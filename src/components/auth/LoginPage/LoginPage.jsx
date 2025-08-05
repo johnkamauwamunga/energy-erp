@@ -66,11 +66,10 @@ const LoginPage = () => {
           <div className="mb-6 p-4 bg-blue-500 bg-opacity-20 border border-blue-400 rounded-lg">
             <h4 className="text-white font-semibold mb-2">Demo Credentials:</h4>
             <div className="text-sm text-blue-100 space-y-1">
-              <div>Super Admin: superadmin@energyerp.com / admin123</div>
-              <div>Company Admin: john@joskaenergy.co.ke / admin123</div>
-              <div>Station Manager: peter@joskaenergy.co.ke / manager123</div>
-              <div>Supervisor: james.supervisor@joskaenergy.co.ke / supervisor123</div>
-              <div>Attendant: john.attendant@joskaenergy.co.ke / attendant123</div>
+              <div>Super Admin: john@joskaenergy.co.ke / admin123</div>
+              <div>Company Admin: jane@kenolkobil.co.ke / admin123</div>
+              <div>Station Manager: peter@joskaenergy.co.ke / admin123</div>
+              <div>Supervisor: james.supervisor@joskaenergy.co.ke / admin123</div>
             </div>
           </div>
 

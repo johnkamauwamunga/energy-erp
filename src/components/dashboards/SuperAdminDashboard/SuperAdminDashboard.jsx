@@ -4,18 +4,17 @@ import {
   Flame, Eye, Edit, Plus, Shield 
 } from 'lucide-react';
 import { Button } from '../../../components/ui';
-import { useApp } from '../../../context/AppContext';
+import { useApp,useAppDispatch,logout } from '../../../context/AppContext';
 import OverviewSection from './OverviewSection';
 import CompanyManagement from './CompanyManagement';
 import UserManagement from './UserManagement';
 import SystemManagement from './SystemManagement';
 import SystemAnalytics from './SystemAnalytics';
 import CreateCompanyModal from './CreateCompanyModal';
-import { useAuth } from '../../../hooks/useAuth';
 
 const SuperAdminDashboard = () => {
   const { state } = useApp();
-  const { logout } = useAuth();
+ const dispatch=useAppDispatch();
   const [activeSection, setActiveSection] = useState('overview');
   const [showCreateCompanyModal, setShowCreateCompanyModal] = useState(false);
 
@@ -26,6 +25,22 @@ const SuperAdminDashboard = () => {
     { id: 'system', label: 'System', icon: Server },
     { id: 'analytics', label: 'Analytics', icon: TrendingUp }
   ];
+
+
+
+    //  console.log("the state ", state);
+     // Implement logout handler
+      const handleLogout = () => {
+        // Perform logout operations
+        dispatch(logout()); // Dispatch logout action
+        
+        // Clear any stored authentication tokens
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('refreshToken');
+        
+        // Redirect to login page
+        window.location.href = '/login'; // Or use your router navigation
+      };
 
   const renderContent = () => {
     switch (activeSection) {
@@ -91,7 +106,7 @@ const SuperAdminDashboard = () => {
                 <Shield className="w-4 h-4" />
                 <span>Super Administrator</span>
               </div>
-              <Button onClick={logout} variant="secondary" size="sm">
+              <Button onClick={handleLogout} variant="secondary" size="sm">
                 Logout
               </Button>
             </div>

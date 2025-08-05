@@ -3,15 +3,21 @@ import {
   BarChart3, Clock, MapPin, Fuel, Flame, X, Menu, UserCheck 
 } from 'lucide-react';
 import { Button } from '../../../components/ui';
-import { useApp } from '../../../context/AppContext';
+import { useApp, useAppDispatch,logout } from '../../../context/AppContext';
 import PlaceholderComponent from './PlaceholderComponent';
 
-const SupervisorDashboard = ({ user, onLogout }) => {
+const SupervisorDashboard = () => {
   const { state } = useApp();
   const [activeSection, setActiveSection] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const dispatch=useAppDispatch();
 
-  const station = state.serviceStations.find(s => s.id === user.stationId);
+  //const station = state.serviceStations.find(s => s.id === user.stationId);
+  console.log("state ",state);
+  const user= state.currentUser.id;
+   console.log("user id ",user);
+  const station=state.currentUser.stationId;
+  
   const supervisor = state.staff.supervisors.find(s => s.id === user.id);
 
   const menuItems = [
@@ -21,6 +27,18 @@ const SupervisorDashboard = ({ user, onLogout }) => {
     { id: 'readings', label: 'Readings', icon: Fuel }
   ];
 
+  // Implement logout handler
+  const handleLogout = () => {
+    // Perform logout operations
+    dispatch(logout()); // Dispatch logout action
+    
+    // Clear any stored authentication tokens
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('refreshToken');
+    
+    // Redirect to login page
+    window.location.href = '/login'; // Or use your router navigation
+  };
   const renderContent = () => {
     switch (activeSection) {
       case 'dashboard':
@@ -103,7 +121,7 @@ const SupervisorDashboard = ({ user, onLogout }) => {
               </button>
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">
-                  Welcome, {user.name}
+                  Welcome, {state.currentUser.name}
                 </h2>
                 <p className="text-sm text-gray-600">{station?.name} - {supervisor?.shift} Shift Supervisor</p>
               </div>
@@ -113,7 +131,7 @@ const SupervisorDashboard = ({ user, onLogout }) => {
                 <UserCheck className="w-4 h-4" />
                 <span>Supervisor</span>
               </div>
-              <Button onClick={onLogout} variant="secondary" size="sm">
+              <Button onClick={handleLogout} variant="secondary" size="sm">
                 Logout
               </Button>
             </div>

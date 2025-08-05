@@ -1,19 +1,35 @@
 import React, { useState } from 'react';
+import { useApp, useAppDispatch } from '../../../context/AppContext'; // Add useAppDispatch
+import { logout } from '../../../context/AppContext/actions';
 import { 
   BarChart3, Activity, Clock, Users, FileText, 
   Flame, X, Menu, MapPin
 } from 'lucide-react';
 import { Button } from '../../../components/ui';
-import { useApp } from '../../../context/AppContext';
 import PlaceholderComponent from './PlaceholderComponent';
 
-const StationManagerDashboard = ({ user, onLogout }) => {
+const StationManagerDashboard = () => {
   const { state } = useApp();
+    const dispatch = useAppDispatch(); // Get dispatch function
   const [activeSection, setActiveSection] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const station = state.serviceStations.find(s => s.id === user.stationId);
 
+  // Implement logout handler
+  const handleLogout = () => {
+    // Perform logout operations
+    dispatch(logout()); // Dispatch logout action
+    
+    // Clear any stored authentication tokens
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('refreshToken');
+    
+    // Redirect to login page
+    window.location.href = '/login'; // Or use your router navigation
+  };
+
+  //const station = state.serviceStations.find(s => s.id === user.stationId);
+const station=state.currentUser.stationId;
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'operations', label: 'Operations', icon: Activity },
@@ -106,7 +122,7 @@ const StationManagerDashboard = ({ user, onLogout }) => {
               </button>
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">
-                  Welcome, {user.name}
+                  Welcome, {state.currentUser.name}
                 </h2>
                 <p className="text-sm text-gray-600">{station?.name} - Station Manager</p>
               </div>
@@ -116,7 +132,7 @@ const StationManagerDashboard = ({ user, onLogout }) => {
                 <MapPin className="w-4 h-4" />
                 <span>Station Manager</span>
               </div>
-              <Button onClick={onLogout} variant="secondary" size="sm">
+              <Button onClick={handleLogout} variant="secondary" size="sm">
                 Logout
               </Button>
             </div>

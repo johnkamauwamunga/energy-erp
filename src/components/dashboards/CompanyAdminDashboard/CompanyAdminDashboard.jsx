@@ -4,19 +4,38 @@ import {
   TrendingUp, FileText, Warehouse, Flame, X, Menu 
 } from 'lucide-react';
 import { Button } from '../../../components/ui';
-import { useApp } from '../../../context/AppContext';
+import { useApp,useAppDispatch,logout } from '../../../context/AppContext';
 import CompanyOverview from '@/components/dashboards/common/CompanyOverview';
 import ServiceStationManagement from '@/components/features/stations/ServiceStationManagement';
 import PlaceholderComponent from './PlaceholderComponent';
+import CreateAssetModal from './CreateAssetModal';
+import CompanyAssetManagement from './CompanyAssetManagement'
 
-const CompanyAdminDashboard = ({ user, onLogout }) => {
+const CompanyAdminDashboard = () => {
   const { state } = useApp();
+    const dispatch=useAppDispatch();
   const [activeSection, setActiveSection] = useState('overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showCreateAssetModal, setShowCreateAssetModal] = useState(false);
+
+  //  console.log("the state ", state);
+   // Implement logout handler
+    const handleLogout = () => {
+      // Perform logout operations
+      dispatch(logout()); // Dispatch logout action
+      
+      // Clear any stored authentication tokens
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('refreshToken');
+      
+      // Redirect to login page
+      window.location.href = '/login'; // Or use your router navigation
+    };
 
   const menuItems = [
     { id: 'overview', label: 'Dashboard', icon: BarChart3 },
     { id: 'stations', label: 'Service Stations', icon: Building2 },
+    { id: 'assets', label: 'Assets', icon: Building2 },
     { id: 'islands', label: 'Island Management', icon: MapPin },
     { id: 'warehouses', label: 'Warehouse', icon: Warehouse },
     { id: 'shifts', label: 'Shift Management', icon: Clock },
@@ -32,7 +51,10 @@ const CompanyAdminDashboard = ({ user, onLogout }) => {
       case 'overview':
         return <CompanyOverview />;
       case 'stations':
-        return <ServiceStationManagement />;
+        // return <ServiceStationManagement />;
+        return <PlaceholderComponent title="Service Station Management" icon={Building2} />;
+      case 'assets':
+         return <CompanyAssetManagement />;
       case 'islands':
         return <PlaceholderComponent title="Island Management" icon={MapPin} />;
       case 'warehouses':
@@ -120,7 +142,7 @@ const CompanyAdminDashboard = ({ user, onLogout }) => {
                 <Menu className="w-6 h-6" />
               </button>
               <h2 className="text-2xl font-bold text-gray-900">
-                Welcome, {user.name}
+                Welcome, {state.currentUser.name}
               </h2>
             </div>
             <div className="flex items-center space-x-4">
@@ -128,7 +150,7 @@ const CompanyAdminDashboard = ({ user, onLogout }) => {
                 <Building2 className="w-4 h-4" />
                 <span>Company Administrator</span>
               </div>
-              <Button onClick={onLogout} variant="secondary" size="sm">
+              <Button onClick={handleLogout} variant="secondary" size="sm">
                 Logout
               </Button>
             </div>
@@ -140,6 +162,12 @@ const CompanyAdminDashboard = ({ user, onLogout }) => {
           {renderContent()}
         </main>
       </div>
+
+            {/* Create Company Modal */}
+      <CreateAssetModal
+        isOpen={showCreateAssetModal}
+        onClose={() => setShowCreateAssetModal(false)}
+      />
     </div>
   );
 };

@@ -5,6 +5,8 @@ export const ACTION_TYPES = {
   LOGOUT: 'LOGOUT',
   ADD_COMPANY: 'ADD_COMPANY',
   UPDATE_COMPANY: 'UPDATE_COMPANY',
+  ADD_ASSET: 'ADD_ASSET',
+  UPDATE_ASSET:'UPDATE_ASSET',
   ADD_STATION: 'ADD_STATION',
   UPDATE_STATION: 'UPDATE_STATION'
 };
@@ -36,6 +38,16 @@ export const addCompany = (company) => ({
 export const updateCompany = (company) => ({
   type: ACTION_TYPES.UPDATE_COMPANY,
   payload: company
+});
+
+export const addAsset = (asset) => ({
+  type: ACTION_TYPES.ADD_ASSET,
+  payload: asset
+});
+
+export const updateAsset = (asset) => ({
+  type: ACTION_TYPES.UPDATE_ASSET,
+  payload: asset
 });
 
 export const addStation = (station) => ({

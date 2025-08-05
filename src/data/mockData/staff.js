@@ -4,7 +4,7 @@ const staff = {
             {
                 id: 'CADM_001',
                 companyId: 'COMP_001',
-                name: 'John Kiprotich',
+                name: 'John Kamau',
                 email: 'john@joskaenergy.co.ke',
                 password: 'admin123',
                 phone: '+254 701 123 456',
@@ -33,7 +33,7 @@ const staff = {
                 stationId: 'JOSKA',
                 name: 'Peter Mwangi',
                 email: 'peter@joskaenergy.co.ke',
-                   password: 'admin123',
+                password: 'admin123',
                 phone: '+254 722 123 456',
                 role: 'station_manager',
                 permissions: ['STATION_OPERATIONS'],

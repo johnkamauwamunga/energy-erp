@@ -1,0 +1,18 @@
+import { useContext } from 'react';
+import AppContext from './AppContext';
+
+export const useApp = () => {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error('useApp must be used within AppProvider');
+  }
+  return context;
+};
+
+export const useAppDispatch = () => {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error('useAppDispatch must be used within AppProvider');
+  }
+  return context.dispatch;
+};

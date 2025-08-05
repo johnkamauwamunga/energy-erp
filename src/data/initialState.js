@@ -19,10 +19,15 @@ export const initialState = {
     supervisors: mockData.staff.supervisors,
     attendants: mockData.staff.attendants
   },
+    assets: {
+      tanks: mockData.assets.tanks,
+      pumps: mockData.assets.pumps,
+      dispensers: mockData.assets.dispensers,
+    },
   
   // Other sections
   islands: {},
-  assets: {},
+
   shifts: mockData.shifts,
   fuelManagement: {},
   sales: {},

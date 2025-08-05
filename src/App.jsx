@@ -50,10 +50,10 @@ const ProtectedLayout = () => {
 const RoleDashboard = () => {
   const { state } = useApp();
   
- // if (!state.currentUser) return <LoadingSpinner />;
-  const role="super_admin";
- // switch (state.currentUser.role) {
- switch(role){
+  if (!state.currentUser) return <LoadingSpinner />;
+  //const role="super_admin";
+ switch (state.currentUser.role) {
+//  switch(role){
     case 'super_admin':
       return <SuperAdminDashboard />;
     case 'company_admin':

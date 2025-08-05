@@ -36,7 +36,15 @@ export const authService = {
       throw new Error('Invalid credentials. Please try again.');
     }
     
-    return user;
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      companyId: user.companyId,
+      permissions: user.permissions,
+      token: 'dummy-token' // Add token for consistency
+    };
   },
   
   logout: async () => {

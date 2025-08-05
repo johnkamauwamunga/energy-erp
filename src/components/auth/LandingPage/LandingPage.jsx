@@ -71,6 +71,7 @@ const LandingPage = ({ onNavigate }) => {
             <a href="#features" className="hover:text-blue-200 transition-colors">Features</a>
             <a href="#about" className="hover:text-blue-200 transition-colors">About</a>
             <a href="#contact" className="hover:text-blue-200 transition-colors">Contact</a>
+              <a href="/login" className="hover:text-blue-200 transition-colors">Login</a>
           </div>
         </div>
       </nav>

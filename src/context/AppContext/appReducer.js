@@ -24,6 +24,11 @@ export const appReducer = (state, action) => {
     }
       
     case 'LOGOUT': {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('authToken');
+       localStorage.removeItem('userData');
+
       return {
         ...state,
         currentUser: null,
@@ -63,7 +68,16 @@ export const appReducer = (state, action) => {
         )
       };
     }
-      
+
+    case 'ADD_ASSET': {
+      console.log("state on add asset ",state.assets);
+      return {
+        ...state,
+        assets: [...state.asset, action.payload]
+      };
+    }
+
+  
     case 'ADD_STATION': {
       return {
         ...state,
