@@ -10,6 +10,7 @@ import ServiceStationManagement from '@/components/features/stations/ServiceStat
 import PlaceholderComponent from './PlaceholderComponent';
 import CreateAssetModal from './CreateAssetModal';
 import CompanyAssetManagement from './CompanyAssetManagement'
+import CompanyUserManagement from './CompanyUserManagement';
 
 const CompanyAdminDashboard = () => {
   const { state } = useApp();
@@ -62,7 +63,7 @@ const CompanyAdminDashboard = () => {
       case 'shifts':
         return <PlaceholderComponent title="Shift Management" icon={Clock} />;
       case 'staff':
-        return <PlaceholderComponent title="Staff Management" icon={Users} />;
+        return <CompanyUserManagement />;
       case 'matching':
         return <PlaceholderComponent title="Document Matching" icon={FileCheck} />;
       case 'offloads':

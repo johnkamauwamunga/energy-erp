@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../../../components/ui';
 import PlaceholderComponent from './PlaceholderComponent';
+import StaffAssetManagement from './assets/StationAssetManagement';
 
 const StationManagerDashboard = () => {
   const { state } = useApp();
@@ -30,6 +31,7 @@ const StationManagerDashboard = () => {
 
   //const station = state.serviceStations.find(s => s.id === user.stationId);
 const station=state.currentUser.stationId;
+console.log("station",station);
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'operations', label: 'Operations', icon: Activity },

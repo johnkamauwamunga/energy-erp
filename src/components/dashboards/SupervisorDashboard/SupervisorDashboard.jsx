@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { 
-  BarChart3, Clock, MapPin, Fuel, Flame, X, Menu, UserCheck 
+  BarChart3, Clock, MapPin, Fuel, Flame, X, Menu, UserCheck ,Building2
 } from 'lucide-react';
 import { Button } from '../../../components/ui';
 import { useApp, useAppDispatch,logout } from '../../../context/AppContext';
 import PlaceholderComponent from './PlaceholderComponent';
+import ShiftManagement from './Shift/ShiftManagement';
+import StationAssetManagement from './assets/StationAssetManagement';
+import IslandManagement from './assets/IslandManagenent';
 
 const SupervisorDashboard = () => {
   const { state } = useApp();
@@ -13,15 +16,18 @@ const SupervisorDashboard = () => {
   const dispatch=useAppDispatch();
 
   //const station = state.serviceStations.find(s => s.id === user.stationId);
-  console.log("state ",state);
+  //console.log("state ",state);
   const user= state.currentUser.id;
-   console.log("user id ",user);
+  // console.log("user id ",user);
   const station=state.currentUser.stationId;
+
+  console.log("station",state.currentUser);
   
   const supervisor = state.staff.supervisors.find(s => s.id === user.id);
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+    {id:'assets', label:'Assets', icon: Building2},
     { id: 'shift', label: 'Current Shift', icon: Clock },
     { id: 'islands', label: 'Islands', icon: MapPin },
     { id: 'readings', label: 'Readings', icon: Fuel }
@@ -43,10 +49,12 @@ const SupervisorDashboard = () => {
     switch (activeSection) {
       case 'dashboard':
         return <PlaceholderComponent title="Supervisor Dashboard" icon={BarChart3} />;
+      case 'assets':
+        return <StationAssetManagement />;
       case 'shift':
-        return <PlaceholderComponent title="Current Shift" icon={Clock} />;
+        return <ShiftManagement />;
       case 'islands':
-        return <PlaceholderComponent title="Island Operations" icon={MapPin} />;
+        return <IslandManagement />;
       case 'readings':
         return <PlaceholderComponent title="Readings Management" icon={Fuel} />;
       default:

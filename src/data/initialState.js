@@ -1,34 +1,43 @@
 import mockData from './mockData';
+import assets from './mockData/assets'; 
 
 export const initialState = {
   // Authentication & User Management
   currentUser: null,
   isAuthenticated: false,
   
-  // Multi-Company Structure (Super Admin View)
+  // Multi-Company Structure
   companies: mockData.companies,
   currentCompany: null,
   
-  // Service Stations with Complete Setup
+  // Service Stations
   serviceStations: mockData.serviceStations,
   
-  // Staff structure with proper nesting
+  // Staff structure
   staff: {
     companyAdmins: mockData.staff.companyAdmins,
     stationManagers: mockData.staff.stationManagers,
     supervisors: mockData.staff.supervisors,
     attendants: mockData.staff.attendants
   },
-    assets: {
-      tanks: mockData.assets.tanks,
-      pumps: mockData.assets.pumps,
-      dispensers: mockData.assets.dispensers,
-    },
   
-  // Other sections
-  islands: {},
+  // Assets with proper structure
+  assets: {
+    tanks: assets.tanks,
+    pumps: assets.pumps,
+    // dispensers: [] // Add if needed
+  },
+  
+  // Islands at root level
+  islands: assets.islands,
 
+  // Other sections
   shifts: mockData.shifts,
+  shiftFilters: {
+    date: 'all',
+    status: '',
+    supervisor: ''
+  },
   fuelManagement: {},
   sales: {},
   reports: {},

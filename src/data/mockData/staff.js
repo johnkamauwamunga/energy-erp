@@ -126,7 +126,7 @@ const staff = {
             {
                 id: 'SUP_004',
                 companyId: 'COMP_002',
-                stationId: 'THIKA',
+                stationId: null,
                 name: 'Elizabeth Atieno',
                 email: 'elizabeth.supervisor@kenolkobil.co.ke',
                    password: 'admin123',

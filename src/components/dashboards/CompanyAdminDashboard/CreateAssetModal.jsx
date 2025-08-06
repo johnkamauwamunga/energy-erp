@@ -20,6 +20,13 @@ const CreateAssetModal = ({ isOpen, onClose, assetType: propAssetType = 'tank' }
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
+  // Asset type to category mapping
+  const assetCategoryMap = {
+    tank: 'tanks',
+    pump: 'pumps',
+    island: 'islands'
+  };
+
   // Reset form when modal opens or asset type changes
   useEffect(() => {
     if (isOpen) {
@@ -64,28 +71,43 @@ const CreateAssetModal = ({ isOpen, onClose, assetType: propAssetType = 'tank' }
     setIsSubmitting(true);
     
     try {
-      // Create asset object
-      const newAsset = {
+      // Create base asset object
+      const baseAsset = {
         id: `${assetType.toUpperCase()}_${Date.now()}`,
         type: assetType,
         code: formData.code,
         companyId: formData.companyId,
         createdAt: new Date().toISOString().split('T')[0],
-        ...(assetType === 'tank' && {
-          capacity: Number(formData.capacity),
-          productType: formData.productType
-        }),
-        // Removed island fields for pumps
-        ...(assetType === 'island' && {
-          name: formData.name
-        })
       };
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 800));
+      // Add type-specific properties
+      let newAsset;
+      switch(assetType) {
+        case 'tank':
+          newAsset = {
+            ...baseAsset,
+            capacity: Number(formData.capacity),
+            productType: formData.productType
+          };
+          break;
+          
+        case 'island':
+          newAsset = {
+            ...baseAsset,
+            name: formData.name
+          };
+          break;
+          
+        case 'pump':
+        default:
+          newAsset = baseAsset;
+      }
+
+      // Get the correct category for dispatch
+      const category = assetCategoryMap[assetType];
       
-      // Dispatch action to add asset
-      dispatch(addAsset(newAsset));
+      // Dispatch action to add asset to specific category
+      dispatch(addAsset(category, newAsset));
       
       onClose();
     } catch (error) {

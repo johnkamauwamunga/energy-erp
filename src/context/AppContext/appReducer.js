@@ -1,7 +1,6 @@
 export const appReducer = (state, action) => {
   switch (action.type) {
     case 'SET_USER': {
-      // Wrap case block in curly braces to create a new block scope
       const user = action.payload;
       let currentCompany = null;
       let currentStation = null;
@@ -24,10 +23,10 @@ export const appReducer = (state, action) => {
     }
       
     case 'LOGOUT': {
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('authToken');
-       localStorage.removeItem('userData');
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('userData');
 
       return {
         ...state,
@@ -70,13 +69,30 @@ export const appReducer = (state, action) => {
     }
 
     case 'ADD_ASSET': {
-      console.log("state on add asset ",state.assets);
+      const { assetType, asset } = action.payload;
+      
       return {
         ...state,
-        assets: [...state.asset, action.payload]
+        assets: {
+          ...state.assets,
+          [assetType]: [...state.assets[assetType], asset]
+        }
       };
     }
 
+    case 'UPDATE_ASSET': {
+      const { assetType, id, updates } = action.payload;
+      
+      return {
+        ...state,
+        assets: {
+          ...state.assets,
+          [assetType]: state.assets[assetType].map(item => 
+            item.id === id ? { ...item, ...updates } : item
+          )
+        }
+      };
+    }
   
     case 'ADD_STATION': {
       return {
@@ -91,6 +107,108 @@ export const appReducer = (state, action) => {
         serviceStations: state.serviceStations.map(s => 
           s.id === action.payload.id ? action.payload : s
         )
+      };
+    }
+
+    case 'ATTACH_ASSET_TO_STATION': {
+      const { stationId, assetId, assetType } = action.payload;
+      
+      return {
+        ...state,
+        assets: {
+          ...state.assets,
+          [assetType]: state.assets[assetType].map(asset => 
+            asset.id === assetId ? { ...asset, stationId } : asset
+          )
+        }
+      };
+    }
+    
+    case 'DETACH_ASSET_FROM_STATION': {
+      const { assetId, assetType } = action.payload;
+      
+      return {
+        ...state,
+        assets: {
+          ...state.assets,
+          [assetType]: state.assets[assetType].map(asset => 
+            asset.id === assetId ? { ...asset, stationId: null } : asset
+          )
+        }
+      };
+    }
+
+    // Shift Management Cases
+    case 'ADD_SHIFT': {
+      return {
+        ...state,
+        shifts: [...state.shifts, action.payload]
+      };
+    }
+    
+    case 'UPDATE_SHIFT': {
+      return {
+        ...state,
+        shifts: state.shifts.map(shift => 
+          shift.id === action.payload.id ? action.payload : shift
+        )
+      };
+    }
+
+    case 'SET_SHIFT_FILTERS': {
+      return {
+        ...state,
+        shiftFilters: action.payload
+      };
+    }
+    
+    // Asset Relationship Cases
+    case 'ATTACH_PUMPS_TO_TANK': {
+      const { tankId, pumpIds } = action.payload;
+      
+      // Get islandId from tank
+      const tank = state.assets.tanks.find(t => t.id === tankId);
+      const islandId = tank ? tank.islandId : null;
+      
+      return {
+        ...state,
+        assets: {
+          ...state.assets,
+          pumps: state.assets.pumps.map(pump => {
+            if (pumpIds.includes(pump.id)) {
+              return {
+                ...pump,
+                tankId,
+                islandId
+              };
+            }
+            return pump;
+          })
+        }
+      };
+    }
+
+    case 'ATTACH_ASSETS_TO_ISLAND': {
+      const { islandId, tankIds, pumpIds } = action.payload;
+      
+      return {
+        ...state,
+        assets: {
+          ...state.assets,
+          tanks: state.assets.tanks.map(tank => 
+            tankIds.includes(tank.id) ? { ...tank, islandId } : tank
+          ),
+          pumps: state.assets.pumps.map(pump => 
+            pumpIds.includes(pump.id) ? { ...pump, islandId } : pump
+          )
+        }
+      };
+    }
+
+    case 'ADD_ISLAND': {
+      return {
+        ...state,
+        islands: [...state.islands, action.payload]
       };
     }
     

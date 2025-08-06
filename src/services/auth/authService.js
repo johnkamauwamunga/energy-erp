@@ -2,7 +2,7 @@ import mockData from '../../data/mockData';
 
 // Helper function to find user
 const findUser = (email, password) => {
-  // Combine all users
+  // Combine all users from mockData
   const allUsers = [
     ...mockData.staff.companyAdmins,
     ...mockData.staff.stationManagers,
@@ -10,18 +10,21 @@ const findUser = (email, password) => {
     ...mockData.staff.attendants
   ];
   
-  // Add super admin
+  // Add hardcoded super admin
   const superAdmin = {
+    id: 'SUPER_001',
     email: 'superadmin@energyerp.com',
     password: 'admin123',
     role: 'super_admin',
     name: 'Super Administrator',
-    permissions: ['ALL_COMPANIES', 'CREATE_COMPANIES']
+    companyId: null,
+    stationId: null,
+    permissions: ['ALL_SYSTEMS'],
+    status: 'active'
   };
   
   return [superAdmin, ...allUsers].find(u => 
-    u.email === email && 
-    u.password === password
+    u.email === email && u.password === password
   );
 };
 
@@ -41,9 +44,12 @@ export const authService = {
       name: user.name,
       email: user.email,
       role: user.role,
-      companyId: user.companyId,
-      permissions: user.permissions,
-      token: 'dummy-token' // Add token for consistency
+      companyId: user.companyId || null,
+      stationId: user.stationId || null,
+      permissions: user.permissions || [],
+      phone: user.phone || null,
+      status: user.status || 'active',
+      token: 'dummy-token' // mock token
     };
   },
   
