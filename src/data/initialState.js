@@ -13,6 +13,9 @@ export const initialState = {
   // Service Stations
   serviceStations: mockData.serviceStations,
   
+  // warehouses
+  warehouses: mockData.warehouses,
+  
   // Staff structure
   staff: {
     companyAdmins: mockData.staff.companyAdmins,

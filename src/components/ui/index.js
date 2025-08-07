@@ -9,4 +9,7 @@ export { default as Badge } from './Badge';
 export { default as Tabs } from './Tabs';
 export { default as Tab } from './Tab';
 export { default as Table } from './Table';
+export { default as DatePicker } from './DatePicker';
+export { default as Progress } from './Progress';
+
 // Add other exports as neededj

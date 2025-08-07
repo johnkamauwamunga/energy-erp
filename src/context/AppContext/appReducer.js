@@ -211,7 +211,126 @@ export const appReducer = (state, action) => {
         islands: [...state.islands, action.payload]
       };
     }
-    
+
+       // Warehouse Management Cases
+    case 'ADD_WAREHOUSE': {
+      return {
+        ...state,
+        warehouses: [...state.warehouses, action.payload]
+      };
+    }
+
+    case 'UPDATE_WAREHOUSE': {
+      const { id, updates } = action.payload;
+      return {
+        ...state,
+        warehouses: state.warehouses.map(wh =>
+          wh.id === id ? { ...wh, ...updates } : wh
+        )
+      };
+    }
+
+    case 'ADD_NONFUEL_ITEM': {
+      const { warehouseId, item } = action.payload;
+      return {
+        ...state,
+        warehouses: state.warehouses.map(wh =>
+          wh.id === warehouseId
+            ? {
+                ...wh,
+                nonFuelItems: [...(wh.nonFuelItems || []), item]
+              }
+            : wh
+        )
+      };
+    }
+
+    case 'UPDATE_NONFUEL_ITEM': {
+      const { warehouseId, itemId, updates } = action.payload;
+      return {
+        ...state,
+        warehouses: state.warehouses.map(wh =>
+          wh.id === warehouseId
+            ? {
+                ...wh,
+                nonFuelItems: wh.nonFuelItems.map(item =>
+                  item.itemId === itemId ? { ...item, ...updates } : item
+                )
+              }
+            : wh
+        )
+      };
+    }
+
+    case 'UPDATE_WAREHOUSE_STOCK': {
+      const { warehouseId, itemId, newStock } = action.payload;
+      return {
+        ...state,
+        warehouses: state.warehouses.map(wh =>
+          wh.id === warehouseId
+            ? {
+                ...wh,
+                nonFuelItems: wh.nonFuelItems.map(item =>
+                  item.itemId === itemId
+                    ? { ...item, currentStock: newStock }
+                    : item
+                )
+              }
+            : wh
+        )
+      };
+    }
+
+    case 'TRANSFER_STOCK': {
+      const { itemId, fromWarehouseId, toWarehouseId, quantity } = action.payload;
+      
+      // Find source and target warehouses
+      const fromWarehouse = state.warehouses.find(wh => wh.id === fromWarehouseId);
+      const toWarehouse = state.warehouses.find(wh => wh.id === toWarehouseId);
+      
+      if (!fromWarehouse || !toWarehouse) return state;
+      
+      // Find source item
+      const fromItem = fromWarehouse.nonFuelItems?.find(item => item.itemId === itemId);
+      if (!fromItem || fromItem.currentStock < quantity) return state;
+      
+      return {
+        ...state,
+        warehouses: state.warehouses.map(wh => {
+          // Update source warehouse
+          if (wh.id === fromWarehouseId) {
+            return {
+              ...wh,
+              nonFuelItems: wh.nonFuelItems.map(item =>
+                item.itemId === itemId
+                  ? { ...item, currentStock: item.currentStock - quantity }
+                  : item
+              )
+            };
+          }
+          
+          // Update target warehouse
+          if (wh.id === toWarehouseId) {
+            const existingItem = wh.nonFuelItems?.find(item => item.itemId === itemId);
+            
+            return {
+              ...wh,
+              nonFuelItems: existingItem
+                ? wh.nonFuelItems.map(item =>
+                    item.itemId === itemId
+                      ? { ...item, currentStock: item.currentStock + quantity }
+                      : item
+                  )
+                : [...(wh.nonFuelItems || []), { ...fromItem, currentStock: quantity }]
+            };
+          }
+          
+          return wh;
+        })
+      };
+    }
+
+
     default:
       return state;
   }

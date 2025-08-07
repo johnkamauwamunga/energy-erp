@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { 
-  BarChart3, Clock, MapPin, Fuel, Flame, X, Menu, UserCheck ,Building2
+  BarChart3, Clock, MapPin, Fuel, Flame, X, Menu, UserCheck ,Building2,DollarSign
 } from 'lucide-react';
 import { Button } from '../../../components/ui';
+import DashboardOverview from '../common/DashboardOverview';
 import { useApp, useAppDispatch,logout } from '../../../context/AppContext';
 import PlaceholderComponent from './PlaceholderComponent';
-import ShiftManagement from './Shift/ShiftManagement';
-import StationAssetManagement from './assets/StationAssetManagement';
-import IslandManagement from './assets/IslandManagenent';
+import ShiftManagement from '../common/shift/ShiftManagement';
+import StationAssetManagement from '../common/assets/station/StationAssetManagement';
+import SalesManagement from '../common/sales/SalesManagement';
 
 const SupervisorDashboard = () => {
   const { state } = useApp();
@@ -30,7 +31,8 @@ const SupervisorDashboard = () => {
     {id:'assets', label:'Assets', icon: Building2},
     { id: 'shift', label: 'Current Shift', icon: Clock },
     { id: 'islands', label: 'Islands', icon: MapPin },
-    { id: 'readings', label: 'Readings', icon: Fuel }
+    { id: 'readings', label: 'Readings', icon: Fuel },
+     { id: 'sales', label: 'Sales Report', icon: DollarSign }
   ];
 
   // Implement logout handler
@@ -48,7 +50,7 @@ const SupervisorDashboard = () => {
   const renderContent = () => {
     switch (activeSection) {
       case 'dashboard':
-        return <PlaceholderComponent title="Supervisor Dashboard" icon={BarChart3} />;
+        return <DashboardOverview />;
       case 'assets':
         return <StationAssetManagement />;
       case 'shift':
@@ -57,6 +59,9 @@ const SupervisorDashboard = () => {
         return <IslandManagement />;
       case 'readings':
         return <PlaceholderComponent title="Readings Management" icon={Fuel} />;
+      case 'sales':
+        return <SalesManagement />;
+
       default:
         return <PlaceholderComponent title="Supervisor Dashboard" icon={BarChart3} />;
     }

@@ -6,6 +6,7 @@ import {
 import { Button } from '../../../components/ui';
 import { useApp,useAppDispatch,logout } from '../../../context/AppContext';
 import CompanyOverview from '@/components/dashboards/common/CompanyOverview';
+import DashboardOverview from '../common/DashboardOverview';
 import ServiceStationManagement from '@/components/features/stations/ServiceStationManagement';
 import PlaceholderComponent from './PlaceholderComponent';
 import CreateAssetModal from './CreateAssetModal';
@@ -50,7 +51,7 @@ const CompanyAdminDashboard = () => {
   const renderContent = () => {
     switch (activeSection) {
       case 'overview':
-        return <CompanyOverview />;
+        return <DashboardOverview />;
       case 'stations':
         // return <ServiceStationManagement />;
         return <PlaceholderComponent title="Service Station Management" icon={Building2} />;

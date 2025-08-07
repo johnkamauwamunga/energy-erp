@@ -6,136 +6,101 @@ import { Plus, X, User, MapPin, Clock, UserCheck, Package } from 'lucide-react';
 import clsx from 'clsx';
 
 const CreateShiftModal = ({ onClose }) => {
-  const { state } = useApp();
+  const { state, dispatch } = useApp();
   const [selectedIsland, setSelectedIsland] = useState(null);
   const [assignments, setAssignments] = useState({});
-  const [nonFuelProducts, setNonFuelProducts] = useState({});
+  const [nonFuelItems, setNonFuelItems] = useState({});
   const [shiftDetails, setShiftDetails] = useState({
     startTime: new Date().toISOString().slice(0, 16),
     endTime: '',
     supervisorId: ''
   });
-  const [currentPostings, setCurrentPostings] = useState({});
   const [selectedAttendantIds, setSelectedAttendantIds] = useState([]);
-  const [selectedProductId, setSelectedProductId] = useState('');
+  const [selectedItemId, setSelectedItemId] = useState('');
   const [openingStock, setOpeningStock] = useState('');
-  const [brandFilter, setBrandFilter] = useState('');
   
-  // Get current station from logged-in user
-  const currentStation = state.currentUser?.stationId;
+  // Get current station
+  const currentStation = state.currentStation?.id;
   
   // Filter islands by current station
   const stationIslands = state.islands.filter(
     island => island.stationId === currentStation
   );
   
-  // Get unattached attendants
-  const systemUnattachedAttendants = state.staff.attendants.filter(attendant => {
-    if (attendant.stationId !== currentStation) return false;
-    
-    const isInActiveShift = state.shifts.some(shift => 
-      shift.status === 'active' && 
-      shift.attendants.some(a => a.id === attendant.id)
-    );
-    
-    return !isInActiveShift;
-  });
-
-  // Get all assigned attendant IDs in current session
-  const assignedAttendantIds = new Set();
-  Object.values(assignments).forEach(islandAssignments => {
-    islandAssignments.forEach(a => assignedAttendantIds.add(a.attendantId));
-  });
-
-  // Filter out attendants already assigned
-  const unattachedAttendants = systemUnattachedAttendants.filter(
-    attendant => !assignedAttendantIds.has(attendant.id)
+  // Get available attendants
+  const availableAttendants = state.staff.attendants.filter(attendant => 
+    attendant.stationId === currentStation &&
+    !state.shifts.some(shift => 
+      shift.status === 'open' && 
+      shift.islands.some(i => 
+        i.attendants.includes(attendant.id)
+      )
+    )
   );
 
-  // Get non-fuel products
-  const nonFuelProductsList = state.assets?.nonFuelProducts || [];
+  // Get assigned attendant IDs
+  const assignedAttendantIds = new Set(
+    Object.values(assignments).flatMap(arr => arr)
+  );
+
+  // Get warehouse for current station
+  const warehouse = state.warehouses.find(
+    wh => wh.stationId === currentStation
+  );
   
-  // Filter products by brand
-  const filteredProducts = nonFuelProductsList.filter(product => {
-    if (!brandFilter) return true;
-    return product.brand.toLowerCase().includes(brandFilter.toLowerCase());
-  });
+  // Get non-fuel items from warehouse
+  const warehouseItems = warehouse?.nonFuelItems || [];
 
-  // Get brands for filter
-  const brands = [...new Set(nonFuelProductsList.map(p => p.brand))];
-
-  // Set default end time (1 hour from now)
+  // Set default end time
   useEffect(() => {
-    const now = new Date();
-    const endTime = new Date(now.setHours(now.getHours() + 1)).toISOString().slice(0, 16);
+    const endTime = new Date(new Date().setHours(23, 59, 0)).toISOString().slice(0, 16);
     setShiftDetails(prev => ({ ...prev, endTime }));
   }, []);
 
   // Handle island selection
   const handleSelectIsland = (islandId) => {
-    const island = stationIslands.find(i => i.id === islandId);
-    setSelectedIsland(island);
+    setSelectedIsland(stationIslands.find(i => i.id === islandId));
   };
 
   // Handle attendant selection
   const toggleAttendantSelection = (attendantId) => {
-    setSelectedAttendantIds(prev => {
-      if (prev.includes(attendantId)) {
-        return prev.filter(id => id !== attendantId);
-      } else {
-        return [...prev, attendantId];
-      }
-    });
+    setSelectedAttendantIds(prev => 
+      prev.includes(attendantId) 
+        ? prev.filter(id => id !== attendantId) 
+        : [...prev, attendantId]
+    );
   };
 
-  // Handle posting assignment
-  const handlePostingChange = (attendantId, posting) => {
-    setCurrentPostings(prev => ({
-      ...prev,
-      [attendantId]: posting
-    }));
-  };
-
-  // Assign selected attendants to island
+  // Assign attendants to island
   const assignToIsland = () => {
     if (!selectedIsland || selectedAttendantIds.length === 0) return;
-    
-    const newAssignments = selectedAttendantIds.map(id => ({
-      attendantId: id,
-      posting: currentPostings[id] || 'Not assigned'
-    }));
     
     setAssignments(prev => ({
       ...prev,
       [selectedIsland.id]: [
         ...(prev[selectedIsland.id] || []),
-        ...newAssignments
+        ...selectedAttendantIds
       ]
     }));
     
-    // Reset selection
     setSelectedAttendantIds([]);
-    setCurrentPostings({});
   };
 
-  // Handle product assignment
-  const assignProductToIsland = () => {
-    if (!selectedIsland || !selectedProductId || !openingStock) return;
+  // Handle item assignment
+  const assignItemToIsland = () => {
+    if (!selectedIsland || !selectedItemId || !openingStock) return;
     
-    const product = nonFuelProductsList.find(p => p.id === selectedProductId);
-    if (!product) return;
+    const item = warehouseItems.find(i => i.itemId === selectedItemId);
+    if (!item) return;
     
     const newAssignment = {
-      productId: selectedProductId,
-      productName: product.name,
-      brand: product.brand,
-      size: product.size,
-      price: product.price,
-      openingStock: parseInt(openingStock, 10),
-      closingStock: null // Will be set during shift closing
+      itemId: selectedItemId,
+      name: item.name,
+      price: item.sellingPrice,
+      openingStock: parseInt(openingStock, 10)
     };
     
-    setNonFuelProducts(prev => ({
+    setNonFuelItems(prev => ({
       ...prev,
       [selectedIsland.id]: [
         ...(prev[selectedIsland.id] || []),
@@ -143,61 +108,54 @@ const CreateShiftModal = ({ onClose }) => {
       ]
     }));
     
-    // Reset form
-    setSelectedProductId('');
+    setSelectedItemId('');
     setOpeningStock('');
   };
 
-  // Remove attendant from assignment
+  // Remove assignment
   const removeAssignment = (islandId, attendantId) => {
-    setAssignments(prev => {
-      const updated = { ...prev };
-      if (updated[islandId]) {
-        updated[islandId] = updated[islandId].filter(a => a.attendantId !== attendantId);
-        if (updated[islandId].length === 0) {
-          delete updated[islandId];
-        }
-      }
-      return updated;
-    });
+    setAssignments(prev => ({
+      ...prev,
+      [islandId]: prev[islandId].filter(id => id !== attendantId)
+    }));
   };
 
-  // Remove product from assignment
-  const removeProductAssignment = (islandId, productId) => {
-    setNonFuelProducts(prev => {
-      const updated = { ...prev };
-      if (updated[islandId]) {
-        updated[islandId] = updated[islandId].filter(p => p.productId !== productId);
-        if (updated[islandId].length === 0) {
-          delete updated[islandId];
-        }
-      }
-      return updated;
-    });
+  // Remove item assignment
+  const removeItemAssignment = (islandId, itemId) => {
+    setNonFuelItems(prev => ({
+      ...prev,
+      [islandId]: prev[islandId].filter(item => item.itemId !== itemId)
+    }));
   };
 
-  // Handle shift creation
+  // Create shift
   const createShift = () => {
-    const timestamp = Date.now();
+    const shiftId = `SHIFT_${Date.now()}`;
     
-    // Create one shift per island with both attendants and products
-    const shifts = Object.entries(assignments).map(([islandId, attendants]) => ({
-      id: `SHIFT_${timestamp}_${islandId}`,
+    const shift = {
+      id: shiftId,
       stationId: currentStation,
-      islandId,
+      warehouseId: warehouse?.id,
+      supervisorId: shiftDetails.supervisorId,
+      status: 'open',
       startTime: shiftDetails.startTime,
       endTime: shiftDetails.endTime,
-      status: 'pending',
-      supervisorId: shiftDetails.supervisorId,
-      attendants: attendants.map(a => ({
-        id: a.attendantId,
-        posting: a.posting,
-        totalSales: 0
-      })),
-      nonFuelProducts: nonFuelProducts[islandId] || []
-    }));
+      islands: Object.keys(assignments).map(islandId => ({
+        islandId,
+        attendants: assignments[islandId],
+        nonFuelItems: nonFuelItems[islandId] || [],
+        fuelPumps: state.assets.pumps
+          .filter(pump => pump.islandId === islandId)
+          .map(pump => ({
+            pumpId: pump.id,
+            openingCash: 0,
+            openingManual: 0,
+            openingElectric: 0
+          }))
+      }))
+    };
     
-    console.log('Created shifts:', shifts);
+    dispatch({ type: 'ADD_SHIFT', payload: shift });
     onClose();
   };
 
@@ -210,7 +168,7 @@ const CreateShiftModal = ({ onClose }) => {
   return (
     <Modal isOpen={true} onClose={onClose} title="Create New Shift" size="2xl">
       <div className="space-y-6">
-        {/* Island Selection Section */}
+        {/* Island Selection */}
         <Card title="1. Select Allocation Point">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Select
@@ -238,7 +196,7 @@ const CreateShiftModal = ({ onClose }) => {
           </div>
         </Card>
         
-        {/* Attendant Assignment Section */}
+        {/* Attendant Assignment */}
         {selectedIsland && (
           <Card title="2. Assign Attendants">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -246,43 +204,25 @@ const CreateShiftModal = ({ onClose }) => {
               <div>
                 <h3 className="font-medium mb-3 flex items-center">
                   <User className="w-4 h-4 mr-2" />
-                  Available Attendants ({unattachedAttendants.length})
+                  Available Attendants ({availableAttendants.length})
                 </h3>
                 
                 <div className="space-y-2 max-h-72 overflow-y-auto pr-2">
-                  {unattachedAttendants.length === 0 ? (
-                    <div className="text-center py-6 text-gray-500">
-                      All attendants have been assigned
+                  {availableAttendants.filter(a => !assignedAttendantIds.has(a.id)).map(attendant => (
+                    <div 
+                      key={attendant.id}
+                      className={clsx(
+                        "p-3 rounded-lg border transition-all cursor-pointer",
+                        selectedAttendantIds.includes(attendant.id)
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-gray-200 hover:border-gray-300"
+                      )}
+                      onClick={() => toggleAttendantSelection(attendant.id)}
+                    >
+                      <div className="font-medium">{attendant.name}</div>
+                      <div className="text-sm text-gray-600">{attendant.email}</div>
                     </div>
-                  ) : (
-                    unattachedAttendants.map(attendant => (
-                      <div 
-                        key={attendant.id}
-                        className={clsx(
-                          "p-3 rounded-lg border transition-all cursor-pointer",
-                          selectedAttendantIds.includes(attendant.id)
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-gray-200 hover:border-gray-300"
-                        )}
-                        onClick={() => toggleAttendantSelection(attendant.id)}
-                      >
-                        <div className="font-medium">{attendant.name}</div>
-                        <div className="text-sm text-gray-600">{attendant.email}</div>
-                        
-                        {selectedAttendantIds.includes(attendant.id) && (
-                          <div className="mt-2">
-                            <Input
-                              label="Posting Assignment"
-                              placeholder="e.g., Dispenser 1"
-                              value={currentPostings[attendant.id] || ''}
-                              onChange={(e) => handlePostingChange(attendant.id, e.target.value)}
-                              size="sm"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    ))
-                  )}
+                  ))}
                 </div>
                 
                 <Button
@@ -303,7 +243,7 @@ const CreateShiftModal = ({ onClose }) => {
                 </h3>
                 
                 <div className="space-y-3 max-h-72 overflow-y-auto pr-2">
-                  {Object.entries(assignments).map(([islandId, attendants]) => {
+                  {Object.entries(assignments).map(([islandId, attendantIds]) => {
                     const island = stationIslands.find(i => i.id === islandId);
                     return (
                       <div key={islandId} className="border rounded-lg overflow-hidden">
@@ -311,15 +251,13 @@ const CreateShiftModal = ({ onClose }) => {
                           {island?.name || 'Unknown Island'}
                         </div>
                         <div className="divide-y">
-                          {attendants.map(({ attendantId, posting }) => {
+                          {attendantIds.map(attendantId => {
                             const attendant = state.staff.attendants.find(a => a.id === attendantId);
                             return (
                               <div key={attendantId} className="px-3 py-2 flex justify-between items-center">
                                 <div>
                                   <div className="font-medium">{attendant?.name}</div>
-                                  <div className="text-sm text-gray-600">
-                                    Posting: {posting}
-                                  </div>
+                                  <div className="text-sm text-gray-600">{attendant?.email}</div>
                                 </div>
                                 <button 
                                   onClick={() => removeAssignment(islandId, attendantId)}
@@ -334,95 +272,86 @@ const CreateShiftModal = ({ onClose }) => {
                       </div>
                     );
                   })}
-                  
-                  {!hasAssignments && (
-                    <div className="text-center py-6 text-gray-500">
-                      No attendants assigned yet
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
           </Card>
         )}
         
-        {/* Non-Fuel Products Section */}
+        {/* Non-Fuel Items Section */}
         {selectedIsland && (
-          <Card title="3. Assign Non-Fuel Products">
+          <Card title="3. Restock Non-Fuel Items">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Product Selection */}
+              {/* Item Selection */}
               <div>
                 <h3 className="font-medium mb-3 flex items-center">
                   <Package className="w-4 h-4 mr-2" />
-                  Available Products
+                  Warehouse Inventory
                 </h3>
                 
                 <div className="space-y-4">
-                  <Input
-                    label="Filter by Brand"
-                    placeholder="e.g., Helix"
-                    value={brandFilter}
-                    onChange={(e) => setBrandFilter(e.target.value)}
-                  />
-                  
                   <Select
-                    label="Select Product"
-                    value={selectedProductId}
-                    onChange={(e) => setSelectedProductId(e.target.value)}
+                    label="Select Item"
+                    value={selectedItemId}
+                    onChange={(e) => setSelectedItemId(e.target.value)}
                     options={[
-                      { value: '', label: 'Select a product' },
-                      ...filteredProducts.map(product => ({
-                        value: product.id,
-                        label: `${product.brand} ${product.name} (${product.size})`
+                      { value: '', label: 'Select an item' },
+                      ...warehouseItems.map(item => ({
+                        value: item.itemId,
+                        label: `${item.name} (Stock: ${item.currentStock})`
                       }))
                     ]}
                   />
                   
-                  {selectedProductId && (
-                    <Input
-                      label="Opening Stock"
-                      type="number"
-                      placeholder="Quantity"
-                      value={openingStock}
-                      onChange={(e) => setOpeningStock(e.target.value)}
-                      min="0"
-                    />
+                  {selectedItemId && (
+                    <>
+                      <Input
+                        label="Quantity to Restock"
+                        type="number"
+                        placeholder="Enter quantity"
+                        value={openingStock}
+                        onChange={(e) => setOpeningStock(e.target.value)}
+                        min="1"
+                        max={warehouseItems.find(i => i.itemId === selectedItemId)?.currentStock || 0}
+                      />
+                      <div className="text-sm text-gray-500">
+                        Max available: {warehouseItems.find(i => i.itemId === selectedItemId)?.currentStock || 0}
+                      </div>
+                    </>
                   )}
                   
                   <Button
-                    onClick={assignProductToIsland}
-                    disabled={!selectedProductId || !openingStock}
+                    onClick={assignItemToIsland}
+                    disabled={!selectedItemId || !openingStock}
                     className="w-full mt-2"
                     icon={Plus}
                   >
-                    Add Product
+                    Add to {selectedIsland.name}
                   </Button>
                 </div>
               </div>
               
-              {/* Current Product Assignments */}
+              {/* Current Assignments */}
               <div>
                 <h3 className="font-medium mb-3 flex items-center">
                   <Package className="w-4 h-4 mr-2" />
-                  Assigned Products
+                  Island Restock List
                 </h3>
                 
                 <div className="max-h-72 overflow-y-auto pr-2">
-                  {nonFuelProducts[selectedIsland.id]?.length > 0 ? (
+                  {nonFuelItems[selectedIsland.id]?.length > 0 ? (
                     <Table
                       columns={[
                         { header: 'Product', accessor: 'name' },
-                        { header: 'Size', accessor: 'size' },
-                        { header: 'Opening', accessor: 'opening' },
+                        { header: 'Quantity', accessor: 'quantity' },
                         { header: 'Actions', accessor: 'actions' }
                       ]}
-                      data={nonFuelProducts[selectedIsland.id].map(product => ({
-                        name: product.productName,
-                        size: product.size,
-                        opening: product.openingStock,
+                      data={nonFuelItems[selectedIsland.id].map(item => ({
+                        name: item.name,
+                        quantity: item.openingStock,
                         actions: (
                           <button 
-                            onClick={() => removeProductAssignment(selectedIsland.id, product.productId)}
+                            onClick={() => removeItemAssignment(selectedIsland.id, item.itemId)}
                             className="text-red-500 hover:text-red-700"
                           >
                             <X className="w-4 h-4" />
@@ -432,7 +361,7 @@ const CreateShiftModal = ({ onClose }) => {
                     />
                   ) : (
                     <div className="text-center py-6 text-gray-500">
-                      No products assigned yet
+                      No items added yet
                     </div>
                   )}
                 </div>
@@ -441,7 +370,7 @@ const CreateShiftModal = ({ onClose }) => {
           </Card>
         )}
         
-        {/* Shift Details Section */}
+        {/* Shift Details */}
         <Card title="4. Schedule Shift">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Input
@@ -496,7 +425,7 @@ const CreateShiftModal = ({ onClose }) => {
             onClick={createShift}
             disabled={!isFormValid}
           >
-            Create Shift
+            Open Shift
           </Button>
         </div>
       </div>

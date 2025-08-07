@@ -6,6 +6,7 @@ import {
 import { Button } from '../../../components/ui';
 import { useApp,useAppDispatch,logout } from '../../../context/AppContext';
 import OverviewSection from './OverviewSection';
+import DashboardOverview from '../common/DashboardOverview';
 import CompanyManagement from './CompanyManagement';
 import UserManagement from './UserManagement';
 import SystemManagement from './SystemManagement';
@@ -45,7 +46,7 @@ const SuperAdminDashboard = () => {
   const renderContent = () => {
     switch (activeSection) {
       case 'overview':
-        return <OverviewSection />;
+        return <DashboardOverview />;
       case 'companies':
         return <CompanyManagement onCreateCompany={() => setShowCreateCompanyModal(true)} />;
       case 'users':

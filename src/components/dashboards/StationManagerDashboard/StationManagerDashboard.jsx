@@ -3,11 +3,14 @@ import { useApp, useAppDispatch } from '../../../context/AppContext'; // Add use
 import { logout } from '../../../context/AppContext/actions';
 import { 
   BarChart3, Activity, Clock, Users, FileText, 
-  Flame, X, Menu, MapPin
+  Flame, X, Menu, MapPin, DollarSign, Building2
 } from 'lucide-react';
 import { Button } from '../../../components/ui';
+import DashboardOverview from '../common/DashboardOverview';
 import PlaceholderComponent from './PlaceholderComponent';
-import StaffAssetManagement from './assets/StationAssetManagement';
+import ShiftManagement from '../common/shift/ShiftManagement';
+import StationAssetManagement from '../common/assets/station/StationAssetManagement';
+import SalesManagement from '../common/sales/SalesManagement';
 
 const StationManagerDashboard = () => {
   const { state } = useApp();
@@ -37,21 +40,24 @@ console.log("station",station);
     { id: 'operations', label: 'Operations', icon: Activity },
     { id: 'shifts', label: 'Shift Management', icon: Clock },
     { id: 'staff', label: 'Staff', icon: Users },
+    { id: 'sales', label: 'Sales', icon: DollarSign },
     { id: 'reports', label: 'Reports', icon: FileText }
   ];
 
   const renderContent = () => {
     switch (activeSection) {
       case 'dashboard':
-        return <PlaceholderComponent title="Station Dashboard" icon={BarChart3} />;
+         return <DashboardOverview />;
       case 'operations':
         return <PlaceholderComponent title="Station Operations" icon={Activity} />;
       case 'shifts':
-        return <PlaceholderComponent title="Shift Management" icon={Clock} />;
+        return <ShiftManagement />;
       case 'staff':
         return <PlaceholderComponent title="Staff Management" icon={Users} />;
+       case 'sales':
+        return <SalesManagement/>;
       case 'reports':
-        return <PlaceholderComponent title="Station Reports" icon={FileText} />;
+         return <PlaceholderComponent title="Station Dashboard" icon={BarChart3} />;
       default:
         return <PlaceholderComponent title="Station Dashboard" icon={BarChart3} />;
     }
