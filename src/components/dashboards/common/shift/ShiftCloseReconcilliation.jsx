@@ -1,226 +1,231 @@
-// src/components/shift/ShiftCloseReconciliation.jsx
 import React, { useState, useEffect } from 'react';
-import { Modal, Button, Table, Input, Card, Badge, Progress } from '../../../ui';
+import { Modal, Button, Card, Input, Select, Badge, Progress } from '../../../ui';
 import { useApp } from '../../../../context/AppContext';
-import { formatCurrency, formatDateTime } from '../../../../utils/helpers';
-import { ChevronLeft, Zap, Package, CheckCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Droplets, Package, CheckCircle } from 'lucide-react';
 
 const ShiftCloseReconciliation = ({ shift, onClose }) => {
   const { state, dispatch } = useApp();
-  const [currentIsland, setCurrentIsland] = useState(null);
-  const [currentPump, setCurrentPump] = useState(null);
-  const [currentProduct, setCurrentProduct] = useState(null);
+  const [currentStep, setCurrentStep] = useState(1); // 1: Select island, 2: Select pump, 3: Record readings
+  const [selectedIsland, setSelectedIsland] = useState(null);
+  const [selectedPump, setSelectedPump] = useState(null);
   const [closingData, setClosingData] = useState({
-    islands: {}
+    pumps: {},
+    nonFuelItems: {}
   });
   const [completedItems, setCompletedItems] = useState({
     pumps: [],
-    products: []
+    nonFuelItems: []
   });
 
   // Get shift islands
-  const shiftIslands = shift.islands.map(island => ({
-    ...state.islands.find(i => i.id === island.islandId),
-    ...island
-  }));
+  const shiftIslands = [...new Set(shift.attendants?.map(a => a.islandId))].map(islandId => 
+    state.islands.find(i => i.id === islandId)
+  ).filter(Boolean);
 
-  // Get progress percentage
+  // Get pumps for selected island
+  const islandPumps = selectedIsland ? 
+    state.assets.pumps.filter(pump => pump.islandId === selectedIsland.id) : [];
+
+  // Get non-fuel items for selected island
+  const islandNonFuelItems = selectedIsland ? 
+    (shift.nonFuelStocks?.filter(item => item.islandId === selectedIsland.id) || []) : [];
+
+  // Calculate progress
   const calculateProgress = () => {
     const totalItems = shiftIslands.reduce((total, island) => {
-      return total + island.fuelPumps.length + island.nonFuelItems.length;
+      const islandPumps = state.assets.pumps.filter(p => p.islandId === island.id);
+      const islandNonFuelItems = shift.nonFuelStocks?.filter(item => item.islandId === island.id) || [];
+      return total + islandPumps.length + islandNonFuelItems.length;
     }, 0);
-    
-    const completedCount = completedItems.pumps.length + completedItems.products.length;
-    
+
+    const completedCount = completedItems.pumps.length + completedItems.nonFuelItems.length;
     return totalItems > 0 ? Math.round((completedCount / totalItems) * 100) : 0;
   };
 
-  // Initialize closing data
+  // Initialize closing data when island is selected
   useEffect(() => {
-    const initialData = { islands: {} };
-    
-    shiftIslands.forEach(island => {
-      initialData.islands[island.id] = {
-        fuelPumps: island.fuelPumps.map(pump => ({
-          pumpId: pump.pumpId,
-          closingCash: '',
-          closingManual: '',
-          closingElectric: ''
-        })),
-        nonFuelItems: island.nonFuelItems.map(item => ({
-          itemId: item.itemId,
-          closingStock: ''
-        }))
-      };
-    });
-    
-    setClosingData(initialData);
-  }, [shift]);
+    if (selectedIsland) {
+      const initialData = { ...closingData };
+      
+      // Initialize pump data
+      islandPumps.forEach(pump => {
+        if (!initialData.pumps[pump.id]) {
+          initialData.pumps[pump.id] = {
+            electric: '',
+            manual: '',
+            cash: ''
+          };
+        }
+      });
+      
+      // Initialize non-fuel item data
+      islandNonFuelItems.forEach(item => {
+        if (!initialData.nonFuelItems[item.productId]) {
+          initialData.nonFuelItems[item.productId] = {
+            closingStock: ''
+          };
+        }
+      });
+      
+      setClosingData(initialData);
+    }
+  }, [selectedIsland]);
 
   // Handle pump reading change
-  const handlePumpReadingChange = (islandId, pumpId, field, value) => {
+  const handlePumpReadingChange = (pumpId, meterType, value) => {
     setClosingData(prev => ({
       ...prev,
-      islands: {
-        ...prev.islands,
-        [islandId]: {
-          ...prev.islands[islandId],
-          fuelPumps: prev.islands[islandId].fuelPumps.map(pump => 
-            pump.pumpId === pumpId ? { ...pump, [field]: value } : pump
-          )
+      pumps: {
+        ...prev.pumps,
+        [pumpId]: {
+          ...prev.pumps[pumpId],
+          [meterType]: value
         }
       }
     }));
   };
 
-  // Handle product stock change
-  const handleProductStockChange = (islandId, itemId, value) => {
+  // Handle non-fuel item change
+  const handleNonFuelItemChange = (itemId, value) => {
     setClosingData(prev => ({
       ...prev,
-      islands: {
-        ...prev.islands,
-        [islandId]: {
-          ...prev.islands[islandId],
-          nonFuelItems: prev.islands[islandId].nonFuelItems.map(item => 
-            item.itemId === itemId ? { ...item, closingStock: value } : item
-          )
+      nonFuelItems: {
+        ...prev.nonFuelItems,
+        [itemId]: {
+          closingStock: value
         }
       }
     }));
   };
 
-  // Calculate fuel sales for a pump
-  const calculateFuelSales = (islandId, pumpId) => {
-    const openingPump = shift.islands
-      .find(i => i.islandId === islandId)
-      .fuelPumps.find(p => p.pumpId === pumpId);
-      
-    const closingPump = closingData.islands[islandId]?.fuelPumps
-      .find(p => p.pumpId === pumpId);
-    
-    if (!openingPump || !closingPump) return 0;
-    
-    const cashSold = (parseFloat(closingPump.closingCash) || 0) - (openingPump.openingCash || 0);
-    const manualSold = (parseFloat(closingPump.closingManual) || 0) - (openingPump.openingManual || 0);
-    const electricSold = (parseFloat(closingPump.closingElectric) || 0) - (openingPump.openingElectric || 0);
-    
-    // Get fuel price from the pump asset
-    const pumpAsset = state.assets.pumps.find(p => p.id === pumpId);
-    const pricePerLiter = pumpAsset?.pricePerLiter || 0;
-    
-    return (cashSold + manualSold + electricSold) * pricePerLiter;
-  };
-
-  // Calculate non-fuel sales
-  const calculateNonFuelSales = (islandId, itemId) => {
-    const openingItem = shift.islands
-      .find(i => i.islandId === islandId)
-      .nonFuelItems.find(i => i.itemId === itemId);
-      
-    const closingItem = closingData.islands[islandId]?.nonFuelItems
-      .find(i => i.itemId === itemId);
-    
-    if (!openingItem || !closingItem) return 0;
-    
-    const openingStock = openingItem.openingStock || 0;
-    const closingStock = parseInt(closingItem.closingStock, 10) || 0;
-    const sold = openingStock - closingStock;
-    
-    return sold * (openingItem.price || 0);
-  };
-
-  // Mark pump as completed
-  const completePump = (islandId, pumpId) => {
+  // Complete pump reconciliation
+  const completePumpReconciliation = () => {
     setCompletedItems(prev => ({
       ...prev,
-      pumps: [...prev.pumps, pumpId]
+      pumps: [...prev.pumps, selectedPump.id]
     }));
-    setCurrentPump(null);
+    
+    // Check if all pumps on this island are completed
+    const allPumpsCompleted = islandPumps.every(pump => 
+      completedItems.pumps.includes(pump.id) || pump.id === selectedPump.id
+    );
+    
+    if (allPumpsCompleted && islandNonFuelItems.length === 0) {
+      // Move back to island selection if no non-fuel items
+      setCurrentStep(1);
+      setSelectedPump(null);
+      setSelectedIsland(null);
+    } else if (allPumpsCompleted) {
+      // Move to non-fuel items if all pumps are done
+      setCurrentStep(3);
+      setSelectedPump(null);
+    } else {
+      // Stay on pump selection
+      setCurrentStep(2);
+      setSelectedPump(null);
+    }
   };
 
-  // Mark product as completed
-  const completeProduct = (islandId, itemId) => {
-    setCompletedItems(prev => ({
-      ...prev,
-      products: [...prev.products, itemId]
-    }));
-    setCurrentProduct(null);
+  // Complete non-fuel item reconciliation
+  const completeNonFuelReconciliation = () => {
+    // Check if all non-fuel items are completed
+    const allItemsCompleted = islandNonFuelItems.every(item => 
+      completedItems.nonFuelItems.includes(item.productId) || 
+      closingData.nonFuelItems[item.productId]?.closingStock !== ''
+    );
+    
+    if (allItemsCompleted) {
+      // Mark all items as completed
+      const newlyCompletedItems = islandNonFuelItems
+        .filter(item => !completedItems.nonFuelItems.includes(item.productId))
+        .map(item => item.productId);
+      
+      setCompletedItems(prev => ({
+        ...prev,
+        nonFuelItems: [...prev.nonFuelItems, ...newlyCompletedItems]
+      }));
+      
+      // Return to island selection
+      setCurrentStep(1);
+      setSelectedIsland(null);
+    }
   };
 
   // Finalize shift closing
   const finalizeShift = () => {
+    // Prepare updated shift data
     const updatedShift = {
       ...shift,
       status: 'closed',
       closedAt: new Date().toISOString(),
-      islands: shift.islands.map(island => {
-        const closingIsland = closingData.islands[island.islandId] || {};
+      
+      // Add closing pump readings
+      pumpReadings: [
+        ...shift.pumpReadings,
+        ...Object.entries(closingData.pumps).flatMap(([pumpId, readings]) => [
+          {
+            pumpId,
+            readingType: 'END',
+            meterType: 'ELECTRIC',
+            value: parseFloat(readings.electric) || 0,
+            recordedById: shift.supervisorId
+          },
+          {
+            pumpId,
+            readingType: 'END',
+            meterType: 'CASH',
+            value: parseFloat(readings.cash) || 0,
+            recordedById: shift.supervisorId
+          },
+          {
+            pumpId,
+            readingType: 'END',
+            meterType: 'MANUAL',
+            value: parseFloat(readings.manual) || 0,
+            recordedById: shift.supervisorId
+          }
+        ])
+      ],
+      
+      // Update non-fuel stocks
+      nonFuelStocks: shift.nonFuelStocks.map(item => {
+        const closingStock = parseInt(closingData.nonFuelItems[item.productId]?.closingStock, 10) || 0;
+        const soldQuantity = item.openingStock - closingStock;
+        
         return {
-          ...island,
-          fuelPumps: island.fuelPumps.map(pump => {
-            const closingPump = closingIsland.fuelPumps?.find(p => p.pumpId === pump.pumpId) || {};
-            return {
-              ...pump,
-              closingCash: closingPump.closingCash,
-              closingManual: closingPump.closingManual,
-              closingElectric: closingPump.closingElectric,
-              fuelSales: calculateFuelSales(island.islandId, pump.pumpId)
-            };
-          }),
-          nonFuelItems: island.nonFuelItems.map(item => {
-            const closingItem = closingIsland.nonFuelItems?.find(i => i.itemId === item.itemId) || {};
-            return {
-              ...item,
-              closingStock: closingItem.closingStock,
-              nonFuelSales: calculateNonFuelSales(island.islandId, item.itemId)
-            };
-          })
+          ...item,
+          closingStock,
+          soldQuantity: Math.max(0, soldQuantity)
         };
       })
     };
     
-    // Calculate totals
-    updatedShift.totalFuelSales = updatedShift.islands.reduce((sum, island) => 
-      sum + island.fuelPumps.reduce((islandSum, pump) => 
-        islandSum + (pump.fuelSales || 0), 0), 0);
-    
-    updatedShift.totalNonFuelSales = updatedShift.islands.reduce((sum, island) => 
-      sum + island.nonFuelItems.reduce((islandSum, item) => 
-        islandSum + (item.nonFuelSales || 0), 0), 0);
-    
-    updatedShift.totalSales = updatedShift.totalFuelSales + updatedShift.totalNonFuelSales;
-    
-    // Update warehouse stock
-    updatedShift.islands.forEach(island => {
-      island.nonFuelItems.forEach(item => {
-        if (item.closingStock) {
-          dispatch({
-            type: 'UPDATE_WAREHOUSE_STOCK',
-            payload: {
-              warehouseId: shift.warehouseId,
-              itemId: item.itemId,
-              newStock: item.closingStock
-            }
-          });
-        }
-      });
-    });
-    
+    // Dispatch update
     dispatch({ type: 'UPDATE_SHIFT', payload: updatedShift });
     onClose();
   };
 
   // Check if all items are completed
   const allItemsCompleted = () => {
-    const totalPumps = shiftIslands.reduce((sum, island) => sum + island.fuelPumps.length, 0);
-    const totalProducts = shiftIslands.reduce((sum, island) => sum + island.nonFuelItems.length, 0);
+    const totalPumps = shiftIslands.reduce((sum, island) => 
+      sum + state.assets.pumps.filter(p => p.islandId === island.id).length, 0);
+    
+    const totalNonFuelItems = shiftIslands.reduce((sum, island) => 
+      sum + (shift.nonFuelStocks?.filter(item => item.islandId === island.id).length || 0), 0);
     
     return completedItems.pumps.length === totalPumps && 
-           completedItems.products.length === totalProducts;
+           completedItems.nonFuelItems.length === totalNonFuelItems;
+  };
+
+  // Get product name by ID
+  const getProductName = (productId) => {
+    const warehouse = state.warehouses.find(w => w.stationId === shift.stationId);
+    const item = warehouse?.nonFuelItems.find(i => i.itemId === productId);
+    return item?.name || productId;
   };
 
   return (
-    <Modal isOpen={true} onClose={onClose} title={`Shift Closing: ${shift.id}`} size="2xl">
+    <Modal isOpen={true} onClose={onClose} title={`Close Shift: ${shift.id}`} size="xl">
       <div className="space-y-6">
         {/* Progress bar */}
         <div className="mb-6">
@@ -231,211 +236,207 @@ const ShiftCloseReconciliation = ({ shift, onClose }) => {
           <Progress value={calculateProgress()} />
         </div>
         
-        {/* Island selection */}
-        {!currentIsland && !currentPump && !currentProduct && (
-          <div>
-            <h3 className="text-lg font-medium mb-4">Select Allocation Point</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {shiftIslands.map(island => {
-                const completedPumps = island.fuelPumps.filter(pump => 
-                  completedItems.pumps.includes(pump.pumpId)
-                ).length;
+        {/* Step 1: Select Island */}
+        {currentStep === 1 && (
+          <Card title="Select Island">
+            <div className="space-y-4">
+              <p className="text-gray-600">Select an island to reconcile its pumps and non-fuel items.</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {shiftIslands.map(island => {
+                  const islandPumps = state.assets.pumps.filter(p => p.islandId === island.id);
+                  const islandNonFuelItems = shift.nonFuelStocks?.filter(item => item.islandId === island.id) || [];
+                  
+                  const completedPumps = islandPumps.filter(pump => 
+                    completedItems.pumps.includes(pump.id)
+                  ).length;
+                  
+                  const completedNonFuelItems = islandNonFuelItems.filter(item => 
+                    completedItems.nonFuelItems.includes(item.productId)
+                  ).length;
+                  
+                  return (
+                    <Card 
+                      key={island.id}
+                      className="cursor-pointer transition-all hover:border-blue-300"
+                      onClick={() => {
+                        setSelectedIsland(island);
+                        setCurrentStep(2);
+                      }}
+                    >
+                      <div className="flex justify-between items-center">
+                        <h4 className="font-medium">{island.name}</h4>
+                        <Badge>
+                          {islandPumps.length} pumps, {islandNonFuelItems.length} items
+                        </Badge>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>Pumps completed:</span>
+                          <span className={completedPumps === islandPumps.length ? 'text-green-600' : 'text-yellow-600'}>
+                            {completedPumps}/{islandPumps.length}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span>Items completed:</span>
+                          <span className={completedNonFuelItems === islandNonFuelItems.length ? 'text-green-600' : 'text-yellow-600'}>
+                            {completedNonFuelItems}/{islandNonFuelItems.length}
+                          </span>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+            
+            {allItemsCompleted() && (
+              <div className="mt-6 pt-4 border-t">
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <div className="flex items-center text-green-700">
+                    <CheckCircle className="w-6 h-6 mr-2" />
+                    <h3 className="text-lg font-medium">All items reconciled!</h3>
+                  </div>
+                  <p className="mt-2 text-green-700">
+                    You can now finalize the shift closing.
+                  </p>
+                </div>
                 
-                const completedProducts = island.nonFuelItems.filter(item => 
-                  completedItems.products.includes(item.itemId)
-                ).length;
-                
-                return (
-                  <Card 
-                    key={island.id}
-                    className="cursor-pointer transition-all hover:border-blue-300"
-                    onClick={() => setCurrentIsland(island)}
+                <div className="flex justify-end mt-4">
+                  <Button onClick={finalizeShift}>
+                    Finalize Shift Closing
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card>
+        )}
+        
+        {/* Step 2: Select Pump */}
+        {currentStep === 2 && selectedIsland && (
+          <Card title={`Select Pump - ${selectedIsland.name}`}>
+            <div className="flex items-center mb-4">
+              <Button 
+                variant="ghost"
+                onClick={() => {
+                  setSelectedIsland(null);
+                  setCurrentStep(1);
+                }}
+                icon={ChevronLeft}
+                className="mr-2"
+              >
+                Back to Islands
+              </Button>
+            </div>
+            
+            <div className="space-y-4">
+              <p className="text-gray-600">Select a pump to record its closing readings.</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {islandPumps.map(pump => {
+                  const isCompleted = completedItems.pumps.includes(pump.id);
+                  const tank = state.assets.tanks.find(t => t.id === pump.tankId);
+                  
+                  return (
+                    <Card 
+                      key={pump.id}
+                      className={`cursor-pointer transition-all ${
+                        isCompleted ? 'border-green-200 bg-green-50' : 'hover:border-blue-300'
+                      }`}
+                      onClick={() => {
+                        if (!isCompleted) {
+                          setSelectedPump(pump);
+                          setCurrentStep(2.5); // Pump detail step
+                        }
+                      }}
+                    >
+                      <div className="flex justify-between items-center">
+                        <h4 className="font-medium">{pump.code}</h4>
+                        <Badge variant={isCompleted ? 'success' : 'default'}>
+                          {isCompleted ? 'Completed' : 'Pending'}
+                        </Badge>
+                      </div>
+                      <div className="mt-2 text-sm text-gray-600">
+                        {tank?.productType || 'Unknown fuel type'}
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+              
+              {islandNonFuelItems.length > 0 && (
+                <div className="pt-4 mt-4 border-t">
+                  <Button 
+                    onClick={() => setCurrentStep(3)}
+                    variant="outline"
+                    className="w-full"
                   >
-                    <div className="flex justify-between items-center">
-                      <h4 className="font-medium">{island.name}</h4>
-                      <Badge>
-                        {island.fuelPumps.length} pumps, {island.nonFuelItems.length} products
-                      </Badge>
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span>Pumps completed:</span>
-                        <span className={completedPumps === island.fuelPumps.length ? 'text-green-600' : 'text-yellow-600'}>
-                          {completedPumps}/{island.fuelPumps.length}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span>Products completed:</span>
-                        <span className={completedProducts === island.nonFuelItems.length ? 'text-green-600' : 'text-yellow-600'}>
-                          {completedProducts}/{island.nonFuelItems.length}
-                        </span>
-                      </div>
-                    </div>
-                  </Card>
-                );
-              })}
+                    Continue to Non-Fuel Items
+                  </Button>
+                </div>
+              )}
             </div>
-          </div>
+          </Card>
         )}
         
-        {/* Island details */}
-        {currentIsland && !currentPump && !currentProduct && (
-          <div>
+        {/* Step 2.5: Pump Reconciliation */}
+        {currentStep === 2.5 && selectedIsland && selectedPump && (
+          <Card title={`Pump Reconciliation - ${selectedPump.code}`}>
             <div className="flex items-center mb-4">
               <Button 
                 variant="ghost"
-                onClick={() => setCurrentIsland(null)}
-                icon={ChevronLeft}
-                className="mr-2"
-              >
-                Back
-              </Button>
-              <h3 className="text-lg font-medium">
-                {currentIsland.name} - Reconciliation
-              </h3>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Fuel Pumps */}
-              <Card title="Fuel Pumps">
-                {currentIsland.fuelPumps.length === 0 ? (
-                  <div className="text-center py-4 text-gray-500">
-                    No fuel pumps assigned
-                  </div>
-                ) : (
-                  <Table
-                    columns={[
-                      { header: 'Pump', accessor: 'code' },
-                      { header: 'Status', accessor: 'status' },
-                      { header: 'Actions', accessor: 'actions' }
-                    ]}
-                    data={currentIsland.fuelPumps.map(pump => {
-                      const isCompleted = completedItems.pumps.includes(pump.pumpId);
-                      const pumpAsset = state.assets.pumps.find(p => p.id === pump.pumpId);
-                      
-                      return {
-                        code: pumpAsset?.code || `Pump ${pump.pumpId.slice(-4)}`,
-                        status: isCompleted ? (
-                          <Badge variant="success">Completed</Badge>
-                        ) : (
-                          <Badge variant="warning">Pending</Badge>
-                        ),
-                        actions: (
-                          <Button 
-                            size="sm"
-                            onClick={() => setCurrentPump(pump.pumpId)}
-                          >
-                            {isCompleted ? 'Review' : 'Reconcile'}
-                          </Button>
-                        )
-                      };
-                    })}
-                  />
-                )}
-              </Card>
-              
-              {/* Non-Fuel Products */}
-              <Card title="Non-Fuel Products">
-                {currentIsland.nonFuelItems.length === 0 ? (
-                  <div className="text-center py-4 text-gray-500">
-                    No non-fuel products assigned
-                  </div>
-                ) : (
-                  <Table
-                    columns={[
-                      { header: 'Product', accessor: 'name' },
-                      { header: 'Status', accessor: 'status' },
-                      { header: 'Actions', accessor: 'actions' }
-                    ]}
-                    data={currentIsland.nonFuelItems.map(item => {
-                      const isCompleted = completedItems.products.includes(item.itemId);
-                      const warehouseItem = warehouse?.nonFuelItems.find(i => i.itemId === item.itemId);
-                      
-                      return {
-                        name: item.name || warehouseItem?.name || `Item ${item.itemId.slice(-4)}`,
-                        status: isCompleted ? (
-                          <Badge variant="success">Completed</Badge>
-                        ) : (
-                          <Badge variant="warning">Pending</Badge>
-                        ),
-                        actions: (
-                          <Button 
-                            size="sm"
-                            onClick={() => setCurrentProduct(item.itemId)}
-                          >
-                            {isCompleted ? 'Review' : 'Reconcile'}
-                          </Button>
-                        )
-                      };
-                    })}
-                  />
-                )}
-              </Card>
-            </div>
-          </div>
-        )}
-        
-        {/* Pump reconciliation */}
-        {currentPump && (
-          <div>
-            <div className="flex items-center mb-4">
-              <Button 
-                variant="ghost"
-                onClick={() => setCurrentPump(null)}
+                onClick={() => {
+                  setSelectedPump(null);
+                  setCurrentStep(2);
+                }}
                 icon={ChevronLeft}
                 className="mr-2"
               >
                 Back to Pumps
               </Button>
-              <h3 className="text-lg font-medium">
-                Pump Reconciliation
-              </h3>
             </div>
             
-            <Card>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <div className="text-sm text-gray-700">Electric Meter</div>
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="text-sm font-medium text-gray-700 mb-2">Electric Meter</div>
                   <Input
                     type="number"
-                    value={closingData.islands[currentIsland.id]?.fuelPumps
-                      .find(p => p.pumpId === currentPump)?.closingElectric || ''}
+                    step="0.01"
+                    value={closingData.pumps[selectedPump.id]?.electric || ''}
                     onChange={(e) => handlePumpReadingChange(
-                      currentIsland.id, 
-                      currentPump, 
-                      'closingElectric', 
+                      selectedPump.id, 
+                      'electric', 
                       e.target.value
                     )}
                     placeholder="Enter reading"
                   />
                 </div>
                 
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <div className="text-sm text-gray-700">Automatic Meter</div>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="text-sm font-medium text-gray-700 mb-2">Cash Meter</div>
                   <Input
                     type="number"
-                    value={closingData.islands[currentIsland.id]?.fuelPumps
-                      .find(p => p.pumpId === currentPump)?.closingAuto || ''}
+                    step="0.01"
+                    value={closingData.pumps[selectedPump.id]?.cash || ''}
                     onChange={(e) => handlePumpReadingChange(
-                      currentIsland.id, 
-                      currentPump, 
-                      'closingAuto', 
+                      selectedPump.id, 
+                      'cash', 
                       e.target.value
                     )}
                     placeholder="Enter reading"
                   />
                 </div>
                 
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <div className="text-sm text-gray-700">Manual Meter</div>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="text-sm font-medium text-gray-700 mb-2">Manual Meter</div>
                   <Input
                     type="number"
-                    value={closingData.islands[currentIsland.id]?.fuelPumps
-                      .find(p => p.pumpId === currentPump)?.closingManual || ''}
+                    step="0.01"
+                    value={closingData.pumps[selectedPump.id]?.manual || ''}
                     onChange={(e) => handlePumpReadingChange(
-                      currentIsland.id, 
-                      currentPump, 
-                      'closingManual', 
+                      selectedPump.id, 
+                      'manual', 
                       e.target.value
                     )}
                     placeholder="Enter reading"
@@ -443,205 +444,126 @@ const ShiftCloseReconciliation = ({ shift, onClose }) => {
                 </div>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-blue-50 p-3 rounded-lg">
-                  <div className="text-sm text-blue-700">Calculated Sales</div>
-                  <div className="text-xl font-bold">
-                    {formatCurrency(calculateFuelSales(currentIsland.id, currentPump))}
-                  </div>
-                </div>
-                
-                <div className="bg-green-50 p-3 rounded-lg">
-                  <div className="text-sm text-green-700">Fuel Type</div>
-                  <div className="text-lg font-bold">
-                    {state.assets.pumps.find(p => p.id === currentPump)?.fuelType || 'N/A'}
-                  </div>
-                </div>
-                
-                <div className="bg-yellow-50 p-3 rounded-lg">
-                  <div className="text-sm text-yellow-700">Price per Liter</div>
-                  <div className="text-xl font-bold">
-                    {formatCurrency(state.assets.pumps.find(p => p.id === currentPump)?.pricePerLiter || 0)}
-                  </div>
-                </div>
+              <div className="flex justify-between">
+                <Button 
+                  variant="secondary" 
+                  onClick={() => {
+                    setSelectedPump(null);
+                    setCurrentStep(2);
+                  }}
+                >
+                  Back to Pumps
+                </Button>
+                <Button 
+                  onClick={completePumpReconciliation}
+                  disabled={!closingData.pumps[selectedPump.id]?.electric}
+                >
+                  Complete Pump Reconciliation
+                </Button>
               </div>
-            </Card>
-            
-            <div className="flex justify-between pt-4">
-              <Button 
-                variant="secondary" 
-                onClick={() => setCurrentPump(null)}
-              >
-                Back to Pumps
-              </Button>
-              <Button 
-                onClick={() => completePump(currentIsland.id, currentPump)}
-                icon={CheckCircle}
-              >
-                Complete Reconciliation
-              </Button>
             </div>
-          </div>
+          </Card>
         )}
         
-        {/* Product reconciliation */}
-        {currentProduct && (
-          <div>
+        {/* Step 3: Non-Fuel Items */}
+        {currentStep === 3 && selectedIsland && (
+          <Card title={`Non-Fuel Items - ${selectedIsland.name}`}>
             <div className="flex items-center mb-4">
               <Button 
                 variant="ghost"
-                onClick={() => setCurrentProduct(null)}
+                onClick={() => {
+                  if (islandPumps.length > 0) {
+                    setCurrentStep(2);
+                  } else {
+                    setSelectedIsland(null);
+                    setCurrentStep(1);
+                  }
+                }}
                 icon={ChevronLeft}
                 className="mr-2"
               >
-                Back to Products
+                {islandPumps.length > 0 ? 'Back to Pumps' : 'Back to Islands'}
               </Button>
-              <h3 className="text-lg font-medium">
-                Product Reconciliation
-              </h3>
             </div>
             
-            <Card>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-blue-50 p-3 rounded-lg">
-                  <div className="text-sm text-blue-700">Opening Stock</div>
-                  <div className="text-xl font-bold">
-                    {currentIsland.nonFuelItems.find(i => i.itemId === currentProduct)?.openingStock || 0}
-                  </div>
-                </div>
-                
-                <div className="bg-green-50 p-3 rounded-lg">
-                  <div className="text-sm text-green-700">Price per Unit</div>
-                  <div className="text-xl font-bold">
-                    {formatCurrency(currentIsland.nonFuelItems.find(i => i.itemId === currentProduct)?.price || 0)}
-                  </div>
-                </div>
-                
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <div className="text-sm text-gray-700">Closing Stock</div>
-                  <Input
-                    type="number"
-                    value={closingData.islands[currentIsland.id]?.nonFuelItems
-                      .find(i => i.itemId === currentProduct)?.closingStock || ''}
-                    onChange={(e) => handleProductStockChange(
-                      currentIsland.id, 
-                      currentProduct, 
-                      e.target.value
-                    )}
-                    placeholder="Enter quantity"
-                    min="0"
-                  />
-                </div>
+            <div className="space-y-6">
+              <p className="text-gray-600">Record closing stock for non-fuel items.</p>
+              
+              <div className="space-y-4">
+                {islandNonFuelItems.map(item => {
+                  const isCompleted = completedItems.nonFuelItems.includes(item.productId);
+                  const openingStock = item.openingStock || 0;
+                  const closingStock = closingData.nonFuelItems[item.productId]?.closingStock || '';
+                  
+                  return (
+                    <Card key={item.productId} className={isCompleted ? 'border-green-200 bg-green-50' : ''}>
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="font-medium">{getProductName(item.productId)}</h4>
+                        <Badge variant={isCompleted ? 'success' : 'default'}>
+                          {isCompleted ? 'Completed' : 'Pending'}
+                        </Badge>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-blue-50 p-3 rounded-lg">
+                          <div className="text-sm text-blue-700">Opening Stock</div>
+                          <div className="text-lg font-bold">{openingStock}</div>
+                        </div>
+                        
+                        <div className="bg-gray-50 p-3 rounded-lg">
+                          <div className="text-sm text-gray-700">Closing Stock</div>
+                          <Input
+                            type="number"
+                            value={closingStock}
+                            onChange={(e) => handleNonFuelItemChange(
+                              item.productId, 
+                              e.target.value
+                            )}
+                            placeholder="Enter quantity"
+                            min="0"
+                            max={openingStock}
+                            disabled={isCompleted}
+                          />
+                        </div>
+                        
+                        <div className="bg-green-50 p-3 rounded-lg">
+                          <div className="text-sm text-green-700">Sold Quantity</div>
+                          <div className="text-lg font-bold">
+                            {closingStock ? openingStock - parseInt(closingStock, 10) : 0}
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
               </div>
               
-              <div className="mt-4 bg-purple-50 p-3 rounded-lg">
-                <div className="text-sm text-purple-700">Calculated Sales</div>
-                <div className="text-xl font-bold">
-                  {formatCurrency(calculateNonFuelSales(currentIsland.id, currentProduct))}
-                </div>
+              <div className="flex justify-between">
+                <Button 
+                  variant="secondary" 
+                  onClick={() => {
+                    if (islandPumps.length > 0) {
+                      setCurrentStep(2);
+                    } else {
+                      setSelectedIsland(null);
+                      setCurrentStep(1);
+                    }
+                  }}
+                >
+                  {islandPumps.length > 0 ? 'Back to Pumps' : 'Back to Islands'}
+                </Button>
+                <Button 
+                  onClick={completeNonFuelReconciliation}
+                  disabled={islandNonFuelItems.some(item => 
+                    !completedItems.nonFuelItems.includes(item.productId) && 
+                    !closingData.nonFuelItems[item.productId]?.closingStock
+                  )}
+                >
+                  Complete Item Reconciliation
+                </Button>
               </div>
-            </Card>
-            
-            <div className="flex justify-between pt-4">
-              <Button 
-                variant="secondary" 
-                onClick={() => setCurrentProduct(null)}
-              >
-                Back to Products
-              </Button>
-              <Button 
-                onClick={() => completeProduct(currentIsland.id, currentProduct)}
-                icon={CheckCircle}
-              >
-                Complete Reconciliation
-              </Button>
             </div>
-          </div>
-        )}
-        
-        {/* Finalization */}
-        {!currentIsland && !currentPump && !currentProduct && allItemsCompleted() && (
-          <div className="pt-6 border-t">
-            <div className="bg-green-50 p-4 rounded-lg mb-6">
-              <div className="flex items-center text-green-700">
-                <CheckCircle className="w-6 h-6 mr-2" />
-                <h3 className="text-lg font-medium">All items reconciled!</h3>
-              </div>
-              <p className="mt-2 text-green-700">
-                You can now finalize the shift closing.
-              </p>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card title="Shift Summary">
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span>Shift ID:</span>
-                    <span className="font-medium">{shift.id}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Supervisor:</span>
-                    <span className="font-medium">
-                      {state.staff.supervisors.find(s => s.id === shift.supervisorId)?.name || 'N/A'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Start Time:</span>
-                    <span className="font-medium">{formatDateTime(shift.startTime)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>End Time:</span>
-                    <span className="font-medium">{formatDateTime(shift.endTime)}</span>
-                  </div>
-                </div>
-              </Card>
-              
-              <Card title="Financial Summary">
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span>Total Fuel Sales:</span>
-                    <span className="font-medium">
-                      {formatCurrency(shift.islands.reduce((sum, island) => 
-                        sum + island.fuelPumps.reduce((islandSum, pump) => 
-                          islandSum + (pump.fuelSales || 0), 0), 0)
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Total Non-Fuel Sales:</span>
-                    <span className="font-medium">
-                      {formatCurrency(shift.islands.reduce((sum, island) => 
-                        sum + island.nonFuelItems.reduce((islandSum, item) => 
-                          islandSum + (item.nonFuelSales || 0), 0), 0)
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex justify-between border-t pt-2 mt-2">
-                    <span className="font-medium">Total Sales:</span>
-                    <span className="font-medium text-lg">
-                      {formatCurrency(
-                        shift.islands.reduce((sum, island) => 
-                          sum + island.fuelPumps.reduce((islandSum, pump) => 
-                            islandSum + (pump.fuelSales || 0), 0) +
-                          island.nonFuelItems.reduce((islandSum, item) => 
-                            islandSum + (item.nonFuelSales || 0), 0), 0)
-                      )}
-                    </span>
-                  </div>
-                </div>
-              </Card>
-            </div>
-            
-            <div className="flex justify-end pt-6">
-              <Button 
-                onClick={finalizeShift}
-                variant="primary"
-                className="w-full md:w-auto"
-              >
-                Finalize Shift Closing
-              </Button>
-            </div>
-          </div>
+          </Card>
         )}
       </div>
     </Modal>

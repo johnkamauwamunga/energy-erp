@@ -1,60 +1,110 @@
-import mockData from '../../data/mockData';
-
-// Helper function to find user
-const findUser = (email, password) => {
-  // Combine all users from mockData
-  const allUsers = [
-    ...mockData.staff.companyAdmins,
-    ...mockData.staff.stationManagers,
-    ...mockData.staff.supervisors,
-    ...mockData.staff.attendants
-  ];
-  
-  // Add hardcoded super admin
-  const superAdmin = {
-    id: 'SUPER_001',
-    email: 'superadmin@energyerp.com',
-    password: 'admin123',
-    role: 'super_admin',
-    name: 'Super Administrator',
-    companyId: null,
-    stationId: null,
-    permissions: ['ALL_SYSTEMS'],
-    status: 'active'
-  };
-  
-  return [superAdmin, ...allUsers].find(u => 
-    u.email === email && u.password === password
-  );
-};
+// services/auth/authService.js
+const API_BASE_URL = 'http://localhost:3001/api';
 
 export const authService = {
   login: async (email, password) => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const user = findUser(email, password);
-    
-    if (!user) {
-      throw new Error('Invalid credentials. Please try again.');
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+
+      //console.log('Login response data:', data);
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Login failed');
+      }
+
+      if (!data.success) {
+        throw new Error(data.message || 'Login failed');
+      }
+
+      return data.data;
+    } catch (error) {
+      throw new Error(error.message || 'Login failed. Please try again.');
     }
-    
+  },
+
+  logout: async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      
+      // Call server logout endpoint if available
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('Logout error:', error);
+      return false;
+    }
+  },
+
+  refreshToken: async () => {
+    try {
+      const refreshToken = localStorage.getItem('refreshToken');
+      
+      if (!refreshToken) {
+        throw new Error('No refresh token available');
+      }
+
+      const response = await fetch(`${API_BASE_URL}/auth/refresh-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.message || 'Token refresh failed');
+      }
+
+      return data.data;
+    } catch (error) {
+      throw new Error(error.message || 'Token refresh failed');
+    }
+  },
+
+  resetPassword: async (email, newPassword) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, newPassword }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.message || 'Password reset failed');
+      }
+
+      return data;
+    } catch (error) {
+      throw new Error(error.message || 'Password reset failed');
+    }
+  },
+
+  getAuthHeaders: () => {
+    const token = localStorage.getItem('accessToken');
     return {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      companyId: user.companyId || null,
-      stationId: user.stationId || null,
-      permissions: user.permissions || [],
-      phone: user.phone || null,
-      status: user.status || 'active',
-      token: 'dummy-token' // mock token
+      'Authorization': token ? `Bearer ${token}` : '',
+      'Content-Type': 'application/json',
     };
   },
-  
-  logout: async () => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return true;
-  }
 };

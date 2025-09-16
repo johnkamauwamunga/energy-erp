@@ -39,22 +39,22 @@ const CompanyAdminDashboard = ({ user, onLogout }) => {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <Sidebar 
+      {/* <Sidebar 
         menuItems={menuItems}
         activeSection={activeSection}
         setActiveSection={setActiveSection}
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
         userRole="Company Admin"
-      />
+      /> */}
       
-      <div className="flex-1 flex flex-col">
+      {/* <div className="flex-1 flex flex-col">
         <Header 
           user={user} 
           onLogout={onLogout}
           setSidebarOpen={setSidebarOpen}
           userType="Company Administrator"
-        />
+        /> */}
         
         <main className="flex-1 overflow-auto">
           {renderContent()}

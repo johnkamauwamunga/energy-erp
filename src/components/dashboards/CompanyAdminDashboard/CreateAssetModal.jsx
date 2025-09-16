@@ -1,288 +1,229 @@
 import React, { useState, useEffect } from 'react';
-import { Input, Button } from '../../ui';
+import { Input, Button, Select } from '../../ui';
 import Dialog from '../../ui/Dialog';
 import { useApp } from '../../../context/AppContext';
-import { addAsset } from '../../../context/AppContext/actions';
-import { Fuel, Zap, Package, Loader } from 'lucide-react';
+import { assetService } from '../../../services/assetService/assetService';
+import { Fuel, Zap, Package, Building2, Loader } from 'lucide-react';
 
-const CreateAssetModal = ({ isOpen, onClose, assetType: propAssetType = 'tank' }) => {
-  const { state, dispatch } = useApp();
-  const [assetType, setAssetType] = useState(propAssetType);
+const assetTypes = [
+  { value: 'STORAGE_TANK', label: 'Storage Tank', icon: Fuel },
+  { value: 'FUEL_PUMP', label: 'Fuel Pump', icon: Zap },
+  { value: 'ISLAND', label: 'Island', icon: Package },
+  { value: 'WAREHOUSE', label: 'Warehouse', icon: Building2 },
+];
+
+const CreateAssetModal = ({ isOpen, onClose, onAssetCreated }) => {
+  const { state } = useApp();
+  const [selectedType, setSelectedType] = useState('');
   const [formData, setFormData] = useState({
-    code: '',
-    companyId: '',
+    name: '',
     capacity: '',
-    productType: 'Diesel',
-    name: '', // For islands
+    warehouseName: '',
+    code: '',
   });
-  
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
 
-  // Asset type to category mapping
-  const assetCategoryMap = {
-    tank: 'tanks',
-    pump: 'pumps',
-    island: 'islands'
-  };
-
-  // Reset form when modal opens or asset type changes
   useEffect(() => {
     if (isOpen) {
-      setAssetType(propAssetType);
+      setSelectedType('');
       setFormData({
-        code: '',
-        companyId: state.currentCompany?.id || state.companies[0]?.id || '',
-        capacity: '',
-        productType: 'Diesel',
         name: '',
+        capacity: '',
+        warehouseName: '',
+        code: '',
       });
       setErrors({});
-      setIsInitialized(true);
-    } else {
-      setIsInitialized(false);
     }
-  }, [isOpen, propAssetType, state.companies, state.currentCompany]);
+  }, [isOpen]);
 
-  const validate = () => {
-    const newErrors = {};
-    if (!formData.code.trim()) newErrors.code = 'Asset code is required';
-    if (!formData.companyId) newErrors.companyId = 'Company is required';
-    
-    if (assetType === 'tank') {
-      if (!formData.capacity) newErrors.capacity = 'Capacity is required';
-      if (!formData.productType) newErrors.productType = 'Product type is required';
+  const handleTypeChange = (type) => {
+    setSelectedType(type);
+    setFormData({
+      name: '',
+      capacity: '',
+      warehouseName: '',
+      code: '',
+    });
+    setErrors({});
+  };
+
+  const handleInputChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }));
     }
-    
-    // Removed island validation for pumps
-    return newErrors;
+  };
+
+  const validateForm = () => {
+    const newErrors = {};
+    if (!selectedType) newErrors.type = 'Asset type is required';
+    if (!formData.name.trim()) newErrors.name = 'Name is required';
+
+    if (selectedType === 'STORAGE_TANK') {
+      if (!formData.capacity) newErrors.capacity = 'Capacity is required';
+    }
+
+    if (selectedType === 'WAREHOUSE') {
+      if (!formData.warehouseName) newErrors.warehouseName = 'Warehouse name is required';
+    }
+
+    if (selectedType === 'ISLAND') {
+      if (!formData.code) newErrors.code = 'Island code is required';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const validationErrors = validate();
-    
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      return;
-    }
+    if (!validateForm()) return;
 
     setIsSubmitting(true);
-    
+
     try {
-      // Create base asset object
-      const baseAsset = {
-        id: `${assetType.toUpperCase()}_${Date.now()}`,
-        type: assetType,
-        code: formData.code,
-        companyId: formData.companyId,
-        createdAt: new Date().toISOString().split('T')[0],
+      let assetData = {
+        name: formData.name,
+        type: selectedType,
       };
 
-      // Add type-specific properties
-      let newAsset;
-      switch(assetType) {
-        case 'tank':
-          newAsset = {
-            ...baseAsset,
-            capacity: Number(formData.capacity),
-            productType: formData.productType
-          };
+      // Add type-specific fields
+      switch (selectedType) {
+        case 'STORAGE_TANK':
+          assetData.capacity = Number(formData.capacity);
           break;
-          
-        case 'island':
-          newAsset = {
-            ...baseAsset,
-            name: formData.name
-          };
+        case 'WAREHOUSE':
+          assetData.warehouseName = formData.warehouseName;
           break;
-          
-        case 'pump':
+        case 'ISLAND':
+          assetData.code = formData.code;
+          break;
         default:
-          newAsset = baseAsset;
+          break;
       }
 
-      // Get the correct category for dispatch
-      const category = assetCategoryMap[assetType];
-      
-      // Dispatch action to add asset to specific category
-      dispatch(addAsset(category, newAsset));
-      
+      const newAsset = await assetService.createAsset(assetData);
+      onAssetCreated(newAsset);
       onClose();
     } catch (error) {
       console.error('Failed to create asset:', error);
-      setErrors({ general: error.message || 'Failed to create asset' });
+      setErrors({ general: error.response?.data?.message || 'Failed to create asset' });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const renderFormFields = () => {
-    if (!assetType) return null;
-    
-    switch (assetType) {
-      case 'tank':
+    switch (selectedType) {
+      case 'STORAGE_TANK':
         return (
-          <>
-            <Input
-              label="Tank Code"
-              value={formData.code}
-              onChange={(e) => setFormData({...formData, code: e.target.value})}
-              required
-              placeholder="e.g., T-001"
-              error={errors.code}
-              icon={Fuel}
-            />
-            
-            <Input
-              label="Capacity (Liters)"
-              type="number"
-              value={formData.capacity}
-              onChange={(e) => setFormData({...formData, capacity: e.target.value})}
-              required
-              placeholder="Enter capacity"
-              error={errors.capacity}
-            />
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Product Type
-              </label>
-              <select
-                value={formData.productType}
-                onChange={(e) => setFormData({...formData, productType: e.target.value})}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="Diesel">Diesel</option>
-                <option value="Petrol">Petrol</option>
-                <option value="Kerosene">Kerosene</option>
-                <option value="LPG">LPG</option>
-              </select>
-              {errors.productType && (
-                <p className="mt-1 text-sm text-red-600">{errors.productType}</p>
-              )}
-            </div>
-          </>
+          <Input
+            label="Capacity (Liters)"
+            type="number"
+            value={formData.capacity}
+            onChange={(e) => handleInputChange('capacity', e.target.value)}
+            error={errors.capacity}
+            required
+          />
         );
-      
-      case 'pump':
+      case 'WAREHOUSE':
         return (
-          <>
-            <Input
-              label="Pump Code"
-              value={formData.code}
-              onChange={(e) => setFormData({...formData, code: e.target.value})}
-              required
-              placeholder="e.g., P-001"
-              error={errors.code}
-              icon={Zap}
-            />
-            <div className="text-sm text-gray-500 mt-1">
-              <p>Note: Island assignment will be done later in pump configuration</p>
-            </div>
-          </>
+          <Input
+            label="Warehouse Name"
+            value={formData.warehouseName}
+            onChange={(e) => handleInputChange('warehouseName', e.target.value)}
+            error={errors.warehouseName}
+            required
+          />
         );
-      
-      case 'island':
+      case 'ISLAND':
         return (
-          <>
-            <Input
-              label="Island Code"
-              value={formData.code}
-              onChange={(e) => setFormData({...formData, code: e.target.value})}
-              required
-              placeholder="e.g., I-001"
-              error={errors.code}
-              icon={Package}
-            />
-            
-            <Input
-              label="Island Name"
-              value={formData.name}
-              onChange={(e) => setFormData({...formData, name: e.target.value})}
-              placeholder="Enter island name"
-              error={errors.name}
-            />
-          </>
+          <Input
+            label="Island Code"
+            value={formData.code}
+            onChange={(e) => handleInputChange('code', e.target.value)}
+            error={errors.code}
+            required
+          />
         );
-      
       default:
-        return (
-          <div className="text-center py-8">
-            <Loader className="w-12 h-12 mx-auto animate-spin text-blue-500" />
-            <p className="mt-4 text-gray-600">Loading asset type...</p>
-          </div>
-        );
+        return null;
     }
   };
-
-  // Get asset type name with fallback
-  const assetTypeName = assetType 
-    ? `${assetType.charAt(0).toUpperCase() + assetType.slice(1)}`
-    : 'Asset';
 
   return (
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
-      title={`Register New ${assetTypeName}`}
+      title="Create New Asset"
       size="md"
     >
-      {!isInitialized ? (
-        <div className="text-center py-8">
-          <Loader className="w-12 h-12 mx-auto animate-spin text-blue-500" />
-          <p className="mt-4 text-gray-600">Initializing form...</p>
-        </div>
-      ) : (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {errors.general && (
-            <div className="p-3 mb-4 text-red-700 bg-red-100 rounded-lg">
-              {errors.general}
-            </div>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {errors.general && (
+          <div className="p-3 text-red-700 bg-red-100 rounded-md">
+            {errors.general}
+          </div>
+        )}
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Asset Type
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {assetTypes.map((type) => (
+              <button
+                key={type.value}
+                type="button"
+                className={`p-3 border rounded-md text-center ${
+                  selectedType === type.value
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+                onClick={() => handleTypeChange(type.value)}
+              >
+                <type.icon className="w-5 h-5 mx-auto mb-1" />
+                <div className="text-sm font-medium">{type.label}</div>
+              </button>
+            ))}
+          </div>
+          {errors.type && (
+            <p className="mt-1 text-sm text-red-600">{errors.type}</p>
           )}
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Company
-            </label>
-            <select
-              value={formData.companyId}
-              onChange={(e) => setFormData({...formData, companyId: e.target.value})}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-            >
-              {state.companies.map(company => (
-                <option key={company.id} value={company.id}>
-                  {company.name}
-                </option>
-              ))}
-            </select>
-            {errors.companyId && (
-              <p className="mt-1 text-sm text-red-600">{errors.companyId}</p>
-            )}
-          </div>
-          
-          {renderFormFields()}
-          
-          <div className="flex justify-end space-x-3 pt-4">
-            <Button 
-              variant="secondary" 
-              onClick={onClose}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button 
-              type="submit" 
-              variant="cosmic"
-              loading={isSubmitting}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Creating...' : 'Register Asset'}
-            </Button>
-          </div>
-        </form>
-      )}
+        </div>
+
+        {selectedType && (
+          <>
+            <Input
+              label="Asset Name"
+              value={formData.name}
+              onChange={(e) => handleInputChange('name', e.target.value)}
+              error={errors.name}
+              required
+            />
+
+            {renderFormFields()}
+          </>
+        )}
+
+        <div className="flex justify-end space-x-3 pt-4">
+          <Button
+            variant="secondary"
+            onClick={onClose}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="cosmic"
+            loading={isSubmitting}
+            disabled={isSubmitting || !selectedType}
+          >
+            Create Asset
+          </Button>
+        </div>
+      </form>
     </Dialog>
   );
 };

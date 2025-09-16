@@ -1,9 +1,9 @@
-// src/components/shift/ShiftManagement.jsx
 import React, { useState } from 'react';
 import { Button, Card, Select, Badge, Table } from '../../../ui';
 import { useApp, useAppDispatch } from '../../../../context/AppContext';
 import Shift360View from './Shift360View';
 import CreateShiftModal from './CreateShiftModal';
+import ShiftCloseReconciliation from './ShiftCloseReconcilliation';
 import { formatDate, formatCurrency } from '../../../../utils/helpers';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
@@ -12,8 +12,10 @@ const ShiftManagement = () => {
   const { state } = useApp();
   const dispatch = useAppDispatch();
   const [selectedShift, setSelectedShift] = useState(null);
+  const [shiftToClose, setShiftToClose] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
   
   // Apply filters to shifts
   const filteredShifts = state.shifts.filter(shift => {
@@ -57,6 +59,12 @@ const ShiftManagement = () => {
     setIsViewModalOpen(true);
   };
 
+  // Handle close shift
+  const handleCloseShift = (shift) => {
+    setShiftToClose(shift);
+    setIsCloseModalOpen(true);
+  };
+
   // Export to PDF function
   const exportToPDF = () => {
     const doc = new jsPDF();
@@ -76,12 +84,23 @@ const ShiftManagement = () => {
     // Table
     const tableData = filteredShifts.map(shift => {
       const supervisor = state.staff.supervisors.find(s => s.id === shift.supervisorId);
+      
+      // Calculate number of islands and attendants
+      const islandsCount = shift.islands?.length || 0;
+      let attendantsCount = 0;
+      
+      if (shift.islands) {
+        attendantsCount = shift.islands.reduce((total, island) => 
+          total + (island.attendants?.length || 0), 0
+        );
+      }
+      
       return [
         formatDate(shift.startTime),
         formatDate(shift.endTime),
         shift.status,
-        shift.islands?.length || 0,
-        shift.attendants?.length || 0,
+        islandsCount,
+        attendantsCount,
         supervisor?.name || 'N/A',
         formatCurrency(shift.totalSales || 0)
       ];
@@ -117,13 +136,28 @@ const ShiftManagement = () => {
     { 
       header: 'Status', 
       accessor: 'status',
-      render: (value) => (
-        <Badge 
-          variant={value === 'active' ? 'success' : value === 'closed' ? 'default' : 'warning'}
-          className="capitalize"
-        >
-          {value}
-        </Badge>
+      render: (value, shift) => (
+        <div className="flex items-center">
+          <Badge 
+            variant={value === 'active' ? 'success' : value === 'closed' ? 'default' : 'warning'}
+            className="capitalize"
+          >
+            {value}
+          </Badge>
+          {value === 'active' && (
+            <Button 
+              size="sm" 
+              variant="outline"
+              className="ml-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCloseShift(shift);
+              }}
+            >
+              Close Shift
+            </Button>
+          )}
+        </div>
       ),
       cellClassName: 'p-3'
     },
@@ -146,6 +180,14 @@ const ShiftManagement = () => {
     { 
       header: 'Supervisor', 
       accessor: 'supervisor',
+      cellClassName: 'p-3'
+    },
+    { 
+      header: 'Total Sales', 
+      accessor: 'totalSales',
+      render: (value) => (
+        <div className="text-right font-medium">{formatCurrency(value)}</div>
+      ),
       cellClassName: 'p-3'
     },
     { 
@@ -185,7 +227,8 @@ const ShiftManagement = () => {
       status: shift.status,
       islandsCount,
       attendantsCount,
-      supervisor: supervisor?.name || 'N/A'
+      supervisor: supervisor?.name || 'N/A',
+      totalSales: shift.totalSales || 0
     };
   });
 
@@ -274,7 +317,20 @@ const ShiftManagement = () => {
       {isViewModalOpen && selectedShift && (
         <Shift360View 
           shift={selectedShift}
-          onClose={() => setIsViewModalOpen(false)}
+          onClose={() => {
+            setIsViewModalOpen(false);
+            setSelectedShift(null);
+          }}
+        />
+      )}
+      
+      {isCloseModalOpen && shiftToClose && (
+        <ShiftCloseReconciliation 
+          shift={shiftToClose}
+          onClose={() => {
+            setIsCloseModalOpen(false);
+            setShiftToClose(null);
+          }}
         />
       )}
       

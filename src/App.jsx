@@ -6,8 +6,9 @@ import {
   Navigate,
   Outlet
 } from 'react-router-dom';
-import { useApp } from './context/AppContext';
-import Layout  from './components/layout';
+import { AppProvider } from './context/AppContext';
+import { useAuth } from './hooks/useAuth';
+import Layout from './components/layout';
 import LoadingSpinner from './components/common/LoadingSpinner';
 
 // Public Components
@@ -15,52 +16,79 @@ const LandingPage = React.lazy(() => import('./components/auth/LandingPage'));
 const LoginPage = React.lazy(() => import('./components/auth/LoginPage'));
 const AboutPage = React.lazy(() => import('./components/auth/AboutPage'));
 
-
-// Protected Components
+// Protected Components - Role-specific dashboards
 const SuperAdminDashboard = React.lazy(() => import('./components/dashboards/SuperAdminDashboard'));
 const CompanyAdminDashboard = React.lazy(() => import('./components/dashboards/CompanyAdminDashboard'));
 const StationManagerDashboard = React.lazy(() => import('./components/dashboards/StationManagerDashboard'));
 const SupervisorDashboard = React.lazy(() => import('./components/dashboards/SupervisorDashboard'));
+
+// Feature Modules
 const ServiceStationManagement = React.lazy(() => import('./components/features/stations/ServiceStationManagement'));
 const FuelManagement = React.lazy(() => import('./components/features/fuel/FuelManagement'));
 const StaffManagement = React.lazy(() => import('./components/features/staff/StaffManagement'));
 const ShiftManagement = React.lazy(() => import('./components/features/shifts/ShiftsManagement'));
 const ReportsCenter = React.lazy(() => import('./components/features/reports/ReportCenter'));
-// const SettingsPage = React.lazy(() => import('./components/features/settings/SettingsPage'));
-// const CompanyManagement = React.lazy(() => import('./components/features/companies/CompanyManagement'));
 
 // Layout wrapper for protected routes
 const ProtectedLayout = () => {
-  const { state } = useApp();
+  const { isAuthenticated, isLoading } = useAuth();
   
-  if (!state.isAuthenticated) {
+  if (isLoading) {
+    return <LoadingSpinner />;
+  }
+  
+  if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
   
   return (
-    <Layout>
+
       <Suspense fallback={<LoadingSpinner />}>
         <Outlet />
       </Suspense>
-    </Layout>
+ 
   );
+};
+
+// Role-based route protection
+const RoleProtectedRoute = ({ allowedRoles, children }) => {
+  const { user, isAuthenticated, isLoading } = useAuth();
+  
+  if (isLoading) {
+    return <LoadingSpinner />;
+  }
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  if (!user || !allowedRoles.includes(user.role)) {
+    return <Navigate to="/unauthorized" replace />;
+  }
+  
+  return children;
 };
 
 // Role-based dashboard router
 const RoleDashboard = () => {
-  const { state } = useApp();
+  const { user, isLoading } = useAuth();
   
-  if (!state.currentUser) return <LoadingSpinner />;
-  //const role="super_admin";
- switch (state.currentUser.role) {
-//  switch(role){
-    case 'super_admin':
+  if (isLoading) {
+    return <LoadingSpinner />;
+  }
+  
+  if (!user) {
+    return <Navigate to="/" replace />;
+  }
+  
+  switch (user.role) {
+    case 'SUPER_ADMIN':
       return <SuperAdminDashboard />;
-    case 'company_admin':
+    case 'COMPANY_ADMIN':
       return <CompanyAdminDashboard />;
-    case 'station_manager':
+    case 'STATION_MANAGER':
       return <StationManagerDashboard />;
-    case 'supervisor':
+    case 'SUPERVISOR':
       return <SupervisorDashboard />;
     default:
       return <Navigate to="/" replace />;
@@ -68,47 +96,87 @@ const RoleDashboard = () => {
 };
 
 function App() {
-  const { state } = useApp();
-
   return (
-    <Router>
-      <Suspense fallback={<LoadingSpinner fullScreen />}>
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={
-            state.isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />
-          } />
-          <Route path="/about" element={<AboutPage />} />
+    <AppProvider>
+      <Router>
+        <Suspense fallback={<LoadingSpinner fullScreen />}>
+          <Routes>
+            {/* Public Routes */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/unauthorized" element={<div>Unauthorized Access</div>} />
 
-          
-          {/* Protected Routes - Requires authentication */}
-          {/* <Route element={<ProtectedLayout />}> */}
-            <Route path="/dashboard" element={<RoleDashboard />} />
+            {/* Protected Routes - Requires authentication */}
+            <Route element={<ProtectedLayout />}>
+              <Route path="/dashboard" element={<RoleDashboard />} />
+              
+              {/* Super Admin Routes */}
+              <Route path="/super-admin/*" element={
+                <RoleProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+                  <SuperAdminDashboard />
+                </RoleProtectedRoute>
+              } />
+              
+              {/* Company Admin Routes */}
+              <Route path="/company-admin/*" element={
+                <RoleProtectedRoute allowedRoles={['COMPANY_ADMIN']}>
+                  <CompanyAdminDashboard />
+                </RoleProtectedRoute>
+              } />
+              
+              {/* Station Manager Routes */}
+              <Route path="/station-manager/*" element={
+                <RoleProtectedRoute allowedRoles={['STATION_MANAGER']}>
+                  <StationManagerDashboard />
+                </RoleProtectedRoute>
+              } />
+              
+              {/* Supervisor Routes */}
+              <Route path="/supervisor/*" element={
+                <RoleProtectedRoute allowedRoles={['SUPERVISOR']}>
+                  <SupervisorDashboard />
+                </RoleProtectedRoute>
+              } />
+              
+              {/* Feature Modules with role-based access */}
+              <Route path="/stations" element={
+                <RoleProtectedRoute allowedRoles={['SUPER_ADMIN', 'COMPANY_ADMIN', 'STATION_MANAGER']}>
+                  <ServiceStationManagement />
+                </RoleProtectedRoute>
+              } />
+              
+              <Route path="/fuel" element={
+                <RoleProtectedRoute allowedRoles={['STATION_MANAGER', 'SUPERVISOR']}>
+                  <FuelManagement />
+                </RoleProtectedRoute>
+              } />
+              
+              <Route path="/staff" element={
+                <RoleProtectedRoute allowedRoles={['SUPER_ADMIN', 'COMPANY_ADMIN', 'STATION_MANAGER']}>
+                  <StaffManagement />
+                </RoleProtectedRoute>
+              } />
+              
+              <Route path="/shifts" element={
+                <RoleProtectedRoute allowedRoles={['STATION_MANAGER', 'SUPERVISOR']}>
+                  <ShiftManagement />
+                </RoleProtectedRoute>
+              } />
+              
+              <Route path="/reports" element={
+                <RoleProtectedRoute allowedRoles={['SUPER_ADMIN', 'COMPANY_ADMIN', 'STATION_MANAGER']}>
+                  <ReportsCenter />
+                </RoleProtectedRoute>
+              } />
+            </Route>
             
-            {/* Feature Modules */}
-            <Route path="/stations" element={<ServiceStationManagement />} />
-            <Route path="/fuel" element={<FuelManagement />} />
-            <Route path="/staff" element={<StaffManagement />} />
-            <Route path="/shifts" element={<ShiftManagement />} />
-            <Route path="/reports" element={<ReportsCenter />} />
-            {/* <Route path="/settings" element={<SettingsPage />} /> */}
-            
-            {/* Role-specific routes */}
-            {/* {state.currentUser?.role === 'super_admin' && (
-              // <Route path="/companies" element={<CompanyManagement />} />
-            )} */}
-          {/* </Route> */}
-          
-          {/* Fallback Routes */}
-          <Route path="*" element={
-            state.isAuthenticated 
-              ? <Navigate to="/dashboard" replace /> 
-              : <Navigate to="/" replace />
-          } />
-        </Routes>
-      </Suspense>
-    </Router>
+            {/* Fallback Routes */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </Router>
+    </AppProvider>
   );
 }
 

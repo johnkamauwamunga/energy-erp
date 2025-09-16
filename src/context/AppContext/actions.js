@@ -1,12 +1,16 @@
 export const ACTION_TYPES = {
   SET_USER: 'SET_USER',
   SET_COMPANY: 'SET_COMPANY',
+  SET_COMPANIES:'SET_COMPANIES',
   SET_STATION: 'SET_STATION',
   LOGOUT: 'LOGOUT',
   ADD_COMPANY: 'ADD_COMPANY',
   UPDATE_COMPANY: 'UPDATE_COMPANY',
+  SET_ASSETS: 'SET_ASSETS',
   ADD_ASSET: 'ADD_ASSET',
   UPDATE_ASSET:'UPDATE_ASSET',
+  ASSIGN_ASSET_TO_STATION: 'ASSIGN_ASSET_TO_STATION',
+  UNASSIGN_ASSET_FROM_STATION: 'UNASSIGN_ASSET_FROM_STATION',
   ADD_STATION: 'ADD_STATION',
   UPDATE_STATION: 'UPDATE_STATION',
   ATTACH_ASSET_TO_STATION: 'ATTACH_ASSET_TO_STATION',
@@ -22,7 +26,10 @@ export const ACTION_TYPES = {
   ADD_NONFUEL_ITEM: 'ADD_NONFUEL_ITEM',
   UPDATE_NONFUEL_ITEM: 'UPDATE_NONFUEL_ITEM',
   UPDATE_WAREHOUSE_STOCK: 'UPDATE_WAREHOUSE_STOCK',
-  TRANSFER_STOCK: 'TRANSFER_STOCK'
+  TRANSFER_STOCK: 'TRANSFER_STOCK',
+  ADD_OFFLOAD: 'ADD_OFFLOAD',
+  SET_OFFLOAD_FILTERS: 'SET_OFFLOAD_FILTERS',
+  UPDATE_TANK_LEVEL: 'UPDATE_TANK_LEVEL'
 };
 
 export const setUser = (user) => ({
@@ -33,6 +40,12 @@ export const setUser = (user) => ({
 export const setCompany = (company) => ({
   type: ACTION_TYPES.SET_COMPANY,
   payload: company
+});
+
+// In your actions file, add this:
+export const setCompanies = (companies) => ({
+  type: ACTION_TYPES.SET_COMPANIES,
+  payload: companies
 });
 
 export const setStation = (station) => ({
@@ -54,15 +67,43 @@ export const updateCompany = (company) => ({
   payload: company
 });
 
-export const addAsset = (assetType, asset) => ({
-  type: ACTION_TYPES.ADD_ASSET,
-  payload: { assetType, asset }
+// In your actions file, update/add these actions:
+
+// Unified asset actions
+export const setAssets = (assets) => ({
+  type: ACTION_TYPES.SET_ASSETS,
+  payload: assets
 });
 
-export const updateAsset = (assetType, id, updates) => ({
-  type: ACTION_TYPES.UPDATE_ASSET,
-  payload: { assetType, id, updates }
+export const addAsset = (asset) => ({
+  type: ACTION_TYPES.ADD_STATION,
+  payload: asset
 });
+
+export const updateAsset = (id, updates) => ({
+  type: ACTION_TYPES.UPDATE_ASSET,
+  payload: { id, updates }
+});
+
+export const assignAssetToStation = (assetId, stationId) => ({
+  type: ACTION_TYPES.ASSIGN_ASSET_TO_STATION,
+  payload: { assetId, stationId }
+});
+
+export const unassignAssetFromStation = (assetId) => ({
+  type: ACTION_TYPES.UNASSIGN_ASSET_FROM_STATION,
+  payload: { assetId }
+});
+
+// export const addAsset = (assetType, asset) => ({
+//   type: ACTION_TYPES.ADD_ASSET,
+//   payload: { assetType, asset }
+// });
+
+// export const updateAsset = (assetType, id, updates) => ({
+//   type: ACTION_TYPES.UPDATE_ASSET,
+//   payload: { assetType, id, updates }
+// });
 
 export const addStation = (station) => ({
   type: ACTION_TYPES.ADD_STATION,
@@ -148,4 +189,19 @@ export const updateWarehouseStock = (warehouseId, itemId, newStock) => ({
 export const transferStock = (fromWarehouseId, toWarehouseId, itemId, quantity) => ({
   type: ACTION_TYPES.TRANSFER_STOCK,
   payload: { fromWarehouseId, toWarehouseId, itemId, quantity }
+});
+
+export const addOffload = (offload) => ({
+  type: ACTION_TYPES.ADD_OFFLOAD,
+  payload: offload
+});
+
+export const setOffloadFilters = (filters) => ({
+  type: ACTION_TYPES.SET_OFFLOAD_FILTERS,
+  payload: filters
+});
+
+export const updateTankLevel = (tankId, newLevel) => ({
+  type: ACTION_TYPES.UPDATE_TANK_LEVEL,
+  payload: { tankId, newLevel }
 });

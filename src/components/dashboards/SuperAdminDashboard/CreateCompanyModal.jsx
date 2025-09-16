@@ -3,24 +3,28 @@ import { Input, Button } from '../../ui';
 import Dialog from '../../ui/Dialog';
 import { useApp } from '../../../context/AppContext';
 import { addCompany } from '../../../context/AppContext/actions';
+import { companyService } from '../../../services/companyService/companyService';
 
 const CreateCompanyModal = ({ isOpen, onClose }) => {
-  const { dispatch } = useApp();
+  const { dispatch, state } = useApp();
   const [activeTab, setActiveTab] = useState('company');
   const [formData, setFormData] = useState({
     // Company data
     name: '',
-    email: '',
-    phone: '',
+    contactEmail: '',
+    phoneNumber: '',
     address: '',
-    subscriptionPlan: 'professional',
+    timeZone: 'UTC',
+    currency: 'USD',
+    subscriptionPlan: 'subscription',
     
-    // Admin user data
-    adminName: '',
-    adminEmail: '',
-    adminPhone: '',
-    adminPassword: 'admin123', // Default password
-    adminRole: 'company_admin',
+    // Admin user data (nested object)
+    admin: {
+      email: '',
+      firstName: '',
+      lastName: '',
+      password: ''
+    }
   });
   
   const [errors, setErrors] = useState({});
@@ -32,15 +36,18 @@ const CreateCompanyModal = ({ isOpen, onClose }) => {
       setActiveTab('company');
       setFormData({
         name: '',
-        email: '',
-        phone: '',
+        contactEmail: '',
+        phoneNumber: '',
         address: '',
-        subscriptionPlan: 'professional',
-        adminName: '',
-        adminEmail: '',
-        adminPhone: '',
-        adminPassword: 'admin123',
-        adminRole: 'company_admin',
+        timeZone: 'UTC',
+        currency: 'USD',
+        subscriptionPlan: 'subscription',
+        admin: {
+          email: '',
+          firstName: '',
+          lastName: '',
+          password: ''
+        }
       });
       setErrors({});
     }
@@ -49,24 +56,39 @@ const CreateCompanyModal = ({ isOpen, onClose }) => {
   const validateCompany = () => {
     const newErrors = {};
     if (!formData.name.trim()) newErrors.name = 'Company name is required';
-    if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Email is invalid';
+    if (formData.contactEmail && !/\S+@\S+\.\S+/.test(formData.contactEmail)) {
+      newErrors.contactEmail = 'Email is invalid';
     }
     return newErrors;
   };
 
   const validateAdmin = () => {
     const newErrors = {};
-    if (!formData.adminName.trim()) newErrors.adminName = 'Admin name is required';
-    if (!formData.adminEmail.trim()) {
+    if (!formData.admin.firstName.trim()) newErrors.adminFirstName = 'First name is required';
+    if (!formData.admin.lastName.trim()) newErrors.adminLastName = 'Last name is required';
+    if (!formData.admin.email.trim()) {
       newErrors.adminEmail = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.adminEmail)) {
+    } else if (!/\S+@\S+\.\S+/.test(formData.admin.email)) {
       newErrors.adminEmail = 'Email is invalid';
     }
-    if (!formData.adminPassword) newErrors.adminPassword = 'Password is required';
+    if (formData.admin.password && formData.admin.password.length < 8) {
+      newErrors.adminPassword = 'Password must be at least 8 characters';
+    }
     return newErrors;
+  };
+
+  const handleInputChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleAdminInputChange = (field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      admin: {
+        ...prev.admin,
+        [field]: value
+      }
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -85,53 +107,57 @@ const CreateCompanyModal = ({ isOpen, onClose }) => {
     setIsSubmitting(true);
     
     try {
-      // Generate company ID
-      const companyId = `COMP_${Date.now()}`;
-      
-      // Create company object
-      const newCompany = {
-        id: companyId,
+      // Prepare data for backend API
+      const companyData = {
         name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        address: formData.address,
+        contactEmail: formData.contactEmail || undefined,
+        phoneNumber: formData.phoneNumber || undefined,
+        address: formData.address || undefined,
+        timeZone: formData.timeZone,
+        currency: formData.currency,
         subscriptionPlan: formData.subscriptionPlan,
-        status: 'active',
-        joinDate: new Date().toISOString().split('T')[0],
-        stationsCount: 0, // Initial value
-        logo: '/api/logos/default-company.png' // Default logo
+        admin: {
+          email: formData.admin.email,
+          firstName: formData.admin.firstName,
+          lastName: formData.admin.lastName,
+          password: formData.admin.password || undefined
+        }
       };
 
-      // Create admin user
-      const adminId = `CADM_${Date.now()}`;
-      const newAdmin = {
-        id: adminId,
-        companyId: companyId,
-        name: formData.adminName,
-        email: formData.adminEmail,
-        password: formData.adminPassword,
-        phone: formData.adminPhone || '+254 700 000 000',
-        role: formData.adminRole,
-        permissions: ['ALL_SYSTEMS'],
-        status: 'active',
-        joinDate: new Date().toISOString().split('T')[0]
-      };
+      // Remove undefined values
+      Object.keys(companyData).forEach(key => {
+        if (companyData[key] === undefined) {
+          delete companyData[key];
+        }
+      });
 
-      // Simulate API calls
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Call the API service
+      const response = await companyService.createCompany(companyData);
+
+      console.log('Create company response:', response);
       
-      // Dispatch actions to add company and admin
-      dispatch(addCompany(newCompany));
-      // You'll need to create an ADD_USER action in your context
-      // dispatch(addUser(newAdmin)); 
-      
-      console.log('Company created:', newCompany);
-      console.log('Admin created:', newAdmin);
-      
+     if (response?.id) {
+      // Add to context
+      dispatch(addCompany(response));
+
+      // Success message
+      alert(`Company "${response.name}" created successfully!`);
+
       onClose();
+    } else {
+        throw new Error(response.message || 'Failed to create company');
+      }
     } catch (error) {
       console.error('Failed to create company:', error);
-      setErrors({ general: error.message || 'Failed to create company' });
+      
+      // Handle specific error cases
+      if (error.response?.data?.message) {
+        setErrors({ general: error.response.data.message });
+      } else if (error.message.includes('Company name already exists')) {
+        setErrors({ general: 'Company name already exists' });
+      } else {
+        setErrors({ general: error.message || 'Failed to create company' });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -142,39 +168,73 @@ const CreateCompanyModal = ({ isOpen, onClose }) => {
       <h3 className="text-lg font-semibold text-gray-800 mb-4">Company Information</h3>
       
       <Input
-        label="Company Name"
+        label="Company Name *"
         value={formData.name}
-        onChange={(e) => setFormData({...formData, name: e.target.value})}
+        onChange={(e) => handleInputChange('name', e.target.value)}
         required
         placeholder="Enter company name"
         error={errors.name}
       />
       
       <Input
-        label="Company Email"
+        label="Contact Email"
         type="email"
-        value={formData.email}
-        onChange={(e) => setFormData({...formData, email: e.target.value})}
-        required
-        placeholder="Enter company email"
-        error={errors.email}
+        value={formData.contactEmail}
+        onChange={(e) => handleInputChange('contactEmail', e.target.value)}
+        placeholder="Enter company contact email"
+        error={errors.contactEmail}
       />
       
       <Input
         label="Phone Number"
-        value={formData.phone}
-        onChange={(e) => setFormData({...formData, phone: e.target.value})}
+        value={formData.phoneNumber}
+        onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
         placeholder="Enter phone number"
-        error={errors.phone}
       />
       
       <Input
         label="Address"
         value={formData.address}
-        onChange={(e) => setFormData({...formData, address: e.target.value})}
+        onChange={(e) => handleInputChange('address', e.target.value)}
         placeholder="Enter company address"
-        error={errors.address}
       />
+      
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Time Zone
+          </label>
+          <select
+            value={formData.timeZone}
+            onChange={(e) => handleInputChange('timeZone', e.target.value)}
+            className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="UTC">UTC</option>
+            <option value="America/New_York">Eastern Time</option>
+            <option value="America/Chicago">Central Time</option>
+            <option value="America/Denver">Mountain Time</option>
+            <option value="America/Los_Angeles">Pacific Time</option>
+            <option value="Europe/London">GMT</option>
+            <option value="Asia/Kolkata">IST</option>
+          </select>
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Currency
+          </label>
+          <select
+            value={formData.currency}
+            onChange={(e) => handleInputChange('currency', e.target.value)}
+            className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="USD">USD ($)</option>
+            <option value="EUR">EUR (€)</option>
+            <option value="GBP">GBP (£)</option>
+            <option value="KES">KES (KSh)</option>
+          </select>
+        </div>
+      </div>
       
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -182,11 +242,10 @@ const CreateCompanyModal = ({ isOpen, onClose }) => {
         </label>
         <select
           value={formData.subscriptionPlan}
-          onChange={(e) => setFormData({...formData, subscriptionPlan: e.target.value})}
+          onChange={(e) => handleInputChange('subscriptionPlan', e.target.value)}
           className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
         >
-          <option value="basic">Basic</option>
-          <option value="professional">Professional</option>
+          <option value="subscription">Subscription</option>
           <option value="enterprise">Enterprise</option>
         </select>
       </div>
@@ -206,56 +265,45 @@ const CreateCompanyModal = ({ isOpen, onClose }) => {
     <div className="space-y-4">
       <h3 className="text-lg font-semibold text-gray-800 mb-4">Admin User Information</h3>
       
-      <Input
-        label="Admin Name"
-        value={formData.adminName}
-        onChange={(e) => setFormData({...formData, adminName: e.target.value})}
-        required
-        placeholder="Enter admin full name"
-        error={errors.adminName}
-      />
+      <div className="grid grid-cols-2 gap-4">
+        <Input
+          label="First Name *"
+          value={formData.admin.firstName}
+          onChange={(e) => handleAdminInputChange('firstName', e.target.value)}
+          required
+          placeholder="Enter first name"
+          error={errors.adminFirstName}
+        />
+        
+        <Input
+          label="Last Name *"
+          value={formData.admin.lastName}
+          onChange={(e) => handleAdminInputChange('lastName', e.target.value)}
+          required
+          placeholder="Enter last name"
+          error={errors.adminLastName}
+        />
+      </div>
       
       <Input
-        label="Admin Email"
+        label="Email *"
         type="email"
-        value={formData.adminEmail}
-        onChange={(e) => setFormData({...formData, adminEmail: e.target.value})}
+        value={formData.admin.email}
+        onChange={(e) => handleAdminInputChange('email', e.target.value)}
         required
         placeholder="Enter admin email"
         error={errors.adminEmail}
       />
       
       <Input
-        label="Admin Phone"
-        value={formData.adminPhone}
-        onChange={(e) => setFormData({...formData, adminPhone: e.target.value})}
-        placeholder="Enter admin phone number"
-        error={errors.adminPhone}
-      />
-      
-      <Input
         label="Password"
         type="password"
-        value={formData.adminPassword}
-        onChange={(e) => setFormData({...formData, adminPassword: e.target.value})}
-        required
-        placeholder="Enter password"
+        value={formData.admin.password}
+        onChange={(e) => handleAdminInputChange('password', e.target.value)}
+        placeholder="Enter password (min 8 characters)"
         error={errors.adminPassword}
+        helpText="If not provided, will use default password: Admin@123"
       />
-      
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Admin Role
-        </label>
-        <select
-          value={formData.adminRole}
-          onChange={(e) => setFormData({...formData, adminRole: e.target.value})}
-          className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-        >
-          <option value="super_admin">Super Admin</option>
-          <option value="company_admin">Company Admin</option>
-        </select>
-      </div>
       
       <div className="flex justify-between pt-4">
         <Button 

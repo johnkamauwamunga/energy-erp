@@ -3,12 +3,13 @@ import { useApp, useAppDispatch } from '../../../context/AppContext'; // Add use
 import { logout } from '../../../context/AppContext/actions';
 import { 
   BarChart3, Activity, Clock, Users, FileText, 
-  Flame, X, Menu, MapPin, DollarSign, Building2
+  Flame, X, Menu, MapPin, DollarSign, Truck
 } from 'lucide-react';
 import { Button } from '../../../components/ui';
 import DashboardOverview from '../common/DashboardOverview';
 import PlaceholderComponent from './PlaceholderComponent';
 import ShiftManagement from '../common/shift/ShiftManagement';
+import OffloadManagement from '../common/offloads/OffloadManagement';
 import StationAssetManagement from '../common/assets/station/StationAssetManagement';
 import SalesManagement from '../common/sales/SalesManagement';
 
@@ -39,6 +40,7 @@ console.log("station",station);
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'operations', label: 'Operations', icon: Activity },
     { id: 'shifts', label: 'Shift Management', icon: Clock },
+     { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
     { id: 'staff', label: 'Staff', icon: Users },
     { id: 'sales', label: 'Sales', icon: DollarSign },
     { id: 'reports', label: 'Reports', icon: FileText }
@@ -52,6 +54,8 @@ console.log("station",station);
         return <PlaceholderComponent title="Station Operations" icon={Activity} />;
       case 'shifts':
         return <ShiftManagement />;
+        case 'offloads':
+          return <OffloadManagement />;
       case 'staff':
         return <PlaceholderComponent title="Staff Management" icon={Users} />;
        case 'sales':

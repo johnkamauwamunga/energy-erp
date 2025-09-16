@@ -1,38 +1,33 @@
 import React, { useState } from 'react';
 import { 
   BarChart3, Building2, MapPin, Clock, Users, FileCheck, Truck, 
-  TrendingUp, FileText, Warehouse, Flame, X, Menu 
+  TrendingUp, FileText, Warehouse, Flame, X, Menu,
+  User, Settings, LogOut
 } from 'lucide-react';
 import { Button } from '../../../components/ui';
-import { useApp,useAppDispatch,logout } from '../../../context/AppContext';
+import { useApp, useAppDispatch, logout } from '../../../context/AppContext';
 import CompanyOverview from '@/components/dashboards/common/CompanyOverview';
 import DashboardOverview from '../common/DashboardOverview';
 import ServiceStationManagement from '@/components/features/stations/ServiceStationManagement';
 import PlaceholderComponent from './PlaceholderComponent';
 import CreateAssetModal from './CreateAssetModal';
-import CompanyAssetManagement from './CompanyAssetManagement'
+import CompanyAssetManagement from './CompanyAssetManagement';
 import CompanyUserManagement from './CompanyUserManagement';
 
 const CompanyAdminDashboard = () => {
   const { state } = useApp();
-    const dispatch=useAppDispatch();
+  const dispatch = useAppDispatch();
   const [activeSection, setActiveSection] = useState('overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showCreateAssetModal, setShowCreateAssetModal] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
 
-  //  console.log("the state ", state);
-   // Implement logout handler
-    const handleLogout = () => {
-      // Perform logout operations
-      dispatch(logout()); // Dispatch logout action
-      
-      // Clear any stored authentication tokens
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('refreshToken');
-      
-      // Redirect to login page
-      window.location.href = '/login'; // Or use your router navigation
-    };
+  const handleLogout = () => {
+    dispatch(logout());
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('refreshToken');
+    window.location.href = '/login';
+  };
 
   const menuItems = [
     { id: 'overview', label: 'Dashboard', icon: BarChart3 },
@@ -53,10 +48,9 @@ const CompanyAdminDashboard = () => {
       case 'overview':
         return <DashboardOverview />;
       case 'stations':
-        // return <ServiceStationManagement />;
         return <PlaceholderComponent title="Service Station Management" icon={Building2} />;
       case 'assets':
-         return <CompanyAssetManagement />;
+        return <CompanyAssetManagement />;
       case 'islands':
         return <PlaceholderComponent title="Island Management" icon={MapPin} />;
       case 'warehouses':
@@ -144,17 +138,56 @@ const CompanyAdminDashboard = () => {
                 <Menu className="w-6 h-6" />
               </button>
               <h2 className="text-2xl font-bold text-gray-900">
-                Welcome, {state.currentUser.name}
+                Welcome, {state.currentUser?.firstName || 'User'}
               </h2>
             </div>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2 text-sm text-gray-600">
-                <Building2 className="w-4 h-4" />
-                <span>Company Administrator</span>
-              </div>
-              <Button onClick={handleLogout} variant="secondary" size="sm">
-                Logout
-              </Button>
+            
+            {/* User Profile with Dropdown */}
+            <div className="relative">
+              <button 
+                className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100"
+                onClick={() => setShowDropdown(!showDropdown)}
+              >
+                <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
+                  {state.currentUser?.firstName?.charAt(0) || 'U'}
+                </div>
+                <div className="hidden md:block text-left">
+                  <div className="text-sm font-medium text-gray-900">
+                    {state.currentUser?.firstName} {state.currentUser?.lastName}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Company Administrator
+                  </div>
+                </div>
+              </button>
+              
+              {/* Dropdown Menu */}
+              {showDropdown && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-2 z-20 border border-gray-200">
+                  <button 
+                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    onClick={() => setShowDropdown(false)}
+                  >
+                    <User className="w-4 h-4 mr-2" />
+                    My Profile
+                  </button>
+                  <button 
+                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    onClick={() => setShowDropdown(false)}
+                  >
+                    <Settings className="w-4 h-4 mr-2" />
+                    Settings
+                  </button>
+                  <div className="border-t border-gray-100 my-1"></div>
+                  <button 
+                    onClick={handleLogout}
+                    className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Logout
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>
@@ -165,7 +198,7 @@ const CompanyAdminDashboard = () => {
         </main>
       </div>
 
-            {/* Create Company Modal */}
+      {/* Create Company Modal */}
       <CreateAssetModal
         isOpen={showCreateAssetModal}
         onClose={() => setShowCreateAssetModal(false)}

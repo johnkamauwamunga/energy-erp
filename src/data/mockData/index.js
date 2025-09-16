@@ -5,6 +5,7 @@ import shifts from './shifts';
 import assets from './assets';
 import islands from './islands';
 import warehouses from './warehouses';
+import offloads from './offloads';
 
 const mockData = {
   companies,
@@ -13,7 +14,8 @@ const mockData = {
   shifts,
   assets,
   islands,
-  warehouses
+  warehouses,
+  offloads
 };
 
 export default mockData;

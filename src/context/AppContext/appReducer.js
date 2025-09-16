@@ -1,5 +1,20 @@
 export const appReducer = (state, action) => {
   switch (action.type) {
+    case 'SET_AUTH_DATA': {
+      const { user, company, station, permissions, accessToken, refreshToken } = action.payload;
+      
+      return {
+        ...state,
+        currentUser: user,
+        currentCompany: company,
+        currentStation: station,
+        permissions: permissions,
+        isAuthenticated: true,
+        accessToken: accessToken,
+        refreshToken: refreshToken
+      };
+    }
+      
     case 'SET_USER': {
       const user = action.payload;
       let currentCompany = null;
@@ -25,15 +40,18 @@ export const appReducer = (state, action) => {
     case 'LOGOUT': {
       localStorage.removeItem('authToken');
       localStorage.removeItem('refreshToken');
-      localStorage.removeItem('authToken');
       localStorage.removeItem('userData');
+      localStorage.removeItem('authData');
 
       return {
         ...state,
         currentUser: null,
         currentCompany: null,
         currentStation: null,
-        isAuthenticated: false
+        permissions: null,
+        isAuthenticated: false,
+        accessToken: null,
+        refreshToken: null
       };
     }
     
@@ -44,11 +62,33 @@ export const appReducer = (state, action) => {
         currentStation: null
       };
     }
+
+    // In your reducer, add this case:
+case 'SET_COMPANIES':
+  return {
+    ...state,
+    companies: action.payload
+  };
       
     case 'SET_STATION': {
       return {
         ...state,
         currentStation: action.payload
+      };
+    }
+    
+    case 'SET_PERMISSIONS': {
+      return {
+        ...state,
+        permissions: action.payload
+      };
+    }
+    
+    case 'UPDATE_TOKENS': {
+      return {
+        ...state,
+        accessToken: action.payload.accessToken,
+        refreshToken: action.payload.refreshToken
       };
     }
     
@@ -68,17 +108,62 @@ export const appReducer = (state, action) => {
       };
     }
 
-    case 'ADD_ASSET': {
-      const { assetType, asset } = action.payload;
+// In your reducer, update the asset handling cases:
+
+case 'SET_ASSETS':
+  return {
+    ...state,
+    assets: action.payload
+  };
+
+case 'ADD_ASSET':
+  return {
+    ...state,
+    assets: [...state.assets, action.payload]
+  };
+
+// case 'UPDATE_ASSET':
+//   const { id, updates } = action.payload;
+//   return {
+//     ...state,
+//     assets: state.assets.map(asset => 
+//       asset.id === id ? { ...asset, ...updates } : asset
+//     )
+//   };
+
+case 'ASSIGN_ASSET_TO_STATION':
+  return {
+    ...state,
+    assets: state.assets.map(asset => 
+      asset.id === action.payload.assetId 
+        ? { ...asset, stationId: action.payload.stationId, status: 'ASSIGNED' } 
+        : asset
+    )
+  };
+
+case 'UNASSIGN_ASSET_FROM_STATION':
+  return {
+    ...state,
+    assets: state.assets.map(asset => 
+      asset.id === action.payload.assetId 
+        ? { ...asset, stationId: null, status: 'REGISTERED' } 
+        : asset
+    )
+  };
+
+// Remove the old assetType-based cases
+
+    // case 'ADD_ASSET': {
+    //   const { assetType, asset } = action.payload;
       
-      return {
-        ...state,
-        assets: {
-          ...state.assets,
-          [assetType]: [...state.assets[assetType], asset]
-        }
-      };
-    }
+    //   return {
+    //     ...state,
+    //     assets: {
+    //       ...state.assets,
+    //       [assetType]: [...state.assets[assetType], asset]
+    //     }
+    //   };
+    // }
 
     case 'UPDATE_ASSET': {
       const { assetType, id, updates } = action.payload;
@@ -133,6 +218,31 @@ export const appReducer = (state, action) => {
           ...state.assets,
           [assetType]: state.assets[assetType].map(asset => 
             asset.id === assetId ? { ...asset, stationId: null } : asset
+          )
+        }
+      };
+    }
+
+    case 'ADD_OFFLOAD':
+      return {
+        ...state,
+        offloads: [...(state.offloads || []), action.payload]
+      };
+      
+    case 'SET_OFFLOAD_FILTERS':
+      return {
+        ...state,
+        offloadFilters: { ...(state.offloadFilters || {}), ...action.payload }
+      };
+      
+    case 'UPDATE_TANK_LEVEL': {
+      const { tankId, newLevel } = action.payload;
+      return {
+        ...state,
+        assets: {
+          ...state.assets,
+          tanks: state.assets.tanks.map(tank => 
+            tank.id === tankId ? { ...tank, currentLevel: newLevel } : tank
           )
         }
       };
@@ -212,7 +322,7 @@ export const appReducer = (state, action) => {
       };
     }
 
-       // Warehouse Management Cases
+    // Warehouse Management Cases
     case 'ADD_WAREHOUSE': {
       return {
         ...state,
@@ -329,7 +439,6 @@ export const appReducer = (state, action) => {
         })
       };
     }
-
 
     default:
       return state;

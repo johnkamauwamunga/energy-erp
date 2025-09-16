@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Flame, Mail, Lock, LogIn, Home } from 'lucide-react';
 import { Button, Input } from '../../../components/ui';
@@ -8,22 +8,70 @@ const LoginPage = () => {
   const [credentials, setCredentials] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { login } = useAuth();
+  const { login, isAuthenticated, user, isLoading } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogin = async () => {
+  console.log("LoginPage render - isAuthenticated:", isAuthenticated, "user:", user, "isLoading:", isLoading);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      console.log("Redirecting based on user role:", user.role);
+      // Redirect based on user role
+      switch (user.role) {
+        case 'SUPER_ADMIN':
+          navigate('/super-admin/dashboard');
+          break;
+        case 'COMPANY_ADMIN':
+          navigate('/company-admin/dashboard');
+          break;
+        case 'STATION_MANAGER':
+          navigate('/station-manager/dashboard');
+          break;
+        case 'SUPERVISOR':
+          navigate('/supervisor/dashboard');
+          break;
+        default:
+          navigate('/dashboard');
+      }
+    }
+  }, [isAuthenticated, user, navigate]);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
     setLoading(true);
     setError('');
     
     try {
-      await login(credentials.email, credentials.password);
-      navigate('/dashboard');
+      const result = await login(credentials.email, credentials.password);
+      
+      if (result.success) {
+        console.log("Login successful, user role:", result.data.user.role);
+        // The useEffect will handle redirection based on role
+      } else {
+        setError(result.message || 'Login failed. Please try again.');
+      }
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }
   };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && credentials.email && credentials.password) {
+      handleLogin(e);
+    }
+  };
+
+  // Show loading while initializing auth state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen cosmic-gradient flex items-center justify-center">
+        <div className="text-white text-xl">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen cosmic-gradient flex items-center justify-center relative overflow-hidden">
@@ -62,26 +110,17 @@ const LoginPage = () => {
             </div>
           )}
 
-          {/* Demo Credentials */}
-          <div className="mb-6 p-4 bg-blue-500 bg-opacity-20 border border-blue-400 rounded-lg">
-            <h4 className="text-white font-semibold mb-2">Demo Credentials:</h4>
-            <div className="text-sm text-blue-100 space-y-1">
-              <div>Super Admin: john@joskaenergy.co.ke / admin123</div>
-              <div>Company Admin: jane@kenolkobil.co.ke / admin123</div>
-              <div>Station Manager: peter@joskaenergy.co.ke / admin123</div>
-              <div>Supervisor: james.supervisor@joskaenergy.co.ke / admin123</div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-4">
             <Input
               label="Email Address"
               type="email"
               value={credentials.email}
               onChange={(e) => setCredentials({...credentials, email: e.target.value})}
+              onKeyPress={handleKeyPress}
               placeholder="Enter your email"
               icon={Mail}
               required
+              autoComplete="email"
             />
             
             <Input
@@ -89,13 +128,15 @@ const LoginPage = () => {
               type="password"
               value={credentials.password}
               onChange={(e) => setCredentials({...credentials, password: e.target.value})}
+              onKeyPress={handleKeyPress}
               placeholder="Enter your password"
               icon={Lock}
               required
+              autoComplete="current-password"
             />
 
             <Button
-              onClick={handleLogin}
+              type="submit"
               variant="cosmic"
               size="lg"
               className="w-full"
@@ -105,7 +146,7 @@ const LoginPage = () => {
             >
               {loading ? 'Signing In...' : 'Sign In'}
             </Button>
-          </div>
+          </form>
 
           <div className="mt-6 text-center">
             <div className="text-blue-100 text-sm">

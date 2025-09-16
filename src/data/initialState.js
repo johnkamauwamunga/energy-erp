@@ -34,13 +34,45 @@ export const initialState = {
   // Islands at root level
   islands: assets.islands,
 
-  // Other sections
+  // Shifts with updated structure
   shifts: mockData.shifts,
   shiftFilters: {
     date: 'all',
     status: '',
     supervisor: ''
   },
+
+    
+  // Add offloads section
+  offloads: mockData.offloads, // Add this line
+  offloadFilters: {
+    date: 'all',
+    tank: '',
+    supplier: ''
+  },
+  
+  // Add suppliers section
+  suppliers: [
+    {
+      id: 'SUP_001',
+      name: 'Vivo Energy',
+      type: 'energy',
+      contact: {
+        phone: '+254 700 123 456',
+        email: 'info@vivoenergy.com'
+      }
+    },
+    {
+      id: 'SUP_002',
+      name: 'Total Energies',
+      type: 'energy',
+      contact: {
+        phone: '+254 700 789 012',
+        email: 'info@totalenergies.com'
+      }
+    }
+  ],
+  
   fuelManagement: {},
   sales: {},
   reports: {},
