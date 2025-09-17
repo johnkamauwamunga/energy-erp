@@ -1,4 +1,4 @@
-import { apiService } from './apiService';
+import { apiService } from '../apiService';
 
 export const stationService = {
   // Create a station
@@ -31,9 +31,15 @@ export const stationService = {
     return response.data;
   },
 
-  // Get all stations for the current company
+  // Get all stations for the current company (or all stations for superadmin)
   getCompanyStations: async () => {
     const response = await apiService.get('/stations');
     return response.data;
   },
+
+  // Get stations by company ID (for superadmin)
+  getStationsByCompanyId: async (companyId) => {
+    const response = await apiService.get(`/stations/company/${companyId}`);
+    return response.data;
+  }
 };

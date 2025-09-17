@@ -178,7 +178,13 @@ case 'UNASSIGN_ASSET_FROM_STATION':
         }
       };
     }
-  
+
+    case 'SET_STATIONS':
+      return {
+        ...state,
+        serviceStations: action.payload
+      };
+      
     case 'ADD_STATION': {
       return {
         ...state,
@@ -194,6 +200,14 @@ case 'UNASSIGN_ASSET_FROM_STATION':
         )
       };
     }
+    
+    case 'DELETE_STATION': {
+      return {
+        ...state,
+        serviceStations: state.serviceStations.filter(s => s.id !== action.payload)
+      };
+    }
+    
 
     case 'ATTACH_ASSET_TO_STATION': {
       const { stationId, assetId, assetType } = action.payload;
@@ -247,6 +261,39 @@ case 'UNASSIGN_ASSET_FROM_STATION':
         }
       };
     }
+
+    // user bits
+    case 'SET_USERS':
+  return {
+    ...state,
+    users: action.payload
+  };
+
+case 'ADD_USER':
+  return {
+    ...state,
+    users: [...state.users, action.payload]
+  };
+
+case 'UPDATE_USER':
+  return {
+    ...state,
+    users: state.users.map(user => 
+      user.id === action.payload.id ? action.payload : user
+    )
+  };
+
+case 'DELETE_USER':
+  return {
+    ...state,
+    users: state.users.filter(user => user.id !== action.payload)
+  };
+
+case 'SET_USER_FILTERS':
+  return {
+    ...state,
+    userFilters: { ...state.userFilters, ...action.payload }
+  };
 
     // Shift Management Cases
     case 'ADD_SHIFT': {

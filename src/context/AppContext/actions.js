@@ -3,9 +3,16 @@ export const ACTION_TYPES = {
   SET_COMPANY: 'SET_COMPANY',
   SET_COMPANIES:'SET_COMPANIES',
   SET_STATION: 'SET_STATION',
+  SET_STATIONS:'SET_STATIONS',
+  DELETE_STATION:'DELETE_STATION',
   LOGOUT: 'LOGOUT',
   ADD_COMPANY: 'ADD_COMPANY',
   UPDATE_COMPANY: 'UPDATE_COMPANY',
+    SET_USERS: 'SET_USERS',
+  ADD_USER: 'ADD_USER',
+  UPDATE_USER: 'UPDATE_USER',
+  DELETE_USER: 'DELETE_USER',
+  SET_USER_FILTERS: 'SET_USER_FILTERS',
   SET_ASSETS: 'SET_ASSETS',
   ADD_ASSET: 'ADD_ASSET',
   UPDATE_ASSET:'UPDATE_ASSET',
@@ -67,6 +74,32 @@ export const updateCompany = (company) => ({
   payload: company
 });
 
+// users
+// User Actions
+export const setUsers = (users) => ({
+  type: ACTION_TYPES.SET_USERS,
+  payload: users
+});
+
+export const addUser = (user) => ({
+  type: ACTION_TYPES.ADD_USER,
+  payload: user
+});
+
+export const updateUser = (user) => ({
+  type: ACTION_TYPES.UPDATE_USER,
+  payload: user
+});
+
+export const deleteUser = (userId) => ({
+  type: ACTION_TYPES.DELETE_USER,
+  payload: userId
+});
+
+export const setUserFilters = (filters) => ({
+  type: ACTION_TYPES.SET_USER_FILTERS,
+  payload: filters
+});
 // In your actions file, update/add these actions:
 
 // Unified asset actions
@@ -104,6 +137,15 @@ export const unassignAssetFromStation = (assetId) => ({
 //   type: ACTION_TYPES.UPDATE_ASSET,
 //   payload: { assetType, id, updates }
 // });
+export const setStations = (stations) => ({
+  type: ACTION_TYPES.SET_STATIONS,
+  payload: stations
+});
+
+export const deleteStation = (stationId) => ({
+  type: ACTION_TYPES.DELETE_STATION,
+  payload: stationId
+});
 
 export const addStation = (station) => ({
   type: ACTION_TYPES.ADD_STATION,

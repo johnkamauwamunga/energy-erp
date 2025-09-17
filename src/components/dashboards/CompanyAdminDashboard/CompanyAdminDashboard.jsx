@@ -13,6 +13,7 @@ import PlaceholderComponent from './PlaceholderComponent';
 import CreateAssetModal from './CreateAssetModal';
 import CompanyAssetManagement from './CompanyAssetManagement';
 import CompanyUserManagement from './CompanyUserManagement';
+import CompanyStationsManagement from './stations/CompanyStationsManagement';
 
 const CompanyAdminDashboard = () => {
   const { state } = useApp();
@@ -48,7 +49,7 @@ const CompanyAdminDashboard = () => {
       case 'overview':
         return <DashboardOverview />;
       case 'stations':
-        return <PlaceholderComponent title="Service Station Management" icon={Building2} />;
+        return <CompanyStationsManagement />;
       case 'assets':
         return <CompanyAssetManagement />;
       case 'islands':

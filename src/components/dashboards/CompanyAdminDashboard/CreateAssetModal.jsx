@@ -3,7 +3,7 @@ import { Input, Button, Select } from '../../ui';
 import Dialog from '../../ui/Dialog';
 import { useApp } from '../../../context/AppContext';
 import { assetService } from '../../../services/assetService/assetService';
-import { Fuel, Zap, Package, Building2, Loader } from 'lucide-react';
+import { Fuel, Zap, Package, Building2 } from 'lucide-react';
 
 const assetTypes = [
   { value: 'STORAGE_TANK', label: 'Storage Tank', icon: Fuel },
@@ -12,30 +12,33 @@ const assetTypes = [
   { value: 'WAREHOUSE', label: 'Warehouse', icon: Building2 },
 ];
 
-const CreateAssetModal = ({ isOpen, onClose, onAssetCreated }) => {
+const CreateAssetModal = ({ isOpen, onClose, assetType, onAssetCreated }) => {
   const { state } = useApp();
-  const [selectedType, setSelectedType] = useState('');
+  const [selectedType, setSelectedType] = useState(assetType || '');
   const [formData, setFormData] = useState({
     name: '',
     capacity: '',
     warehouseName: '',
     code: '',
+    productId: ''
   });
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [products, setProducts] = useState([]);
 
   useEffect(() => {
     if (isOpen) {
-      setSelectedType('');
+      setSelectedType(assetType || '');
       setFormData({
         name: '',
         capacity: '',
         warehouseName: '',
         code: '',
+        productId: ''
       });
       setErrors({});
     }
-  }, [isOpen]);
+  }, [isOpen, assetType]);
 
   const handleTypeChange = (type) => {
     setSelectedType(type);
@@ -44,6 +47,7 @@ const CreateAssetModal = ({ isOpen, onClose, onAssetCreated }) => {
       capacity: '',
       warehouseName: '',
       code: '',
+      productId: ''
     });
     setErrors({});
   };
@@ -62,14 +66,11 @@ const CreateAssetModal = ({ isOpen, onClose, onAssetCreated }) => {
 
     if (selectedType === 'STORAGE_TANK') {
       if (!formData.capacity) newErrors.capacity = 'Capacity is required';
+      if (formData.capacity && parseFloat(formData.capacity) < 0) newErrors.capacity = 'Capacity must be non-negative';
     }
 
-    if (selectedType === 'WAREHOUSE') {
-      if (!formData.warehouseName) newErrors.warehouseName = 'Warehouse name is required';
-    }
-
-    if (selectedType === 'ISLAND') {
-      if (!formData.code) newErrors.code = 'Island code is required';
+    if (selectedType === 'FUEL_PUMP') {
+      if (!formData.productId) newErrors.productId = 'Product is required for fuel pumps';
     }
 
     setErrors(newErrors);
@@ -91,24 +92,43 @@ const CreateAssetModal = ({ isOpen, onClose, onAssetCreated }) => {
       // Add type-specific fields
       switch (selectedType) {
         case 'STORAGE_TANK':
-          assetData.capacity = Number(formData.capacity);
+          assetData.capacity = parseFloat(formData.capacity);
+          if (formData.productId) {
+            assetData.productId = formData.productId;
+          }
+          break;
+        case 'FUEL_PUMP':
+          assetData.productId = formData.productId;
           break;
         case 'WAREHOUSE':
-          assetData.warehouseName = formData.warehouseName;
+          if (formData.warehouseName) {
+            assetData.warehouseName = formData.warehouseName;
+          }
           break;
         case 'ISLAND':
-          assetData.code = formData.code;
+          if (formData.code) {
+            assetData.code = formData.code;
+          }
           break;
         default:
           break;
       }
 
-      const newAsset = await assetService.createAsset(assetData);
-      onAssetCreated(newAsset);
+      const response = await assetService.createAsset(assetData);
+      onAssetCreated(response);
       onClose();
     } catch (error) {
       console.error('Failed to create asset:', error);
-      setErrors({ general: error.response?.data?.message || 'Failed to create asset' });
+      if (error.response?.data?.errors) {
+        // Handle Zod validation errors from backend
+        const backendErrors = {};
+        error.response.data.errors.forEach(err => {
+          backendErrors[err.path] = err.message;
+        });
+        setErrors(backendErrors);
+      } else {
+        setErrors({ general: error.response?.data?.message || 'Failed to create asset' });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -118,33 +138,59 @@ const CreateAssetModal = ({ isOpen, onClose, onAssetCreated }) => {
     switch (selectedType) {
       case 'STORAGE_TANK':
         return (
-          <Input
-            label="Capacity (Liters)"
-            type="number"
-            value={formData.capacity}
-            onChange={(e) => handleInputChange('capacity', e.target.value)}
-            error={errors.capacity}
+          <>
+            <Input
+              label="Capacity (Liters)"
+              type="number"
+              min="0"
+              step="0.01"
+              value={formData.capacity}
+              onChange={(e) => handleInputChange('capacity', e.target.value)}
+              error={errors.capacity}
+              required
+            />
+            <Select
+              label="Product (Optional)"
+              value={formData.productId}
+              onChange={(value) => handleInputChange('productId', value)}
+              options={products.filter(p => p.type === 'FUEL').map(p => ({
+                value: p.id,
+                label: p.name
+              }))}
+              error={errors.productId}
+            />
+          </>
+        );
+      case 'FUEL_PUMP':
+        return (
+          <Select
+            label="Product"
+            value={formData.productId}
+            onChange={(value) => handleInputChange('productId', value)}
+            options={products.filter(p => p.type === 'FUEL').map(p => ({
+              value: p.id,
+              label: p.name
+            }))}
+            error={errors.productId}
             required
           />
         );
       case 'WAREHOUSE':
         return (
           <Input
-            label="Warehouse Name"
+            label="Warehouse Name (Optional)"
             value={formData.warehouseName}
             onChange={(e) => handleInputChange('warehouseName', e.target.value)}
             error={errors.warehouseName}
-            required
           />
         );
       case 'ISLAND':
         return (
           <Input
-            label="Island Code"
+            label="Island Code (Optional)"
             value={formData.code}
             onChange={(e) => handleInputChange('code', e.target.value)}
             error={errors.code}
-            required
           />
         );
       default:

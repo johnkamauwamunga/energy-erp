@@ -8,35 +8,27 @@ import { assetService } from '../../../services/assetService/assetService';
 
 const CompanyAssetManagement = () => {
   const { state, dispatch } = useApp();
-  const [activeTab, setActiveTab] = useState('tanks');
+  const [activeTab, setActiveTab] = useState('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [assetType, setAssetType] = useState('tank'); // Added this line
+  const [assetType, setAssetType] = useState('');
   const [loading, setLoading] = useState(true);
 
   const tabs = [
-    { id: 'tanks', label: 'Tanks', icon: Fuel },
-    { id: 'pumps', label: 'Pumps', icon: Zap },
-    { id: 'islands', label: 'Islands', icon: Package },
-    { id: 'warehouses', label: 'Warehouses', icon: Building2 },
+    { id: 'all', label: 'All Assets', icon: Package },
+    { id: 'STORAGE_TANK', label: 'Tanks', icon: Fuel },
+    { id: 'FUEL_PUMP', label: 'Pumps', icon: Zap },
+    { id: 'ISLAND', label: 'Islands', icon: Package },
+    { id: 'WAREHOUSE', label: 'Warehouses', icon: Building2 },
     { id: 'attachments', label: 'Attachments', icon: Link }
   ];
 
   // Get assets based on tab selection
   const getAssets = () => {
-    switch (activeTab) {
-      case 'tanks':
-        return state.assets?.tanks || [];
-      case 'pumps':
-        return state.assets?.pumps || [];
-      case 'islands':
-        return state.assets?.islands || [];
-      case 'warehouses':
-        return state.assets?.warehouses || [];
-      case 'attachments':
-        return []; // Attachments tab doesn't need table data
-      default:
-        return [];
-    }
+    if (!state.assets || !state.assets.data) return [];
+    
+    if (activeTab === 'all') return state.assets.data;
+    
+    return state.assets.data.filter(asset => asset.type === activeTab);
   };
 
   const currentAssets = getAssets();
@@ -49,18 +41,10 @@ const CompanyAssetManagement = () => {
   const loadAssetsFromBackend = async () => {
     try {
       setLoading(true);
-      const assets = await assetService.getCompanyAssets();
+      const response = await assetService.getCompanyAssets();
       
-      // Transform the backend data to match our frontend structure
-      const transformedAssets = {
-        tanks: assets.filter(asset => asset.type === 'STORAGE_TANK'),
-        pumps: assets.filter(asset => asset.type === 'FUEL_PUMP'),
-        islands: assets.filter(asset => asset.type === 'ISLAND'),
-        warehouses: assets.filter(asset => asset.type === 'WAREHOUSE')
-      };
-      
-      // Update the state with the transformed assets
-      dispatch({ type: 'SET_ASSETS', payload: transformedAssets });
+      // Update the state with the assets
+      dispatch({ type: 'SET_ASSETS', payload: response.data });
     } catch (error) {
       console.error('Failed to load assets:', error);
     } finally {
@@ -76,6 +60,27 @@ const CompanyAssetManagement = () => {
   const handleAssetCreated = () => {
     // Refresh assets after creating a new one
     loadAssetsFromBackend();
+  };
+
+  const getStatusBadgeClass = (status) => {
+    switch (status) {
+      case 'ASSIGNED': return 'bg-green-100 text-green-800';
+      case 'OPERATIONAL': return 'bg-blue-100 text-blue-800';
+      case 'MAINTENANCE': return 'bg-yellow-100 text-yellow-800';
+      case 'DECOMMISSIONED': return 'bg-red-100 text-red-800';
+      case 'REGISTERED': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getAssetIcon = (type) => {
+    switch (type) {
+      case 'STORAGE_TANK': return <Fuel className="w-5 h-5 text-blue-500 mr-2" />;
+      case 'FUEL_PUMP': return <Zap className="w-5 h-5 text-yellow-500 mr-2" />;
+      case 'ISLAND': return <Package className="w-5 h-5 text-green-500 mr-2" />;
+      case 'WAREHOUSE': return <Building2 className="w-5 h-5 text-purple-500 mr-2" />;
+      default: return <Package className="w-5 h-5 text-gray-500 mr-2" />;
+    }
   };
 
   if (loading) {
@@ -98,7 +103,7 @@ const CompanyAssetManagement = () => {
         </div>
         <div className="flex space-x-3">
           <Button 
-            onClick={() => openCreateModal('tank')} 
+            onClick={() => openCreateModal('STORAGE_TANK')} 
             icon={Fuel} 
             variant="cosmic"
             size="sm"
@@ -106,7 +111,7 @@ const CompanyAssetManagement = () => {
             Add Tank
           </Button>
           <Button 
-            onClick={() => openCreateModal('pump')} 
+            onClick={() => openCreateModal('FUEL_PUMP')} 
             icon={Zap} 
             variant="cosmic"
             size="sm"
@@ -114,7 +119,7 @@ const CompanyAssetManagement = () => {
             Add Pump
           </Button>
           <Button 
-            onClick={() => openCreateModal('island')} 
+            onClick={() => openCreateModal('ISLAND')} 
             icon={Package} 
             variant="cosmic"
             size="sm"
@@ -122,7 +127,7 @@ const CompanyAssetManagement = () => {
             Add Island
           </Button>
           <Button 
-            onClick={() => openCreateModal('warehouse')} 
+            onClick={() => openCreateModal('WAREHOUSE')} 
             icon={Building2} 
             variant="cosmic"
             size="sm"
@@ -164,12 +169,9 @@ const CompanyAssetManagement = () => {
                 <tr>
                   <th className="text-left py-4 px-6 font-semibold text-gray-900">ID</th>
                   <th className="text-left py-4 px-6 font-semibold text-gray-900">Name</th>
-                  {activeTab === 'tanks' && (
-                    <>
-                      <th className="text-left py-4 px-6 font-semibold text-gray-900">Capacity</th>
-                      <th className="text-left py-4 px-6 font-semibold text-gray-900">Status</th>
-                    </>
-                  )}
+                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Type</th>
+                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Capacity</th>
+                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Status</th>
                   <th className="text-left py-4 px-6 font-semibold text-gray-900">Station</th>
                   <th className="text-left py-4 px-6 font-semibold text-gray-900">Created</th>
                   <th className="text-left py-4 px-6 font-semibold text-gray-900">Actions</th>
@@ -183,35 +185,21 @@ const CompanyAssetManagement = () => {
                     </td>
                     <td className="py-4 px-6">
                       <div className="flex items-center">
-                        {activeTab === 'tanks' && <Fuel className="w-5 h-5 text-blue-500 mr-2" />}
-                        {activeTab === 'pumps' && <Zap className="w-5 h-5 text-yellow-500 mr-2" />}
-                        {activeTab === 'islands' && <Package className="w-5 h-5 text-green-500 mr-2" />}
-                        {activeTab === 'warehouses' && <Building2 className="w-5 h-5 text-purple-500 mr-2" />}
+                        {getAssetIcon(asset.type)}
                         {asset.name}
                       </div>
                     </td>
-                    
-                    {activeTab === 'tanks' && (
-                      <>
-                        <td className="py-4 px-6 text-sm text-gray-500">
-                          {asset.tank?.capacity || 0} L
-                        </td>
-                        <td className="py-4 px-6">
-                          <span className={`px-2 py-1 text-xs rounded-full ${
-                            asset.status === 'ASSIGNED' 
-                              ? 'bg-green-100 text-green-800' 
-                              : asset.status === 'MAINTENANCE'
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : asset.status === 'DECOMMISSIONED'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-blue-100 text-blue-800'
-                          }`}>
-                            {asset.status}
-                          </span>
-                        </td>
-                      </>
-                    )}
-                    
+                    <td className="py-4 px-6 text-sm text-gray-500">
+                      {asset.type.replace('_', ' ')}
+                    </td>
+                    <td className="py-4 px-6 text-sm text-gray-500">
+                      {asset.tank?.capacity ? `${asset.tank.capacity} L` : 'N/A'}
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className={`px-2 py-1 text-xs rounded-full ${getStatusBadgeClass(asset.status)}`}>
+                        {asset.status}
+                      </span>
+                    </td>
                     <td className="py-4 px-6 text-sm text-gray-500">
                       {asset.station 
                         ? asset.station.name 
@@ -219,11 +207,9 @@ const CompanyAssetManagement = () => {
                           ? 'Unknown Station' 
                           : 'Unassigned'}
                     </td>
-                    
                     <td className="py-4 px-6 text-sm text-gray-500">
                       {new Date(asset.createdAt).toLocaleDateString()}
                     </td>
-                    
                     <td className="py-4 px-6">
                       <div className="flex space-x-2">
                         <Button size="sm" variant="secondary" icon={Eye}>
@@ -239,8 +225,8 @@ const CompanyAssetManagement = () => {
                 
                 {currentAssets.length === 0 && (
                   <tr>
-                    <td colSpan={activeTab === 'tanks' ? 7 : 5} className="py-8 px-6 text-center text-gray-500">
-                      No {activeTab} found. Register a new {activeTab.slice(0, -1)}.
+                    <td colSpan={8} className="py-8 px-6 text-center text-gray-500">
+                      No {activeTab === 'all' ? 'assets' : activeTab.toLowerCase()} found.
                     </td>
                   </tr>
                 )}

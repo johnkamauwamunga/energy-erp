@@ -2,18 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { Input, Button, Select } from '../../../ui';
 import Dialog from '../../../ui/Dialog';
 import { useApp } from '../../../../context/AppContext';
-import { User, UserPlus, X } from 'lucide-react';
+import { UserPlus } from 'lucide-react';
+import { userService } from '../../../../services/userService/userService';
 
-const CreateStaffModal = ({ isOpen, onClose }) => {
+const CreateStaffModal = ({ isOpen, onClose, onUserCreated }) => {
   const { state, dispatch } = useApp();
   const [formData, setFormData] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     email: '',
-    phone: '',
-    role: 'attendant',
-    status: 'active',
-    shift: 'morning',
-    companyId: '',
+    phoneNumber: '',
+    role: 'ATTENDANT',
+    status: 'ACTIVE',
   });
   
   const [errors, setErrors] = useState({});
@@ -23,24 +23,23 @@ const CreateStaffModal = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (isOpen) {
       setFormData({
-        name: '',
+        firstName: '',
+        lastName: '',
         email: '',
-        phone: '',
-        role: 'attendant',
-        status: 'active',
-        shift: 'morning',
-        companyId: state.currentCompany?.id || state.companies[0]?.id || '',
+        phoneNumber: '',
+        role: 'ATTENDANT',
+        status: 'ACTIVE',
       });
       setErrors({});
     }
-  }, [isOpen, state.companies, state.currentCompany]);
+  }, [isOpen]);
 
   const validate = () => {
     const newErrors = {};
-    if (!formData.name.trim()) newErrors.name = 'Name is required';
+    if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
+    if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
     if (!formData.email.trim()) newErrors.email = 'Email is required';
-    if (!formData.phone.trim()) newErrors.phone = 'Phone is required';
-    if (!formData.companyId) newErrors.companyId = 'Company is required';
+    if (!formData.phoneNumber.trim()) newErrors.phoneNumber = 'Phone is required';
     return newErrors;
   };
 
@@ -56,46 +55,22 @@ const CreateStaffModal = ({ isOpen, onClose }) => {
     setIsSubmitting(true);
     
     try {
-      const roleMap = {
-        manager: 'stationManagers',
-        attendant: 'attendants',
-        supervisor: 'supervisors'
-      };
+      // Call the userService to create the user
+      const response = await userService.createUser(formData);
       
-      const roleCategory = roleMap[formData.role];
-      
-      const newStaff = {
-        id: `STAFF_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-        ...formData,
-        permissions: getPermissionsForRole(formData.role),
-        joinDate: new Date().toISOString().split('T')[0],
-        stationId: null, // Initially unattached
-      };
-
-      // Dispatch action to add staff
-      dispatch({
-        type: 'ADD_STAFF',
-        payload: {
-          role: roleCategory,
-          staff: newStaff
-        }
-      });
-      
-      onClose();
+      if (response.success) {
+        // Dispatch to add the user to the state
+        dispatch({ type: 'ADD_USER', payload: response.data });
+        onUserCreated(); // Refetch users
+        onClose();
+      } else {
+        setErrors({ general: response.message });
+      }
     } catch (error) {
-      console.error('Failed to create staff:', error);
-      setErrors({ general: error.message || 'Failed to create staff' });
+      console.error('Failed to create user:', error);
+      setErrors({ general: error.message || 'Failed to create user' });
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const getPermissionsForRole = (role) => {
-    switch(role) {
-      case 'manager': return ['STATION_OPERATIONS'];
-      case 'supervisor': return ['SHIFT_MANAGEMENT'];
-      case 'attendant': return ['SALES_RECORDING'];
-      default: return [];
     }
   };
 
@@ -115,11 +90,19 @@ const CreateStaffModal = ({ isOpen, onClose }) => {
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Input
-            label="Full Name"
-            value={formData.name}
-            onChange={(e) => setFormData({...formData, name: e.target.value})}
+            label="First Name"
+            value={formData.firstName}
+            onChange={(e) => setFormData({...formData, firstName: e.target.value})}
             required
-            error={errors.name}
+            error={errors.firstName}
+          />
+          
+          <Input
+            label="Last Name"
+            value={formData.lastName}
+            onChange={(e) => setFormData({...formData, lastName: e.target.value})}
+            required
+            error={errors.lastName}
           />
           
           <Input
@@ -133,10 +116,10 @@ const CreateStaffModal = ({ isOpen, onClose }) => {
           
           <Input
             label="Phone Number"
-            value={formData.phone}
-            onChange={(e) => setFormData({...formData, phone: e.target.value})}
+            value={formData.phoneNumber}
+            onChange={(e) => setFormData({...formData, phoneNumber: e.target.value})}
             required
-            error={errors.phone}
+            error={errors.phoneNumber}
           />
           
           <Select
@@ -144,33 +127,19 @@ const CreateStaffModal = ({ isOpen, onClose }) => {
             value={formData.role}
             onChange={(e) => setFormData({...formData, role: e.target.value})}
             options={[
-              { value: 'manager', label: 'Station Manager' },
-              { value: 'supervisor', label: 'Supervisor' },
-              { value: 'attendant', label: 'Attendant' }
+              { value: 'STATION_MANAGER', label: 'Station Manager' },
+              { value: 'SUPERVISOR', label: 'Supervisor' },
+              { value: 'ATTENDANT', label: 'Attendant' }
             ]}
           />
-          
-          {formData.role === 'supervisor' && (
-            <Select
-              label="Shift"
-              value={formData.shift}
-              onChange={(e) => setFormData({...formData, shift: e.target.value})}
-              options={[
-                { value: 'morning', label: 'Morning Shift' },
-                { value: 'afternoon', label: 'Afternoon Shift' },
-                { value: 'night', label: 'Night Shift' }
-              ]}
-            />
-          )}
-          
           
           <Select
             label="Status"
             value={formData.status}
             onChange={(e) => setFormData({...formData, status: e.target.value})}
             options={[
-              { value: 'active', label: 'Active' },
-              { value: 'inactive', label: 'Inactive' }
+              { value: 'ACTIVE', label: 'Active' },
+              { value: 'INACTIVE', label: 'Inactive' }
             ]}
           />
         </div>

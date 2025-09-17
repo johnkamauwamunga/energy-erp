@@ -1,21 +1,43 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button, Card, Tabs, Tab, Badge } from '../../ui';
-import CreateStaffModal from './create/CreateStaffModal';
+import CreateStaffModal from './users/CreateStaffModal';
 import StaffAttachmentsTab from '../../features/assets/StaffAttachmentsTab';
 import { User, UserPlus, Link } from 'lucide-react';
 import { formatDate } from '../../../utils/helpers';
 import { useApp } from '../../../context/AppContext';
+import { userService } from '../../../services/userService/userService';
 
 const CompanyUserManagement = () => {
-  const { state } = useApp();
+  const { state, dispatch } = useApp();
   const [activeTab, setActiveTab] = useState('managers');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  
-  // Corrected staff types to match your state structure
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Fetch users on component mount
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    setIsLoading(true);
+    try {
+      const response = await userService.getUsers();
+
+      console.log("user responses  ",response)
+      // Assuming the response structure is { success: true, data: users }
+      dispatch({ type: 'SET_USERS', payload: response.data });
+    } catch (error) {
+      console.error('Failed to fetch users:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Filter users by role
   const staffTypes = {
-    managers: state.staff?.stationManagers || [],
-    supervisors: state.staff?.supervisors || [],
-    attendants: state.staff?.attendants || []
+    managers: state.users.filter(user => user.role === 'STATION_MANAGER'),
+    supervisors: state.users.filter(user => user.role === 'SUPERVISOR'),
+    attendants: state.users.filter(user => user.role === 'ATTENDANT')
   };
   
   const currentStaff = staffTypes[activeTab] || [];
@@ -40,20 +62,20 @@ const CompanyUserManagement = () => {
     
     return (
       <tr key={staff.id} className="hover:bg-gray-50">
-        <td className="p-3">{staff.name}</td>
+        <td className="p-3">{staff.firstName} {staff.lastName}</td>
         <td className="p-3">{staff.email}</td>
-        <td className="p-3">{staff.phone}</td>
+        <td className="p-3">{staff.phoneNumber || 'N/A'}</td>
         <td className="p-3">
           <Badge 
-            variant={staff.status === 'active' ? 'success' : 'warning'}
+            variant={staff.status === 'ACTIVE' ? 'success' : 'warning'}
             className="capitalize"
           >
-            {staff.status}
+            {staff.status.toLowerCase()}
           </Badge>
         </td>
-        <td className="p-3">{formatDate(staff.joinDate)}</td>
+        <td className="p-3">{formatDate(staff.createdAt)}</td>
         {activeTab === 'supervisors' && (
-          <td className="p-3 capitalize">{staff.shift}</td>
+          <td className="p-3 capitalize">{staff.shift || 'N/A'}</td>
         )}
         <td className="p-3">{stationInfo || 'Not assigned'}</td>
         <td className="p-3">
@@ -83,15 +105,15 @@ const CompanyUserManagement = () => {
           </Button>
         }
       >
-                <div className="flex flex-right space-x-3">
-      <Button 
+        <div className="flex flex-right space-x-3">
+          <Button 
             variant="cosmic" 
             icon={UserPlus}
             onClick={() => setIsCreateModalOpen(true)}
           >
             Add New Staff
           </Button>
-          </div>
+        </div>
         <Tabs value={activeTab} onChange={setActiveTab}>
           <Tab value="managers" icon={User}>
             Managers ({staffTypes.managers.length})
@@ -126,50 +148,18 @@ const CompanyUserManagement = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {currentStaff.map(staff => {
-                    // Find station info for each staff member
-                    let stationInfo = '';
-                    if (staff.stationId) {
-                      const station = state.serviceStations.find(s => s.id === staff.stationId);
-                      stationInfo = station ? `${station.name}` : 'N/A';
-                    }
-                    
-                    return (
-                      <tr key={staff.id} className="hover:bg-gray-50">
-                        <td className="p-3">{staff.name}</td>
-                        <td className="p-3">{staff.email}</td>
-                        <td className="p-3">{staff.phone}</td>
-                        <td className="p-3">
-                          <Badge 
-                            variant={staff.status === 'active' ? 'success' : 'warning'}
-                            className="capitalize"
-                          >
-                            {staff.status}
-                          </Badge>
-                        </td>
-                        <td className="p-3">{formatDate(staff.joinDate)}</td>
-                        {activeTab === 'supervisors' && (
-                          <td className="p-3 capitalize">{staff.shift}</td>
-                        )}
-                        <td className="p-3">{stationInfo || 'Not assigned'}</td>
-                        <td className="p-3">
-                          <Button 
-                            size="sm" 
-                            variant="secondary"
-                            onClick={() => console.log('Edit', staff.id)}
-                          >
-                            Edit
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {currentStaff.map(staff => renderStaffRow(staff))}
                 </tbody>
               </table>
             </div>
-            {currentStaff.length === 0 && (
+            {currentStaff.length === 0 && !isLoading && (
               <div className="text-center py-8 text-gray-500">
                 No {activeTab} found
+              </div>
+            )}
+            {isLoading && (
+              <div className="text-center py-8 text-gray-500">
+                Loading...
               </div>
             )}
           </div>
@@ -179,6 +169,7 @@ const CompanyUserManagement = () => {
       <CreateStaffModal 
         isOpen={isCreateModalOpen} 
         onClose={() => setIsCreateModalOpen(false)} 
+        onUserCreated={fetchUsers} // Refetch users after creation
       />
     </div>
   );
