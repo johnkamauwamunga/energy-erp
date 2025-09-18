@@ -20,11 +20,15 @@ const CreateAssetModal = ({ isOpen, onClose, assetType, onAssetCreated }) => {
     capacity: '',
     warehouseName: '',
     code: '',
-    productId: ''
+    productId: '',
+    tankId: '',
+    islandId: ''
   });
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [products, setProducts] = useState([]);
+  const [tanks, setTanks] = useState([]);
+  const [islands, setIslands] = useState([]);
 
   useEffect(() => {
     if (isOpen) {
@@ -34,11 +38,36 @@ const CreateAssetModal = ({ isOpen, onClose, assetType, onAssetCreated }) => {
         capacity: '',
         warehouseName: '',
         code: '',
-        productId: ''
+        productId: '',
+        tankId: '',
+        islandId: ''
       });
       setErrors({});
+      
+      // Load available products, tanks, and islands
+      loadOptions();
     }
   }, [isOpen, assetType]);
+
+  const loadOptions = async () => {
+    try {
+      // Load fuel products for pumps and tanks
+      const allProducts = state.products || [];
+      const fuelProducts = allProducts.filter(p => p.type === 'FUEL');
+      setProducts(fuelProducts);
+      
+      // Load tanks for pump connections
+      const allAssets = state.assets || [];
+      const availableTanks = allAssets.filter(a => a.type === 'STORAGE_TANK');
+      setTanks(availableTanks);
+      
+      // Load islands for pump connections
+      const availableIslands = allAssets.filter(a => a.type === 'ISLAND');
+      setIslands(availableIslands);
+    } catch (error) {
+      console.error('Failed to load options:', error);
+    }
+  };
 
   const handleTypeChange = (type) => {
     setSelectedType(type);
@@ -47,7 +76,9 @@ const CreateAssetModal = ({ isOpen, onClose, assetType, onAssetCreated }) => {
       capacity: '',
       warehouseName: '',
       code: '',
-      productId: ''
+      productId: '',
+      tankId: '',
+      islandId: ''
     });
     setErrors({});
   };
@@ -61,6 +92,7 @@ const CreateAssetModal = ({ isOpen, onClose, assetType, onAssetCreated }) => {
 
   const validateForm = () => {
     const newErrors = {};
+    
     if (!selectedType) newErrors.type = 'Asset type is required';
     if (!formData.name.trim()) newErrors.name = 'Name is required';
 
@@ -69,8 +101,8 @@ const CreateAssetModal = ({ isOpen, onClose, assetType, onAssetCreated }) => {
       if (formData.capacity && parseFloat(formData.capacity) < 0) newErrors.capacity = 'Capacity must be non-negative';
     }
 
-    if (selectedType === 'FUEL_PUMP') {
-      if (!formData.productId) newErrors.productId = 'Product is required for fuel pumps';
+    if (selectedType === 'ISLAND' && !formData.code) {
+      newErrors.code = 'Island code is required';
     }
 
     setErrors(newErrors);
@@ -98,16 +130,20 @@ const CreateAssetModal = ({ isOpen, onClose, assetType, onAssetCreated }) => {
           }
           break;
         case 'FUEL_PUMP':
-          assetData.productId = formData.productId;
+          // All fields are optional for pumps
+          if (formData.productId) assetData.productId = formData.productId;
+          if (formData.tankId) assetData.tankId = formData.tankId;
+          if (formData.islandId) assetData.islandId = formData.islandId;
           break;
         case 'WAREHOUSE':
           if (formData.warehouseName) {
-            assetData.warehouseName = formData.warehouseName;
+            assetData.name = formData.warehouseName; // Use warehouseName as the asset name
           }
           break;
         case 'ISLAND':
-          if (formData.code) {
-            assetData.code = formData.code;
+          assetData.code = formData.code;
+          if (formData.name) {
+            assetData.name = formData.name;
           }
           break;
         default:
@@ -123,7 +159,7 @@ const CreateAssetModal = ({ isOpen, onClose, assetType, onAssetCreated }) => {
         // Handle Zod validation errors from backend
         const backendErrors = {};
         error.response.data.errors.forEach(err => {
-          backendErrors[err.path] = err.message;
+          backendErrors[err.field] = err.message;
         });
         setErrors(backendErrors);
       } else {
@@ -153,45 +189,80 @@ const CreateAssetModal = ({ isOpen, onClose, assetType, onAssetCreated }) => {
               label="Product (Optional)"
               value={formData.productId}
               onChange={(value) => handleInputChange('productId', value)}
-              options={products.filter(p => p.type === 'FUEL').map(p => ({
+              options={products.map(p => ({
                 value: p.id,
                 label: p.name
               }))}
               error={errors.productId}
+              placeholder="Select a product"
             />
           </>
         );
       case 'FUEL_PUMP':
         return (
-          <Select
-            label="Product"
-            value={formData.productId}
-            onChange={(value) => handleInputChange('productId', value)}
-            options={products.filter(p => p.type === 'FUEL').map(p => ({
-              value: p.id,
-              label: p.name
-            }))}
-            error={errors.productId}
-            required
-          />
+          <>
+            <Select
+              label="Product (Optional)"
+              value={formData.productId}
+              onChange={(value) => handleInputChange('productId', value)}
+              options={products.map(p => ({
+                value: p.id,
+                label: p.name
+              }))}
+              error={errors.productId}
+              placeholder="Select a product"
+            />
+            <Select
+              label="Connected Tank (Optional)"
+              value={formData.tankId}
+              onChange={(value) => handleInputChange('tankId', value)}
+              options={tanks.map(t => ({
+                value: t.id,
+                label: t.name
+              }))}
+              error={errors.tankId}
+              placeholder="Select a tank"
+            />
+            <Select
+              label="Connected Island (Optional)"
+              value={formData.islandId}
+              onChange={(value) => handleInputChange('islandId', value)}
+              options={islands.map(i => ({
+                value: i.id,
+                label: i.name || i.code
+              }))}
+              error={errors.islandId}
+              placeholder="Select an island"
+            />
+          </>
         );
       case 'WAREHOUSE':
         return (
           <Input
-            label="Warehouse Name (Optional)"
+            label="Warehouse Name"
             value={formData.warehouseName}
             onChange={(e) => handleInputChange('warehouseName', e.target.value)}
             error={errors.warehouseName}
+            required
           />
         );
       case 'ISLAND':
         return (
-          <Input
-            label="Island Code (Optional)"
-            value={formData.code}
-            onChange={(e) => handleInputChange('code', e.target.value)}
-            error={errors.code}
-          />
+          <>
+            <Input
+              label="Island Code"
+              value={formData.code}
+              onChange={(e) => handleInputChange('code', e.target.value)}
+              error={errors.code}
+              required
+            />
+            <Input
+              label="Island Name (Optional)"
+              value={formData.name}
+              onChange={(e) => handleInputChange('name', e.target.value)}
+              error={errors.name}
+            />
+          </>
         );
       default:
         return null;
@@ -240,13 +311,15 @@ const CreateAssetModal = ({ isOpen, onClose, assetType, onAssetCreated }) => {
 
         {selectedType && (
           <>
-            <Input
-              label="Asset Name"
-              value={formData.name}
-              onChange={(e) => handleInputChange('name', e.target.value)}
-              error={errors.name}
-              required
-            />
+            {selectedType !== 'ISLAND' && (
+              <Input
+                label="Asset Name"
+                value={formData.name}
+                onChange={(e) => handleInputChange('name', e.target.value)}
+                error={errors.name}
+                required
+              />
+            )}
 
             {renderFormFields()}
           </>

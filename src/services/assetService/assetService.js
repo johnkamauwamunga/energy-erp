@@ -1,45 +1,211 @@
 import { apiService } from '../apiService';
 
 export const assetService = {
-  // Get all assets for current company
-  getCompanyAssets: async () => {
-    const response = await apiService.get('/assets');
-    return response.data;
+  // Get assets based on user role (main endpoint)
+  getAssets: async () => {
+    console.log('🔄 [AssetService] Fetching assets based on user role...');
+    
+    try {
+      const response = await apiService.get('/assets');
+      console.log('✅ [AssetService] API response received');
+      
+      if (response.data && response.data.success) {
+        console.log('✅ [AssetService] Assets loaded successfully, count:', response.data.data.length);
+        return response.data.data;
+      } else {
+        console.warn('⚠️ [AssetService] Unexpected response structure:', response.data);
+        throw new Error('Invalid response format from server');
+      }
+    } catch (error) {
+      console.error('❌ [AssetService] Error fetching assets:', error);
+      
+      if (error.response) {
+        console.error('📊 [AssetService] Error response:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data
+        });
+        
+        if (error.response.status === 401) {
+          // Token might be expired, clear it and redirect to login
+          localStorage.removeItem('accessToken');
+          window.location.href = '/login';
+          throw new Error('Authentication failed. Please login again.');
+        } else if (error.response.status === 403) {
+          throw new Error('You do not have permission to access these resources');
+        } else if (error.response.status === 404) {
+          throw new Error('Assets endpoint not found. Please check the API URL.');
+        }
+      } else if (error.request) {
+        console.error('🌐 [AssetService] Network error - no response received');
+        throw new Error('Network error. Please check your connection and try again.');
+      } else {
+        console.error('⚙️ [AssetService] Request configuration error:', error.message);
+        throw new Error('Failed to fetch assets. Please try again.');
+      }
+    }
+  },
+
+  // Get assets for a specific company (for admins)
+  getCompanyAssets: async (companyId) => {
+    console.log('🔄 [AssetService] Fetching company assets:', companyId);
+    
+    try {
+      const response = await apiService.get(`/assets/company/${companyId}`);
+      console.log('✅ response is success if ', response.success);
+      
+     if (response && response.success) {
+        console.log('✅ [AssetService] Company assets loaded successfully, count:');
+        return response.data;
+      } else {
+        console.warn('⚠️ [AssetService] Unexpected response structure:', response.data);
+        throw new Error('Invalid response format from server');
+      }
+    } catch (error) {
+      console.error('❌ [AssetService] Error fetching company assets:', error);
+      throw new Error(error.response?.data?.message || 'Failed to fetch company assets');
+    }
+  },
+
+  // Get assets for a specific station
+  getStationAssets: async (stationId) => {
+    console.log('🔄 [AssetService] Fetching station assets:', stationId);
+    
+    try {
+      const response = await apiService.get(`/assets/station/${stationId}`);
+      console.log('✅ [AssetService] API response received');
+      
+      if (response.data && response.data.success) {
+        console.log('✅ [AssetService] Station assets loaded successfully, count:', response.data.data.length);
+        return response.data.data;
+      } else {
+        console.warn('⚠️ [AssetService] Unexpected response structure:', response.data);
+        throw new Error('Invalid response format from server');
+      }
+    } catch (error) {
+      console.error('❌ [AssetService] Error fetching station assets:', error);
+      throw new Error(error.response?.data?.message || 'Failed to fetch station assets');
+    }
   },
 
   // Create a new asset
   createAsset: async (assetData) => {
-    const response = await apiService.post('/assets', assetData);
-    return response.data;
+    console.log('🔄 [AssetService] Creating asset:', assetData);
+    try {
+      const response = await apiService.post('/assets', assetData);
+      
+      if (response.data && response.data.success) {
+        console.log('✅ [AssetService] Asset created successfully');
+        return response.data.data;
+      } else {
+        console.warn('⚠️ [AssetService] Unexpected response structure:', response.data);
+        throw new Error('Invalid response format from server');
+      }
+    } catch (error) {
+      console.error('❌ [AssetService] Error creating asset:', error);
+      
+      if (error.response && error.response.data && error.response.data.errors) {
+        // Handle validation errors from backend
+        const errorMessages = error.response.data.errors.map(err => err.message).join(', ');
+        throw new Error(`Validation failed: ${errorMessages}`);
+      }
+      
+      throw new Error(error.response?.data?.message || 'Failed to create asset');
+    }
+  },
+
+  // Get asset by ID
+  getAssetById: async (id) => {
+    console.log('🔄 [AssetService] Fetching asset by ID:', id);
+    try {
+      const response = await apiService.get(`/assets/${id}`);
+      
+      if (response.data && response.data.success) {
+        console.log('✅ [AssetService] Asset loaded successfully');
+        return response.data.data;
+      } else {
+        console.warn('⚠️ [AssetService] Unexpected response structure:', response.data);
+        throw new Error('Invalid response format from server');
+      }
+    } catch (error) {
+      console.error('❌ [AssetService] Error fetching asset:', error);
+      throw new Error(error.response?.data?.message || 'Failed to fetch asset');
+    }
   },
 
   // Update asset
   updateAsset: async (id, assetData) => {
-    const response = await apiService.put(`/assets/${id}`, assetData);
-    return response.data;
+    console.log('🔄 [AssetService] Updating asset:', id, assetData);
+    try {
+      const response = await apiService.put(`/assets/${id}`, assetData);
+      
+      if (response.data && response.data.success) {
+        console.log('✅ [AssetService] Asset updated successfully');
+        return response.data.data;
+      } else {
+        console.warn('⚠️ [AssetService] Unexpected response structure:', response.data);
+        throw new Error('Invalid response format from server');
+      }
+    } catch (error) {
+      console.error('❌ [AssetService] Error updating asset:', error);
+      throw new Error(error.response?.data?.message || 'Failed to update asset');
+    }
   },
 
   // Delete asset
   deleteAsset: async (id) => {
-    const response = await apiService.delete(`/assets/${id}`);
-    return response.data;
+    console.log('🔄 [AssetService] Deleting asset:', id);
+    try {
+      const response = await apiService.delete(`/assets/${id}`);
+      
+      if (response.data && response.data.success) {
+        console.log('✅ [AssetService] Asset deleted successfully');
+        return response.data;
+      } else {
+        console.warn('⚠️ [AssetService] Unexpected response structure:', response.data);
+        throw new Error('Invalid response format from server');
+      }
+    } catch (error) {
+      console.error('❌ [AssetService] Error deleting asset:', error);
+      throw new Error(error.response?.data?.message || 'Failed to delete asset');
+    }
   },
 
   // Assign asset to station
   assignToStation: async (id, stationId) => {
-    const response = await apiService.patch(`/assets/${id}/assign`, { stationId });
-    return response.data;
+    console.log('🔄 [AssetService] Assigning asset to station:', id, stationId);
+    try {
+      const response = await apiService.patch(`/assets/${id}/assign`, { stationId });
+      
+      if (response.data && response.data.success) {
+        console.log('✅ [AssetService] Asset assigned successfully');
+        return response.data.data;
+      } else {
+        console.warn('⚠️ [AssetService] Unexpected response structure:', response.data);
+        throw new Error('Invalid response format from server');
+      }
+    } catch (error) {
+      console.error('❌ [AssetService] Error assigning asset:', error);
+      throw new Error(error.response?.data?.message || 'Failed to assign asset');
+    }
   },
 
   // Remove asset from station
   removeFromStation: async (id) => {
-    const response = await apiService.patch(`/assets/${id}/unassign`);
-    return response.data;
-  },
-
-  // Get assets for current user based on role
-  getUserAssets: async () => {
-    const response = await apiService.get('/assets/user/assets');
-    return response.data;
+    console.log('🔄 [AssetService] Removing asset from station:', id);
+    try {
+      const response = await apiService.patch(`/assets/${id}/unassign`);
+      
+      if (response.data && response.data.success) {
+        console.log('✅ [AssetService] Asset unassigned successfully');
+        return response.data.data;
+      } else {
+        console.warn('⚠️ [AssetService] Unexpected response structure:', response.data);
+        throw new Error('Invalid response format from server');
+      }
+    } catch (error) {
+      console.error('❌ [AssetService] Error unassigning asset:', error);
+      throw new Error(error.response?.data?.message || 'Failed to unassign asset');
+    }
   }
 };

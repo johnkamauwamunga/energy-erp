@@ -11,7 +11,7 @@ export const initialState = {
   currentCompany: null,
   
   // Service Stations
-  serviceStations: mockData.serviceStations,
+  serviceStations: [],
   
   // warehouses
   warehouses: mockData.warehouses,

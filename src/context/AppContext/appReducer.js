@@ -179,11 +179,12 @@ case 'UNASSIGN_ASSET_FROM_STATION':
       };
     }
 
-    case 'SET_STATIONS':
-      return {
-        ...state,
-        serviceStations: action.payload
-      };
+ case 'SET_STATIONS':
+  return {
+    ...state,
+    serviceStations: action.payload
+  };
+
       
     case 'ADD_STATION': {
       return {

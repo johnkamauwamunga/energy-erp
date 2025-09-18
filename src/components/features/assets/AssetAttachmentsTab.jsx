@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button, Card, Select } from '../../ui';
 import { useApp } from '../../../context/AppContext';
 import { attachAssetToStation, detachAssetFromStation } from '../../../context/AppContext/actions';
 import { Fuel, Zap, X, Link } from 'lucide-react';
+import { stationService } from '../../../services/stationService/stationService';
 import clsx from 'clsx';
 
 
@@ -13,10 +14,52 @@ const AssetAttachmentsTab = () => {
     tanks: [],
     pumps: []
   });
+
+  // load stations
+
+    //loading
+    const [stations, setStations] = useState([]);
+    const [loadingStations, setLoadingStations] = useState(false);
+    const [stationError, setStationError] = useState('');
+
+
+    const loadStations = async () => {
+      try {
+        setLoadingStations(true);
+        setStationError('');
   
+        // Fetch stations for the company
+        const response = await stationService.getCompanyStations();
+  
+  // console.log('✅ Stations loaded successfully:', response);
+        if (response) {
+          setStations(response); // assuming response.data is an array of stations
+        } else {
+          setStationError('Failed to load stations');
+        }
+      } catch (err) {
+        console.error('❌ Failed to fetch stations:', err);
+        setStationError(err.message || 'Failed to fetch stations');
+      } finally {
+        setLoadingStations(false);
+      }
+    };
+
+      useEffect(() => {
+     
+       loadStations();
+      }, []);
+  
+       console.log('✅ Stations loaded successfully:', stations);
   // Get unattached assets
-  const unattachedTanks = state.assets?.tanks?.filter(tank => !tank.stationId) || [];
-  const unattachedPumps = state.assets?.pumps?.filter(pump => !pump.stationId) || [];
+  // const unattachedTanks = state.assets?.tanks?.filter(tank => !tank.stationId) || [];
+  // const unattachedPumps = state.assets?.pumps?.filter(pump => !pump.stationId) || [];
+  // console.log("current state bits ",state);
+  const unattachedTanks = state.assets?.filter(a => a.type === 'STORAGE_TANK' && !a.stationId) || [];
+const unattachedPumps = state.assets?.filter(a => a.type === 'FUEL_PUMP' && !a.stationId) || [];
+
+// console.log("unattachedTanks:", unattachedTanks);
+// console.log("unattachedPumps:", unattachedPumps);
   
   // Get assets attached to selected station
   const stationTanks = state.assets?.tanks?.filter(tank => tank.stationId === selectedStation?.id) || [];
@@ -59,23 +102,23 @@ const AssetAttachmentsTab = () => {
 
   return (
     <div className="space-y-6">
-      <Card title="Select Station" className="mb-6">
-        <Select
-          label="Service Station"
-          options={state.serviceStations.map(station => ({
-            value: station.id,
-            label: `${station.code ? station.code + ' - ' : ''}${station.name}`
-          }))}
-          value={selectedStation?.id || ''}
-          onChange={(e) => {
-            const stationId = e.target.value;
-            const station = state.serviceStations.find(s => s.id === stationId);
-            setSelectedStation(station || null);
-            setSelectedAssets({ tanks: [], pumps: [] }); // Clear selection
-          }}
-          placeholder="Select a station"
-        />
-      </Card>
+    <Card title="Select Station" className="mb-6">
+      <Select
+        label="Service Station"
+        options={stations.map(station => ({
+          value: station.id,
+          label: station.name
+        }))}
+        value={selectedStation?.id || ''}
+        onChange={(e) => {
+          const stationId = e.target.value;
+          const station = stations.find(s => s.id === stationId);
+          setSelectedStation(station || null);
+          setSelectedAssets({ tanks: [], pumps: [] }); // Clear selection
+        }}
+        placeholder="Select a station"
+      />
+    </Card>
       
       {selectedStation ? (
         <>
@@ -111,9 +154,9 @@ const AssetAttachmentsTab = () => {
                       onClick={() => handleAttachAsset(tank.id, 'tanks')}
                     >
                       <div>
-                        <div className="font-medium">{tank.code}</div>
+                        <div className="font-medium">{tank.name}</div>
                         <div className="text-sm text-gray-500">
-                          {tank.capacity}L · {tank.productType}
+                          {tank.type} · {tank.productType}
                         </div>
                       </div>
                       <div className="flex items-center">
@@ -151,7 +194,7 @@ const AssetAttachmentsTab = () => {
                       onClick={() => handleAttachAsset(pump.id, 'pumps')}
                     >
                       <div>
-                        <div className="font-medium">{pump.code}</div>
+                        <div className="font-medium">{pump.name}</div>
                         <div className="text-sm text-gray-500">Pump</div>
                       </div>
                       <div className="flex items-center">
@@ -189,7 +232,7 @@ const AssetAttachmentsTab = () => {
                         <div className="flex items-center">
                           <Fuel className="w-4 h-4 mr-2 text-blue-500" />
                           <div>
-                            <div className="font-medium">{tank.code}</div>
+                            <div className="font-medium">{tank.name}</div>
                             <div className="text-sm text-gray-500">Tank</div>
                           </div>
                         </div>
@@ -213,7 +256,7 @@ const AssetAttachmentsTab = () => {
                         <div className="flex items-center">
                           <Zap className="w-4 h-4 mr-2 text-yellow-500" />
                           <div>
-                            <div className="font-medium">{pump.code}</div>
+                            <div className="font-medium">{pump.name}</div>
                             <div className="text-sm text-gray-500">Pump</div>
                           </div>
                         </div>
