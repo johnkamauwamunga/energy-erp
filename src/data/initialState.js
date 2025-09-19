@@ -18,10 +18,10 @@ export const initialState = {
   
   // Staff structure
   staff: {
-    companyAdmins: mockData.staff.companyAdmins,
-    stationManagers: mockData.staff.stationManagers,
-    supervisors: mockData.staff.supervisors,
-    attendants: mockData.staff.attendants
+    companyAdmins:[],
+    stationManagers:[],
+    supervisors:[],
+    attendants:[]
   },
   
   // Assets with proper structure

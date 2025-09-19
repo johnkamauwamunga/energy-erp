@@ -2,42 +2,45 @@ import React, { useState, useEffect } from 'react';
 import { Button, Card, Tabs, Tab, Badge } from '../../ui';
 import CreateStaffModal from './users/CreateStaffModal';
 import StaffAttachmentsTab from '../../features/assets/StaffAttachmentsTab';
-import { User, UserPlus, Link } from 'lucide-react';
+import { User, UserPlus, Link, Shield, Settings } from 'lucide-react';
 import { formatDate } from '../../../utils/helpers';
 import { useApp } from '../../../context/AppContext';
 import { userService } from '../../../services/userService/userService';
 
 const CompanyUserManagement = () => {
   const { state, dispatch } = useApp();
-  const [activeTab, setActiveTab] = useState('managers');
+  const [activeTab, setActiveTab] = useState('admins');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [allUsers, setAllUsers] = useState([]);
 
   // Fetch users on component mount
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
   const fetchUsers = async () => {
     setIsLoading(true);
     try {
-      const response = await userService.getUsers();
-
-      console.log("user responses  ",response)
-      // Assuming the response structure is { success: true, data: users }
-      dispatch({ type: 'SET_USERS', payload: response.data });
+      const response = await userService.getUsers({}, dispatch);
+      console.log("✅ Users loaded successfully:", response);
+      setAllUsers(response);
     } catch (error) {
-      console.error('Failed to fetch users:', error);
+      console.error('❌ Failed to fetch users:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Filter users by role
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  // Filter users by role from API response
+  const filterUsersByRole = (role) => {
+    return allUsers.filter(user => user.role === role);
+  };
+
   const staffTypes = {
-    managers: state.users.filter(user => user.role === 'STATION_MANAGER'),
-    supervisors: state.users.filter(user => user.role === 'SUPERVISOR'),
-    attendants: state.users.filter(user => user.role === 'ATTENDANT')
+    admins: filterUsersByRole('COMPANY_ADMIN'),
+    supervisors: filterUsersByRole('SUPERVISOR'),
+    attendants: filterUsersByRole('ATTENDANT')
   };
   
   const currentStaff = staffTypes[activeTab] || [];
@@ -56,7 +59,7 @@ const CompanyUserManagement = () => {
   const renderStaffRow = (staff) => {
     let stationInfo = '';
     if (staff.stationId) {
-      const station = state.serviceStations.find(s => s.id === staff.stationId);
+      const station = state.serviceStations?.find(s => s.id === staff.stationId);
       stationInfo = station ? `${station.code} - ${station.name}` : 'Unknown Station';
     }
     
@@ -105,20 +108,11 @@ const CompanyUserManagement = () => {
           </Button>
         }
       >
-        <div className="flex flex-right space-x-3">
-          <Button 
-            variant="cosmic" 
-            icon={UserPlus}
-            onClick={() => setIsCreateModalOpen(true)}
-          >
-            Add New Staff
-          </Button>
-        </div>
         <Tabs value={activeTab} onChange={setActiveTab}>
-          <Tab value="managers" icon={User}>
-            Managers ({staffTypes.managers.length})
+          <Tab value="admins" icon={Shield}>
+            Admins ({staffTypes.admins.length})
           </Tab>
-          <Tab value="supervisors" icon={User}>
+          <Tab value="supervisors" icon={Settings}>
             Supervisors ({staffTypes.supervisors.length})
           </Tab>
           <Tab value="attendants" icon={User}>
@@ -130,7 +124,7 @@ const CompanyUserManagement = () => {
         </Tabs>
         
         {activeTab === 'attachments' ? (
-          <StaffAttachmentsTab />
+          <StaffAttachmentsTab users={allUsers} />
         ) : (
           <div className="mt-6 overflow-x-auto">
             <div className="bg-white rounded-lg shadow">
@@ -169,7 +163,7 @@ const CompanyUserManagement = () => {
       <CreateStaffModal 
         isOpen={isCreateModalOpen} 
         onClose={() => setIsCreateModalOpen(false)} 
-        onUserCreated={fetchUsers} // Refetch users after creation
+        onUserCreated={fetchUsers}
       />
     </div>
   );

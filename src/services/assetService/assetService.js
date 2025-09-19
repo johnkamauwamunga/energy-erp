@@ -52,11 +52,10 @@ export const assetService = {
     
     try {
       const response = await apiService.get(`/assets/company/${companyId}`);
-      console.log('✅ response is success if ', response.success);
       
-     if (response && response.success) {
-        console.log('✅ [AssetService] Company assets loaded successfully, count:');
-        return response.data;
+      if (response.data && response.data.success) {
+        console.log('✅ [AssetService] Company assets loaded successfully');
+        return response.data.data;
       } else {
         console.warn('⚠️ [AssetService] Unexpected response structure:', response.data);
         throw new Error('Invalid response format from server');
@@ -206,6 +205,48 @@ export const assetService = {
     } catch (error) {
       console.error('❌ [AssetService] Error unassigning asset:', error);
       throw new Error(error.response?.data?.message || 'Failed to unassign asset');
+    }
+  },
+
+  // Bulk assign assets to station
+  bulkAssignToStation: async (assetIds, stationId) => {
+    console.log('🔄 [AssetService] Bulk assigning assets to station:', assetIds, stationId);
+    try {
+      const response = await apiService.patch('/assets/bulk/assign', { assetIds, stationId });
+      
+      if (response.data && response.data.success) {
+        console.log('✅ [AssetService] Assets bulk assigned successfully');
+        return response.data.data;
+      } else {
+        console.warn('⚠️ [AssetService] Unexpected response structure:', response.data);
+        throw new Error('Invalid response format from server');
+      }
+    } catch (error) {
+      console.error('❌ [AssetService] Error bulk assigning assets:', error);
+      throw new Error(error.response?.data?.message || 'Failed to bulk assign assets');
+    }
+  },
+
+  // Bulk reassign assets between stations
+  bulkReassignAssets: async (assetIds, fromStationId, toStationId) => {
+    console.log('🔄 [AssetService] Bulk reassigning assets:', assetIds, fromStationId, toStationId);
+    try {
+      const response = await apiService.patch('/assets/bulk/reassign', { 
+        assetIds, 
+        fromStationId, 
+        toStationId 
+      });
+      
+      if (response.data && response.data.success) {
+        console.log('✅ [AssetService] Assets bulk reassigned successfully');
+        return response.data.data;
+      } else {
+        console.warn('⚠️ [AssetService] Unexpected response structure:', response.data);
+        throw new Error('Invalid response format from server');
+      }
+    } catch (error) {
+      console.error('❌ [AssetService] Error bulk reassigning assets:', error);
+      throw new Error(error.response?.data?.message || 'Failed to bulk reassign assets');
     }
   }
 };

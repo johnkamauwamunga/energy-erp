@@ -11,5 +11,7 @@ export { default as Tab } from './Tab';
 export { default as Table } from './Table';
 export { default as DatePicker } from './DatePicker';
 export { default as Progress } from './Progress';
+export { default as MultiSelect } from './MultiSelect';
+export { default as Alert } from './Alert';
 
 // Add other exports as neededj

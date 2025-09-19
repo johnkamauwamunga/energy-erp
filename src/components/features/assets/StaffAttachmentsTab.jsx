@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button, Card, Select } from '../../ui';
+import Alert from '../../ui/Alert'; // Updated import for our new Alert component
 import { useApp } from '../../../context/AppContext';
 import { User, X, Link } from 'lucide-react';
+import { stationService } from '../../../services/stationService/stationService';
+import { userService } from '../../../services/userService/userService';
 import clsx from 'clsx';
 
 const StaffAttachmentsTab = () => {
@@ -12,24 +15,129 @@ const StaffAttachmentsTab = () => {
     attendants: [],
     supervisors: []
   });
+  const [assignments, setAssignments] = useState([]);
+  const [stations, setStations] = useState([]);
+  const [loadingStations, setLoadingStations] = useState(false);
+  const [stationError, setStationError] = useState('');
+  const [isLoadingAssignments, setIsLoadingAssignments] = useState(false);
+  const [allUsers, setAllUsers] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [alert, setAlert] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info' // 'info', 'success', 'warning', or 'error'
+  });
+
+  // Close alert function
+  const closeAlert = () => {
+    setAlert(prev => ({ ...prev, isOpen: false }));
+  };
+
+  // Show alert function
+  const showAlert = (title, message, type = 'info') => {
+    setAlert({
+      isOpen: true,
+      title,
+      message,
+      type
+    });
+  };
+
+  // Load stations when component mounts
+  const loadStations = async () => {
+    try {
+      setLoadingStations(true);
+      setStationError('');
+
+      // Fetch stations for the company
+      const response = await stationService.getCompanyStations();
+
+      if (response) {
+        setStations(response);
+      } else {
+        setStationError('Failed to load stations');
+        showAlert('Error', 'Failed to load stations', 'error');
+      }
+    } catch (err) {
+      console.error('❌ Failed to fetch stations:', err);
+      setStationError(err.message || 'Failed to fetch stations');
+      showAlert('Error', err.message || 'Failed to fetch stations', 'error');
+    } finally {
+      setLoadingStations(false);
+    }
+  };
+
+  // Load assignments when station is selected
+  const loadAssignments = async () => {
+    if (!selectedStation) return;
+    
+    try {
+      setIsLoadingAssignments(true);
+      const response = await userService.getStationAssignments(selectedStation.id);
+      setAssignments(response.data || []);
+    } catch (error) {
+      console.error('Failed to load assignments:', error);
+      showAlert('Error', 'Failed to load station assignments', 'error');
+    } finally {
+      setIsLoadingAssignments(false);
+    }
+  };
+
+  // Fetch users on component mount
+  const fetchUsers = async () => {
+    setIsLoading(true);
+    try {
+      const response = await userService.getUsers({}, dispatch);
+      console.log("✅ Users loaded successfully:", response);
+      setAllUsers(response);
+    } catch (error) {
+      console.error('❌ Failed to fetch users:', error);
+      showAlert('Error', 'Failed to load users', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+    loadStations();
+  }, []);
+
+  useEffect(() => {
+    loadAssignments();
+  }, [selectedStation]);
+
+  // Get staff by role from Redux state
+  const getStaffByRole = (role) => {
+    return allUsers.filter(user => user.role === role);
+  };
+
+  // Get unattached staff (not assigned to any station)
+  const unattachedManagers = getStaffByRole('STATION_MANAGER').filter(manager => 
+    !assignments.some(a => a.userId === manager.id)
+  );
   
-  // Get unattached staff
-  const unattachedManagers = state.staff?.stationManagers?.filter(manager => !manager.stationId) || [];
-  const unattachedAttendants = state.staff?.attendants?.filter(attendant => !attendant.stationId) || [];
-  const unattachedSupervisors = state.staff?.supervisors?.filter(supervisor => !supervisor.stationId) || [];
+  const unattachedAttendants = getStaffByRole('ATTENDANT').filter(attendant => 
+    !assignments.some(a => a.userId === attendant.id)
+  );
+  
+  const unattachedSupervisors = getStaffByRole('SUPERVISOR').filter(supervisor => 
+    !assignments.some(a => a.userId === supervisor.id)
+  );
   
   // Get staff attached to selected station
-  const stationManagers = state.staff?.stationManagers?.filter(manager => 
-    manager.stationId === selectedStation?.id
-  ) || [];
+  const stationManagers = assignments.filter(a => 
+    a.role === 'STATION_MANAGER'
+  );
   
-  const stationAttendants = state.staff?.attendants?.filter(attendant => 
-    attendant.stationId === selectedStation?.id
-  ) || [];
+  const stationAttendants = assignments.filter(a => 
+    a.role === 'ATTENDANT'
+  );
   
-  const stationSupervisors = state.staff?.supervisors?.filter(supervisor => 
-    supervisor.stationId === selectedStation?.id
-  ) || [];
+  const stationSupervisors = assignments.filter(a => 
+    a.role === 'SUPERVISOR'
+  );
   
   const handleSelectStaff = (staffId, staffType) => {
     if (!selectedStation) return;
@@ -42,53 +150,84 @@ const StaffAttachmentsTab = () => {
     }));
   };
   
-  const handleBulkAttach = () => {
+  const handleBulkAttach = async () => {
     if (!selectedStation) return;
     
-    // Attach all selected staff
-    Object.entries(selectedStaff).forEach(([staffType, staffIds]) => {
+    try {
+      // Prepare bulk assignment data
       const roleMap = {
-        managers: 'stationManagers',
-        attendants: 'attendants',
-        supervisors: 'supervisors'
+        managers: 'STATION_MANAGER',
+        attendants: 'ATTENDANT',
+        supervisors: 'SUPERVISOR'
       };
       
-      const roleCategory = roleMap[staffType];
+      const assignmentsData = [];
       
-      staffIds.forEach(staffId => {
-        dispatch({
-          type: 'ATTACH_STAFF_TO_STATION',
-          payload: {
-            stationId: selectedStation.id,
-            staffId,
-            role: roleCategory
-          }
-        });
+      // Create assignment objects for each selected staff
+      Object.entries(selectedStaff).forEach(([staffType, staffIds]) => {
+        if (staffIds.length > 0) {
+          staffIds.forEach(staffId => {
+            assignmentsData.push({
+              userId: staffId,
+              role: roleMap[staffType]
+            });
+          });
+        }
       });
-    });
-    
-    // Clear selection
-    setSelectedStaff({
-      managers: [],
-      attendants: [],
-      supervisors: []
-    });
+      
+      if (assignmentsData.length === 0) return;
+      
+      // Call the bulk assignment API
+      const response = await userService.assignUsersBulk({
+        stationId: selectedStation.id,
+        assignments: assignmentsData
+      });
+      
+      // Show success message with details
+      showAlert(
+        'Success', 
+        `Successfully assigned ${response.successCount} staff members.${response.errorCount > 0 ? ` ${response.errorCount} assignments failed.` : ''}`,
+        'success'
+      );
+      
+      // Refresh assignments
+      await loadAssignments();
+      
+      // Clear selection
+      setSelectedStaff({
+        managers: [],
+        attendants: [],
+        supervisors: []
+      });
+      
+    } catch (error) {
+      console.error('Failed to assign staff to station:', error);
+      showAlert(
+        'Error', 
+        error.message || 'Failed to assign staff to station. Please try again.', 
+        'error'
+      );
+    }
   };
   
-  const handleDetachStaff = (staffId, staffType) => {
-    const roleMap = {
-      managers: 'stationManagers',
-      attendants: 'attendants',
-      supervisors: 'supervisors'
-    };
-    
-    dispatch({
-      type: 'DETACH_STAFF_FROM_STATION',
-      payload: {
-        staffId,
-        role: roleMap[staffType]
-      }
-    });
+  const handleDetachStaff = async (assignmentId) => {
+    try {
+      await userService.unassignUserFromStation(assignmentId);
+      
+      // Refresh assignments
+      await loadAssignments();
+      
+      // Show success message
+      showAlert('Success', 'Staff successfully removed from station!', 'success');
+      
+    } catch (error) {
+      console.error('Failed to remove staff from station:', error);
+      showAlert(
+        'Error', 
+        error.message || 'Failed to remove staff from station. Please try again.', 
+        'error'
+      );
+    }
   };
 
   // Check if any staff are selected
@@ -97,24 +236,29 @@ const StaffAttachmentsTab = () => {
 
   return (
     <div className="space-y-6">
+      {/* Alert Component */}
+      <Alert
+        isOpen={alert.isOpen}
+        onClose={closeAlert}
+        title={alert.title}
+        message={alert.message}
+        type={alert.type}
+        duration={5000}
+      />
+      
       <Card title="Select Station" className="mb-6">
         <Select
           label="Service Station"
-          options={state.serviceStations.map(station => ({
+          options={stations.map(station => ({
             value: station.id,
-            label: `${station.code ? station.code + ' - ' : ''}${station.name}`
+            label: station.name
           }))}
           value={selectedStation?.id || ''}
           onChange={(e) => {
             const stationId = e.target.value;
-            const station = state.serviceStations.find(s => s.id === stationId);
+            const station = stations.find(s => s.id === stationId);
             setSelectedStation(station || null);
-            // Clear selection when station changes
-            setSelectedStaff({
-              managers: [],
-              attendants: [],
-              supervisors: []
-            });
+            setSelectedStaff({ managers: [], attendants: [], supervisors: [] });
           }}
           placeholder="Select a station"
         />
@@ -154,7 +298,7 @@ const StaffAttachmentsTab = () => {
                       onClick={() => handleSelectStaff(manager.id, 'managers')}
                     >
                       <div>
-                        <div className="font-medium">{manager.name}</div>
+                        <div className="font-medium">{manager.firstName} {manager.lastName}</div>
                         <div className="text-sm text-gray-500">
                           Manager
                         </div>
@@ -194,9 +338,9 @@ const StaffAttachmentsTab = () => {
                       onClick={() => handleSelectStaff(supervisor.id, 'supervisors')}
                     >
                       <div>
-                        <div className="font-medium">{supervisor.name}</div>
+                        <div className="font-medium">{supervisor.firstName} {supervisor.lastName}</div>
                         <div className="text-sm text-gray-500">
-                          {supervisor.shift} Shift
+                          Supervisor
                         </div>
                       </div>
                       <div className="flex items-center">
@@ -234,7 +378,7 @@ const StaffAttachmentsTab = () => {
                       onClick={() => handleSelectStaff(attendant.id, 'attendants')}
                     >
                       <div>
-                        <div className="font-medium">{attendant.name}</div>
+                        <div className="font-medium">{attendant.firstName} {attendant.lastName}</div>
                         <div className="text-sm text-gray-500">Attendant</div>
                       </div>
                       <div className="flex items-center">
@@ -257,7 +401,7 @@ const StaffAttachmentsTab = () => {
           
           {/* Attached Staff */}
           <Card 
-            title={`Staff Attached to ${selectedStation.name || selectedStation.code || 'Station'}`}
+            title={`Staff Attached to ${selectedStation.name}`}
             headerClass="bg-blue-50"
           >
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
@@ -268,22 +412,22 @@ const StaffAttachmentsTab = () => {
                   {stationManagers.length === 0 ? (
                     <p className="text-gray-500 text-center py-4">No managers attached</p>
                   ) : (
-                    stationManagers.map(manager => (
+                    stationManagers.map(assignment => (
                       <div 
-                        key={manager.id} 
+                        key={assignment.id} 
                         className="flex justify-between items-center p-3 bg-blue-50 rounded-lg"
                       >
                         <div className="flex items-center">
                           <User className="w-4 h-4 mr-2 text-blue-500" />
                           <div>
-                            <div className="font-medium">{manager.name}</div>
+                            <div className="font-medium">{assignment.user.firstName} {assignment.user.lastName}</div>
                             <div className="text-sm text-gray-500">Manager</div>
                           </div>
                         </div>
                         <Button 
                           variant="ghost" 
                           size="sm"
-                          onClick={() => handleDetachStaff(manager.id, 'managers')}
+                          onClick={() => handleDetachStaff(assignment.id)}
                           title="Detach manager"
                           className="p-1"
                         >
@@ -302,24 +446,22 @@ const StaffAttachmentsTab = () => {
                   {stationSupervisors.length === 0 ? (
                     <p className="text-gray-500 text-center py-4">No supervisors attached</p>
                   ) : (
-                    stationSupervisors.map(supervisor => (
+                    stationSupervisors.map(assignment => (
                       <div 
-                        key={supervisor.id} 
+                        key={assignment.id} 
                         className="flex justify-between items-center p-3 bg-blue-50 rounded-lg"
                       >
                         <div className="flex items-center">
                           <User className="w-4 h-4 mr-2 text-yellow-500" />
                           <div>
-                            <div className="font-medium">{supervisor.name}</div>
-                            <div className="text-sm text-gray-500 capitalize">
-                              {supervisor.shift} Supervisor
-                            </div>
+                            <div className="font-medium">{assignment.user.firstName} {assignment.user.lastName}</div>
+                            <div className="text-sm text-gray-500">Supervisor</div>
                           </div>
                         </div>
                         <Button 
                           variant="ghost" 
                           size="sm"
-                          onClick={() => handleDetachStaff(supervisor.id, 'supervisors')}
+                          onClick={() => handleDetachStaff(assignment.id)}
                           title="Detach supervisor"
                           className="p-1"
                         >
@@ -338,22 +480,22 @@ const StaffAttachmentsTab = () => {
                   {stationAttendants.length === 0 ? (
                     <p className="text-gray-500 text-center py-4">No attendants attached</p>
                   ) : (
-                    stationAttendants.map(attendant => (
+                    stationAttendants.map(assignment => (
                       <div 
-                        key={attendant.id} 
+                        key={assignment.id} 
                         className="flex justify-between items-center p-3 bg-blue-50 rounded-lg"
                       >
                         <div className="flex items-center">
                           <User className="w-4 h-4 mr-2 text-green-500" />
                           <div>
-                            <div className="font-medium">{attendant.name}</div>
+                            <div className="font-medium">{assignment.user.firstName} {assignment.user.lastName}</div>
                             <div className="text-sm text-gray-500">Attendant</div>
                           </div>
                         </div>
                         <Button 
                           variant="ghost" 
                           size="sm"
-                          onClick={() => handleDetachStaff(attendant.id, 'attendants')}
+                          onClick={() => handleDetachStaff(assignment.id)}
                           title="Detach attendant"
                           className="p-1"
                         >

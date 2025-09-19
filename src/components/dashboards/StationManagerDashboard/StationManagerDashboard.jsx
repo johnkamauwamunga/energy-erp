@@ -3,7 +3,7 @@ import { useApp, useAppDispatch } from '../../../context/AppContext'; // Add use
 import { logout } from '../../../context/AppContext/actions';
 import { 
   BarChart3, Activity, Clock, Users, FileText, 
-  Flame, X, Menu, MapPin, DollarSign, Truck
+  Flame, X, Menu, MapPin, DollarSign, Truck,Building2
 } from 'lucide-react';
 import { Button } from '../../../components/ui';
 import DashboardOverview from '../common/DashboardOverview';
@@ -38,6 +38,7 @@ const station=state.currentUser.stationId;
 console.log("station",station);
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+    { id: 'assets', label: 'Assets', icon: Building2 },
     { id: 'operations', label: 'Operations', icon: Activity },
     { id: 'shifts', label: 'Shift Management', icon: Clock },
      { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
@@ -50,6 +51,8 @@ console.log("station",station);
     switch (activeSection) {
       case 'dashboard':
          return <DashboardOverview />;
+      case 'assets':
+        return <StationAssetManagement />;
       case 'operations':
         return <PlaceholderComponent title="Station Operations" icon={Activity} />;
       case 'shifts':
