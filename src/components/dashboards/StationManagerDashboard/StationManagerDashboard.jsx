@@ -10,7 +10,8 @@ import DashboardOverview from '../common/DashboardOverview';
 import PlaceholderComponent from './PlaceholderComponent';
 import ShiftManagement from '../common/shift/ShiftManagement';
 import OffloadManagement from '../common/offloads/OffloadManagement';
-import StationAssetManagement from '../common/assets/station/StationAssetManagement';
+// import StationAssetManagement from '../common/assets/station/StationAssetManagement';
+import StationAssetManagement from './assets/StationAssetManagement';
 import SalesManagement from '../common/sales/SalesManagement';
 
 const StationManagerDashboard = () => {

@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
-import { Button, Card, Table, Select, Badge } from '../../ui';
-import { useApp } from '../../../context/AppContext';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Button, Card, Table, Badge, Alert, Tab } from '../../../ui';
+import { useApp } from '../../../../context/AppContext';
 import { 
   attachAssetToStation, 
   detachAssetFromStation,
   attachPumpsToTank,
   attachAssetsToIsland
-} from '../../../context/AppContext/actions';
-import { Fuel, Zap, Package, Link, Unlink, X } from 'lucide-react';
+} from '../../../../context/AppContext/actions';
+import { assetService } from '../../../../services/assetService/assetService';
+import { Fuel, Zap, Package, Link, Unlink, Warehouse } from 'lucide-react';
 
 const StationAssetManagement = () => {
   const { state, dispatch } = useApp();
@@ -15,49 +16,178 @@ const StationAssetManagement = () => {
   const [selectedTank, setSelectedTank] = useState(null);
   const [selectedPumps, setSelectedPumps] = useState([]);
   const [selectedIsland, setSelectedIsland] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [assets, setAssets] = useState([]);
+  const [error, setError] = useState('');
   const [assetsForIsland, setAssetsForIsland] = useState({
     tanks: [],
     pumps: []
   });
+  const [userInfo, setUserInfo] = useState(null);
 
-  const currentStation = state.currentStation;
+  // Memoize the loadAssets function
+  const loadAssetsFromBackend = useCallback(async (currentUser) => {
+    try {
+      setLoading(true);
+      setError("");
+      console.log("🔄 Loading assets from backend...");
+
+      let assetsData;
+      let stationId = currentUser?.station?.id;
+      console.log("current user is ", currentUser?.user?.role);
+      
+      // Choose the right API endpoint based on role
+      if (currentUser?.user?.role === "SUPER_ADMIN") {
+        assetsData = await assetService.getAssets();
+      } else if (
+        currentUser?.user?.role === "COMPANY_ADMIN" ||
+        currentUser?.user?.role === "COMPANY_MANAGER"
+      ) {
+        assetsData = await assetService.getCompanyAssets(currentUser.company.id);
+        console.log("🔄 Company assets are ", assetsData);
+      } else if (
+        currentUser?.user?.role === "STATION_MANAGER" ||
+        currentUser?.user?.role === "SUPERVISOR"
+      ) {
+        assetsData = await assetService.getStationAssets(stationId);
+        console.log("🔄 Station assets: ", assetsData);
+      } else {
+        assetsData = await assetService.getAssets();
+      }
+
+      console.log("✅ Assets loaded successfully:", assetsData);
+
+      // Ensure we're working with the data property if it exists
+      const assetsArray = assetsData.data || assetsData || [];
+      setAssets(assetsArray);
+      dispatch({ type: "SET_ASSETS", payload: assetsArray });
+    } catch (error) {
+      console.error("❌ Failed to load assets:", error);
+      setError(error.message || "Failed to load assets. Please try again.");
+      setAssets([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [dispatch]);
+
+  // On first render, load user info from localStorage
+  useEffect(() => {
+    const storedAuthData = localStorage.getItem("authData");
+    if (storedAuthData) {
+      try {
+        const authData = JSON.parse(storedAuthData);
+        setUserInfo(authData);
+      } catch (error) {
+        console.error("Error parsing auth data:", error);
+      }
+    }
+  }, []);
+
+  // Load assets when userInfo is available
+  useEffect(() => {
+    if (userInfo) {
+      loadAssetsFromBackend(userInfo);
+    }
+  }, [userInfo, loadAssetsFromBackend]);
+
+  console.log("my assets ", assets);
+
+  if (!userInfo) {
+    return (
+      <div className="p-6">
+        <Alert variant="error">Unable to load user information. Please try logging in again.</Alert>
+      </div>
+    );
+  }
+
+  const userStationId = userInfo.station?.id;
+  const userCompanyId = userInfo.company?.id;
+
+  if (!userStationId) {
+    return (
+      <div className="p-6">
+        <Alert variant="warning">No station assigned to your account. Please contact your administrator.</Alert>
+      </div>
+    );
+  }
+
+  // Get assets attached to this user's station
+  const stationTanks = assets.filter(asset => 
+    asset.type === 'STORAGE_TANK' && asset.stationId === userStationId
+  );
   
-  // Get assets attached to this station
-  const stationTanks = state.assets?.tanks?.filter(tank => 
-    tank.stationId === currentStation?.id
-  ) || [];
+  const stationPumps = assets.filter(asset => 
+    asset.type === 'FUEL_PUMP' && asset.stationId === userStationId
+  );
   
-  const stationPumps = state.assets?.pumps?.filter(pump => 
-    pump.stationId === currentStation?.id
-  ) || [];
+  const stationIslands = assets.filter(asset => 
+    asset.type === 'ISLAND' && asset.stationId === userStationId
+  );
   
-  const stationIslands = state.assets?.islands?.filter(island => 
-    island.stationId === currentStation?.id
-  ) || [];
+  const stationWarehouses = assets.filter(asset => 
+    asset.type === 'WAREHOUSE' && asset.stationId === userStationId
+  );
   
   // Get unattached assets in the same company
-  const unattachedTanks = state.assets?.tanks?.filter(tank => 
-    !tank.stationId && tank.companyId === currentStation?.companyId
-  ) || [];
+  const unattachedTanks = assets.filter(asset => 
+    asset.type === 'STORAGE_TANK' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
+  );
   
-  const unattachedPumps = state.assets?.pumps?.filter(pump => 
-    !pump.stationId && pump.companyId === currentStation?.companyId
-  ) || [];
+  const unattachedPumps = assets.filter(asset => 
+    asset.type === 'FUEL_PUMP' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
+  );
   
-  const unattachedIslands = state.assets?.islands?.filter(island => 
-    !island.stationId && island.companyId === currentStation?.companyId
-  ) || [];
+  const unattachedIslands = assets.filter(asset => 
+    asset.type === 'ISLAND' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
+  );
+  
+  const unattachedWarehouses = assets.filter(asset => 
+    asset.type === 'WAREHOUSE' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
+  );
   
   // Get pumps not attached to any tank
   const pumpsWithoutTank = stationPumps.filter(pump => !pump.tankId);
   
   // Handle attaching assets to station
-  const handleAttachAsset = (assetId, assetType) => {
-    dispatch(attachAssetToStation(currentStation.id, assetId, assetType));
+  const handleAttachAsset = async (assetId, assetType) => {
+    try {
+      // Call the API to attach the asset to the station
+      const response = await assetService.assignToStation(assetId, userStationId);
+      
+      // Update local state with the updated asset
+      const updatedAssets = assets.map(asset => 
+        asset.id === assetId ? { ...asset, stationId: userStationId } : asset
+      );
+      
+      setAssets(updatedAssets);
+      dispatch({ type: "SET_ASSETS", payload: updatedAssets });
+      
+      console.log(`✅ Asset ${assetId} attached to station successfully`);
+    } catch (error) {
+      console.error("❌ Failed to attach asset to station:", error);
+      setError(error.message || "Failed to attach asset to station");
+    }
   };
   
-  const handleDetachAsset = (assetId, assetType) => {
-    dispatch(detachAssetFromStation(assetId, assetType));
+  // Handle detaching assets from station
+  const handleDetachAsset = async (assetId, assetType) => {
+    try {
+      // Call the API to detach the asset from the station
+      const response = await assetService.removeFromStation(assetId);
+      
+      // Update local state with the updated asset
+      const updatedAssets = assets.map(asset => 
+        asset.id === assetId ? { ...asset, stationId: null } : asset
+      );
+      
+      setAssets(updatedAssets);
+      dispatch({ type: "SET_ASSETS", payload: updatedAssets });
+      
+      console.log(`✅ Asset ${assetId} detached from station successfully`);
+    } catch (error) {
+      console.error("❌ Failed to detach asset from station:", error);
+      setError(error.message || "Failed to detach asset from station");
+    }
   };
   
   // Handle attaching pumps to tank
@@ -102,16 +232,23 @@ const StationAssetManagement = () => {
     }
   };
 
+  // Simple tab panel component
+  const TabPanel = ({ value, tabId, children }) => {
+    if (value !== tabId) return null;
+    return <div className="mt-4">{children}</div>;
+  };
+
   // Tank columns for table
   const tankColumns = [
+    { header: 'Name', accessor: 'name' },
     { header: 'Code', accessor: 'code' },
     { header: 'Capacity', accessor: 'capacity', render: value => `${value}L` },
     { header: 'Product', accessor: 'productType' },
     { header: 'Attached Pumps', 
       render: (_, tank) => (
         <div className="flex flex-wrap gap-1">
-          {state.assets?.pumps
-            ?.filter(pump => pump.tankId === tank.id)
+          {stationPumps
+            .filter(pump => pump.tankId === tank.id)
             .map(pump => (
               <Badge key={pump.id} variant="outline">
                 {pump.code}
@@ -135,6 +272,7 @@ const StationAssetManagement = () => {
 
   // Pump columns for table
   const pumpColumns = [
+    { header: 'Name', accessor: 'name' },
     { header: 'Code', accessor: 'code' },
     { header: 'Status', 
       render: (_, pump) => (
@@ -149,7 +287,7 @@ const StationAssetManagement = () => {
     { header: 'Attached To', 
       render: (_, pump) => (
         pump.tankId 
-          ? `Tank: ${state.assets?.tanks?.find(t => t.id === pump.tankId)?.code || 'N/A'}`
+          ? `Tank: ${stationTanks.find(t => t.id === pump.tankId)?.code || 'N/A'}`
           : 'No tank'
       )
     },
@@ -173,16 +311,16 @@ const StationAssetManagement = () => {
     { header: 'Attached Assets', 
       render: (_, island) => (
         <div className="flex flex-wrap gap-1">
-          {state.assets?.tanks
-            ?.filter(tank => tank.islandId === island.id)
+          {stationTanks
+            .filter(tank => tank.islandId === island.id)
             .map(tank => (
               <Badge key={tank.id} variant="blue">
                 <Fuel size={14} className="mr-1" /> {tank.code}
               </Badge>
             ))}
           
-          {state.assets?.pumps
-            ?.filter(pump => pump.islandId === island.id)
+          {stationPumps
+            .filter(pump => pump.islandId === island.id)
             .map(pump => (
               <Badge key={pump.id} variant="yellow">
                 <Zap size={14} className="mr-1" /> {pump.code}
@@ -204,40 +342,83 @@ const StationAssetManagement = () => {
     }
   ];
 
+  // Warehouse columns for table
+  const warehouseColumns = [
+    { header: 'Name', accessor: 'name' },
+    { header: 'Code', accessor: 'code' },
+    { header: 'Capacity', accessor: 'capacity', render: value => `${value} units` },
+    { header: 'Actions', 
+      render: (_, warehouse) => (
+        <Button 
+          variant="destructive" 
+          size="sm"
+          onClick={() => handleDetachAsset(warehouse.id, 'warehouses')}
+        >
+          <Unlink size={16} className="mr-1" /> Detach
+        </Button>
+      )
+    }
+  ];
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="flex justify-center items-center h-64">
+          <div className="text-lg text-gray-600">Loading assets...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <Alert variant="error">{error}</Alert>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
-            Asset Management - {currentStation?.name}
+            Asset Management - {userInfo.station?.name}
           </h2>
           <p className="text-gray-600">
-            Manage tanks, pumps, and allocation points for this station
+            Manage tanks, pumps, islands, and warehouses for this station
           </p>
         </div>
+        <Badge variant="outline" className="text-sm">
+          Station Manager: {userInfo.user?.firstName} {userInfo.user?.lastName}
+        </Badge>
       </div>
 
       {/* Asset Type Tabs */}
       <div className="border-b border-gray-200 mb-6">
         <nav className="flex space-x-8">
-          {['tanks', 'pumps', 'islands', 'relationships'].map(tab => (
-            <button
-              key={tab}
-              className={`pb-3 px-1 border-b-2 font-medium text-sm ${
-                activeTab === tab
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              onClick={() => setActiveTab(tab)}
+          {[
+            { id: 'tanks', label: 'Tanks', icon: Fuel },
+            { id: 'pumps', label: 'Pumps', icon: Zap },
+            { id: 'islands', label: 'Islands', icon: Package },
+            { id: 'warehouses', label: 'Warehouses', icon: Warehouse },
+            { id: 'relationships', label: 'Relationships', icon: Link }
+          ].map(tab => (
+            <Tab
+              key={tab.id}
+              value={tab.id}
+              icon={tab.icon}
+              isActive={activeTab === tab.id}
+              onClick={() => setActiveTab(tab.id)}
             >
-              <span className="capitalize">{tab}</span>
-            </button>
+              {tab.label}
+            </Tab>
           ))}
         </nav>
       </div>
 
       {/* Tanks Tab */}
-      {activeTab === 'tanks' && (
+      <TabPanel value={activeTab} tabId="tanks">
         <div className="space-y-6">
           <Card title="Station Tanks">
             <Table
@@ -251,6 +432,7 @@ const StationAssetManagement = () => {
             <Card title="Available Tanks" className="bg-blue-50">
               <Table
                 columns={[
+                  { header: 'Name', accessor: 'name' },
                   { header: 'Code', accessor: 'code' },
                   { header: 'Capacity', accessor: 'capacity', render: value => `${value}L` },
                   { header: 'Product', accessor: 'productType' },
@@ -271,10 +453,10 @@ const StationAssetManagement = () => {
             </Card>
           )}
         </div>
-      )}
+      </TabPanel>
 
       {/* Pumps Tab */}
-      {activeTab === 'pumps' && (
+      <TabPanel value={activeTab} tabId="pumps">
         <div className="space-y-6">
           <Card title="Station Pumps">
             <Table
@@ -288,6 +470,7 @@ const StationAssetManagement = () => {
             <Card title="Available Pumps" className="bg-yellow-50">
               <Table
                 columns={[
+                  { header: 'Name', accessor: 'name' },
                   { header: 'Code', accessor: 'code' },
                   { header: 'Status', accessor: 'status' },
                   { header: 'Actions', 
@@ -307,10 +490,10 @@ const StationAssetManagement = () => {
             </Card>
           )}
         </div>
-      )}
+      </TabPanel>
 
       {/* Islands Tab */}
-      {activeTab === 'islands' && (
+      <TabPanel value={activeTab} tabId="islands">
         <div className="space-y-6">
           <Card title="Allocation Points (Islands)">
             <Table
@@ -343,10 +526,47 @@ const StationAssetManagement = () => {
             </Card>
           )}
         </div>
-      )}
+      </TabPanel>
+
+      {/* Warehouses Tab */}
+      <TabPanel value={activeTab} tabId="warehouses">
+        <div className="space-y-6">
+          <Card title="Station Warehouses">
+            <Table
+              columns={warehouseColumns}
+              data={stationWarehouses}
+              emptyMessage="No warehouses attached to this station"
+            />
+          </Card>
+
+          {unattachedWarehouses.length > 0 && (
+            <Card title="Available Warehouses" className="bg-purple-50">
+              <Table
+                columns={[
+                  { header: 'Name', accessor: 'name' },
+                  { header: 'Code', accessor: 'code' },
+                  { header: 'Capacity', accessor: 'capacity', render: value => `${value} units` },
+                  { header: 'Actions', 
+                    render: (_, warehouse) => (
+                      <Button 
+                        variant="success"
+                        size="sm"
+                        onClick={() => handleAttachAsset(warehouse.id, 'warehouses')}
+                      >
+                        <Link size={16} className="mr-1" /> Attach to Station
+                      </Button>
+                    )
+                  }
+                ]}
+                data={unattachedWarehouses}
+              />
+            </Card>
+          )}
+        </div>
+      </TabPanel>
 
       {/* Relationships Tab */}
-      {activeTab === 'relationships' && (
+      <TabPanel value={activeTab} tabId="relationships">
         <div className="space-y-8">
           {/* Tank-Pump Relationship */}
           <Card title="Attach Pumps to Tank">
@@ -526,7 +746,7 @@ const StationAssetManagement = () => {
             </div>
           </Card>
         </div>
-      )}
+      </TabPanel>
     </div>
   );
 };

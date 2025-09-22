@@ -11,7 +11,7 @@ const LoginPage = () => {
   const { login, isAuthenticated, user, isLoading } = useAuth();
   const navigate = useNavigate();
 
-  console.log("LoginPage render - isAuthenticated:", isAuthenticated, "user:", user, "isLoading:", isLoading);
+  // console.log("LoginPage render - isAuthenticated:", isAuthenticated, "user:", user, "isLoading:", isLoading);
 
   // Redirect if already authenticated
   useEffect(() => {

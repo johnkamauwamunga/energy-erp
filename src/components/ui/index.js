@@ -8,10 +8,13 @@ export {default as Select} from './Select';
 export { default as Badge } from './Badge';
 export { default as Tabs } from './Tabs';
 export { default as Tab } from './Tab';
+export { default as TabPanel } from './TabPanel';
 export { default as Table } from './Table';
 export { default as DatePicker } from './DatePicker';
 export { default as Progress } from './Progress';
 export { default as MultiSelect } from './MultiSelect';
 export { default as Alert } from './Alert';
+export { default as LoadingSpinner } from './LoadingSpinner';
+
 
 // Add other exports as neededj

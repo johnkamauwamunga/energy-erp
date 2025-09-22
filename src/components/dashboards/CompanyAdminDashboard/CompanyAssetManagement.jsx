@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Plus, Eye, Edit, Fuel, Zap, Package, Link, RefreshCw, AlertCircle } from 'lucide-react';
-import { Button } from '../../../components/ui';
+import { Building2, Plus, Eye, Edit, Fuel, Zap, Package, Link, RefreshCw, AlertCircle, Trash2, Search, Filter } from 'lucide-react';
+import { Button, Input, Select } from '../../../components/ui';
 import { useApp } from '../../../context/AppContext';
 import CreateAssetModal from './CreateAssetModal';
 import AssetAttachmentsTab from '../../features/assets/AssetAttachmentsTab';
 import { assetService } from '../../../services/assetService/assetService';
-
-
 
 const CompanyAssetManagement = () => {
   const { state, dispatch } = useApp();
@@ -17,8 +15,8 @@ const CompanyAssetManagement = () => {
   const [assets, setAssets] = useState([]);
   const [error, setError] = useState('');
   const [retryCount, setRetryCount] = useState(0);
-
-
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const tabs = [
     { id: 'all', label: 'All Assets', icon: Package },
@@ -32,8 +30,28 @@ const CompanyAssetManagement = () => {
   // Get assets based on tab selection
   const getFilteredAssets = () => {
     if (!assets || !Array.isArray(assets)) return [];
-    if (activeTab === 'all') return assets;
-    return assets.filter(asset => asset.type === activeTab);
+    
+    let filtered = assets;
+    
+    // Filter by tab
+    if (activeTab !== 'all') {
+      filtered = filtered.filter(asset => asset.type === activeTab);
+    }
+    
+    // Filter by search query
+    if (searchQuery) {
+      filtered = filtered.filter(asset => 
+        asset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        asset.id.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    
+    // Filter by status
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(asset => asset.status === statusFilter);
+    }
+    
+    return filtered;
   };
 
   const filteredAssets = getFilteredAssets();
@@ -43,30 +61,29 @@ const CompanyAssetManagement = () => {
     try {
       setLoading(true);
       setError('');
-      console.log('🔄 Loading assets from backend...');
-
-      console.log("state is ",state.currentUser);
       
+      const currentUser = state.currentUser;
       let assetsData;
-      let currentUser = state.currentUser ;
       
       // Choose the right API endpoint based on user role
       if (currentUser.role === 'SUPER_ADMIN') {
-        // Super admin can use the general endpoint or specific company endpoint
         assetsData = await assetService.getAssets();
       } else if (currentUser.role === 'COMPANY_ADMIN' || currentUser.role === 'COMPANY_MANAGER') {
-        // Company admin/manager gets company assets
+        // Make sure companyId exists
+        if (!currentUser.companyId) {
+          throw new Error('Company ID not found for user');
+        }
         assetsData = await assetService.getCompanyAssets(currentUser.companyId);
-           console.log('🔄 assets are  ', assetsData);
+        console.log("Company admin sees ",currentUser.companyId);
       } else if (currentUser.role === 'STATION_MANAGER' || currentUser.role === 'SUPERVISOR') {
-        // Station staff gets station assets
+        // Make sure stationId exists
+        if (!currentUser.stationId) {
+          throw new Error('Station ID not found for user');
+        }
         assetsData = await assetService.getStationAssets(currentUser.stationId);
       } else {
-        // Default to general endpoint with role-based filtering on backend
         assetsData = await assetService.getAssets();
       }
-      
-      console.log('✅ Assets loaded successfully:', assetsData);
       
       // Set the local assets state
       setAssets(assetsData || []);
@@ -74,40 +91,13 @@ const CompanyAssetManagement = () => {
       // Also update the global state if needed
       dispatch({ type: 'SET_ASSETS', payload: assetsData || [] });
     } catch (error) {
-      console.error('❌ Failed to load assets:', error);
+      console.error('Failed to load assets:', error);
       setError(error.message || 'Failed to load assets. Please try again.');
       setAssets([]);
     } finally {
       setLoading(false);
     }
   };
-
-  
-
-  // const loadStations = async () => {
-  //   try {
-  //     setLoadingStations(true);
-  //     setStationError('');
-
-  //     // Fetch stations for the company
-  //     const response = await stationService.getCompanyStations();
-
-  //     console.log('✅ Stations loaded successfully:', response);
-  //     if (response && response.success) {
-  //       setStations(response.data); // assuming response.data is an array of stations
-  //     } else {
-  //       setStationError('Failed to load stations');
-  //     }
-  //   } catch (err) {
-  //     console.error('❌ Failed to fetch stations:', err);
-  //     setStationError(err.message || 'Failed to fetch stations');
-  //   } finally {
-  //     setLoadingStations(false);
-  //   }
-  // };
-
- 
-
 
   // Load assets on component mount and when retryCount changes
   useEffect(() => {
@@ -116,9 +106,7 @@ const CompanyAssetManagement = () => {
 
   const openCreateModal = (type) => {
     // Check if user has permission to create assets
-    if (state.currentUser.role !== 'SUPER_ADMIN' && 
-        state.currentUser.role !== 'COMPANY_ADMIN' && 
-        state.currentUser.role !== 'COMPANY_MANAGER') {
+    if (!canCreateAssets()) {
       setError('You do not have permission to create assets');
       return;
     }
@@ -149,11 +137,11 @@ const CompanyAssetManagement = () => {
 
   const getAssetIcon = (type) => {
     switch (type) {
-      case 'STORAGE_TANK': return <Fuel className="w-5 h-5 text-blue-500 mr-2" />;
-      case 'FUEL_PUMP': return <Zap className="w-5 h-5 text-yellow-500 mr-2" />;
-      case 'ISLAND': return <Package className="w-5 h-5 text-green-500 mr-2" />;
-      case 'WAREHOUSE': return <Building2 className="w-5 h-5 text-purple-500 mr-2" />;
-      default: return <Package className="w-5 h-5 text-gray-500 mr-2" />;
+      case 'STORAGE_TANK': return <Fuel className="w-5 h-5 text-blue-500" />;
+      case 'FUEL_PUMP': return <Zap className="w-5 h-5 text-yellow-500" />;
+      case 'ISLAND': return <Package className="w-5 h-5 text-green-500" />;
+      case 'WAREHOUSE': return <Building2 className="w-5 h-5 text-purple-500" />;
+      default: return <Package className="w-5 h-5 text-gray-500" />;
     }
   };
 
@@ -167,9 +155,19 @@ const CompanyAssetManagement = () => {
 
   // Check if user can create assets
   const canCreateAssets = () => {
-    return state.currentUser.role === 'SUPER_ADMIN' || 
-           state.currentUser.role === 'COMPANY_ADMIN' || 
-           state.currentUser.role === 'COMPANY_MANAGER';
+    return ['SUPER_ADMIN', 'COMPANY_ADMIN', 'COMPANY_MANAGER'].includes(state.currentUser.role);
+  };
+
+  const handleDeleteAsset = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this asset?')) return;
+    
+    try {
+      await assetService.deleteAsset(id);
+      // Refresh the assets list
+      loadAssetsFromBackend();
+    } catch (error) {
+      setError(error.message || 'Failed to delete asset');
+    }
   };
 
   if (loading) {
@@ -204,9 +202,12 @@ const CompanyAssetManagement = () => {
         <div>
           <h3 className="text-2xl font-bold text-gray-900 mb-2">Assets Management</h3>
           <p className="text-gray-600">
-            {state.currentUser.role === 'SUPER_ADMIN' ? 'All assets across all companies' : 
-             state.currentUser.role === 'COMPANY_ADMIN' || state.currentUser.role === 'COMPANY_MANAGER' ? 'Your company assets' : 
-             'Assets assigned to your station'}
+            {state.currentUser.role === 'SUPER_ADMIN' 
+              ? 'All assets across all companies' 
+              : state.currentUser.role === 'COMPANY_ADMIN' || state.currentUser.role === 'COMPANY_MANAGER' 
+                ? 'Your company assets' 
+                : 'Assets assigned to your station'
+            }
           </p>
         </div>
         {canCreateAssets() && (
@@ -258,6 +259,39 @@ const CompanyAssetManagement = () => {
         </div>
       )}
 
+      {/* Search and Filter Bar */}
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex space-x-4 items-center">
+          <div className="relative">
+            <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+            <Input
+              type="text"
+              placeholder="Search assets..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 pr-4 py-2 w-64"
+            />
+          </div>
+          <div className="flex items-center space-x-2">
+            <Filter className="w-5 h-5 text-gray-500" />
+            <Select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-40"
+            >
+              <option value="all">All Statuses</option>
+              <option value="REGISTERED">Registered</option>
+              <option value="OPERATIONAL">Operational</option>
+              <option value="MAINTENANCE">Maintenance</option>
+              <option value="DECOMMISSIONED">Decommissioned</option>
+            </Select>
+          </div>
+        </div>
+        <Button onClick={loadAssetsFromBackend} icon={RefreshCw} variant="outline">
+          Refresh
+        </Button>
+      </div>
+
       {/* Asset Type Tabs */}
       <div className="border-b border-gray-200 mb-6">
         <nav className="flex space-x-8">
@@ -292,7 +326,6 @@ const CompanyAssetManagement = () => {
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-               
                   <th className="text-left py-4 px-6 font-semibold text-gray-900">Name</th>
                   <th className="text-left py-4 px-6 font-semibold text-gray-900">Type</th>
                   <th className="text-left py-4 px-6 font-semibold text-gray-900">Capacity</th>
@@ -309,8 +342,13 @@ const CompanyAssetManagement = () => {
                     <tr key={asset.id} className="hover:bg-gray-50">
                       <td className="py-4 px-6">
                         <div className="flex items-center">
-                          {getAssetIcon(asset.type)}
-                          {asset.name}
+                          <div className="mr-3">
+                            {getAssetIcon(asset.type)}
+                          </div>
+                          <div>
+                            <div className="font-medium text-gray-900">{asset.name}</div>
+                            <div className="text-sm text-gray-500">ID: {asset.id.substring(0, 8)}...</div>
+                          </div>
                         </div>
                       </td>
                       <td className="py-4 px-6 text-sm text-gray-500">
@@ -347,14 +385,25 @@ const CompanyAssetManagement = () => {
                           <Button size="sm" variant="secondary" icon={Edit}>
                             Edit
                           </Button>
+                          <Button 
+                            size="sm" 
+                            variant="danger" 
+                            icon={Trash2}
+                            onClick={() => handleDeleteAsset(asset.id)}
+                          >
+                            Delete
+                          </Button>
                         </div>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={9} className="py-8 px-6 text-center text-gray-500">
-                      No {activeTab === 'all' ? 'assets' : activeTab.toLowerCase()} found.
+                    <td colSpan={8} className="py-8 px-6 text-center text-gray-500">
+                      {searchQuery || statusFilter !== 'all' 
+                        ? 'No assets match your search criteria.' 
+                        : `No ${activeTab === 'all' ? 'assets' : activeTab.toLowerCase()} found.`
+                      }
                     </td>
                   </tr>
                 )}
@@ -370,7 +419,7 @@ const CompanyAssetManagement = () => {
         onClose={() => setIsCreateModalOpen(false)}
         assetType={assetType}
         onAssetCreated={handleAssetCreated}
-        user={state.user}
+        user={state.currentUser}
       />
     </div>
   );
