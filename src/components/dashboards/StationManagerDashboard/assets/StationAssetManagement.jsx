@@ -90,8 +90,6 @@ const StationAssetManagement = () => {
     }
   }, [userInfo, loadAssetsFromBackend]);
 
-  console.log("my assets ", assets);
-
   if (!userInfo) {
     return (
       <div className="p-6">
@@ -116,18 +114,22 @@ const StationAssetManagement = () => {
     asset.type === 'STORAGE_TANK' && asset.stationId === userStationId
   );
   
+  console.log("station tanks ",stationTanks)
   const stationPumps = assets.filter(asset => 
     asset.type === 'FUEL_PUMP' && asset.stationId === userStationId
   );
   
+    console.log("station pumps ",stationPumps)
   const stationIslands = assets.filter(asset => 
     asset.type === 'ISLAND' && asset.stationId === userStationId
   );
   
+    console.log("station island ",stationIslands)
   const stationWarehouses = assets.filter(asset => 
     asset.type === 'WAREHOUSE' && asset.stationId === userStationId
   );
   
+  console.log("station warehouse ",stationWarehouses)
   // Get unattached assets in the same company
   const unattachedTanks = assets.filter(asset => 
     asset.type === 'STORAGE_TANK' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId

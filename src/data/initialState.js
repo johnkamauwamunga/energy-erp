@@ -30,6 +30,21 @@ export const initialState = {
     pumps: assets.pumps,
     // dispensers: [] // Add if needed
   },
+
+  // attach assets
+    assetConnections: {
+    connections: [],
+    assignments: null,
+    healthReport: null,
+    connectionTypes: [],
+    filters: {
+      type: null,
+      assetId: null,
+      connectionStatus: 'all'
+    },
+    loading: false,
+    error: null
+  },
   
   // Islands at root level
   islands: assets.islands,

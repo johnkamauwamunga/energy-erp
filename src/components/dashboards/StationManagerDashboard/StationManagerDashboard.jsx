@@ -12,6 +12,8 @@ import ShiftManagement from '../common/shift/ShiftManagement';
 import OffloadManagement from '../common/offloads/OffloadManagement';
 // import StationAssetManagement from '../common/assets/station/StationAssetManagement';
 import StationAssetManagement from './assets/StationAssetManagement';
+import StationAssetsOverview from './assets/StationAssetsOverview';
+// import AssetAssignmentManager from './assets/AssetAssignmentManager'
 import SalesManagement from '../common/sales/SalesManagement';
 
 const StationManagerDashboard = () => {
@@ -40,6 +42,8 @@ console.log("station",station);
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'assets', label: 'Assets', icon: Building2 },
+     { id: 'assets-mant', label: 'Asset Management', icon: Building2 },
+     { id: 'Pump_mant', label: 'Pump Management', icon: Building2 },
     { id: 'operations', label: 'Operations', icon: Activity },
     { id: 'shifts', label: 'Shift Management', icon: Clock },
      { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
@@ -54,6 +58,10 @@ console.log("station",station);
          return <DashboardOverview />;
       case 'assets':
         return <StationAssetManagement />;
+           case 'assets-mant':
+        return <StationAssetsOverview />;
+        case 'Pump_mant':
+        return <PlaceholderComponent title="Pump Management" icon={Building2} />;
       case 'operations':
         return <PlaceholderComponent title="Station Operations" icon={Activity} />;
       case 'shifts':

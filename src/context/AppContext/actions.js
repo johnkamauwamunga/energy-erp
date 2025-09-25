@@ -25,8 +25,20 @@ export const ACTION_TYPES = {
   ADD_SHIFT: 'ADD_SHIFT',
   UPDATE_SHIFT: 'UPDATE_SHIFT',
   SET_SHIFT_FILTERS: 'SET_SHIFT_FILTERS',
-  ATTACH_PUMPS_TO_TANK: 'ATTACH_PUMPS_TO_TANK',
-  ATTACH_ASSETS_TO_ISLAND: 'ATTACH_ASSETS_TO_ISLAND',
+
+ // Asset Connection Actions
+  SET_ASSET_CONNECTIONS: 'SET_ASSET_CONNECTIONS',
+  ADD_ASSET_CONNECTION: 'ADD_ASSET_CONNECTION',
+  UPDATE_ASSET_CONNECTION: 'UPDATE_ASSET_CONNECTION',
+  DELETE_ASSET_CONNECTION: 'DELETE_ASSET_CONNECTION',
+  SET_ASSET_ASSIGNMENTS: 'SET_ASSET_ASSIGNMENTS',
+  SET_CONNECTION_HEALTH: 'SET_CONNECTION_HEALTH',
+  UPDATE_ASSET_CONNECTION_STATUS: 'UPDATE_ASSET_CONNECTION_STATUS',
+  BULK_ADD_CONNECTIONS: 'BULK_ADD_CONNECTIONS',
+  BULK_DELETE_CONNECTIONS: 'BULK_DELETE_CONNECTIONS',
+  SET_CONNECTION_FILTERS: 'SET_CONNECTION_FILTERS',
+  SET_CONNECTION_TYPES: 'SET_CONNECTION_TYPES',
+
   ADD_ISLAND: 'ADD_ISLAND',
   ADD_WAREHOUSE: 'ADD_WAREHOUSE',
   UPDATE_WAREHOUSE: 'UPDATE_WAREHOUSE',
@@ -247,3 +259,176 @@ export const updateTankLevel = (tankId, newLevel) => ({
   type: ACTION_TYPES.UPDATE_TANK_LEVEL,
   payload: { tankId, newLevel }
 });
+
+// asset connections and attachment
+// actions/assetConnectionActions.js
+
+// Asset Connection Actions
+export const setAssetConnections = (connections) => ({
+  type: ACTION_TYPES.SET_ASSET_CONNECTIONS,
+  payload: connections
+});
+
+export const addAssetConnection = (connection) => ({
+  type: ACTION_TYPES.ADD_ASSET_CONNECTION,
+  payload: connection
+});
+
+export const updateAssetConnection = (connectionId, updates) => ({
+  type: ACTION_TYPES.UPDATE_ASSET_CONNECTION,
+  payload: { connectionId, updates }
+});
+
+export const deleteAssetConnection = (connectionId) => ({
+  type: ACTION_TYPES.DELETE_ASSET_CONNECTION,
+  payload: connectionId
+});
+
+export const setAssetAssignments = (assignments) => ({
+  type: ACTION_TYPES.SET_ASSET_ASSIGNMENTS,
+  payload: assignments
+});
+
+export const setConnectionHealth = (healthReport) => ({
+  type: ACTION_TYPES.SET_CONNECTION_HEALTH,
+  payload: healthReport
+});
+
+export const updateAssetConnectionStatus = (assetId, status) => ({
+  type: ACTION_TYPES.UPDATE_ASSET_CONNECTION_STATUS,
+  payload: { assetId, status }
+});
+
+export const bulkAddConnections = (connections) => ({
+  type: ACTION_TYPES.BULK_ADD_CONNECTIONS,
+  payload: connections
+});
+
+export const bulkDeleteConnections = (connectionIds) => ({
+  type: ACTION_TYPES.BULK_DELETE_CONNECTIONS,
+  payload: connectionIds
+});
+
+export const setConnectionFilters = (filters) => ({
+  type: ACTION_TYPES.SET_CONNECTION_FILTERS,
+  payload: filters
+});
+
+export const setConnectionTypes = (connectionTypes) => ({
+  type: ACTION_TYPES.SET_CONNECTION_TYPES,
+  payload: connectionTypes
+});
+
+// Thunk actions for API calls
+export const fetchAssetConnections = (stationId, filters = {}) => {
+  return async (dispatch, getState) => {
+    try {
+      const { assetConnectionService } = getState().services;
+      const connections = await assetConnectionService.getStationConnections(stationId, filters);
+      dispatch(setAssetConnections(connections));
+      return connections;
+    } catch (error) {
+      console.error('Failed to fetch asset connections:', error);
+      throw error;
+    }
+  };
+};
+
+export const createAssetConnection = (stationId, connectionData) => {
+  return async (dispatch, getState) => {
+    try {
+      const { assetConnectionService } = getState().services;
+      const connection = await assetConnectionService.createConnection(stationId, connectionData);
+      dispatch(addAssetConnection(connection));
+      return connection;
+    } catch (error) {
+      console.error('Failed to create asset connection:', error);
+      throw error;
+    }
+  };
+};
+
+export const removeAssetConnection = (connectionId) => {
+  return async (dispatch, getState) => {
+    try {
+      const { assetConnectionService } = getState().services;
+      await assetConnectionService.deleteConnection(connectionId);
+      dispatch(deleteAssetConnection(connectionId));
+    } catch (error) {
+      console.error('Failed to delete asset connection:', error);
+      throw error;
+    }
+  };
+};
+
+export const fetchAssetAssignments = (stationId) => {
+  return async (dispatch, getState) => {
+    try {
+      const { assetConnectionService } = getState().services;
+      const assignments = await assetConnectionService.getStationAssetAssignments(stationId);
+      dispatch(setAssetAssignments(assignments));
+      return assignments;
+    } catch (error) {
+      console.error('Failed to fetch asset assignments:', error);
+      throw error;
+    }
+  };
+};
+
+export const fetchConnectionHealth = (stationId) => {
+  return async (dispatch, getState) => {
+    try {
+      const { assetConnectionService } = getState().services;
+      const healthReport = await assetConnectionService.getConnectionsHealth(stationId);
+      dispatch(setConnectionHealth(healthReport));
+      return healthReport;
+    } catch (error) {
+      console.error('Failed to fetch connection health:', error);
+      throw error;
+    }
+  };
+};
+
+export const bulkCreateConnections = (stationId, connections) => {
+  return async (dispatch, getState) => {
+    try {
+      const { assetConnectionService } = getState().services;
+      const results = await assetConnectionService.createBulkConnections(stationId, connections);
+      
+      // Add successful connections to state
+      const successfulConnections = results
+        .filter(result => result.success)
+        .map(result => result.data);
+      
+      if (successfulConnections.length > 0) {
+        dispatch(bulkAddConnections(successfulConnections));
+      }
+      
+      return results;
+    } catch (error) {
+      console.error('Failed to create bulk connections:', error);
+      throw error;
+    }
+  };
+};
+
+export const detachAssets = (stationId, detachmentData) => {
+  return async (dispatch, getState) => {
+    try {
+      const { assetConnectionService } = getState().services;
+      const results = await assetConnectionService.detachAssets(stationId, detachmentData);
+      
+      // Update state for successful detachments
+      if (results.success) {
+        // Refetch assignments to get updated state
+        dispatch(fetchAssetAssignments(stationId));
+        dispatch(fetchAssetConnections(stationId));
+      }
+      
+      return results;
+    } catch (error) {
+      console.error('Failed to detach assets:', error);
+      throw error;
+    }
+  };
+};

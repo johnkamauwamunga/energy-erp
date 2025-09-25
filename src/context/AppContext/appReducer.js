@@ -321,28 +321,65 @@ case 'SET_USER_FILTERS':
     }
     
     // Asset Relationship Cases
+    // case 'ATTACH_PUMPS_TO_TANK': {
+    //   const { tankId, pumpIds } = action.payload;
+      
+    //   // Get islandId from tank
+    //   const tank = state.assets.tanks.find(t => t.id === tankId);
+    //   const islandId = tank ? tank.islandId : null;
+      
+    //   return {
+    //     ...state,
+    //     assets: {
+    //       ...state.assets,
+    //       pumps: state.assets.pumps.map(pump => {
+    //         if (pumpIds.includes(pump.id)) {
+    //           return {
+    //             ...pump,
+    //             tankId,
+    //             islandId
+    //           };
+    //         }
+    //         return pump;
+    //       })
+    //     }
+    //   };
+    // }
+
+    // case 'ATTACH_ASSETS_TO_ISLAND': {
+    //   const { islandId, tankIds, pumpIds } = action.payload;
+      
+    //   return {
+    //     ...state,
+    //     assets: {
+    //       ...state.assets,
+    //       tanks: state.assets.tanks.map(tank => 
+    //         tankIds.includes(tank.id) ? { ...tank, islandId } : tank
+    //       ),
+    //       pumps: state.assets.pumps.map(pump => 
+    //         pumpIds.includes(pump.id) ? { ...pump, islandId } : pump
+    //       )
+    //     }
+    //   };
+    // }
+
+     // Asset Relationship Cases
     case 'ATTACH_PUMPS_TO_TANK': {
       const { tankId, pumpIds } = action.payload;
       
-      // Get islandId from tank
-      const tank = state.assets.tanks.find(t => t.id === tankId);
-      const islandId = tank ? tank.islandId : null;
-      
       return {
         ...state,
-        assets: {
-          ...state.assets,
-          pumps: state.assets.pumps.map(pump => {
-            if (pumpIds.includes(pump.id)) {
-              return {
-                ...pump,
-                tankId,
-                islandId
-              };
-            }
-            return pump;
-          })
-        }
+        assets: state.assets.map(asset => {
+          if (pumpIds.includes(asset.id) && asset.type === 'FUEL_PUMP') {
+            return {
+              ...asset,
+              tankId,
+              // Update connection status based on attachments
+              connectionStatus: asset.islandId ? 'FULLY_CONNECTED' : 'PARTIAL'
+            };
+          }
+          return asset;
+        })
       };
     }
 
@@ -351,17 +388,26 @@ case 'SET_USER_FILTERS':
       
       return {
         ...state,
-        assets: {
-          ...state.assets,
-          tanks: state.assets.tanks.map(tank => 
-            tankIds.includes(tank.id) ? { ...tank, islandId } : tank
-          ),
-          pumps: state.assets.pumps.map(pump => 
-            pumpIds.includes(pump.id) ? { ...pump, islandId } : pump
-          )
-        }
+        assets: state.assets.map(asset => {
+          if (tankIds.includes(asset.id) && asset.type === 'STORAGE_TANK') {
+            return {
+              ...asset,
+              islandId
+            };
+          }
+          if (pumpIds.includes(asset.id) && asset.type === 'FUEL_PUMP') {
+            const newStatus = asset.tankId ? 'FULLY_CONNECTED' : 'PARTIAL';
+            return {
+              ...asset,
+              islandId,
+              connectionStatus: newStatus
+            };
+          }
+          return asset;
+        })
       };
     }
+
 
     case 'ADD_ISLAND': {
       return {

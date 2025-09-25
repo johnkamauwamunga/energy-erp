@@ -1,36 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Card, Select, LoadingSpinner, Modal } from '../../ui';
+import { Button, Card, Select, LoadingSpinner } from '../../ui';
 import { useApp } from '../../../context/AppContext';
-import { Fuel, Zap, X, Link, MapPin, RefreshCw, AlertCircle, Unlink } from 'lucide-react';
+import { Fuel, Zap, X, Link, Warehouse, MapPin, RefreshCw, AlertCircle } from 'lucide-react';
 import { stationService } from '../../../services/stationService/stationService';
 import { assetService } from '../../../services/assetService/assetService';
-import { assetConnectionService } from '../../../services/assetConnectionService/assetConnectionService';
 import clsx from 'clsx';
 
-const AssetConnectionsTab = ({ onRefreshAssets }) => {
+const AssetAttachmentsTab = ({ onRefreshAssets }) => {
   const { state, dispatch } = useApp();
   const [selectedStation, setSelectedStation] = useState(null);
-  const [stations, setStations] = useState([]);
-  const [loadingStations, setLoadingStations] = useState(false);
-  const [stationError, setStationError] = useState('');
+  const [selectedAssets, setSelectedAssets] = useState({
+    tanks: [],
+    pumps: [],
+    islands: [],
+    warehouses: []
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [connections, setConnections] = useState([]);
-  const [activeTab, setActiveTab] = useState('tank-pump');
-  const [connectionModal, setConnectionModal] = useState({
-    isOpen: false,
-    type: null,
-    sourceAsset: null,
-    targetAssets: []
-  });
 
   // Load stations
+  const [stations, setStations] = useState([]);
+  const [loadingStations, setLoadingStations] = useState(false);
+  const [stationError, setStationError] = useState('');
+
   const loadStations = async () => {
     try {
       setLoadingStations(true);
       setStationError('');
+
+      // Fetch stations for the company
       const response = await stationService.getCompanyStations();
+
       if (response) {
         setStations(response);
       } else {
@@ -44,474 +45,113 @@ const AssetConnectionsTab = ({ onRefreshAssets }) => {
     }
   };
 
-  // Load connections for selected station
-  const loadConnections = async () => {
-    if (!selectedStation) return;
-    
-    try {
-      setLoading(true);
-      const response = await assetConnectionService.getStationConnections(selectedStation.id);
-      console.log("loading station ",response);
-      setConnections(response.data || []);
-    } catch (err) {
-      console.error('Failed to load connections:', err);
-      setError(err.message || 'Failed to load connections');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
     loadStations();
   }, []);
 
-  useEffect(() => {
-    if (selectedStation) {
-      loadConnections();
-    }
-  }, [selectedStation]);
+  // Get unattached assets
+  const unattachedTanks = state.assets?.filter(a => a.type === 'STORAGE_TANK' && !a.stationId) || [];
+  const unattachedPumps = state.assets?.filter(a => a.type === 'FUEL_PUMP' && !a.stationId) || [];
+  const unattachedIslands = state.assets?.filter(a => a.type === 'ISLAND' && !a.stationId) || [];
+  const unattachedWarehouses = state.assets?.filter(a => a.type === 'WAREHOUSE' && !a.stationId) || [];
 
-  // Get assets by type
+  // Get assets attached to selected station
   const stationTanks = state.assets?.filter(a => a.type === 'STORAGE_TANK' && a.stationId === selectedStation?.id) || [];
   const stationPumps = state.assets?.filter(a => a.type === 'FUEL_PUMP' && a.stationId === selectedStation?.id) || [];
   const stationIslands = state.assets?.filter(a => a.type === 'ISLAND' && a.stationId === selectedStation?.id) || [];
+  const stationWarehouses = state.assets?.filter(a => a.type === 'WAREHOUSE' && a.stationId === selectedStation?.id) || [];
 
-  // Get connections by type
-  const tankPumpConnections = connections.filter(c => c.type === 'TANK_TO_PUMP');
-  const tankIslandConnections = connections.filter(c => c.type === 'TANK_TO_ISLAND');
-  const pumpIslandConnections = connections.filter(c => c.type === 'PUMP_TO_ISLAND');
-
-  // Group connections by source asset for easier display
-  const groupedTankPumpConnections = {};
-  tankPumpConnections.forEach(conn => {
-    const tankId = conn.assetA.type === 'STORAGE_TANK' ? conn.assetAId : conn.assetBId;
-    const pumpId = conn.assetA.type === 'FUEL_PUMP' ? conn.assetAId : conn.assetBId;
+  const handleAttachAsset = (assetId, assetType) => {
+    if (!selectedStation) return;
     
-    if (!groupedTankPumpConnections[tankId]) {
-      groupedTankPumpConnections[tankId] = [];
-    }
-    groupedTankPumpConnections[tankId].push(pumpId);
-  });
-
-  const groupedTankIslandConnections = {};
-  tankIslandConnections.forEach(conn => {
-    const tankId = conn.assetA.type === 'STORAGE_TANK' ? conn.assetAId : conn.assetBId;
-    const islandId = conn.assetA.type === 'ISLAND' ? conn.assetAId : conn.assetBId;
-    
-    if (!groupedTankIslandConnections[islandId]) {
-      groupedTankIslandConnections[islandId] = [];
-    }
-    groupedTankIslandConnections[islandId].push(tankId);
-  });
-
-  const groupedPumpIslandConnections = {};
-  pumpIslandConnections.forEach(conn => {
-    const pumpId = conn.assetA.type === 'FUEL_PUMP' ? conn.assetAId : conn.assetBId;
-    const islandId = conn.assetA.type === 'ISLAND' ? conn.assetAId : conn.assetBId;
-    
-    if (!groupedPumpIslandConnections[islandId]) {
-      groupedPumpIslandConnections[islandId] = [];
-    }
-    groupedPumpIslandConnections[islandId].push(pumpId);
-  });
-
-  // Get unconnected assets
-  const getUnconnectedPumps = () => {
-    const connectedPumpIds = new Set(tankPumpConnections.flatMap(conn => 
-      [conn.assetAId, conn.assetBId].filter(id => 
-        state.assets?.find(a => a.id === id)?.type === 'FUEL_PUMP'
-      )
-    ));
-    
-    return stationPumps.filter(pump => !connectedPumpIds.has(pump.id));
-  };
-
-  const getUnconnectedTanks = () => {
-    const connectedTankIds = new Set(tankPumpConnections.flatMap(conn => 
-      [conn.assetAId, conn.assetBId].filter(id => 
-        state.assets?.find(a => a.id === id)?.type === 'STORAGE_TANK'
-      )
-    ));
-    
-    return stationTanks.filter(tank => !connectedTankIds.has(tank.id));
-  };
-
-  const openConnectionModal = (type, sourceAsset) => {
-    setConnectionModal({
-      isOpen: true,
-      type,
-      sourceAsset,
-      targetAssets: []
-    });
-  };
-
-  const closeConnectionModal = () => {
-    setConnectionModal({
-      isOpen: false,
-      type: null,
-      sourceAsset: null,
-      targetAssets: []
-    });
-  };
-
-  const handleTargetAssetSelection = (assetId, checked) => {
-    setConnectionModal(prev => ({
+    // Toggle selection
+    setSelectedAssets(prev => ({
       ...prev,
-      targetAssets: checked 
-        ? [...prev.targetAssets, assetId]
-        : prev.targetAssets.filter(id => id !== assetId)
+      [assetType]: prev[assetType].includes(assetId)
+        ? prev[assetType].filter(id => id !== assetId)
+        : [...prev[assetType], assetId]
     }));
   };
-
-  const createConnections = async () => {
-    if (!connectionModal.sourceAsset || connectionModal.targetAssets.length === 0) return;
+  
+  const handleBulkAttach = async () => {
+    if (!selectedStation) return;
     
     try {
       setLoading(true);
       setError('');
       setSuccess('');
       
-      const { type, sourceAsset, targetAssets } = connectionModal;
+      // Collect all selected asset IDs
+      const allAssetIds = [
+        ...selectedAssets.tanks,
+        ...selectedAssets.pumps,
+        ...selectedAssets.islands,
+        ...selectedAssets.warehouses
+      ];
       
-      // Create connections based on type
-      const connectionPromises = targetAssets.map(targetAssetId => {
-        let assetAId, assetBId;
-        
-        if (type === 'TANK_TO_PUMP') {
-          assetAId = sourceAsset.id; // Tank
-          assetBId = targetAssetId;  // Pump
-        } else if (type === 'TANK_TO_ISLAND') {
-          assetAId = sourceAsset.id; // Tank
-          assetBId = targetAssetId;  // Island
-        } else if (type === 'PUMP_TO_ISLAND') {
-          assetAId = sourceAsset.id; // Pump
-          assetBId = targetAssetId;  // Island
-        }
-        
-        return assetConnectionService.createConnection(selectedStation.id, {
-          type,
-          assetAId,
-          assetBId
-        });
-      });
+      if (allAssetIds.length === 0) {
+        setError('Please select at least one asset to attach');
+        return;
+      }
       
-      await Promise.all(connectionPromises);
-      setSuccess(`Successfully created ${targetAssets.length} connections`);
-      closeConnectionModal();
-      loadConnections();
+      // Use bulk assign endpoint
+      await assetService.bulkAssignToStation(allAssetIds, selectedStation.id);
+      
+      setSuccess(`Successfully attached ${allAssetIds.length} assets to station`);
+      
+      // Clear selection
+      setSelectedAssets({ tanks: [], pumps: [], islands: [], warehouses: [] });
+      
+      // Refresh assets
+      if (onRefreshAssets) {
+        onRefreshAssets();
+      } else {
+        // Fallback: reload the page after a short delay
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      }
     } catch (err) {
-      console.error('Failed to create connections:', err);
-      setError(err.message || 'Failed to create connections');
+      console.error('Failed to bulk assign assets:', err);
+      setError(err.message || 'Failed to attach assets to station');
     } finally {
       setLoading(false);
     }
   };
-
-  const disconnectAssets = async (connectionId) => {
+  
+  const handleDetachAsset = async (assetId) => {
     try {
       setLoading(true);
       setError('');
       setSuccess('');
       
-      await assetConnectionService.deleteConnection(connectionId);
-      setSuccess('Connection successfully removed');
-      loadConnections();
+      await assetService.removeFromStation(assetId);
+      
+      setSuccess('Asset successfully detached from station');
+      
+      // Refresh assets
+      if (onRefreshAssets) {
+        onRefreshAssets();
+      } else {
+        // Fallback: reload the page after a short delay
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      }
     } catch (err) {
-      console.error('Failed to disconnect assets:', err);
-      setError(err.message || 'Failed to disconnect assets');
+      console.error('Failed to detach asset:', err);
+      setError(err.message || 'Failed to detach asset from station');
     } finally {
       setLoading(false);
     }
   };
 
-  const findConnectionId = (type, assetAId, assetBId) => {
-    return connections.find(conn => 
-      conn.type === type && 
-      ((conn.assetAId === assetAId && conn.assetBId === assetBId) ||
-       (conn.assetAId === assetBId && conn.assetBId === assetAId))
-    )?.id;
-  };
-
-  // Render connection section based on type
-  const renderTankPumpSection = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {/* Connected Tanks and Pumps */}
-      <div>
-        <h3 className="font-medium mb-4 flex items-center">
-          <Fuel className="w-5 h-5 mr-2 text-blue-500" />
-          Tanks with Pump Connections
-        </h3>
-        
-        {stationTanks.length === 0 ? (
-          <p className="text-gray-500 text-sm py-4">No tanks available at this station</p>
-        ) : (
-          <div className="space-y-4">
-            {stationTanks.map(tank => (
-              <Card key={tank.id} className="mb-4">
-                <div className="flex justify-between items-center mb-3">
-                  <h4 className="font-medium">{tank.name}</h4>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openConnectionModal('TANK_TO_PUMP', tank)}
-                  >
-                    <Link className="w-4 h-4 mr-1" />
-                    Connect Pumps
-                  </Button>
-                </div>
-                
-                {groupedTankPumpConnections[tank.id]?.length > 0 ? (
-                  <div className="space-y-2">
-                    {groupedTankPumpConnections[tank.id].map(pumpId => {
-                      const pump = state.assets?.find(a => a.id === pumpId);
-                      if (!pump) return null;
-                      
-                      const connectionId = findConnectionId('TANK_TO_PUMP', tank.id, pumpId);
-                      
-                      return (
-                        <div key={pumpId} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                          <span>{pump.name}</span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => disconnectAssets(connectionId)}
-                            title="Disconnect pump"
-                          >
-                            <Unlink className="w-4 h-4 text-red-500" />
-                          </Button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-sm py-2">No pumps connected to this tank</p>
-                )}
-              </Card>
-            ))}
-          </div>
-        )}
-      </div>
-      
-      {/* Unconnected Pumps */}
-      <div>
-        <h3 className="font-medium mb-4 flex items-center">
-          <Zap className="w-5 h-5 mr-2 text-yellow-500" />
-          Unconnected Pumps
-        </h3>
-        
-        {getUnconnectedPumps().length === 0 ? (
-          <p className="text-gray-500 text-sm py-4">All pumps are connected to tanks</p>
-        ) : (
-          <div className="space-y-2">
-            {getUnconnectedPumps().map(pump => (
-              <div key={pump.id} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
-                <span>{pump.name}</span>
-                <span className="text-sm text-gray-500">Not connected</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  const renderTankIslandSection = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {/* Islands with Tank Connections */}
-      <div>
-        <h3 className="font-medium mb-4 flex items-center">
-          <MapPin className="w-5 h-5 mr-2 text-green-500" />
-          Islands with Tank Connections
-        </h3>
-        
-        {stationIslands.length === 0 ? (
-          <p className="text-gray-500 text-sm py-4">No islands available at this station</p>
-        ) : (
-          <div className="space-y-4">
-            {stationIslands.map(island => (
-              <Card key={island.id} className="mb-4">
-                <div className="flex justify-between items-center mb-3">
-                  <h4 className="font-medium">{island.name}</h4>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openConnectionModal('TANK_TO_ISLAND', island)}
-                  >
-                    <Link className="w-4 h-4 mr-1" />
-                    Connect Tanks
-                  </Button>
-                </div>
-                
-                {groupedTankIslandConnections[island.id]?.length > 0 ? (
-                  <div className="space-y-2">
-                    {groupedTankIslandConnections[island.id].map(tankId => {
-                      const tank = state.assets?.find(a => a.id === tankId);
-                      if (!tank) return null;
-                      
-                      const connectionId = findConnectionId('TANK_TO_ISLAND', island.id, tankId);
-                      
-                      return (
-                        <div key={tankId} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                          <span>{tank.name}</span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => disconnectAssets(connectionId)}
-                            title="Disconnect tank"
-                          >
-                            <Unlink className="w-4 h-4 text-red-500" />
-                          </Button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-sm py-2">No tanks connected to this island</p>
-                )}
-              </Card>
-            ))}
-          </div>
-        )}
-      </div>
-      
-      {/* Unconnected Tanks */}
-      <div>
-        <h3 className="font-medium mb-4 flex items-center">
-          <Fuel className="w-5 h-5 mr-2 text-blue-500" />
-          Unconnected Tanks
-        </h3>
-        
-        {getUnconnectedTanks().length === 0 ? (
-          <p className="text-gray-500 text-sm py-4">All tanks are connected to islands</p>
-        ) : (
-          <div className="space-y-2">
-            {getUnconnectedTanks().map(tank => (
-              <div key={tank.id} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
-                <span>{tank.name}</span>
-                <span className="text-sm text-gray-500">Not connected</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  const renderPumpIslandSection = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {/* Islands with Pump Connections */}
-      <div>
-        <h3 className="font-medium mb-4 flex items-center">
-          <MapPin className="w-5 h-5 mr-2 text-green-500" />
-          Islands with Pump Connections
-        </h3>
-        
-        {stationIslands.length === 0 ? (
-          <p className="text-gray-500 text-sm py-4">No islands available at this station</p>
-        ) : (
-          <div className="space-y-4">
-            {stationIslands.map(island => (
-              <Card key={island.id} className="mb-4">
-                <div className="flex justify-between items-center mb-3">
-                  <h4 className="font-medium">{island.name}</h4>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openConnectionModal('PUMP_TO_ISLAND', island)}
-                  >
-                    <Link className="w-4 h-4 mr-1" />
-                    Connect Pumps
-                  </Button>
-                </div>
-                
-                {groupedPumpIslandConnections[island.id]?.length > 0 ? (
-                  <div className="space-y-2">
-                    {groupedPumpIslandConnections[island.id].map(pumpId => {
-                      const pump = state.assets?.find(a => a.id === pumpId);
-                      if (!pump) return null;
-                      
-                      const connectionId = findConnectionId('PUMP_TO_ISLAND', island.id, pumpId);
-                      
-                      return (
-                        <div key={pumpId} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                          <span>{pump.name}</span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => disconnectAssets(connectionId)}
-                            title="Disconnect pump"
-                          >
-                            <Unlink className="w-4 h-4 text-red-500" />
-                          </Button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-sm py-2">No pumps connected to this island</p>
-                )}
-              </Card>
-            ))}
-          </div>
-        )}
-      </div>
-      
-      {/* Unconnected Pumps */}
-      <div>
-        <h3 className="font-medium mb-4 flex items-center">
-          <Zap className="w-5 h-5 mr-2 text-yellow-500" />
-          Unconnected Pumps
-        </h3>
-        
-        {stationPumps.filter(pump => {
-          // Filter out pumps that are already connected to an island
-          const connectedToIsland = pumpIslandConnections.some(conn => 
-            conn.assetAId === pump.id || conn.assetBId === pump.id
-          );
-          return !connectedToIsland;
-        }).length === 0 ? (
-          <p className="text-gray-500 text-sm py-4">All pumps are connected to islands</p>
-        ) : (
-          <div className="space-y-2">
-            {stationPumps.filter(pump => {
-              const connectedToIsland = pumpIslandConnections.some(conn => 
-                conn.assetAId === pump.id || conn.assetBId === pump.id
-              );
-              return !connectedToIsland;
-            }).map(pump => (
-              <div key={pump.id} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
-                <span>{pump.name}</span>
-                <span className="text-sm text-gray-500">Not connected to island</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  // Get available target assets based on connection type
-  const getAvailableTargetAssets = () => {
-    const { type, sourceAsset } = connectionModal;
-    
-    if (!type || !sourceAsset) return [];
-    
-    if (type === 'TANK_TO_PUMP') {
-      // For TANK_TO_PUMP, show unconnected pumps
-      return getUnconnectedPumps();
-    } else if (type === 'TANK_TO_ISLAND') {
-      // For TANK_TO_ISLAND, show unconnected tanks
-      return getUnconnectedTanks();
-    } else if (type === 'PUMP_TO_ISLAND') {
-      // For PUMP_TO_ISLAND, show pumps not connected to this island
-      return stationPumps.filter(pump => {
-        const alreadyConnected = groupedPumpIslandConnections[sourceAsset.id]?.includes(pump.id);
-        return !alreadyConnected;
-      });
-    }
-    
-    return [];
-  };
+  // Check if any assets are selected
+  const hasSelectedAssets = 
+    selectedAssets.tanks.length > 0 || 
+    selectedAssets.pumps.length > 0 || 
+    selectedAssets.islands.length > 0 || 
+    selectedAssets.warehouses.length > 0;
 
   return (
     <div className="space-y-6">
@@ -527,6 +167,7 @@ const AssetConnectionsTab = ({ onRefreshAssets }) => {
             const stationId = e.target.value;
             const station = stations.find(s => s.id === stationId);
             setSelectedStation(station || null);
+            setSelectedAssets({ tanks: [], pumps: [], islands: [], warehouses: [] }); // Clear selection
             setError('');
             setSuccess('');
           }}
@@ -554,111 +195,341 @@ const AssetConnectionsTab = ({ onRefreshAssets }) => {
       
       {selectedStation ? (
         <>
-          {/* Connection Type Tabs */}
-          <div className="border-b border-gray-200">
-            <nav className="-mb-px flex space-x-8">
-              <button
-                onClick={() => setActiveTab('tank-pump')}
-                className={clsx(
-                  "py-4 px-1 border-b-2 font-medium text-sm",
-                  activeTab === 'tank-pump'
-                    ? "border-blue-500 text-blue-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                )}
-              >
-                <Fuel className="w-4 h-4 inline mr-1" />
-                <Zap className="w-4 h-4 inline mr-1" />
-                Tank-Pump Connections
-              </button>
-              <button
-                onClick={() => setActiveTab('tank-island')}
-                className={clsx(
-                  "py-4 px-1 border-b-2 font-medium text-sm",
-                  activeTab === 'tank-island'
-                    ? "border-blue-500 text-blue-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                )}
-              >
-                <Fuel className="w-4 h-4 inline mr-1" />
-                <MapPin className="w-4 h-4 inline mr-1" />
-                Tank-Island Connections
-              </button>
-              <button
-                onClick={() => setActiveTab('pump-island')}
-                className={clsx(
-                  "py-4 px-1 border-b-2 font-medium text-sm",
-                  activeTab === 'pump-island'
-                    ? "border-blue-500 text-blue-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                )}
-              >
-                <Zap className="w-4 h-4 inline mr-1" />
-                <MapPin className="w-4 h-4 inline mr-1" />
-                Pump-Island Connections
-              </button>
-            </nav>
+          {/* Bulk Attach Button */}
+          <div className="flex justify-end mb-4">
+            <Button
+              variant="cosmic"
+              icon={Link}
+              onClick={handleBulkAttach}
+              disabled={!hasSelectedAssets || loading}
+              className="transition-all"
+            >
+              {loading ? (
+                <LoadingSpinner size="sm" className="mr-2" />
+              ) : (
+                <Link className="w-4 h-4 mr-2" />
+              )}
+              Attach Selected Assets (
+              {selectedAssets.tanks.length + 
+               selectedAssets.pumps.length + 
+               selectedAssets.islands.length + 
+               selectedAssets.warehouses.length})
+            </Button>
           </div>
           
-          {/* Connection Content */}
-          <div className="mt-6">
-            {activeTab === 'tank-pump' && renderTankPumpSection()}
-            {activeTab === 'tank-island' && renderTankIslandSection()}
-            {activeTab === 'pump-island' && renderPumpIslandSection()}
-          </div>
-          
-          {/* Connection Modal */}
-          <Modal
-            isOpen={connectionModal.isOpen}
-            onClose={closeConnectionModal}
-            title={`Connect ${connectionModal.sourceAsset?.name} to ${connectionModal.type === 'TANK_TO_PUMP' ? 'Pumps' : connectionModal.type === 'TANK_TO_ISLAND' ? 'Tanks' : 'Pumps'}`}
-          >
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">
-                Select {connectionModal.type === 'TANK_TO_PUMP' ? 'pumps' : connectionModal.type === 'TANK_TO_ISLAND' ? 'tanks' : 'pumps'} to connect to {connectionModal.sourceAsset?.name}
-              </p>
-              
-              <div className="max-h-64 overflow-y-auto border rounded-lg p-2">
-                {getAvailableTargetAssets().length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">No available assets to connect</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Unattached Tanks */}
+            <Card title="Available Tanks" icon={Fuel}>
+              <div className="space-y-2 max-h-96 overflow-y-auto p-2">
+                {unattachedTanks.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">No unattached tanks</p>
                 ) : (
-                  getAvailableTargetAssets().map(asset => (
-                    <div key={asset.id} className="flex items-center p-2 hover:bg-gray-50 rounded">
-                      <input
-                        type="checkbox"
-                        id={`asset-${asset.id}`}
-                        checked={connectionModal.targetAssets.includes(asset.id)}
-                        onChange={(e) => handleTargetAssetSelection(asset.id, e.target.checked)}
-                        className="mr-2"
-                      />
-                      <label htmlFor={`asset-${asset.id}`} className="flex-1 cursor-pointer">
-                        {asset.name}
-                      </label>
+                  unattachedTanks.map(tank => (
+                    <div 
+                      key={tank.id} 
+                      className={clsx(
+                        "flex justify-between items-center p-3 rounded-lg cursor-pointer transition-all",
+                        selectedAssets.tanks.includes(tank.id)
+                          ? "bg-blue-100 border border-blue-300"
+                          : "bg-gray-50 hover:bg-gray-100"
+                      )}
+                      onClick={() => handleAttachAsset(tank.id, 'tanks')}
+                    >
+                      <div>
+                        <div className="font-medium">{tank.name}</div>
+                        <div className="text-sm text-gray-500">
+                          {tank.type} · {tank.productType}
+                        </div>
+                      </div>
+                      <div className="flex items-center">
+                        {selectedAssets.tanks.includes(tank.id) && (
+                          <span className="text-blue-500 mr-2">Selected</span>
+                        )}
+                        <Button 
+                          size="sm" 
+                          variant={selectedAssets.tanks.includes(tank.id) ? "primary" : "outline"}
+                          disabled={loading}
+                        >
+                          {selectedAssets.tanks.includes(tank.id) ? 'Selected' : 'Select'}
+                        </Button>
+                      </div>
                     </div>
                   ))
                 )}
               </div>
+            </Card>
+            
+            {/* Unattached Pumps */}
+            <Card title="Available Pumps" icon={Zap}>
+              <div className="space-y-2 max-h-96 overflow-y-auto p-2">
+                {unattachedPumps.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">No unattached pumps</p>
+                ) : (
+                  unattachedPumps.map(pump => (
+                    <div 
+                      key={pump.id} 
+                      className={clsx(
+                        "flex justify-between items-center p-3 rounded-lg cursor-pointer transition-all",
+                        selectedAssets.pumps.includes(pump.id)
+                          ? "bg-blue-100 border border-blue-300"
+                          : "bg-gray-50 hover:bg-gray-100"
+                      )}
+                      onClick={() => handleAttachAsset(pump.id, 'pumps')}
+                    >
+                      <div>
+                        <div className="font-medium">{pump.name}</div>
+                        <div className="text-sm text-gray-500">Pump</div>
+                      </div>
+                      <div className="flex items-center">
+                        {selectedAssets.pumps.includes(pump.id) && (
+                          <span className="text-blue-500 mr-2">Selected</span>
+                        )}
+                        <Button 
+                          size="sm" 
+                          variant={selectedAssets.pumps.includes(pump.id) ? "primary" : "outline"}
+                          disabled={loading}
+                        >
+                          {selectedAssets.pumps.includes(pump.id) ? 'Selected' : 'Select'}
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+            
+            {/* Unattached Islands */}
+            <Card title="Available Islands" icon={MapPin}>
+              <div className="space-y-2 max-h-96 overflow-y-auto p-2">
+                {unattachedIslands.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">No unattached islands</p>
+                ) : (
+                  unattachedIslands.map(island => (
+                    <div 
+                      key={island.id} 
+                      className={clsx(
+                        "flex justify-between items-center p-3 rounded-lg cursor-pointer transition-all",
+                        selectedAssets.islands.includes(island.id)
+                          ? "bg-blue-100 border border-blue-300"
+                          : "bg-gray-50 hover:bg-gray-100"
+                      )}
+                      onClick={() => handleAttachAsset(island.id, 'islands')}
+                    >
+                      <div>
+                        <div className="font-medium">{island.name}</div>
+                        <div className="text-sm text-gray-500">
+                          Island · {island.code}
+                        </div>
+                      </div>
+                      <div className="flex items-center">
+                        {selectedAssets.islands.includes(island.id) && (
+                          <span className="text-blue-500 mr-2">Selected</span>
+                        )}
+                        <Button 
+                          size="sm" 
+                          variant={selectedAssets.islands.includes(island.id) ? "primary" : "outline"}
+                          disabled={loading}
+                        >
+                          {selectedAssets.islands.includes(island.id) ? 'Selected' : 'Select'}
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+            
+            {/* Unattached Warehouses */}
+            <Card title="Available Warehouses" icon={Warehouse}>
+              <div className="space-y-2 max-h-96 overflow-y-auto p-2">
+                {unattachedWarehouses.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">No unattached warehouses</p>
+                ) : (
+                  unattachedWarehouses.map(warehouse => (
+                    <div 
+                      key={warehouse.id} 
+                      className={clsx(
+                        "flex justify-between items-center p-3 rounded-lg cursor-pointer transition-all",
+                        selectedAssets.warehouses.includes(warehouse.id)
+                          ? "bg-blue-100 border border-blue-300"
+                          : "bg-gray-50 hover:bg-gray-100"
+                      )}
+                      onClick={() => handleAttachAsset(warehouse.id, 'warehouses')}
+                    >
+                      <div>
+                        <div className="font-medium">{warehouse.name}</div>
+                        <div className="text-sm text-gray-500">Warehouse</div>
+                      </div>
+                      <div className="flex items-center">
+                        {selectedAssets.warehouses.includes(warehouse.id) && (
+                          <span className="text-blue-500 mr-2">Selected</span>
+                        )}
+                        <Button 
+                          size="sm" 
+                          variant={selectedAssets.warehouses.includes(warehouse.id) ? "primary" : "outline"}
+                          disabled={loading}
+                        >
+                          {selectedAssets.warehouses.includes(warehouse.id) ? 'Selected' : 'Select'}
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </div>
+          
+          {/* Attached Assets */}
+          <Card 
+            title={`Attached to ${selectedStation.name || selectedStation.code || 'Station'}`}
+            headerClass="bg-blue-50"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Attached Tanks */}
+              <div>
+                <h3 className="font-medium mb-2 flex items-center">
+                  <Fuel className="w-4 h-4 mr-2 text-blue-500" />
+                  Tanks ({stationTanks.length})
+                </h3>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {stationTanks.length === 0 ? (
+                    <p className="text-gray-500 text-sm">No tanks attached</p>
+                  ) : (
+                    stationTanks.map(tank => (
+                      <div 
+                        key={tank.id} 
+                        className="flex justify-between items-center p-3 bg-blue-50 rounded-lg"
+                      >
+                        <div>
+                          <div className="font-medium">{tank.name}</div>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleDetachAsset(tank.id)}
+                          title="Detach tank"
+                          className="p-1"
+                          disabled={loading}
+                        >
+                          {loading ? <LoadingSpinner size="sm" /> : <X className="w-4 h-4" />}
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
               
-              <div className="flex justify-end space-x-3 pt-4">
-                <Button variant="outline" onClick={closeConnectionModal}>
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={createConnections} 
-                  disabled={connectionModal.targetAssets.length === 0 || loading}
-                >
-                  {loading ? <LoadingSpinner size="sm" className="mr-2" /> : <Link className="w-4 h-4 mr-2" />}
-                  Create {connectionModal.targetAssets.length} Connection(s)
-                </Button>
+              {/* Attached Pumps */}
+              <div>
+                <h3 className="font-medium mb-2 flex items-center">
+                  <Zap className="w-4 h-4 mr-2 text-yellow-500" />
+                  Pumps ({stationPumps.length})
+                </h3>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {stationPumps.length === 0 ? (
+                    <p className="text-gray-500 text-sm">No pumps attached</p>
+                  ) : (
+                    stationPumps.map(pump => (
+                      <div 
+                        key={pump.id} 
+                        className="flex justify-between items-center p-3 bg-blue-50 rounded-lg"
+                      >
+                        <div>
+                          <div className="font-medium">{pump.name}</div>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleDetachAsset(pump.id)}
+                          title="Detach pump"
+                          className="p-1"
+                          disabled={loading}
+                        >
+                          {loading ? <LoadingSpinner size="sm" /> : <X className="w-4 h-4" />}
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+              
+              {/* Attached Islands */}
+              <div>
+                <h3 className="font-medium mb-2 flex items-center">
+                  <MapPin className="w-4 h-4 mr-2 text-green-500" />
+                  Islands ({stationIslands.length})
+                </h3>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {stationIslands.length === 0 ? (
+                    <p className="text-gray-500 text-sm">No islands attached</p>
+                  ) : (
+                    stationIslands.map(island => (
+                      <div 
+                        key={island.id} 
+                        className="flex justify-between items-center p-3 bg-blue-50 rounded-lg"
+                      >
+                        <div>
+                          <div className="font-medium">{island.name}</div>
+                          <div className="text-sm text-gray-500">{island.code}</div>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleDetachAsset(island.id)}
+                          title="Detach island"
+                          className="p-1"
+                          disabled={loading}
+                        >
+                          {loading ? <LoadingSpinner size="sm" /> : <X className="w-4 h-4" />}
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+              
+              {/* Attached Warehouses */}
+              <div>
+                <h3 className="font-medium mb-2 flex items-center">
+                  <Warehouse className="w-4 h-4 mr-2 text-purple-500" />
+                  Warehouses ({stationWarehouses.length})
+                </h3>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {stationWarehouses.length === 0 ? (
+                    <p className="text-gray-500 text-sm">No warehouses attached</p>
+                  ) : (
+                    stationWarehouses.map(warehouse => (
+                      <div 
+                        key={warehouse.id} 
+                        className="flex justify-between items-center p-3 bg-blue-50 rounded-lg"
+                      >
+                        <div>
+                          <div className="font-medium">{warehouse.name}</div>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleDetachAsset(warehouse.id)}
+                          title="Detach warehouse"
+                          className="p-1"
+                          disabled={loading}
+                        >
+                          {loading ? <LoadingSpinner size="sm" /> : <X className="w-4 h-4" />}
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
-          </Modal>
+          </Card>
         </>
       ) : (
         <Card>
           <div className="text-center py-10">
-            <div className="text-gray-400 mb-2">Select a station to manage asset connections</div>
+            <div className="text-gray-400 mb-2">Select a station to manage its assets</div>
             <div className="text-sm text-gray-500">
-              Connect tanks to pumps, tanks to islands, and pumps to islands for operational management
+              Attach tanks, pumps, islands, and warehouses to service stations for operational management
             </div>
           </div>
         </Card>
@@ -667,4 +538,4 @@ const AssetConnectionsTab = ({ onRefreshAssets }) => {
   );
 };
 
-export default AssetConnectionsTab;
+export default AssetAttachmentsTab;
