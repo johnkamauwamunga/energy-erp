@@ -37,9 +37,10 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
     try {
       setLoadingCategories(true);
       const response = await fuelService.getFuelCategories();
-      setCategories(response.data || []);
+      setCategories(Array.isArray(response) ? response : response.data || []);
     } catch (error) {
       console.error('Failed to load categories:', error);
+      setErrors({ general: 'Failed to load categories' });
     } finally {
       setLoadingCategories(false);
     }
@@ -49,9 +50,10 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
     try {
       setLoadingSubTypes(true);
       const response = await fuelService.getFuelSubTypes({ categoryId });
-      setSubTypes(response.data || []);
+      setSubTypes(Array.isArray(response) ? response : response.data || []);
     } catch (error) {
       console.error('Failed to load sub types:', error);
+      setErrors({ general: 'Failed to load sub types' });
     } finally {
       setLoadingSubTypes(false);
     }
@@ -67,6 +69,9 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
   const handleTypeChange = (type) => {
     setSelectedType(type);
     resetForm();
+    if (type === 'subtype' || type === 'product') {
+      loadCategories();
+    }
   };
 
   const validateForm = () => {
@@ -125,15 +130,7 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
       onClose();
     } catch (error) {
       console.error('Failed to create:', error);
-      if (error.response?.data?.errors) {
-        const backendErrors = {};
-        error.response.data.errors.forEach(err => {
-          backendErrors[err.field] = err.message;
-        });
-        setErrors(backendErrors);
-      } else {
-        setErrors({ general: error.response?.data?.message || `Failed to create ${selectedType}` });
-      }
+      setErrors({ general: error.message || `Failed to create ${selectedType}` });
     } finally {
       setIsSubmitting(false);
     }
@@ -322,15 +319,6 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
     }
   };
 
-  const getTypeIcon = () => {
-    switch (selectedType) {
-      case 'category': return <Layers className="w-5 h-5" />;
-      case 'subtype': return <Package className="w-5 h-5" />;
-      case 'product': return <Fuel className="w-5 h-5" />;
-      default: return <Layers className="w-5 h-5" />;
-    }
-  };
-
   const getTypeLabel = () => {
     switch (selectedType) {
       case 'category': return 'Category';
@@ -415,7 +403,6 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
             loading={isSubmitting}
             disabled={isSubmitting}
           >
-            {getTypeIcon()}
             Create {getTypeLabel()}
           </Button>
         </div>

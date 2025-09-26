@@ -15,6 +15,8 @@ import StationAssetManagement from './assets/StationAssetManagement';
 import StationAssetsOverview from './assets/StationAssetsOverview';
 // import AssetAssignmentManager from './assets/AssetAssignmentManager'
 import SalesManagement from '../common/sales/SalesManagement';
+import StationUserManagement from './staff/StationUserManagement';
+// import FuelOffloadManagement from '../common/fuel-offload/FuelOffloadManagement';
 
 const StationManagerDashboard = () => {
   const { state } = useApp();
@@ -67,9 +69,9 @@ console.log("station",station);
       case 'shifts':
         return <ShiftManagement />;
         case 'offloads':
-          return <OffloadManagement />;
+        return <PlaceholderComponent title="Offload Under Maaintenance" icon={BarChart3} />;
       case 'staff':
-        return <PlaceholderComponent title="Staff Management" icon={Users} />;
+           return <StationUserManagement />;
        case 'sales':
         return <SalesManagement/>;
       case 'reports':

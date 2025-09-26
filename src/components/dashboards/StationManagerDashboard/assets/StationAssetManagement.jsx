@@ -1,13 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button, Card, Table, Badge, Alert, Tab } from '../../../ui';
 import { useApp } from '../../../../context/AppContext';
-import { 
-  attachAssetToStation, 
-  detachAssetFromStation,
-  attachPumpsToTank,
-  attachAssetsToIsland
-} from '../../../../context/AppContext/actions';
 import { assetService } from '../../../../services/assetService/assetService';
+import { assetConnectionService } from '../../../../services/assetConnection/assetConnectionService';
 import { Fuel, Zap, Package, Link, Unlink, Warehouse } from 'lucide-react';
 
 const StationAssetManagement = () => {
@@ -18,6 +13,8 @@ const StationAssetManagement = () => {
   const [selectedIsland, setSelectedIsland] = useState(null);
   const [loading, setLoading] = useState(true);
   const [assets, setAssets] = useState([]);
+  const [connections, setConnections] = useState(null);
+  const [topology, setTopology] = useState(null);
   const [error, setError] = useState('');
   const [assetsForIsland, setAssetsForIsland] = useState({
     tanks: [],
@@ -25,18 +22,17 @@ const StationAssetManagement = () => {
   });
   const [userInfo, setUserInfo] = useState(null);
 
-  // Memoize the loadAssets function
-  const loadAssetsFromBackend = useCallback(async (currentUser) => {
+  // Load assets and connections
+  const loadAssetsAndConnections = useCallback(async (currentUser) => {
     try {
       setLoading(true);
       setError("");
-      console.log("🔄 Loading assets from backend...");
+      console.log("🔄 Loading assets and connections from backend...");
 
-      let assetsData;
       let stationId = currentUser?.station?.id;
-      console.log("current user is ", currentUser?.user?.role);
+      let assetsData;
       
-      // Choose the right API endpoint based on role
+      // Load assets based on role
       if (currentUser?.user?.role === "SUPER_ADMIN") {
         assetsData = await assetService.getAssets();
       } else if (
@@ -44,26 +40,38 @@ const StationAssetManagement = () => {
         currentUser?.user?.role === "COMPANY_MANAGER"
       ) {
         assetsData = await assetService.getCompanyAssets(currentUser.company.id);
-        console.log("🔄 Company assets are ", assetsData);
       } else if (
         currentUser?.user?.role === "STATION_MANAGER" ||
         currentUser?.user?.role === "SUPERVISOR"
       ) {
         assetsData = await assetService.getStationAssets(stationId);
-        console.log("🔄 Station assets: ", assetsData);
       } else {
         assetsData = await assetService.getAssets();
       }
 
-      console.log("✅ Assets loaded successfully:", assetsData);
-
-      // Ensure we're working with the data property if it exists
       const assetsArray = assetsData.data || assetsData || [];
       setAssets(assetsArray);
       dispatch({ type: "SET_ASSETS", payload: assetsArray });
+
+      // Load station topology if we have a station
+      if (stationId) {
+        try {
+          const topologyData = await assetConnectionService.getStationTopology(stationId);
+
+          console.log("typografy asset connection ",topologyData)
+          const processedTopology = assetConnectionService.processTopologyData(topologyData);
+                    console.log("proccessed  asset connection ",processedTopology)
+          setTopology(processedTopology);
+          setConnections(processedTopology?.connections || []);
+        } catch (topologyError) {
+          console.warn("Could not load topology data:", topologyError.message);
+          // Continue without topology data
+        }
+      }
+
     } catch (error) {
-      console.error("❌ Failed to load assets:", error);
-      setError(error.message || "Failed to load assets. Please try again.");
+      console.error("❌ Failed to load data:", error);
+      setError(error.message || "Failed to load data. Please try again.");
       setAssets([]);
     } finally {
       setLoading(false);
@@ -83,12 +91,19 @@ const StationAssetManagement = () => {
     }
   }, []);
 
-  // Load assets when userInfo is available
+  // Load assets and connections when userInfo is available
   useEffect(() => {
     if (userInfo) {
-      loadAssetsFromBackend(userInfo);
+      loadAssetsAndConnections(userInfo);
     }
-  }, [userInfo, loadAssetsFromBackend]);
+  }, [userInfo, loadAssetsAndConnections]);
+
+  // Helper function to refresh data
+  const refreshData = useCallback(() => {
+    if (userInfo) {
+      loadAssetsAndConnections(userInfo);
+    }
+  }, [userInfo, loadAssetsAndConnections]);
 
   if (!userInfo) {
     return (
@@ -114,22 +129,18 @@ const StationAssetManagement = () => {
     asset.type === 'STORAGE_TANK' && asset.stationId === userStationId
   );
   
-  console.log("station tanks ",stationTanks)
   const stationPumps = assets.filter(asset => 
     asset.type === 'FUEL_PUMP' && asset.stationId === userStationId
   );
   
-    console.log("station pumps ",stationPumps)
   const stationIslands = assets.filter(asset => 
     asset.type === 'ISLAND' && asset.stationId === userStationId
   );
   
-    console.log("station island ",stationIslands)
   const stationWarehouses = assets.filter(asset => 
     asset.type === 'WAREHOUSE' && asset.stationId === userStationId
   );
-  
-  console.log("station warehouse ",stationWarehouses)
+
   // Get unattached assets in the same company
   const unattachedTanks = assets.filter(asset => 
     asset.type === 'STORAGE_TANK' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
@@ -146,24 +157,46 @@ const StationAssetManagement = () => {
   const unattachedWarehouses = assets.filter(asset => 
     asset.type === 'WAREHOUSE' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
   );
-  
-  // Get pumps not attached to any tank
-  const pumpsWithoutTank = stationPumps.filter(pump => !pump.tankId);
-  
+
+  // Enhanced asset filtering using connection data
+  // Pumps that are not fully connected (no tank AND no island)
+  const pumpsAvailableForConnection = stationPumps.filter(pump => {
+    if (!connections) return !pump.tankId; // Fallback if no connection data
+    
+    const pumpConnections = assetConnectionService.filterConnectionsByType(connections, 'TANK_TO_PUMP')
+      .filter(conn => conn.assetA.id === pump.id || conn.assetB.id === pump.id);
+    
+    const islandConnections = assetConnectionService.filterConnectionsByType(connections, 'PUMP_TO_ISLAND')
+      .filter(conn => conn.assetA.id === pump.id || conn.assetB.id === pump.id);
+
+    return pumpConnections.length === 0 && islandConnections.length === 0;
+  });
+
+  // Tanks that are not connected to any island
+  const tanksAvailableForIsland = stationTanks.filter(tank => {
+    if (!connections) return !tank.islandId; // Fallback if no connection data
+    
+    const islandConnections = assetConnectionService.filterConnectionsByType(connections, 'TANK_TO_ISLAND')
+      .filter(conn => conn.assetA.id === tank.id || conn.assetB.id === tank.id);
+
+    return islandConnections.length === 0;
+  });
+
+  // Pumps that are not connected to any island
+  const pumpsAvailableForIsland = stationPumps.filter(pump => {
+    if (!connections) return !pump.islandId; // Fallback if no connection data
+    
+    const islandConnections = assetConnectionService.filterConnectionsByType(connections, 'PUMP_TO_ISLAND')
+      .filter(conn => conn.assetA.id === pump.id || conn.assetB.id === pump.id);
+
+    return islandConnections.length === 0;
+  });
+
   // Handle attaching assets to station
   const handleAttachAsset = async (assetId, assetType) => {
     try {
-      // Call the API to attach the asset to the station
       const response = await assetService.assignToStation(assetId, userStationId);
-      
-      // Update local state with the updated asset
-      const updatedAssets = assets.map(asset => 
-        asset.id === assetId ? { ...asset, stationId: userStationId } : asset
-      );
-      
-      setAssets(updatedAssets);
-      dispatch({ type: "SET_ASSETS", payload: updatedAssets });
-      
+      await refreshData();
       console.log(`✅ Asset ${assetId} attached to station successfully`);
     } catch (error) {
       console.error("❌ Failed to attach asset to station:", error);
@@ -174,64 +207,114 @@ const StationAssetManagement = () => {
   // Handle detaching assets from station
   const handleDetachAsset = async (assetId, assetType) => {
     try {
-      // Call the API to detach the asset from the station
       const response = await assetService.removeFromStation(assetId);
-      
-      // Update local state with the updated asset
-      const updatedAssets = assets.map(asset => 
-        asset.id === assetId ? { ...asset, stationId: null } : asset
-      );
-      
-      setAssets(updatedAssets);
-      dispatch({ type: "SET_ASSETS", payload: updatedAssets });
-      
+      await refreshData();
       console.log(`✅ Asset ${assetId} detached from station successfully`);
     } catch (error) {
       console.error("❌ Failed to detach asset from station:", error);
       setError(error.message || "Failed to detach asset from station");
     }
   };
-  
-  // Handle attaching pumps to tank
-  const handleAttachPumpsToTank = () => {
-    if (selectedTank && selectedPumps.length > 0) {
-      dispatch(attachPumpsToTank(selectedTank, selectedPumps));
+
+  // Handle creating TANK_TO_PUMP connection
+  const handleCreateTankToPumpConnection = async () => {
+    if (!selectedTank || selectedPumps.length === 0) return;
+
+    try {
+      setError('');
+      
+      // Create connections for each selected pump
+      const connectionPromises = selectedPumps.map(pumpId => 
+        assetConnectionService.createConnection({
+          type: 'TANK_TO_PUMP',
+          assetAId: selectedTank,
+          assetBId: pumpId,
+          stationId: userStationId
+        })
+      );
+
+      await Promise.all(connectionPromises);
+      await refreshData();
+      
       setSelectedTank(null);
       setSelectedPumps([]);
+      
+      console.log('✅ Tank to pump connections created successfully');
+    } catch (error) {
+      console.error('❌ Failed to create tank-pump connections:', error);
+      setError(error.message || 'Failed to create connections');
     }
   };
-  
-  // Handle selecting pumps for tank
-  const togglePumpSelection = (pumpId) => {
-    setSelectedPumps(prev => 
-      prev.includes(pumpId) 
-        ? prev.filter(id => id !== pumpId)
-        : [...prev, pumpId]
-    );
-  };
-  
-  // Handle selecting assets for island
-  const toggleAssetForIsland = (assetId, assetType) => {
-    setAssetsForIsland(prev => ({
-      ...prev,
-      [assetType]: prev[assetType].includes(assetId)
-        ? prev[assetType].filter(id => id !== assetId)
-        : [...prev[assetType], assetId]
-    }));
-  };
-  
-  // Handle attaching assets to island
-  const handleAttachAssetsToIsland = () => {
-    if (selectedIsland && 
-        (assetsForIsland.tanks.length > 0 || assetsForIsland.pumps.length > 0)) {
-      dispatch(attachAssetsToIsland(
-        selectedIsland, 
-        assetsForIsland.tanks, 
-        assetsForIsland.pumps
-      ));
+
+  // Handle creating ISLAND connections
+  const handleCreateIslandConnections = async () => {
+    if (!selectedIsland || (assetsForIsland.tanks.length === 0 && assetsForIsland.pumps.length === 0)) return;
+
+    try {
+      setError('');
+      const connectionPromises = [];
+
+      // Create TANK_TO_ISLAND connections
+      assetsForIsland.tanks.forEach(tankId => {
+        connectionPromises.push(
+          assetConnectionService.createConnection({
+            type: 'TANK_TO_ISLAND',
+            assetAId: tankId,
+            assetBId: selectedIsland,
+            stationId: userStationId
+          })
+        );
+      });
+
+      // Create PUMP_TO_ISLAND connections
+      assetsForIsland.pumps.forEach(pumpId => {
+        connectionPromises.push(
+          assetConnectionService.createConnection({
+            type: 'PUMP_TO_ISLAND',
+            assetAId: pumpId,
+            assetBId: selectedIsland,
+            stationId: userStationId
+          })
+        );
+      });
+
+      await Promise.all(connectionPromises);
+      await refreshData();
+      
       setSelectedIsland(null);
       setAssetsForIsland({ tanks: [], pumps: [] });
+      
+      console.log('✅ Island connections created successfully');
+    } catch (error) {
+      console.error('❌ Failed to create island connections:', error);
+      setError(error.message || 'Failed to create connections');
     }
+  };
+
+  // Handle deleting a connection
+  const handleDeleteConnection = async (connectionId) => {
+    try {
+      await assetConnectionService.deleteConnection(connectionId);
+      await refreshData();
+      console.log('✅ Connection deleted successfully');
+    } catch (error) {
+      console.error('❌ Failed to delete connection:', error);
+      setError(error.message || 'Failed to delete connection');
+    }
+  };
+
+  // Get connection status for an asset
+  const getAssetConnectionStatus = (asset) => {
+    if (!connections) return { status: 'unknown', label: 'Unknown', color: 'default' };
+    
+    return assetConnectionService.getAssetConnectionStatus(asset, {
+      tanks: assetConnectionService.filterConnectionsByType(connections, 'TANK_TO_ISLAND'),
+      pumps: [
+        ...assetConnectionService.filterConnectionsByType(connections, 'TANK_TO_PUMP'),
+        ...assetConnectionService.filterConnectionsByType(connections, 'PUMP_TO_ISLAND')
+      ],
+      islands: []
+    });
   };
 
   // Simple tab panel component
@@ -240,24 +323,41 @@ const StationAssetManagement = () => {
     return <div className="mt-4">{children}</div>;
   };
 
-  // Tank columns for table
+  // Enhanced columns with connection status
   const tankColumns = [
     { header: 'Name', accessor: 'name' },
-    { header: 'Code', accessor: 'code' },
+    { header: 'Status', 
+      render: (_, tank) => {
+        const status = getAssetConnectionStatus(tank);
+        return <Badge variant={status.color}>{status.label}</Badge>;
+      }
+    },
     { header: 'Capacity', accessor: 'capacity', render: value => `${value}L` },
     { header: 'Product', accessor: 'productType' },
     { header: 'Attached Pumps', 
-      render: (_, tank) => (
-        <div className="flex flex-wrap gap-1">
-          {stationPumps
-            .filter(pump => pump.tankId === tank.id)
-            .map(pump => (
-              <Badge key={pump.id} variant="outline">
-                {pump.code}
+      render: (_, tank) => {
+        const tankPumpConnections = connections ? 
+          assetConnectionService.filterConnectionsByType(connections, 'TANK_TO_PUMP')
+            .filter(conn => conn.assetA.id === tank.id) : [];
+        
+        return (
+          <div className="flex flex-wrap gap-1">
+            {tankPumpConnections.map(connection => (
+              <Badge key={connection.id} variant="outline">
+                {connection.assetB.name}
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="ml-1 h-4 w-4 p-0"
+                  onClick={() => handleDeleteConnection(connection.id)}
+                >
+                  ×
+                </Button>
               </Badge>
             ))}
-        </div>
-      )
+          </div>
+        );
+      }
     },
     { header: 'Actions', 
       render: (_, tank) => (
@@ -272,26 +372,36 @@ const StationAssetManagement = () => {
     }
   ];
 
-  // Pump columns for table
   const pumpColumns = [
     { header: 'Name', accessor: 'name' },
-    { header: 'Code', accessor: 'code' },
     { header: 'Status', 
-      render: (_, pump) => (
-        <Badge 
-          variant={pump.status === 'active' ? 'success' : 'destructive'}
-          className="capitalize"
-        >
-          {pump.status}
-        </Badge>
-      )
+      render: (_, pump) => {
+        const status = getAssetConnectionStatus(pump);
+        return <Badge variant={status.color}>{status.label}</Badge>;
+      }
     },
     { header: 'Attached To', 
-      render: (_, pump) => (
-        pump.tankId 
-          ? `Tank: ${stationTanks.find(t => t.id === pump.tankId)?.code || 'N/A'}`
-          : 'No tank'
-      )
+      render: (_, pump) => {
+        const tankConnection = connections ? 
+          assetConnectionService.findConnectionBetweenAssets(connections, pump.id, null, 'TANK_TO_PUMP') : null;
+        const islandConnection = connections ? 
+          assetConnectionService.findConnectionBetweenAssets(connections, pump.id, null, 'PUMP_TO_ISLAND') : null;
+        
+        return (
+          <div className="space-y-1">
+            {tankConnection && (
+              <div className="text-sm">
+                Tank: {tankConnection.assetA.id === pump.id ? tankConnection.assetB.name : tankConnection.assetA.name}
+              </div>
+            )}
+            {islandConnection && (
+              <div className="text-sm">
+                Island: {islandConnection.assetA.id === pump.id ? islandConnection.assetB.name : islandConnection.assetA.name}
+              </div>
+            )}
+          </div>
+        );
+      }
     },
     { header: 'Actions', 
       render: (_, pump) => (
@@ -306,30 +416,32 @@ const StationAssetManagement = () => {
     }
   ];
 
-  // Island columns for table
   const islandColumns = [
     { header: 'Name', accessor: 'name' },
-    { header: 'Code', accessor: 'code' },
     { header: 'Attached Assets', 
-      render: (_, island) => (
-        <div className="flex flex-wrap gap-1">
-          {stationTanks
-            .filter(tank => tank.islandId === island.id)
-            .map(tank => (
-              <Badge key={tank.id} variant="blue">
-                <Fuel size={14} className="mr-1" /> {tank.code}
+      render: (_, island) => {
+        const tankConnections = connections ? 
+          assetConnectionService.filterConnectionsByType(connections, 'TANK_TO_ISLAND')
+            .filter(conn => conn.assetB.id === island.id) : [];
+        const pumpConnections = connections ? 
+          assetConnectionService.filterConnectionsByType(connections, 'PUMP_TO_ISLAND')
+            .filter(conn => conn.assetB.id === island.id) : [];
+        
+        return (
+          <div className="flex flex-wrap gap-1">
+            {tankConnections.map(connection => (
+              <Badge key={connection.id} variant="blue">
+                <Fuel size={14} className="mr-1" /> {connection.assetA.name}
               </Badge>
             ))}
-          
-          {stationPumps
-            .filter(pump => pump.islandId === island.id)
-            .map(pump => (
-              <Badge key={pump.id} variant="yellow">
-                <Zap size={14} className="mr-1" /> {pump.code}
+            {pumpConnections.map(connection => (
+              <Badge key={connection.id} variant="yellow">
+                <Zap size={14} className="mr-1" /> {connection.assetA.name}
               </Badge>
             ))}
-        </div>
-      )
+          </div>
+        );
+      }
     },
     { header: 'Actions', 
       render: (_, island) => (
@@ -344,38 +456,12 @@ const StationAssetManagement = () => {
     }
   ];
 
-  // Warehouse columns for table
-  const warehouseColumns = [
-    { header: 'Name', accessor: 'name' },
-    { header: 'Code', accessor: 'code' },
-    { header: 'Capacity', accessor: 'capacity', render: value => `${value} units` },
-    { header: 'Actions', 
-      render: (_, warehouse) => (
-        <Button 
-          variant="destructive" 
-          size="sm"
-          onClick={() => handleDetachAsset(warehouse.id, 'warehouses')}
-        >
-          <Unlink size={16} className="mr-1" /> Detach
-        </Button>
-      )
-    }
-  ];
-
   if (loading) {
     return (
       <div className="p-6">
         <div className="flex justify-center items-center h-64">
-          <div className="text-lg text-gray-600">Loading assets...</div>
+          <div className="text-lg text-gray-600">Loading assets and connections...</div>
         </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <Alert variant="error">{error}</Alert>
       </div>
     );
   }
@@ -395,6 +481,12 @@ const StationAssetManagement = () => {
           Station Manager: {userInfo.user?.firstName} {userInfo.user?.lastName}
         </Badge>
       </div>
+
+      {error && (
+        <Alert variant="error" className="mb-6">
+          {error}
+        </Alert>
+      )}
 
       {/* Asset Type Tabs */}
       <div className="border-b border-gray-200 mb-6">
@@ -435,7 +527,6 @@ const StationAssetManagement = () => {
               <Table
                 columns={[
                   { header: 'Name', accessor: 'name' },
-                  { header: 'Code', accessor: 'code' },
                   { header: 'Capacity', accessor: 'capacity', render: value => `${value}L` },
                   { header: 'Product', accessor: 'productType' },
                   { header: 'Actions', 
@@ -473,8 +564,6 @@ const StationAssetManagement = () => {
               <Table
                 columns={[
                   { header: 'Name', accessor: 'name' },
-                  { header: 'Code', accessor: 'code' },
-                  { header: 'Status', accessor: 'status' },
                   { header: 'Actions', 
                     render: (_, pump) => (
                       <Button 
@@ -510,7 +599,6 @@ const StationAssetManagement = () => {
               <Table
                 columns={[
                   { header: 'Name', accessor: 'name' },
-                  { header: 'Code', accessor: 'code' },
                   { header: 'Actions', 
                     render: (_, island) => (
                       <Button 
@@ -530,43 +618,6 @@ const StationAssetManagement = () => {
         </div>
       </TabPanel>
 
-      {/* Warehouses Tab */}
-      <TabPanel value={activeTab} tabId="warehouses">
-        <div className="space-y-6">
-          <Card title="Station Warehouses">
-            <Table
-              columns={warehouseColumns}
-              data={stationWarehouses}
-              emptyMessage="No warehouses attached to this station"
-            />
-          </Card>
-
-          {unattachedWarehouses.length > 0 && (
-            <Card title="Available Warehouses" className="bg-purple-50">
-              <Table
-                columns={[
-                  { header: 'Name', accessor: 'name' },
-                  { header: 'Code', accessor: 'code' },
-                  { header: 'Capacity', accessor: 'capacity', render: value => `${value} units` },
-                  { header: 'Actions', 
-                    render: (_, warehouse) => (
-                      <Button 
-                        variant="success"
-                        size="sm"
-                        onClick={() => handleAttachAsset(warehouse.id, 'warehouses')}
-                      >
-                        <Link size={16} className="mr-1" /> Attach to Station
-                      </Button>
-                    )
-                  }
-                ]}
-                data={unattachedWarehouses}
-              />
-            </Card>
-          )}
-        </div>
-      </TabPanel>
-
       {/* Relationships Tab */}
       <TabPanel value={activeTab} tabId="relationships">
         <div className="space-y-8">
@@ -576,7 +627,7 @@ const StationAssetManagement = () => {
               <div>
                 <h3 className="font-medium mb-3">Select Tank</h3>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {stationTanks.map(tank => (
+                  {tanksAvailableForIsland.map(tank => (
                     <div
                       key={tank.id}
                       className={`p-3 rounded-lg cursor-pointer ${
@@ -589,10 +640,8 @@ const StationAssetManagement = () => {
                       <div className="flex items-center">
                         <Fuel className="w-5 h-5 text-blue-500 mr-2" />
                         <div>
-                          <div className="font-medium">{tank.code}</div>
-                          <div className="text-sm text-gray-500">
-                            {tank.capacity}L · {tank.productType}
-                          </div>
+                          <div className="font-medium">{tank.name}</div>
+                          <div className="text-sm text-gray-500">Tank</div>
                         </div>
                       </div>
                     </div>
@@ -606,7 +655,7 @@ const StationAssetManagement = () => {
                   {selectedTank && (
                     <Button 
                       size="sm"
-                      onClick={handleAttachPumpsToTank}
+                      onClick={handleCreateTankToPumpConnection}
                       disabled={selectedPumps.length === 0}
                     >
                       Attach Selected Pumps
@@ -614,7 +663,7 @@ const StationAssetManagement = () => {
                   )}
                 </div>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {pumpsWithoutTank.map(pump => (
+                  {pumpsAvailableForConnection.map(pump => (
                     <div
                       key={pump.id}
                       className={`p-3 rounded-lg cursor-pointer ${
@@ -622,13 +671,19 @@ const StationAssetManagement = () => {
                           ? 'bg-yellow-100 border border-yellow-300'
                           : 'bg-gray-50 hover:bg-gray-100'
                       }`}
-                      onClick={() => togglePumpSelection(pump.id)}
+                      onClick={() => {
+                        setSelectedPumps(prev => 
+                          prev.includes(pump.id) 
+                            ? prev.filter(id => id !== pump.id)
+                            : [...prev, pump.id]
+                        );
+                      }}
                     >
                       <div className="flex justify-between items-center">
                         <div className="flex items-center">
                           <Zap className="w-5 h-5 text-yellow-500 mr-2" />
                           <div>
-                            <div className="font-medium">{pump.code}</div>
+                            <div className="font-medium">{pump.name}</div>
                             <div className="text-sm text-gray-500">Pump</div>
                           </div>
                         </div>
@@ -663,7 +718,7 @@ const StationAssetManagement = () => {
                         <Package className="w-5 h-5 text-green-500 mr-2" />
                         <div>
                           <div className="font-medium">{island.name}</div>
-                          <div className="text-sm text-gray-500">{island.code}</div>
+                          <div className="text-sm text-gray-500">Island</div>
                         </div>
                       </div>
                     </div>
@@ -674,32 +729,37 @@ const StationAssetManagement = () => {
               <div>
                 <h3 className="font-medium mb-3">Select Tanks</h3>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {stationTanks
-                    .filter(tank => !tank.islandId)
-                    .map(tank => (
-                      <div
-                        key={tank.id}
-                        className={`p-3 rounded-lg cursor-pointer ${
-                          assetsForIsland.tanks.includes(tank.id)
-                            ? 'bg-blue-100 border border-blue-300'
-                            : 'bg-gray-50 hover:bg-gray-100'
-                        }`}
-                        onClick={() => toggleAssetForIsland(tank.id, 'tanks')}
-                      >
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center">
-                            <Fuel className="w-5 h-5 text-blue-500 mr-2" />
-                            <div>
-                              <div className="font-medium">{tank.code}</div>
-                              <div className="text-sm text-gray-500">Tank</div>
-                            </div>
+                  {tanksAvailableForIsland.map(tank => (
+                    <div
+                      key={tank.id}
+                      className={`p-3 rounded-lg cursor-pointer ${
+                        assetsForIsland.tanks.includes(tank.id)
+                          ? 'bg-blue-100 border border-blue-300'
+                          : 'bg-gray-50 hover:bg-gray-100'
+                      }`}
+                      onClick={() => {
+                        setAssetsForIsland(prev => ({
+                          ...prev,
+                          tanks: prev.tanks.includes(tank.id)
+                            ? prev.tanks.filter(id => id !== tank.id)
+                            : [...prev.tanks, tank.id]
+                        }));
+                      }}
+                    >
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center">
+                          <Fuel className="w-5 h-5 text-blue-500 mr-2" />
+                          <div>
+                            <div className="font-medium">{tank.name}</div>
+                            <div className="text-sm text-gray-500">Tank</div>
                           </div>
-                          {assetsForIsland.tanks.includes(tank.id) && (
-                            <Badge variant="blue">Selected</Badge>
-                          )}
                         </div>
+                        {assetsForIsland.tanks.includes(tank.id) && (
+                          <Badge variant="blue">Selected</Badge>
+                        )}
                       </div>
-                    ))}
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -709,7 +769,7 @@ const StationAssetManagement = () => {
                   {selectedIsland && (
                     <Button 
                       size="sm"
-                      onClick={handleAttachAssetsToIsland}
+                      onClick={handleCreateIslandConnections}
                       disabled={assetsForIsland.tanks.length === 0 && assetsForIsland.pumps.length === 0}
                     >
                       Attach Assets
@@ -717,32 +777,37 @@ const StationAssetManagement = () => {
                   )}
                 </div>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {stationPumps
-                    .filter(pump => !pump.islandId)
-                    .map(pump => (
-                      <div
-                        key={pump.id}
-                        className={`p-3 rounded-lg cursor-pointer ${
-                          assetsForIsland.pumps.includes(pump.id)
-                            ? 'bg-yellow-100 border border-yellow-300'
-                            : 'bg-gray-50 hover:bg-gray-100'
-                        }`}
-                        onClick={() => toggleAssetForIsland(pump.id, 'pumps')}
-                      >
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center">
-                            <Zap className="w-5 h-5 text-yellow-500 mr-2" />
-                            <div>
-                              <div className="font-medium">{pump.code}</div>
-                              <div className="text-sm text-gray-500">Pump</div>
-                            </div>
+                  {pumpsAvailableForIsland.map(pump => (
+                    <div
+                      key={pump.id}
+                      className={`p-3 rounded-lg cursor-pointer ${
+                        assetsForIsland.pumps.includes(pump.id)
+                          ? 'bg-yellow-100 border border-yellow-300'
+                          : 'bg-gray-50 hover:bg-gray-100'
+                      }`}
+                      onClick={() => {
+                        setAssetsForIsland(prev => ({
+                          ...prev,
+                          pumps: prev.pumps.includes(pump.id)
+                            ? prev.pumps.filter(id => id !== pump.id)
+                            : [...prev.pumps, pump.id]
+                        }));
+                      }}
+                    >
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center">
+                          <Zap className="w-5 h-5 text-yellow-500 mr-2" />
+                          <div>
+                            <div className="font-medium">{pump.name}</div>
+                            <div className="text-sm text-gray-500">Pump</div>
                           </div>
-                          {assetsForIsland.pumps.includes(pump.id) && (
-                            <Badge variant="yellow">Selected</Badge>
-                          )}
                         </div>
+                        {assetsForIsland.pumps.includes(pump.id) && (
+                          <Badge variant="yellow">Selected</Badge>
+                        )}
                       </div>
-                    ))}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>

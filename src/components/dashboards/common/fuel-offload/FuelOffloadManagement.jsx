@@ -7,11 +7,11 @@ import {
   Calculator, FileText, CheckSquare, MapPin, Building, 
   Smartphone, Monitor, Grid, List, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { Button, Input, Select, Badge, LoadingSpinner } from '../../ui';
-import { useApp } from '../../context/AppContext';
-import CreateEditOffloadModal from './CreateEditOffloadModal';
-import OffloadDetailsModal from './OffloadDetailsModal';
-import CompleteOffloadModal from './CompleteOffloadModal';
+import { Button, Input, Select, Badge, LoadingSpinner } from '../../../ui';
+import { useApp } from '../../../../context/AppContext';
+import CreateEditOffloadModal from '../offloads/CreateOffloadModal';
+// import OffloadDetailsModal from './OffloadDetailsModal';
+// import CompleteOffloadModal from './CompleteOffloadModal';
 import { fuelOffloadService, offloadFormatters } from '../../services/fuelOffloadService';
 
 const FuelOffloadManagement = () => {
@@ -627,13 +627,13 @@ const FuelOffloadManagement = () => {
         onOffloadUpdated={handleOffloadUpdated}
       />
 
-      <OffloadDetailsModal 
+      {/* <OffloadDetailsModal 
         isOpen={isDetailsModalOpen}
         onClose={() => setIsDetailsModalOpen(false)}
         offload={selectedOffload}
-      />
+      /> */}
 
-      <CompleteOffloadModal 
+      {/* <CompleteOffloadModal 
         isOpen={isCompleteModalOpen}
         onClose={() => {
           setIsCompleteModalOpen(false);
@@ -641,7 +641,7 @@ const FuelOffloadManagement = () => {
         }}
         offload={selectedOffload}
         onOffloadCompleted={handleOffloadCompleted}
-      />
+      /> */}
     </div>
   );
 };

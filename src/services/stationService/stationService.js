@@ -4,6 +4,7 @@ export const stationService = {
   // Create a station
   createStation: async (stationData) => {
     const response = await apiService.post('/stations/create', stationData);
+    console.log("stations create response ",response);
     return response.data;
   },
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Fuel, Package, Layers, Plus, Eye, Edit, Trash2, Search, Filter, RefreshCw, AlertCircle } from 'lucide-react';
-import { Button, Input, Select } from '../../../components/ui';
+import { Fuel, Package, Layers, Plus, Eye, Edit, Trash2, Search, RefreshCw, AlertCircle } from 'lucide-react';
+import { Button, Input } from '../../../components/ui';
 import { useApp } from '../../../context/AppContext';
 import CreateFuelModal from './CreateFuelModal';
 import { fuelService } from '../../../services/fuelService';
@@ -14,7 +14,6 @@ const FuelManagement = () => {
   const [error, setError] = useState('');
   const [retryCount, setRetryCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
 
   // Data states
   const [categories, setCategories] = useState([]);
@@ -33,20 +32,22 @@ const FuelManagement = () => {
       setLoading(true);
       setError('');
 
+      const filters = searchQuery ? { search: searchQuery } : {};
+
       switch (activeTab) {
         case 'categories':
-          const categoriesData = await fuelService.getFuelCategories({ search: searchQuery });
-          setCategories(categoriesData.data || []);
+          const categoriesData = await fuelService.getFuelCategories(filters);
+          setCategories(categoriesData.data || categoriesData || []);
           break;
         
         case 'subtypes':
-          const subTypesData = await fuelService.getFuelSubTypes({ search: searchQuery });
-          setSubTypes(subTypesData.data || []);
+          const subTypesData = await fuelService.getFuelSubTypes(filters);
+          setSubTypes(subTypesData.data || subTypesData || []);
           break;
         
         case 'products':
-          const productsData = await fuelService.getFuelProducts({ search: searchQuery });
-          setProducts(productsData.data || []);
+          const productsData = await fuelService.getFuelProducts(filters);
+          setProducts(productsData.data || productsData || []);
           break;
         
         default:
@@ -70,8 +71,8 @@ const FuelManagement = () => {
   };
 
   const handleFuelCreated = () => {
-    // Refresh data after creating new item
     loadData();
+    setIsCreateModalOpen(false);
   };
 
   const handleRetry = () => {
@@ -87,47 +88,18 @@ const FuelManagement = () => {
     }
   };
 
-  const getDisplayName = (item) => {
-    switch (activeTab) {
-      case 'categories': return item.name;
-      case 'subtypes': return `${item.name} (${item.category?.name || 'No Category'})`;
-      case 'products': return `${item.name} (${item.fuelCode})`;
-      default: return item.name;
-    }
+  const handleSearch = (e) => {
+    setSearchQuery(e.target.value);
   };
 
-  const getDescription = (item) => {
-    switch (activeTab) {
-      case 'categories': 
-        return item.description || `${item.name} fuel products`;
-      case 'subtypes':
-        return item.specification || `Standard ${item.name} specification`;
-      case 'products':
-        return item.description || `${item.name} fuel product`;
-      default: return item.description;
-    }
+  const handleView = (item) => {
+    // Implement view functionality
+    console.log('View item:', item);
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this item?')) return;
-    
-    try {
-      switch (activeTab) {
-        case 'categories':
-          // Note: You might want to add a delete method in your service
-          // await fuelService.deleteFuelCategory(id);
-          break;
-        case 'subtypes':
-          // await fuelService.deleteFuelSubType(id);
-          break;
-        case 'products':
-          // await fuelService.deleteFuelProduct(id);
-          break;
-      }
-      loadData();
-    } catch (error) {
-      setError(error.message || 'Failed to delete item');
-    }
+  const handleEdit = (item) => {
+    // Implement edit functionality
+    console.log('Edit item:', item);
   };
 
   if (loading) {
@@ -156,6 +128,8 @@ const FuelManagement = () => {
     );
   }
 
+  const activeData = getActiveData();
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -166,7 +140,6 @@ const FuelManagement = () => {
           </p>
         </div>
         
-        {/* Add Button with Dropdown */}
         <div className="relative group">
           <Button 
             onClick={() => openCreateModal('category')}
@@ -177,7 +150,6 @@ const FuelManagement = () => {
             Add New
           </Button>
           
-          {/* Dropdown Menu */}
           <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
             <button
               onClick={() => openCreateModal('category')}
@@ -224,7 +196,7 @@ const FuelManagement = () => {
               type="text"
               placeholder={`Search ${activeTab}...`}
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={handleSearch}
               className="pl-10 pr-4 py-2 w-64"
             />
           </div>
@@ -249,7 +221,7 @@ const FuelManagement = () => {
             >
               <tab.icon className="w-4 h-4 mr-1" />
               <span className="capitalize">{tab.label}</span>
-              <span className="ml-1">({getActiveData().length})</span>
+              <span className="ml-1">({activeData.length})</span>
             </button>
           ))}
         </nav>
@@ -271,16 +243,14 @@ const FuelManagement = () => {
                   <>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Sub Type</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-900">Density</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-900">Octane</th>
                   </>
                 )}
-                <th className="text-left py-4 px-6 font-semibold text-gray-900">Created</th>
                 <th className="text-left py-4 px-6 font-semibold text-gray-900">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {getActiveData().length > 0 ? (
-                getActiveData().map((item) => (
+              {activeData.length > 0 ? (
+                activeData.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50">
                     <td className="py-4 px-6">
                       <div className="flex items-center">
@@ -290,7 +260,7 @@ const FuelManagement = () => {
                           {activeTab === 'products' && <Fuel className="w-5 h-5 text-orange-500" />}
                         </div>
                         <div>
-                          <div className="font-medium text-gray-900">{getDisplayName(item)}</div>
+                          <div className="font-medium text-gray-900">{item.name}</div>
                           <div className="text-sm text-gray-500">ID: {item.id.substring(0, 8)}...</div>
                         </div>
                       </div>
@@ -299,7 +269,7 @@ const FuelManagement = () => {
                       {item.code || item.fuelCode || 'N/A'}
                     </td>
                     <td className="py-4 px-6 text-sm text-gray-500">
-                      {getDescription(item)}
+                      {item.description || 'No description'}
                     </td>
                     {activeTab === 'subtypes' && (
                       <td className="py-4 px-6 text-sm text-gray-500">
@@ -314,29 +284,25 @@ const FuelManagement = () => {
                         <td className="py-4 px-6 text-sm text-gray-500">
                           {item.density ? `${item.density} kg/L` : 'N/A'}
                         </td>
-                        <td className="py-4 px-6 text-sm text-gray-500">
-                          {item.octaneRating ? `RON ${item.octaneRating}` : 'N/A'}
-                        </td>
                       </>
                     )}
-                    <td className="py-4 px-6 text-sm text-gray-500">
-                      {new Date(item.createdAt).toLocaleDateString()}
-                    </td>
                     <td className="py-4 px-6">
                       <div className="flex space-x-2">
-                        <Button size="sm" variant="secondary" icon={Eye}>
+                        <Button 
+                          size="sm" 
+                          variant="secondary" 
+                          icon={Eye}
+                          onClick={() => handleView(item)}
+                        >
                           View
-                        </Button>
-                        <Button size="sm" variant="secondary" icon={Edit}>
-                          Edit
                         </Button>
                         <Button 
                           size="sm" 
-                          variant="danger" 
-                          icon={Trash2}
-                          onClick={() => handleDelete(item.id)}
+                          variant="secondary" 
+                          icon={Edit}
+                          onClick={() => handleEdit(item)}
                         >
-                          Delete
+                          Edit
                         </Button>
                       </div>
                     </td>
@@ -344,7 +310,7 @@ const FuelManagement = () => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={activeTab === 'products' ? 8 : activeTab === 'subtypes' ? 6 : 5} 
+                  <td colSpan={activeTab === 'products' ? 6 : activeTab === 'subtypes' ? 5 : 4} 
                       className="py-8 px-6 text-center text-gray-500">
                     {searchQuery 
                       ? `No ${activeTab} match your search criteria.` 
@@ -364,7 +330,7 @@ const FuelManagement = () => {
         onClose={() => setIsCreateModalOpen(false)}
         createType={createType}
         onFuelCreated={handleFuelCreated}
-        companyId={state.currentUser.companyId}
+        companyId={state.currentUser?.companyId}
       />
     </div>
   );

@@ -12,18 +12,21 @@ export const userService = {
     
     try {
       const response = await apiService.post('/users', userData);
-      console.log('✅ [USER API] User created successfully:', { 
-        userId: response.data.data.id,
-        email: response.data.data.email,
-        tempPassword: response.data.data.tempPassword ? 'Generated' : 'Not generated'
-      });
+
+      console.log("the user created is ",response)
+      // console.log('✅ [USER API] User created successfully:', { 
+      //   userId: response.data.data.id,
+      //   email: response.data.data.email,
+      //   tempPassword: response.data.data.tempPassword ? 'Generated' : 'Not generated'
+      // });
       return response.data;
     } catch (error) {
-      console.error('❌ [USER API] Failed to create user:', {
-        error: error.response?.data?.message || error.message,
-        status: error.response?.status,
-        email: userData.email
-      });
+      console.log("error ",error);
+      // console.error('❌ [USER API] Failed to create user:', {
+      //   error: error.response?.data?.message || error.message,
+      //   status: error.response?.status,
+      //   email: userData.email
+      // });
       throw error;
     }
   },
@@ -413,11 +416,13 @@ getStationAssignments: async (stationId, filters = {}) => {
       : `/user-assignments/station/${stationId}`;
     
     const response = await apiService.get(url);
-    console.log('✅ [USER ASSIGNMENT] Station assignments fetched successfully:', {
-      stationId,
-      count: response.data.data.length,
-      pagination: response.data.pagination
-    });
+
+    console.log("the response for station assignment is ",response)
+    // console.log('✅ [USER ASSIGNMENT] Station assignments fetched successfully:', {
+    //   stationId,
+    //   count: response.data.data.length,
+    //   pagination: response.data.pagination
+    // });
     return response.data;
   } catch (error) {
     console.error('❌ [USER ASSIGNMENT] Failed to get station assignments:', {

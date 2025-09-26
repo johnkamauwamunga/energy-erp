@@ -325,8 +325,8 @@ const StationAssetManagement = () => {
                       <div className="flex items-center">
                         <Fuel className="w-5 h-5 text-blue-500 mr-2" />
                         <div>
-                          <div className="font-medium">{tank.code}</div>
-                          <div className="text-sm text-gray-500">{tank.capacity}L · {tank.productType}</div>
+                          <div className="font-medium">{tank.name}</div>
+                          <div className="text-sm text-gray-500">{tank.name} L · </div>
                         </div>
                       </div>
                     </div>
@@ -408,7 +408,7 @@ const StationAssetManagement = () => {
                         <div className="flex items-center">
                           <Fuel className="w-5 h-5 text-blue-500 mr-2" />
                           <div>
-                            <div className="font-medium">{tank.code}</div>
+                            <div className="font-medium">{tank.name}</div>
                             <div className="text-sm text-gray-500">Tank</div>
                           </div>
                         </div>

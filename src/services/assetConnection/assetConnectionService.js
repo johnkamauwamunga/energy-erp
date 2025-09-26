@@ -59,11 +59,6 @@ const handleError = (error, operation, defaultMessage) => {
     if (data && data.message) {
       throw new Error(data.message);
     }
-    
-    // Handle connection-specific error types
-    if (data && data.errorType) {
-      throw new Error(`${data.message} (Error: ${data.errorType})`);
-    }
   } else if (error.request) {
     throw new Error('Network error. Please check your connection and try again.');
   }
@@ -73,18 +68,18 @@ const handleError = (error, operation, defaultMessage) => {
 
 export const assetConnectionService = {
   // =====================
-  // CONNECTION TYPES & META
+  // CONNECTION RULES & META
   // =====================
   
-  // Get connection types
-  getConnectionTypes: async () => {
-    logger.info('Fetching connection types');
+  // Get connection rules
+  getConnectionRules: async () => {
+    logger.info('Fetching connection rules');
     
     try {
-      const response = await apiService.get('/asset-connections/types');
-      return handleResponse(response, 'fetching connection types');
+      const response = await apiService.get('/asset-connections/rules');
+      return handleResponse(response, 'fetching connection rules');
     } catch (error) {
-      throw handleError(error, 'fetching connection types', 'Failed to fetch connection types');
+      throw handleError(error, 'fetching connection rules', 'Failed to fetch connection rules');
     }
   },
 
@@ -93,14 +88,11 @@ export const assetConnectionService = {
   // =====================
 
   // Create a connection
-  createConnection: async (stationId, connectionData) => {
-    logger.info(`Creating connection for station ${stationId}:`, connectionData);
+  createConnection: async (connectionData) => {
+    logger.info('Creating connection:', connectionData);
     
     try {
-      const response = await apiService.post(
-        `/asset-connections/stations/${stationId}/connections`,
-        connectionData
-      );
+      const response = await apiService.post('/asset-connections', connectionData);
       return handleResponse(response, 'creating connection');
     } catch (error) {
       throw handleError(error, 'creating connection', 'Failed to create connection');
@@ -108,32 +100,14 @@ export const assetConnectionService = {
   },
 
   // Create bulk connections
-  createBulkConnections: async (stationId, connections) => {
-    logger.info(`Creating bulk connections for station ${stationId}:`, connections);
+  createBulkConnections: async (bulkData) => {
+    logger.info('Creating bulk connections:', bulkData);
     
     try {
-      const response = await apiService.post(
-        `/asset-connections/stations/${stationId}/connections/bulk`,
-        { connections }
-      );
+      const response = await apiService.post('/asset-connections/bulk', bulkData);
       return handleResponse(response, 'creating bulk connections');
     } catch (error) {
       throw handleError(error, 'creating bulk connections', 'Failed to create bulk connections');
-    }
-  },
-
-  // Bulk connect to a single asset
-  bulkConnectToAsset: async (stationId, bulkData) => {
-    logger.info(`Bulk connecting to asset for station ${stationId}:`, bulkData);
-    
-    try {
-      const response = await apiService.post(
-        `/asset-connections/stations/${stationId}/connections/bulk-to-asset`,
-        bulkData
-      );
-      return handleResponse(response, 'bulk connecting to asset');
-    } catch (error) {
-      throw handleError(error, 'bulk connecting to asset', 'Failed to bulk connect to asset');
     }
   },
 
@@ -150,25 +124,22 @@ export const assetConnectionService = {
   },
 
   // =====================
-  // QUERY & FILTER OPERATIONS
+  // QUERY ENDPOINTS
   // =====================
 
-  // Get station connections with advanced filtering
-  getStationConnections: async (stationId, filters = {}) => {
+  // Get all connections for a station
+  getConnectionsByStation: async (stationId, filters = {}) => {
     logger.info(`Fetching connections for station ${stationId}:`, filters);
     
     try {
       const queryParams = new URLSearchParams();
       
       // Add filter parameters
-      if (filters.type) queryParams.append('type', filters.type);
-      if (filters.assetId) queryParams.append('assetId', filters.assetId);
-      if (filters.include) {
-        filters.include.forEach(include => queryParams.append('include[]', include));
-      }
+      if (filters.connectionType) queryParams.append('connectionType', filters.connectionType);
+      if (filters.includeUnattached) queryParams.append('includeUnattached', filters.includeUnattached);
       
       const queryString = queryParams.toString();
-      const url = `/asset-connections/stations/${stationId}/connections${queryString ? `?${queryString}` : ''}`;
+      const url = `/asset-connections/station/${stationId}${queryString ? `?${queryString}` : ''}`;
       
       const response = await apiService.get(url);
       return handleResponse(response, 'fetching station connections');
@@ -177,100 +148,63 @@ export const assetConnectionService = {
     }
   },
 
-  // Get specific connection types
-  getConnectionsByType: async (stationId, connectionType) => {
-    return assetConnectionService.getStationConnections(stationId, { type: connectionType });
-  },
-
   // Get connections for a specific asset
-  getAssetConnections: async (stationId, assetId, includeRelationships = []) => {
-    return assetConnectionService.getStationConnections(stationId, { 
-      assetId, 
-      include: includeRelationships 
-    });
-  },
-
-  // =====================
-  // ASSET ASSIGNMENTS & HEALTH
-  // =====================
-
-  // Get station asset assignments (attached and unassigned)
-  getStationAssetAssignments: async (stationId) => {
-    logger.info(`Fetching asset assignments for station ${stationId}`);
+  getConnectionsByAsset: async (assetId) => {
+    logger.info(`Fetching connections for asset ${assetId}`);
     
     try {
-      const response = await apiService.get(
-        `/asset-connections/stations/${stationId}/assignments`
-      );
-      return handleResponse(response, 'fetching asset assignments');
+      const response = await apiService.get(`/asset-connections/asset/${assetId}`);
+      return handleResponse(response, 'fetching asset connections');
     } catch (error) {
-      throw handleError(error, 'fetching asset assignments', 'Failed to fetch asset assignments');
+      throw handleError(error, 'fetching asset connections', 'Failed to fetch asset connections');
     }
   },
 
-  // Get connection health for station
-  getConnectionsHealth: async (stationId) => {
-    logger.info(`Fetching connection health for station ${stationId}`);
+  // Get station topology (complete connection map)
+  getStationTopology: async (stationId) => {
+    logger.info(`Fetching station topology for station ${stationId}`);
     
     try {
-      const response = await apiService.get(
-        `/asset-connections/stations/${stationId}/connections/health`
-      );
-      return handleResponse(response, 'fetching connection health');
+      const response = await apiService.get(`/asset-connections/station/${stationId}/topology`);
+      return handleResponse(response, 'fetching station topology');
     } catch (error) {
-      throw handleError(error, 'fetching connection health', 'Failed to fetch connection health');
+      throw handleError(error, 'fetching station topology', 'Failed to fetch station topology');
     }
   },
 
-  // =====================
-  // DETACHMENT OPERATIONS
-  // =====================
-
-  // Detach specific connection type from asset(s)
-  detachAssets: async (stationId, detachmentData) => {
-    logger.info(`Detaching assets for station ${stationId}:`, detachmentData);
+  // Get unattached assets in station
+  getUnattachedAssets: async (stationId) => {
+    logger.info(`Fetching unattached assets for station ${stationId}`);
     
     try {
-      const response = await apiService.post(
-        `/asset-connections/stations/${stationId}/detach`,
-        detachmentData
-      );
-      return handleResponse(response, 'detaching assets');
+      const response = await apiService.get(`/asset-connections/station/${stationId}/unattached`);
+      return handleResponse(response, 'fetching unattached assets');
     } catch (error) {
-      throw handleError(error, 'detaching assets', 'Failed to detach assets');
+      throw handleError(error, 'fetching unattached assets', 'Failed to fetch unattached assets');
     }
   },
 
-  // Detach all connections from an asset
-  detachAllConnections: async (stationId, assetId) => {
-    logger.info(`Detaching all connections from asset ${assetId} in station ${stationId}`);
+  // Get connection audit logs
+  getConnectionAuditLogs: async (stationId, filters = {}) => {
+    logger.info(`Fetching connection audit logs for station ${stationId}:`, filters);
     
     try {
-      const response = await apiService.delete(
-        `/asset-connections/stations/${stationId}/assets/${assetId}/connections`
-      );
-      return handleResponse(response, 'detaching all connections from asset');
+      const queryParams = new URLSearchParams();
+      
+      // Add filter parameters
+      if (filters.action) queryParams.append('action', filters.action);
+      if (filters.connectionType) queryParams.append('connectionType', filters.connectionType);
+      if (filters.startDate) queryParams.append('startDate', filters.startDate);
+      if (filters.endDate) queryParams.append('endDate', filters.endDate);
+      if (filters.limit) queryParams.append('limit', filters.limit);
+      
+      const queryString = queryParams.toString();
+      const url = `/asset-connections/station/${stationId}/audit-logs${queryString ? `?${queryString}` : ''}`;
+      
+      const response = await apiService.get(url);
+      return handleResponse(response, 'fetching connection audit logs');
     } catch (error) {
-      throw handleError(error, 'detaching all connections from asset', 'Failed to detach all connections');
-    }
-  },
-
-  // =====================
-  // VERIFICATION OPERATIONS
-  // =====================
-
-  // Verify connection feasibility
-  verifyConnection: async (stationId, connectionData) => {
-    logger.info(`Verifying connection for station ${stationId}:`, connectionData);
-    
-    try {
-      const response = await apiService.post(
-        `/asset-connections/stations/${stationId}/verify-connection`,
-        connectionData
-      );
-      return handleResponse(response, 'verifying connection');
-    } catch (error) {
-      throw handleError(error, 'verifying connection', 'Failed to verify connection');
+      throw handleError(error, 'fetching connection audit logs', 'Failed to fetch connection audit logs');
     }
   },
 
@@ -282,8 +216,8 @@ export const assetConnectionService = {
   getConnectionTypeDescription: (type) => {
     const descriptions = {
       TANK_TO_PUMP: 'Connects a storage tank to a fuel pump. A pump can only be connected to one tank.',
-      TANK_TO_ISLAND: 'Connects a storage tank to an island. A tank can only be connected to one island.',
-      PUMP_TO_ISLAND: 'Connects a fuel pump to an island. A pump can only be connected to one island.'
+      TANK_TO_ISLAND: 'Connects a storage tank to an island. An island can have multiple tanks.',
+      PUMP_TO_ISLAND: 'Connects a fuel pump to an island. An island can have multiple pumps.'
     };
     
     return descriptions[type] || 'Unknown connection type';
@@ -305,6 +239,10 @@ export const assetConnectionService = {
       errors.push('Asset B ID is required');
     }
     
+    if (!connectionData.stationId) {
+      errors.push('Station ID is required');
+    }
+    
     if (connectionData.assetAId === connectionData.assetBId) {
       errors.push('Cannot connect an asset to itself');
     }
@@ -312,21 +250,11 @@ export const assetConnectionService = {
     return errors;
   },
 
-  // Helper to prepare bulk connection data for multiple assets to a single target
-  prepareBulkConnectionData: (targetAssetId, sourceAssetIds, type) => {
+  // Helper to prepare bulk connection data
+  prepareBulkConnectionData: (connections) => {
     return {
-      targetAssetId,
-      sourceAssetIds,
-      type
-    };
-  },
-
-  // Helper to prepare detachment data
-  prepareDetachmentData: (assetIds, type = null, disconnectAll = false) => {
-    return {
-      assetIds,
-      type,
-      disconnectAll
+      connections,
+      action: 'CONNECT'
     };
   },
 
@@ -350,108 +278,72 @@ export const assetConnectionService = {
     const combination = validCombinations[connectionType];
     if (!combination) return false;
     
-    // Check if the asset types match the expected combination
-    // For TANK_TO_PUMP, order matters
-    if (connectionType === 'TANK_TO_PUMP') {
-      return assetAType === combination.assetAType && assetBType === combination.assetBType;
-    }
-    
-    // For ISLAND connections, either order is acceptable
-    return (
-      (assetAType === combination.assetAType && assetBType === combination.assetBType) ||
-      (assetAType === combination.assetBType && assetBType === combination.assetAType)
-    );
+    return assetAType === combination.assetAType && assetBType === combination.assetBType;
   },
 
-  // =====================
-  // ASSET STATUS & FILTERING UTILITIES
-  // =====================
-
-  // Filter assignments by asset type and connection status
-  filterAssignments: (assignments, filters = {}) => {
-    let filtered = { ...assignments };
+  // Helper to process station topology data for display
+  processTopologyData: (topologyData) => {
+    if (!topologyData) return null;
     
-    // Filter by asset type
-    if (filters.assetType) {
-      if (filters.assetType === 'pumps') {
-        filtered.tanks = [];
-        filtered.islands = [];
-      } else if (filters.assetType === 'tanks') {
-        filtered.pumps = [];
-        filtered.islands = [];
-      } else if (filters.assetType === 'islands') {
-        filtered.tanks = [];
-        filtered.pumps = [];
-      }
+    const processed = {
+      station: topologyData.station,
+      connections: topologyData.connections || [],
+      summary: topologyData.summary || {}
+    };
+    
+    // Enhance summary with additional calculations
+    if (processed.summary) {
+      processed.summary.connectionHealth = calculateConnectionHealth(
+        processed.summary.totalConnections,
+        processed.summary.unattachedAssets?.length || 0
+      );
     }
     
-    // Filter by connection status
-    if (filters.connectionStatus) {
-      if (filters.connectionStatus === 'unattached') {
-        filtered.pumps = filtered.pumps.filter(pump => 
-          !pump.tank && !pump.island
-        );
-        filtered.tanks = filtered.tanks.filter(tank => 
-          !tank.island
-        );
-      } else if (filters.connectionStatus === 'partial') {
-        filtered.pumps = filtered.pumps.filter(pump => 
-          (pump.tank && !pump.island) || (!pump.tank && pump.island)
-        );
-      } else if (filters.connectionStatus === 'fully-attached') {
-        filtered.pumps = filtered.pumps.filter(pump => 
-          pump.tank && pump.island
-        );
-        filtered.tanks = filtered.tanks.filter(tank => 
-          tank.island
-        );
-      }
-    }
-    
-    return filtered;
+    return processed;
   },
 
-  // Get connection statistics
-  getConnectionStats: (assignments) => {
-    const totalPumps = assignments.pumps.length + assignments.unassigned.pumps.length;
-    const totalTanks = assignments.tanks.length + assignments.unassigned.tanks.length;
-    const totalIslands = assignments.islands.length;
-    
-    const unattachedPumps = assignments.unassigned.pumps.length;
-    const unattachedTanks = assignments.unassigned.tanks.length;
-    
-    const partiallyAttachedPumps = assignments.pumps.filter(pump => 
-      (pump.tank && !pump.island) || (!pump.tank && pump.island)
-    ).length;
-    
-    const fullyAttachedPumps = assignments.pumps.filter(pump => 
-      pump.tank && pump.island
-    ).length;
+  // Helper to process asset connections data
+  processAssetConnections: (assetConnectionsData) => {
+    if (!assetConnectionsData) return null;
     
     return {
-      totalPumps,
-      totalTanks,
-      totalIslands,
-      unattachedPumps,
-      unattachedTanks,
-      partiallyAttachedPumps,
-      fullyAttachedPumps,
-      healthScore: calculateHealthScore(totalPumps, unattachedPumps, partiallyAttachedPumps)
+      asset: assetConnectionsData.asset,
+      connections: assetConnectionsData.connections || {
+        tanks: [],
+        pumps: [],
+        islands: []
+      }
     };
   },
 
   // Get asset connection status
-  getAssetConnectionStatus: (asset) => {
+  getAssetConnectionStatus: (asset, connections) => {
     if (asset.type === 'FUEL_PUMP') {
-      if (asset.pump?.tank && asset.pump?.island) {
+      const pumpConnections = connections?.pumps || [];
+      const hasTankConnection = pumpConnections.some(conn => 
+        conn.type === 'TANK_TO_PUMP' && 
+        (conn.assetA.id === asset.id || conn.assetB.id === asset.id)
+      );
+      const hasIslandConnection = pumpConnections.some(conn => 
+        conn.type === 'PUMP_TO_ISLAND' && 
+        (conn.assetA.id === asset.id || conn.assetB.id === asset.id)
+      );
+      
+      if (hasTankConnection && hasIslandConnection) {
         return { status: 'fully-attached', label: 'Fully Attached', color: 'success' };
-      } else if (asset.pump?.tank || asset.pump?.island) {
+      } else if (hasTankConnection || hasIslandConnection) {
         return { status: 'partial', label: 'Partially Attached', color: 'warning' };
       } else {
         return { status: 'unattached', label: 'Unattached', color: 'error' };
       }
     } else if (asset.type === 'STORAGE_TANK') {
-      if (asset.tank?.islands?.length > 0) {
+      const tankConnections = connections?.tanks || [];
+      const hasIslandConnection = tankConnections.some(conn => 
+        conn.type === 'TANK_TO_ISLAND' && 
+        (conn.assetA.id === asset.id || conn.assetB.id === asset.id)
+      );
+      
+      if (hasIslandConnection) {
         return { status: 'attached', label: 'Attached to Island', color: 'success' };
       } else {
         return { status: 'unattached', label: 'Not Attached', color: 'warning' };
@@ -459,18 +351,101 @@ export const assetConnectionService = {
     }
     
     return { status: 'unknown', label: 'Unknown', color: 'default' };
+  },
+
+  // Helper to find connections between specific assets
+  findConnectionBetweenAssets: (connections, assetAId, assetBId, type = null) => {
+    const allConnections = [
+      ...(connections.tanks || []),
+      ...(connections.pumps || []),
+      ...(connections.islands || [])
+    ];
+    
+    return allConnections.find(connection => {
+      const matchesAssets = 
+        (connection.assetA.id === assetAId && connection.assetB.id === assetBId) ||
+        (connection.assetA.id === assetBId && connection.assetB.id === assetAId);
+      
+      if (type) {
+        return matchesAssets && connection.type === type;
+      }
+      return matchesAssets;
+    });
+  },
+
+  // Helper to get connection statistics
+  getConnectionStats: (topologyData) => {
+    if (!topologyData) return null;
+    
+    const { summary, connections } = topologyData;
+    const totalConnections = connections.length;
+    
+    const connectionTypes = {
+      TANK_TO_PUMP: connections.filter(conn => conn.type === 'TANK_TO_PUMP').length,
+      TANK_TO_ISLAND: connections.filter(conn => conn.type === 'TANK_TO_ISLAND').length,
+      PUMP_TO_ISLAND: connections.filter(conn => conn.type === 'PUMP_TO_ISLAND').length
+    };
+    
+    return {
+      totalConnections,
+      connectionTypes,
+      unattachedAssets: summary.unattachedAssets?.length || 0,
+      healthScore: calculateConnectionHealth(totalConnections, summary.unattachedAssets?.length || 0)
+    };
+  },
+
+  // Helper to filter connections by type
+  filterConnectionsByType: (connections, type) => {
+    const allConnections = [
+      ...(connections.tanks || []),
+      ...(connections.pumps || []),
+      ...(connections.islands || [])
+    ];
+    
+    return allConnections.filter(connection => connection.type === type);
+  },
+
+  // Helper to get assets of specific type from topology
+  getAssetsByType: (topologyData, assetType) => {
+    if (!topologyData) return [];
+    
+    const assets = [];
+    
+    // Get connected assets from connections
+    topologyData.connections.forEach(connection => {
+      if (connection.assetA.type === assetType) {
+        assets.push(connection.assetA);
+      }
+      if (connection.assetB.type === assetType) {
+        assets.push(connection.assetB);
+      }
+    });
+    
+    // Get unattached assets
+    if (topologyData.summary.unattachedAssets) {
+      topologyData.summary.unattachedAssets.forEach(asset => {
+        if (asset.type === assetType) {
+          assets.push(asset);
+        }
+      });
+    }
+    
+    // Remove duplicates by id
+    return assets.filter((asset, index, self) => 
+      index === self.findIndex(a => a.id === asset.id)
+    );
   }
 };
 
-// Helper function to calculate health score
-const calculateHealthScore = (totalPumps, unattachedPumps, partiallyAttachedPumps) => {
-  if (totalPumps === 0) return 100;
+// Helper function to calculate connection health score
+const calculateConnectionHealth = (totalConnections, unattachedAssetsCount) => {
+  if (totalConnections === 0 && unattachedAssetsCount === 0) return 100;
+  if (totalConnections === 0) return 0;
   
-  const unattachedScore = (unattachedPumps / totalPumps) * 50;
-  const partialScore = (partiallyAttachedPumps / totalPumps) * 25;
-  const problemScore = unattachedScore + partialScore;
+  const maxPossibleConnections = totalConnections + unattachedAssetsCount;
+  const healthPercentage = (totalConnections / maxPossibleConnections) * 100;
   
-  return Math.max(0, 100 - problemScore);
+  return Math.round(healthPercentage);
 };
 
 export default assetConnectionService;

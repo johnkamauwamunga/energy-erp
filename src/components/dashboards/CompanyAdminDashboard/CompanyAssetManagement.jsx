@@ -332,7 +332,6 @@ const CompanyAssetManagement = () => {
                   <th className="text-left py-4 px-6 font-semibold text-gray-900">Status</th>
                   <th className="text-left py-4 px-6 font-semibold text-gray-900">Station</th>
                   <th className="text-left py-4 px-6 font-semibold text-gray-900">Company</th>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Created</th>
                   <th className="text-left py-4 px-6 font-semibold text-gray-900">Actions</th>
                 </tr>
               </thead>
@@ -372,10 +371,7 @@ const CompanyAssetManagement = () => {
                       <td className="py-4 px-6 text-sm text-gray-500">
                         {state.currentUser.role === 'SUPER_ADMIN' && asset.companyId 
                           ? `Company ${asset.companyId.substring(0, 8)}...` 
-                          : 'Your Company'}
-                      </td>
-                      <td className="py-4 px-6 text-sm text-gray-500">
-                        {new Date(asset.createdAt).toLocaleDateString()}
+                          : '-'}
                       </td>
                       <td className="py-4 px-6">
                         <div className="flex space-x-2">

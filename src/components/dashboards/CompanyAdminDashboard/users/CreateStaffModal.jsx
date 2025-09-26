@@ -19,6 +19,7 @@ const CreateStaffModal = ({ isOpen, onClose, onUserCreated }) => {
   
   const [stations, setStations] = useState([]);
   const [errors, setErrors] = useState({});
+  const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingStations, setIsLoadingStations] = useState(false);
 
@@ -94,35 +95,13 @@ const CreateStaffModal = ({ isOpen, onClose, onUserCreated }) => {
       
       // Call the userService to create the user
       const response = await userService.createUser(userData, dispatch);
+
+      console.log("use create response ",response)
       
-      if (response.success) {
-        // If user was created successfully and station assignments are needed
-        if (formData.stationIds.length > 0 && 
-            formData.role !== 'SUPER_ADMIN' && 
-            formData.role !== 'COMPANY_ADMIN') {
-          
-          // Assign user to selected stations
-          for (const stationId of formData.stationIds) {
-            try {
-              await userService.assignUserToStation({
-                userId: response.data.id,
-                stationId: stationId,
-                role: formData.role
-              });
-            } catch (assignmentError) {
-              console.error(`Failed to assign user to station ${stationId}:`, assignmentError);
-              // Continue with other assignments even if one fails
-            }
-          }
-        }
-        
-        // Show success message with temp password if available
-        if (response.data.tempPassword) {
-          alert(`User created successfully! Temporary password: ${response.data.tempPassword}`);
-        } else {
-          alert('User created successfully!');
-        }
-        
+      if (response.id) {
+
+        setSuccessMessage('User created successfully! Temporary password: ',response.tempPassword);
+    
         onUserCreated(); // Refetch users
         onClose();
       } else {
@@ -189,9 +168,17 @@ const CreateStaffModal = ({ isOpen, onClose, onUserCreated }) => {
       size="md"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* General Error */}
         {errors.general && (
           <div className="p-3 mb-4 text-red-700 bg-red-100 rounded-lg">
             {errors.general}
+          </div>
+        )}
+
+        {/* Success Message */}
+        {successMessage && (
+          <div className="p-3 mb-4 text-green-700 bg-green-100 rounded-lg">
+            {successMessage}
           </div>
         )}
         

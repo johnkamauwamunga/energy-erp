@@ -60,7 +60,6 @@ export const fuelService = {
   // FUEL CATEGORY METHODS
   // =====================
   
-  // Create a new fuel category
   createFuelCategory: async (categoryData) => {
     logger.info('Creating fuel category:', categoryData);
     
@@ -72,7 +71,6 @@ export const fuelService = {
     }
   },
 
-  // Update fuel category
   updateFuelCategory: async (categoryData) => {
     logger.info('Updating fuel category:', categoryData);
     
@@ -84,7 +82,6 @@ export const fuelService = {
     }
   },
 
-  // Get all fuel categories with optional filtering
   getFuelCategories: async (filters = {}) => {
     logger.info('Fetching fuel categories with filters:', filters);
     
@@ -104,7 +101,6 @@ export const fuelService = {
     }
   },
 
-  // Get fuel category by ID
   getFuelCategoryById: async (categoryId) => {
     logger.info(`Fetching fuel category: ${categoryId}`);
     
@@ -116,23 +112,10 @@ export const fuelService = {
     }
   },
 
-  // Delete fuel category
-  deleteFuelCategory: async (categoryId) => {
-    logger.info(`Deleting fuel category: ${categoryId}`);
-    
-    try {
-      const response = await apiService.delete(`/fuel/categories/${categoryId}`);
-      return handleResponse(response, 'deleting fuel category');
-    } catch (error) {
-      throw handleError(error, 'deleting fuel category', 'Failed to delete fuel category');
-    }
-  },
-
   // =====================
   // FUEL SUBTYPE METHODS
   // =====================
 
-  // Create a new fuel subtype
   createFuelSubType: async (subTypeData) => {
     logger.info('Creating fuel subtype:', subTypeData);
     
@@ -144,7 +127,6 @@ export const fuelService = {
     }
   },
 
-  // Update fuel subtype
   updateFuelSubType: async (subTypeData) => {
     logger.info('Updating fuel subtype:', subTypeData);
     
@@ -156,7 +138,6 @@ export const fuelService = {
     }
   },
 
-  // Get all fuel subtypes with optional filtering
   getFuelSubTypes: async (filters = {}) => {
     logger.info('Fetching fuel subtypes with filters:', filters);
     
@@ -176,7 +157,6 @@ export const fuelService = {
     }
   },
 
-  // Get fuel subtype by ID
   getFuelSubTypeById: async (subTypeId) => {
     logger.info(`Fetching fuel subtype: ${subTypeId}`);
     
@@ -188,43 +168,10 @@ export const fuelService = {
     }
   },
 
-  // Delete fuel subtype
-  deleteFuelSubType: async (subTypeId) => {
-    logger.info(`Deleting fuel subtype: ${subTypeId}`);
-    
-    try {
-      const response = await apiService.delete(`/fuel/subtypes/${subTypeId}`);
-      return handleResponse(response, 'deleting fuel subtype');
-    } catch (error) {
-      throw handleError(error, 'deleting fuel subtype', 'Failed to delete fuel subtype');
-    }
-  },
-
-  // Get subtypes by category
-  getSubTypesByCategory: async (categoryId, filters = {}) => {
-    logger.info(`Fetching subtypes for category: ${categoryId}`, filters);
-    
-    try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          params.append(key, filters[key]);
-        }
-      });
-      
-      const url = `/fuel/subtypes/category/${categoryId}?${params.toString()}`;
-      const response = await apiService.get(url);
-      return handleResponse(response, 'fetching subtypes by category');
-    } catch (error) {
-      throw handleError(error, 'fetching subtypes by category', 'Failed to fetch subtypes by category');
-    }
-  },
-
   // =====================
   // FUEL PRODUCT METHODS
   // =====================
 
-  // Create a new fuel product
   createFuelProduct: async (productData) => {
     logger.info('Creating fuel product:', productData);
     
@@ -236,7 +183,6 @@ export const fuelService = {
     }
   },
 
-  // Update fuel product
   updateFuelProduct: async (productData) => {
     logger.info('Updating fuel product:', productData);
     
@@ -248,7 +194,6 @@ export const fuelService = {
     }
   },
 
-  // Get all fuel products with optional filtering
   getFuelProducts: async (filters = {}) => {
     logger.info('Fetching fuel products with filters:', filters);
     
@@ -268,7 +213,6 @@ export const fuelService = {
     }
   },
 
-  // Get fuel product by ID
   getFuelProductById: async (productId) => {
     logger.info(`Fetching fuel product: ${productId}`);
     
@@ -280,82 +224,10 @@ export const fuelService = {
     }
   },
 
-  // Delete fuel product
-  deleteFuelProduct: async (productId) => {
-    logger.info(`Deleting fuel product: ${productId}`);
-    
-    try {
-      const response = await apiService.delete(`/fuel/products/${productId}`);
-      return handleResponse(response, 'deleting fuel product');
-    } catch (error) {
-      throw handleError(error, 'deleting fuel product', 'Failed to delete fuel product');
-    }
-  },
-
-  // Search fuel products by various criteria
-  searchFuelProducts: async (searchCriteria = {}) => {
-    logger.info('Searching fuel products with criteria:', searchCriteria);
-    
-    try {
-      const params = new URLSearchParams();
-      Object.keys(searchCriteria).forEach(key => {
-        if (searchCriteria[key] !== undefined && searchCriteria[key] !== null && searchCriteria[key] !== '') {
-          params.append(key, searchCriteria[key]);
-        }
-      });
-      
-      const response = await apiService.get(`/fuel/products/search?${params.toString()}`);
-      return handleResponse(response, 'searching fuel products');
-    } catch (error) {
-      throw handleError(error, 'searching fuel products', 'Failed to search fuel products');
-    }
-  },
-
-  // Get products by subtype
-  getProductsBySubType: async (subTypeId, filters = {}) => {
-    logger.info(`Fetching products for subtype: ${subTypeId}`, filters);
-    
-    try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          params.append(key, filters[key]);
-        }
-      });
-      
-      const url = `/fuel/products/subtype/${subTypeId}?${params.toString()}`;
-      const response = await apiService.get(url);
-      return handleResponse(response, 'fetching products by subtype');
-    } catch (error) {
-      throw handleError(error, 'fetching products by subtype', 'Failed to fetch products by subtype');
-    }
-  },
-
-  // Get products by category
-  getProductsByCategory: async (categoryId, filters = {}) => {
-    logger.info(`Fetching products for category: ${categoryId}`, filters);
-    
-    try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          params.append(key, filters[key]);
-        }
-      });
-      
-      const url = `/fuel/products/category/${categoryId}?${params.toString()}`;
-      const response = await apiService.get(url);
-      return handleResponse(response, 'fetching products by category');
-    } catch (error) {
-      throw handleError(error, 'fetching products by category', 'Failed to fetch products by category');
-    }
-  },
-
   // =====================
   // FUEL HIERARCHY METHODS
   // =====================
 
-  // Get complete fuel hierarchy
   getFuelHierarchy: async () => {
     logger.info('Fetching fuel hierarchy');
     
@@ -367,7 +239,6 @@ export const fuelService = {
     }
   },
 
-  // Create fuel hierarchy sequentially (category → subtype → product)
   createFuelHierarchySequential: async (hierarchyData) => {
     logger.info('Creating fuel hierarchy sequentially:', hierarchyData);
     
@@ -380,80 +251,12 @@ export const fuelService = {
   },
 
   // =====================
-  // BULK OPERATIONS
-  // =====================
-
-  // Bulk update fuel products
-  bulkUpdateFuelProducts: async (updates) => {
-    logger.info('Bulk updating fuel products:', updates);
-    
-    try {
-      const response = await apiService.patch('/fuel/products/bulk', { updates });
-      return handleResponse(response, 'bulk updating fuel products');
-    } catch (error) {
-      throw handleError(error, 'bulk updating fuel products', 'Failed to bulk update fuel products');
-    }
-  },
-
-  // Bulk create fuel products
-  bulkCreateFuelProducts: async (productsData) => {
-    logger.info('Bulk creating fuel products:', productsData);
-    
-    try {
-      const response = await apiService.post('/fuel/products/bulk', { products: productsData });
-      return handleResponse(response, 'bulk creating fuel products');
-    } catch (error) {
-      throw handleError(error, 'bulk creating fuel products', 'Failed to bulk create fuel products');
-    }
-  },
-
-  // =====================
-  // EXPORT METHODS
-  // =====================
-
-  // Export fuel data
-  exportFuelData: async (format = 'csv', filters = {}) => {
-    logger.info(`Exporting fuel data as ${format} with filters:`, filters);
-    
-    try {
-      const params = new URLSearchParams();
-      params.append('format', format);
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          params.append(key, filters[key]);
-        }
-      });
-      
-      const response = await apiService.get(`/fuel/export?${params.toString()}`, {
-        responseType: 'blob'
-      });
-      
-      // Handle file download
-      const blob = new Blob([response.data]);
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `fuel-data.${format}`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      
-      return { success: true, message: 'Export completed successfully' };
-    } catch (error) {
-      throw handleError(error, 'exporting fuel data', 'Failed to export fuel data');
-    }
-  },
-
-  // =====================
   // VALIDATION UTILITIES
   // =====================
 
-  // Validate fuel product data
   validateFuelProduct: (productData) => {
     const errors = [];
 
-    // Required fields validation
     if (!productData.name?.trim()) {
       errors.push('Product name is required');
     }
@@ -466,7 +269,6 @@ export const fuelService = {
       errors.push('Fuel subtype is required');
     }
 
-    // Numeric field validation
     if (productData.density && (productData.density <= 0 || productData.density > 1.5)) {
       errors.push('Density must be between 0 and 1.5 kg/L');
     }
@@ -479,7 +281,6 @@ export const fuelService = {
       errors.push('Sulfur content cannot be negative');
     }
 
-    // Price validation
     if (productData.minSellingPrice && productData.maxSellingPrice) {
       if (productData.minSellingPrice > productData.maxSellingPrice) {
         errors.push('Minimum selling price cannot be greater than maximum selling price');
@@ -489,7 +290,6 @@ export const fuelService = {
     return errors;
   },
 
-  // Validate fuel category data
   validateFuelCategory: (categoryData) => {
     const errors = [];
 
@@ -508,7 +308,6 @@ export const fuelService = {
     return errors;
   },
 
-  // Validate fuel subtype data
   validateFuelSubType: (subTypeData) => {
     const errors = [];
 
@@ -531,7 +330,6 @@ export const fuelService = {
   // UTILITY METHODS
   // =====================
 
-  // Get default quality standards for a fuel category
   getDefaultQualityStandards: (categoryName) => {
     const upperName = categoryName?.toUpperCase() || '';
     
@@ -567,14 +365,13 @@ export const fuelService = {
     };
   },
 
-  // Get default category properties
   getDefaultCategoryProperties: (categoryName) => {
     const defaultCategoryColors = {
-      'DIESEL': '#0047AB',     // Blue
-      'PETROL': '#FF0000',     // Red
-      'KEROSENE': '#FFFF00',   // Yellow
-      'LUBRICANTS': '#808080', // Gray
-      'default': '#666666'     // Default gray
+      'DIESEL': '#0047AB',
+      'PETROL': '#FF0000',
+      'KEROSENE': '#FFFF00',
+      'LUBRICANTS': '#808080',
+      'default': '#666666'
     };
     
     const defaultDensities = {
@@ -600,7 +397,6 @@ export const fuelService = {
     };
   },
 
-  // Format fuel product for display
   formatFuelProduct: (product) => {
     if (!product) return null;
     
@@ -616,33 +412,6 @@ export const fuelService = {
         ? `${product.minSellingPrice} - ${product.maxSellingPrice}`
         : 'Not set'
     };
-  },
-
-  // Calculate mass from volume
-  calculateMassFromVolume: (volume, density, temperature = 15) => {
-    if (!volume || !density) return null;
-    
-    // Simple temperature correction (basic implementation)
-    const temperatureCorrection = 1 - (0.0008 * (temperature - 15));
-    const correctedDensity = density * temperatureCorrection;
-    
-    return volume * correctedDensity;
-  },
-
-  // Check if fuel code is unique
-  checkFuelCodeUnique: async (fuelCode, excludeProductId = null) => {
-    try {
-      const params = new URLSearchParams();
-      params.append('fuelCode', fuelCode);
-      if (excludeProductId) {
-        params.append('excludeId', excludeProductId);
-      }
-      
-      const response = await apiService.get(`/fuel/products/check-unique?${params.toString()}`);
-      return handleResponse(response, 'checking fuel code uniqueness');
-    } catch (error) {
-      throw handleError(error, 'checking fuel code uniqueness', 'Failed to check fuel code uniqueness');
-    }
   }
 };
 

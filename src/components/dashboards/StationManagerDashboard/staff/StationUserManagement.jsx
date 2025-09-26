@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Card, Tabs, Tab, Badge } from '../../ui';
-import CreateStaffModal from './users/CreateStaffModal';
-import StaffAttachmentsTab from '../../features/assets/StaffAttachmentsTab';
+import { Button, Card, Tabs, Tab, Badge } from '../../../ui';
 import { User, UserPlus, Link, Shield, Settings } from 'lucide-react';
-import { formatDate } from '../../../utils/helpers';
-import { useApp } from '../../../context/AppContext';
-import { userService } from '../../../services/userService/userService';
+import { formatDate } from '../../../../utils/helpers';
+import { useApp } from '../../../../context/AppContext';
+import { userService } from '../../../../services/userService/userService';
 
-const CompanyUserManagement = () => {
+const StationUserManagement = () => {
   const { state, dispatch } = useApp();
   const [activeTab, setActiveTab] = useState('admins');
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+
   const [isLoading, setIsLoading] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
 
@@ -38,7 +36,6 @@ const CompanyUserManagement = () => {
   };
 
   const staffTypes = {
-    admins: filterUsersByRole('COMPANY_ADMIN'),
     managers: filterUsersByRole('STATION_MANAGER'),
     supervisors: filterUsersByRole('SUPERVISOR'),
     attendants: filterUsersByRole('ATTENDANT')
@@ -103,7 +100,6 @@ const CompanyUserManagement = () => {
           <Button 
             variant="cosmic" 
             icon={UserPlus}
-            onClick={() => setIsCreateModalOpen(true)}
           >
             Add New Staff
           </Button>
@@ -111,10 +107,6 @@ const CompanyUserManagement = () => {
       >
         <Tabs value={activeTab} onChange={setActiveTab}>
           <Tab value="admins" icon={Shield}>
-            Admins ({staffTypes.admins.length})
-          </Tab>
-          {/* managers */}
-            <Tab value="admins" icon={Shield}>
             Managers ({staffTypes.managers.length})
           </Tab>
           <Tab value="supervisors" icon={Settings}>
@@ -123,14 +115,9 @@ const CompanyUserManagement = () => {
           <Tab value="attendants" icon={User}>
             Attendants ({staffTypes.attendants.length})
           </Tab>
-          <Tab value="attachments" icon={Link}>
-            Station Assignments
-          </Tab>
         </Tabs>
         
-        {activeTab === 'attachments' ? (
-          <StaffAttachmentsTab users={allUsers} />
-        ) : (
+      
           <div className="mt-6 overflow-x-auto">
             <div className="bg-white rounded-lg shadow">
               <table className="min-w-full divide-y divide-gray-200">
@@ -162,16 +149,12 @@ const CompanyUserManagement = () => {
               </div>
             )}
           </div>
-        )}
+      
       </Card>
       
-      <CreateStaffModal 
-        isOpen={isCreateModalOpen} 
-        onClose={() => setIsCreateModalOpen(false)} 
-        onUserCreated={fetchUsers}
-      />
+ 
     </div>
   );
 };
 
-export default CompanyUserManagement;
+export default StationUserManagement;

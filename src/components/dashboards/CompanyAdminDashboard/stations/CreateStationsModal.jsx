@@ -83,11 +83,13 @@ const CreateStationsModal = ({ isOpen, onClose, editingStation }) => {
       } else {
         // Create new station
         response = await stationService.createStation(formData);
+
+        console.log("station created must be ",response)
         
-        if (response.success) {
+        if (response.id) {
           // Dispatch add action
           dispatch({ type: 'ADD_STATION', payload: response.data });
-          alert(`Station "${response.data.name}" created successfully!`);
+          alert(`Station "${response.name}" created successfully!`);
           onClose();
         } else {
           throw new Error(response.message || 'Failed to create station');
