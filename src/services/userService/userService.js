@@ -463,9 +463,178 @@ checkUserAssignment: async (userId, stationId) => {
     });
     throw error;
   }
-}
+},
+
+
+  // =====================
+  // STATION-LEVEL USER MANAGEMENT
+  // =====================
+
+
+  getUsersByStation: async (stationId, filters = {}) => {
+    console.log('🟢 [STATION USERS] Fetching users for station:', { 
+      stationId, 
+      filters 
+    });
+    
+    const params = new URLSearchParams();
+    
+    // Add filters to params if provided
+    Object.keys(filters).forEach(key => {
+      if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+        params.append(key, filters[key]);
+      }
+    });
+    
+    const queryString = params.toString();
+    const url = queryString 
+      ? `/users/station/${stationId}/users?${queryString}`
+      : `/users/station/${stationId}/users`;
+    
+    try {
+      const response = await apiService.get(url);
+      console.log('✅ [STATION USERS] Station users fetched successfully:', { 
+        stationId,
+        count: response.data.data?.length,
+        totalCount: response.data.pagination?.totalCount
+      });
+      return response.data;
+    } catch (error) {
+      console.error('❌ [STATION USERS] Failed to fetch station users:', {
+        error: error.response?.data?.message || error.message,
+        status: error.response?.status,
+        stationId,
+        filters
+      });
+      throw error;
+    }
+  },
+
+  // Get user's specific station assignments
+  getUserStationAssignments: async (userId, stationId) => {
+    console.log('🟢 [USER ASSIGNMENTS] Fetching user station assignments:', { 
+      userId, 
+      stationId 
+    });
+    
+    try {
+      const response = await apiService.get(`/users/${userId}/station/${stationId}/assignments`);
+      console.log('✅ [USER ASSIGNMENTS] User station assignments fetched successfully:', { 
+        userId,
+        stationId,
+        assignmentCount: response.data.data?.stationAssignments?.length
+      });
+      return response.data;
+    } catch (error) {
+      console.error('❌ [USER ASSIGNMENTS] Failed to fetch user station assignments:', {
+        error: error.response?.data?.message || error.message,
+        status: error.response?.status,
+        userId,
+        stationId
+      });
+      throw error;
+    }
+  },
+
+  // Get station users summary
+  getStationUsersSummary: async (stationId) => {
+    console.log('🟢 [STATION SUMMARY] Fetching station users summary:', { stationId });
+    
+    try {
+      const response = await apiService.get(`/users/station/${stationId}/summary`);
+      console.log('✅ [STATION SUMMARY] Station users summary fetched successfully:', { 
+        stationId,
+        totalUsers: response.data.data?.summary?.totalUsers
+      });
+      return response.data;
+    } catch (error) {
+      console.error('❌ [STATION SUMMARY] Failed to fetch station users summary:', {
+        error: error.response?.data?.message || error.message,
+        status: error.response?.status,
+        stationId
+      });
+      throw error;
+    }
+  },
+
+  // =====================
+  // HELPER METHODS FOR STATION MANAGEMENT
+  // =====================
+
+  // Get attendants for a station
+getStationAttendants: async (stationId, filters = {}) => {
+  const response = await userService.getUsersByStation(stationId, {
+    ...filters,
+    role: 'ATTENDANT'
+  });
+
+  console.log("✅ [STATION ATTEDANTS] ", response);
+  return response;
+},
+
+
+  // Get supervisors for a station
+  getStationSupervisors: async (stationId, filters = {}) => {
+    const response= userService.getUsersByStation(stationId, {
+      ...filters,
+      role: 'SUPERVISOR'
+    });
+   console.log("✅ [STATION SUPERVISOR] ",response)
+    return response;
+  },
+
+  // Get station managers for a station
+  getStationManagers: async (stationId, filters = {}) => {
+    return userService.getUsersByStation(stationId, {
+      ...filters,
+      role: 'STATION_MANAGER'
+    });
+  },
+
+  // Get users by status (ACTIVE, INACTIVE, etc.)
+  getStationUsersByStatus: async (stationId, status, filters = {}) => {
+    return userService.getUsersByStation(stationId, {
+      ...filters,
+      status: status
+    });
+  },
+
+  // =====================
+  // UTILITY METHODS
+  // =====================
+
+  // Filter users by role from existing data (client-side filtering)
+  filterUsersByRole: (users, role) => {
+    return users.filter(user => user.role === role);
+  },
+
+  // Get user count by role
+  getUserCountByRole: (users) => {
+    return users.reduce((acc, user) => {
+      acc[user.role] = (acc[user.role] || 0) + 1;
+      return acc;
+    }, {});
+  },
+
+  // Format user for display
+  formatUserDisplay: (user) => {
+    return {
+      id: user.id,
+      name: `${user.firstName} ${user.lastName}`.trim(),
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      stationAssignment: user.stationAssignments?.[0],
+      isActive: user.status === 'ACTIVE'
+    };
+  },
+
+  // Check if user is assigned to specific station
+  isUserAssignedToStation: (user, stationId) => {
+    return user.stationAssignments?.some(assignment => 
+      assignment.stationId === stationId
+    );
+  }
 };
-
-
 
 export default userService;

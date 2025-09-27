@@ -45,7 +45,7 @@ console.log("station",station);
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'assets', label: 'Assets', icon: Building2 },
      { id: 'assets-mant', label: 'Asset Management', icon: Building2 },
-     { id: 'Pump_mant', label: 'Pump Management', icon: Building2 },
+     { id: 'fuel_tank', label: 'Fuel Tanks', icon: Truck },
     { id: 'operations', label: 'Operations', icon: Activity },
     { id: 'shifts', label: 'Shift Management', icon: Clock },
      { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
@@ -62,8 +62,8 @@ console.log("station",station);
         return <StationAssetManagement />;
            case 'assets-mant':
         return <StationAssetsOverview />;
-        case 'Pump_mant':
-        return <PlaceholderComponent title="Pump Management" icon={Building2} />;
+        case 'fuel_tank':
+        return <PlaceholderComponent title="Fuel Tank Management" icon={Truck} />;
       case 'operations':
         return <PlaceholderComponent title="Station Operations" icon={Activity} />;
       case 'shifts':
