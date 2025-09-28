@@ -12,12 +12,19 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
   const [error, setError] = useState('');
   const [selectedTank, setSelectedTank] = useState(null);
   const [selectedPurchase, setSelectedPurchase] = useState(null);
+  const [selectedPurchaseItem, setSelectedPurchaseItem] = useState(null);
   const [availablePurchases, setAvailablePurchases] = useState([]);
 
-  // Main offload data structure matching backend
+  // Get current station and user
+  const currentStation = state.currentStation;
+  const currentUser = state.user;
+  
+  // Main offload data structure matching backend - UPDATED
   const [offloadData, setOffloadData] = useState({
-    // Core References
+    // Core References - UPDATED: Added productId and stationId
     purchaseId: '',
+    productId: '', // NEW: Required by backend
+    stationId: currentStation?.id || '', // NEW: Required by backend
     tankId: '',
     shiftId: '',
     
@@ -76,23 +83,14 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
     driverSignature: ''
   });
 
-  // Get current station and user
-  const currentStation = state.currentStation?.id;
-  const currentUser = state.user;
-  
-  // Filter tanks by current station
+  // Filter tanks by current station - UPDATED
   const stationTanks = state.assets?.tanks?.filter(
-    tank => tank.stationId === currentStation && tank.productId
+    tank => tank.stationId === currentStation?.id && tank.productId
   ) || [];
 
-  // Filter suppliers (energy companies)
-  const energyCompanies = state.suppliers?.filter(
-    supplier => supplier.type === 'energy' || supplier.type === 'FUEL'
-  ) || [];
-
-  // Get available shifts
+  // Get available shifts - UPDATED
   const availableShifts = state.shifts?.filter(
-    shift => shift.stationId === currentStation && shift.status === 'OPEN'
+    shift => shift.stationId === currentStation?.id && shift.status === 'OPEN'
   ) || [];
 
   // Get pumps connected to selected tank
@@ -100,40 +98,56 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
     ? state.assets?.pumps?.filter(pump => pump.tankId === selectedTank.id) || []
     : [];
 
-  // Fetch available purchases when tank is selected
+  // Fetch available purchases when tank is selected - UPDATED
   useEffect(() => {
-    if (selectedTank?.productId) {
+    if (selectedTank?.productId && currentStation?.id) {
       const purchases = state.purchases?.filter(purchase => 
         purchase.status === 'APPROVED' && 
-        purchase.items?.some(item => item.productId === selectedTank.productId)
+        purchase.items?.some(item => 
+          item.productId === selectedTank.productId && 
+          item.stationId === currentStation.id
+        )
       ) || [];
       setAvailablePurchases(purchases);
     }
-  }, [selectedTank, state.purchases]);
+  }, [selectedTank, currentStation, state.purchases]);
 
-  // Handle tank selection
+  // Handle tank selection - UPDATED
   const handleSelectTank = (tankId) => {
     const tank = stationTanks.find(t => t.id === tankId);
     setSelectedTank(tank);
-    setOffloadData(prev => ({ 
-      ...prev, 
-      tankId,
-      // Auto-set density from tank product if available
-      density: tank?.product?.density || prev.density
-    }));
+    
+    if (tank) {
+      setOffloadData(prev => ({ 
+        ...prev, 
+        tankId,
+        productId: tank.productId, // NEW: Set productId from tank
+        stationId: currentStation?.id || '', // NEW: Ensure stationId is set
+        // Auto-set density from tank product if available
+        density: tank?.product?.density || prev.density
+      }));
+    }
   };
 
-  // Handle purchase selection
+  // Handle purchase selection - UPDATED
   const handleSelectPurchase = (purchaseId) => {
     const purchase = availablePurchases.find(p => p.id === purchaseId);
     setSelectedPurchase(purchase);
     
-    if (purchase) {
-      const purchaseItem = purchase.items?.find(item => item.tankId === selectedTank?.id);
+    if (purchase && selectedTank) {
+      // Find the specific purchase item for this tank
+      const purchaseItem = purchase.items?.find(item => 
+        item.productId === selectedTank.productId && 
+        item.stationId === currentStation?.id &&
+        item.tankId === selectedTank.id
+      );
+      
+      setSelectedPurchaseItem(purchaseItem);
+      
       setOffloadData(prev => ({
         ...prev,
         purchaseId,
-        unitPrice: purchaseItem?.unitCost || '',
+        unitPrice: purchaseItem?.unitCost || purchaseItem?.unitPrice || '',
         expectedQuantity: purchaseItem?.quantity || '',
         supplierId: purchase.supplierId
       }));
@@ -156,7 +170,7 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
     }));
   };
 
-  // Handle pump reading change
+  // Handle pump reading change - UPDATED for better handling
   const handlePumpReadingChange = (readingType, pumpId, meterType, value) => {
     setOffloadData(prev => {
       const readings = [...prev[readingType]];
@@ -170,7 +184,6 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
       } else {
         readings.push({
           pumpId,
-          [meterType]: value ? parseFloat(value) : null,
           electricMeter: meterType === 'electricMeter' ? parseFloat(value) : null,
           manualMeter: meterType === 'manualMeter' ? parseFloat(value) : null,
           cashMeter: meterType === 'cashMeter' ? parseFloat(value) : null
@@ -181,7 +194,7 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
     });
   };
 
-  // Initialize pump readings when tank is selected
+  // Initialize pump readings when tank is selected - UPDATED
   useEffect(() => {
     if (tankPumps.length > 0 && offloadData.beforePumpReadings.length === 0) {
       const initialReadings = tankPumps.map(pump => ({
@@ -209,12 +222,17 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
     return offloadCalculations.calculateVariance(expected, actual);
   };
 
-  // Start offload (Step 1-2)
+  // Start offload (Step 1-2) - UPDATED error handling
   const startOffload = async () => {
     setLoading(true);
     setError('');
     
     try {
+      // Validate required fields
+      if (!offloadData.productId || !offloadData.stationId) {
+        throw new Error('Product and station selection is required');
+      }
+
       const submissionData = offloadFormatters.formatForSubmission(offloadData, false);
       const result = await fuelOffloadService.startOffload(submissionData);
       
@@ -229,12 +247,13 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
       
     } catch (error) {
       setError(error.message);
+      console.error('Start offload error:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Complete offload (Step 3)
+  // Complete offload (Step 3) - UPDATED error handling
   const completeOffload = async () => {
     setLoading(true);
     setError('');
@@ -253,17 +272,20 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
       
     } catch (error) {
       setError(error.message);
+      console.error('Complete offload error:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Check if current step is valid
+  // Check if current step is valid - UPDATED
   const isStepValid = () => {
     switch(step) {
       case 'basic-info':
         return offloadData.purchaseId && 
                offloadData.tankId && 
+               offloadData.productId && // NEW: Required
+               offloadData.stationId && // NEW: Required
                offloadData.shiftId &&
                offloadData.deliveryNoteNumber &&
                offloadData.transporterName &&
@@ -294,13 +316,37 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
   const getPumpReading = (readingType, pumpId, meterType) => {
     const readings = offloadData[readingType];
     const reading = readings.find(r => r.pumpId === pumpId);
-    return reading ? reading[meterType] : '';
+    return reading ? reading[meterType] || '' : '';
   };
 
   // Calculate volume from dip if tank capacity is available
   const calculateVolumeFromDip = (dipValue) => {
     if (!selectedTank?.capacity || !dipValue) return '';
     return offloadCalculations.calculateVolumeFromDip(parseFloat(dipValue), selectedTank.capacity);
+  };
+
+  // Render station and product info - NEW helper
+  const renderStationProductInfo = () => {
+    if (!currentStation || !selectedTank) return null;
+    
+    return (
+      <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+        <div className="flex justify-between items-center">
+          <div>
+            <span className="font-medium">Station: </span>
+            <span>{currentStation.name}</span>
+          </div>
+          <div>
+            <span className="font-medium">Product: </span>
+            <span>{selectedTank.product?.name || 'Unknown Product'}</span>
+          </div>
+          <div>
+            <span className="font-medium">Tank: </span>
+            <span>{selectedTank.asset?.name || selectedTank.name}</span>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -337,6 +383,9 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
           </div>
         </div>
 
+        {/* Station and Product Info */}
+        {currentStation && renderStationProductInfo()}
+
         {/* Step 1: Basic Information */}
         {step === 'basic-info' && (
           <Card title="1. Basic Information & Purchase Details">
@@ -366,7 +415,7 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
                   { value: '', label: 'Select purchase order' },
                   ...availablePurchases.map(purchase => ({
                     value: purchase.id,
-                    label: `${purchase.purchaseNumber} - ${purchase.supplier?.name}`
+                    label: `${purchase.purchaseNumber} - ${purchase.supplier?.name} - ${purchase.items?.find(item => item.productId === selectedTank?.productId)?.quantity || 0}L`
                   }))
                 ]}
                 icon={FileText}
@@ -527,6 +576,10 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
                 placeholder="INV-2024-FUEL-001"
                 icon={FileText}
               />
+
+              {/* Hidden fields for backend requirements */}
+              <input type="hidden" value={offloadData.productId} />
+              <input type="hidden" value={offloadData.stationId} />
             </div>
           </Card>
         )}
@@ -542,6 +595,13 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
               <p className="text-sm text-blue-600">
                 Capacity: {selectedTank.capacity}L | Current Volume: {selectedTank.currentVolume}L
               </p>
+              {selectedPurchaseItem && (
+                <p className="text-sm text-blue-600">
+                  Purchase: {selectedPurchase?.purchaseNumber} | 
+                  Expected: {selectedPurchaseItem.quantity}L | 
+                  Unit Price: KES {selectedPurchaseItem.unitCost}
+                </p>
+              )}
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -610,7 +670,8 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
                   <p className="text-xs text-gray-600">
                     Purchase: {selectedPurchase?.purchaseNumber}<br/>
                     Supplier: {selectedPurchase?.supplier?.name}<br/>
-                    Expected: {offloadData.expectedQuantity}L
+                    Expected: {offloadData.expectedQuantity}L<br/>
+                    Product: {selectedTank.product?.name}
                   </p>
                 </div>
               </div>
@@ -619,55 +680,59 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
             {/* Pump Readings Table */}
             <div className="mt-6">
               <h3 className="font-medium mb-3">Pump Meter Readings (Before Offload) *</h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pump</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Electric Meter *</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cash Meter</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Manual Meter</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {tankPumps.map(pump => (
-                      <tr key={pump.id}>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {pump.asset?.name || pump.code}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <Input
-                            type="number"
-                            value={getPumpReading('beforePumpReadings', pump.id, 'electricMeter')}
-                            onChange={(e) => handlePumpReadingChange('beforePumpReadings', pump.id, 'electricMeter', e.target.value)}
-                            placeholder="0.00"
-                            step="0.01"
-                            required
-                          />
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <Input
-                            type="number"
-                            value={getPumpReading('beforePumpReadings', pump.id, 'cashMeter')}
-                            onChange={(e) => handlePumpReadingChange('beforePumpReadings', pump.id, 'cashMeter', e.target.value)}
-                            placeholder="0.00"
-                            step="0.01"
-                          />
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <Input
-                            type="number"
-                            value={getPumpReading('beforePumpReadings', pump.id, 'manualMeter')}
-                            onChange={(e) => handlePumpReadingChange('beforePumpReadings', pump.id, 'manualMeter', e.target.value)}
-                            placeholder="0.00"
-                            step="0.01"
-                          />
-                        </td>
+              {tankPumps.length === 0 ? (
+                <Alert type="warning" message="No pumps found for this tank. Please add pumps or continue without pump readings." />
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pump</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Electric Meter *</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cash Meter</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Manual Meter</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {tankPumps.map(pump => (
+                        <tr key={pump.id}>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {pump.asset?.name || pump.code}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <Input
+                              type="number"
+                              value={getPumpReading('beforePumpReadings', pump.id, 'electricMeter')}
+                              onChange={(e) => handlePumpReadingChange('beforePumpReadings', pump.id, 'electricMeter', e.target.value)}
+                              placeholder="0.00"
+                              step="0.01"
+                              required
+                            />
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <Input
+                              type="number"
+                              value={getPumpReading('beforePumpReadings', pump.id, 'cashMeter')}
+                              onChange={(e) => handlePumpReadingChange('beforePumpReadings', pump.id, 'cashMeter', e.target.value)}
+                              placeholder="0.00"
+                              step="0.01"
+                            />
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <Input
+                              type="number"
+                              value={getPumpReading('beforePumpReadings', pump.id, 'manualMeter')}
+                              onChange={(e) => handlePumpReadingChange('beforePumpReadings', pump.id, 'manualMeter', e.target.value)}
+                              placeholder="0.00"
+                              step="0.01"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </Card>
         )}
@@ -795,75 +860,81 @@ const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
             {/* After Pump Readings Table */}
             <div className="mt-6">
               <h3 className="font-medium mb-3">Pump Meter Readings (After Offload) *</h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pump</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Electric Meter *</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cash Meter</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Manual Meter</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sales During</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {tankPumps.map(pump => {
-                      const beforeReading = offloadData.beforePumpReadings.find(r => r.pumpId === pump.id);
-                      const afterReading = offloadData.afterPumpReadings.find(r => r.pumpId === pump.id);
-                      const sales = afterReading && beforeReading ? 
-                        (afterReading.electricMeter || 0) - (beforeReading.electricMeter || 0) : 0;
-                      
-                      return (
-                        <tr key={pump.id}>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {pump.asset?.name || pump.code}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <Input
-                              type="number"
-                              value={getPumpReading('afterPumpReadings', pump.id, 'electricMeter')}
-                              onChange={(e) => handlePumpReadingChange('afterPumpReadings', pump.id, 'electricMeter', e.target.value)}
-                              placeholder="0.00"
-                              step="0.01"
-                              required
-                            />
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <Input
-                              type="number"
-                              value={getPumpReading('afterPumpReadings', pump.id, 'cashMeter')}
-                              onChange={(e) => handlePumpReadingChange('afterPumpReadings', pump.id, 'cashMeter', e.target.value)}
-                              placeholder="0.00"
-                              step="0.01"
-                            />
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <Input
-                              type="number"
-                              value={getPumpReading('afterPumpReadings', pump.id, 'manualMeter')}
-                              onChange={(e) => handlePumpReadingChange('afterPumpReadings', pump.id, 'manualMeter', e.target.value)}
-                              placeholder="0.00"
-                              step="0.01"
-                            />
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-green-600">
-                            {sales.toFixed(2)}L
-                          </td>
+              {tankPumps.length === 0 ? (
+                <Alert type="warning" message="No pumps found for this tank. Please complete without pump readings." />
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pump</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Electric Meter *</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cash Meter</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Manual Meter</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sales During</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              
-              <div className="mt-4 p-4 bg-green-50 rounded-lg">
-                <div className="flex justify-between items-center">
-                  <span className="font-medium">Total Sales During Offload:</span>
-                  <span className="text-xl font-bold text-green-700">
-                    {calculateSalesDuringOffload().toFixed(2)} L
-                  </span>
-                </div>
-              </div>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {tankPumps.map(pump => {
+                          const beforeReading = offloadData.beforePumpReadings.find(r => r.pumpId === pump.id);
+                          const afterReading = offloadData.afterPumpReadings.find(r => r.pumpId === pump.id);
+                          const sales = afterReading && beforeReading ? 
+                            (afterReading.electricMeter || 0) - (beforeReading.electricMeter || 0) : 0;
+                          
+                          return (
+                            <tr key={pump.id}>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {pump.asset?.name || pump.code}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <Input
+                                  type="number"
+                                  value={getPumpReading('afterPumpReadings', pump.id, 'electricMeter')}
+                                  onChange={(e) => handlePumpReadingChange('afterPumpReadings', pump.id, 'electricMeter', e.target.value)}
+                                  placeholder="0.00"
+                                  step="0.01"
+                                  required
+                                />
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <Input
+                                  type="number"
+                                  value={getPumpReading('afterPumpReadings', pump.id, 'cashMeter')}
+                                  onChange={(e) => handlePumpReadingChange('afterPumpReadings', pump.id, 'cashMeter', e.target.value)}
+                                  placeholder="0.00"
+                                  step="0.01"
+                                />
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <Input
+                                  type="number"
+                                  value={getPumpReading('afterPumpReadings', pump.id, 'manualMeter')}
+                                  onChange={(e) => handlePumpReadingChange('afterPumpReadings', pump.id, 'manualMeter', e.target.value)}
+                                  placeholder="0.00"
+                                  step="0.01"
+                                />
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-green-600">
+                                {sales.toFixed(2)}L
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  <div className="mt-4 p-4 bg-green-50 rounded-lg">
+                    <div className="flex justify-between items-center">
+                      <span className="font-medium">Total Sales During Offload:</span>
+                      <span className="text-xl font-bold text-green-700">
+                        {calculateSalesDuringOffload().toFixed(2)} L
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </Card>
         )}

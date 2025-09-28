@@ -56,12 +56,15 @@ const handleError = (error, operation, defaultMessage) => {
   throw new Error(defaultMessage || 'An unexpected error occurred');
 };
 
-// Validation utilities - UPDATED TO MATCH BACKEND SCHEMA
+// Validation utilities - UPDATED TO MATCH BACKEND SCHEMA EXACTLY
 export const offloadValidators = {
   validateOffloadData: (offloadData) => {
     const errors = [];
     
+    // Required fields from backend schema
     if (!offloadData.purchaseId) errors.push('Purchase ID is required');
+    if (!offloadData.productId) errors.push('Product ID is required'); // NEW: Required by backend
+    if (!offloadData.stationId) errors.push('Station ID is required'); // NEW: Required by backend
     if (!offloadData.tankId) errors.push('Tank ID is required');
     if (!offloadData.shiftId) errors.push('Shift ID is required');
     if (!offloadData.deliveryNoteNumber) errors.push('Delivery note number is required');
@@ -70,6 +73,7 @@ export const offloadValidators = {
     if (!offloadData.transporterName) errors.push('Transporter name is required');
     if (!offloadData.documentRef) errors.push('Document reference is required');
     
+    // Quantities and pricing
     if (!offloadData.expectedQuantity || offloadData.expectedQuantity <= 0) {
       errors.push('Expected quantity must be positive');
     }
@@ -78,6 +82,7 @@ export const offloadValidators = {
       errors.push('Unit price must be positive');
     }
     
+    // Dip reading validation
     if (!offloadData.beforeDipReading) {
       errors.push('Before dip reading is required');
     } else {
@@ -89,11 +94,11 @@ export const offloadValidators = {
       }
     }
     
-    // Pump readings are optional at start (can be added later)
+    // Pump readings are optional at start
     if (offloadData.beforePumpReadings) {
       offloadData.beforePumpReadings.forEach((reading, index) => {
         if (!reading.pumpId) errors.push(`Pump ${index + 1}: Pump ID is required`);
-        if (!reading.electricMeter && reading.electricMeter !== 0) {
+        if (reading.electricMeter === undefined || reading.electricMeter === null) {
           errors.push(`Pump ${index + 1}: Electric meter reading is required`);
         }
       });
@@ -127,7 +132,7 @@ export const offloadValidators = {
     } else {
       completionData.afterPumpReadings.forEach((reading, index) => {
         if (!reading.pumpId) errors.push(`After Pump ${index + 1}: Pump ID is required`);
-        if (!reading.electricMeter && reading.electricMeter !== 0) {
+        if (reading.electricMeter === undefined || reading.electricMeter === null) {
           errors.push(`After Pump ${index + 1}: Electric meter reading is required`);
         }
       });
@@ -148,11 +153,6 @@ export const offloadCalculations = {
     return ((actual - expected) / expected) * 100;
   },
 
-  calculateVolumeFromDip: (dipValue, tankCapacity) => {
-    // Simple calculation - adjust based on your tank calibration
-    return dipValue * (tankCapacity / 100);
-  },
-  
   calculateSalesDuringOffload: (beforeReadings, afterReadings) => {
     let totalSales = 0;
     if (!beforeReadings || !afterReadings) return totalSales;
@@ -172,9 +172,9 @@ export const offloadCalculations = {
   calculateDipVolumeChange: (beforeVolume, afterVolume) => afterVolume - beforeVolume
 };
 
-// Main service - UPDATED TO MATCH BACKEND ENDPOINTS
+// Main service - UPDATED TO MATCH BACKEND ENDPOINTS EXACTLY
 export const fuelOffloadService = {
-  // Start a new fuel offload - MATCHES BACKEND
+  // Start a new fuel offload - MATCHES BACKEND SCHEMA
   startOffload: async (offloadData) => {
     logger.info('Starting fuel offload:', offloadData);
     
@@ -184,14 +184,16 @@ export const fuelOffloadService = {
     }
     
     try {
-      const response = await apiService.post('/fuel-offloads', offloadData);
+      // Format data to match backend schema exactly
+      const formattedData = offloadFormatters.formatForSubmission(offloadData, false);
+      const response = await apiService.post('/fuel-offloads', formattedData);
       return handleResponse(response, 'starting fuel offload');
     } catch (error) {
       throw handleError(error, 'starting fuel offload', 'Failed to start fuel offload');
     }
   },
 
-  // Complete an offload - MATCHES BACKEND
+  // Complete an offload - MATCHES BACKEND SCHEMA
   completeOffload: async (offloadId, completionData) => {
     logger.info(`Completing offload ${offloadId}:`, completionData);
     
@@ -201,7 +203,9 @@ export const fuelOffloadService = {
     }
     
     try {
-      const response = await apiService.post(`/fuel-offloads/${offloadId}/complete`, completionData);
+      // Format data to match backend schema exactly
+      const formattedData = offloadFormatters.formatForSubmission(completionData, true);
+      const response = await apiService.post(`/fuel-offloads/${offloadId}/complete`, formattedData);
       return handleResponse(response, 'completing fuel offload');
     } catch (error) {
       throw handleError(error, 'completing fuel offload', 'Failed to complete fuel offload');
@@ -220,11 +224,11 @@ export const fuelOffloadService = {
     }
   },
 
-  // Get paginated offloads with filtering - MATCHES BACKEND
+  // Get paginated offloads with filtering - MATCHES BACKEND QUERY SCHEMA
   getOffloads: async (filters = {}) => {
     logger.info('Fetching offloads with filters:', filters);
     
-    // Default parameters that match backend
+    // Default parameters that match backend schema
     const defaultParams = {
       page: 1,
       limit: 20,
@@ -232,9 +236,25 @@ export const fuelOffloadService = {
       sortOrder: 'desc'
     };
     
+    // Map frontend filters to backend query parameters
+    const backendFilters = {
+      ...defaultParams,
+      ...filters,
+      // Convert date formats if needed
+      startDate: filters.startDate ? new Date(filters.startDate).toISOString() : undefined,
+      endDate: filters.endDate ? new Date(filters.endDate).toISOString() : undefined
+    };
+    
+    // Remove undefined values
+    Object.keys(backendFilters).forEach(key => {
+      if (backendFilters[key] === undefined || backendFilters[key] === '') {
+        delete backendFilters[key];
+      }
+    });
+    
     try {
       const response = await apiService.get('/fuel-offloads', { 
-        params: { ...defaultParams, ...filters }
+        params: backendFilters
       });
       return handleResponse(response, 'fetching offloads');
     } catch (error) {
@@ -242,7 +262,7 @@ export const fuelOffloadService = {
     }
   },
 
-  // Update offload - MATCHES BACKEND
+  // Update offload - MATCHES BACKEND UPDATE SCHEMA
   updateOffload: async (offloadId, updateData) => {
     logger.info(`Updating offload ${offloadId}:`, updateData);
     
@@ -254,13 +274,13 @@ export const fuelOffloadService = {
     }
   },
 
-  // Get offloads by purchase ID - NEW ENDPOINT
+  // Get offloads by purchase ID - MATCHES BACKEND ENDPOINT
   getOffloadsByPurchase: async (purchaseId, filters = {}) => {
     logger.info(`Fetching offloads for purchase: ${purchaseId}`, filters);
     
     try {
       const response = await apiService.get(`/fuel-offloads/purchase/${purchaseId}`, {
-        params: filters
+        params: { ...filters, page: 1, limit: 100 } // Default to get all for a purchase
       });
       return handleResponse(response, 'fetching offloads by purchase');
     } catch (error) {
@@ -268,7 +288,49 @@ export const fuelOffloadService = {
     }
   },
 
-  // Get offload summary for dashboard - MATCHES BACKEND
+  // Get offloads by supplier - NEW ENDPOINT
+  getOffloadsBySupplier: async (supplierId, filters = {}) => {
+    logger.info(`Fetching offloads for supplier: ${supplierId}`, filters);
+    
+    try {
+      const response = await apiService.get(`/fuel-offloads/supplier/${supplierId}`, {
+        params: filters
+      });
+      return handleResponse(response, 'fetching offloads by supplier');
+    } catch (error) {
+      throw handleError(error, 'fetching offloads by supplier', 'Failed to fetch offloads by supplier');
+    }
+  },
+
+  // Get offloads by station - NEW ENDPOINT
+  getOffloadsByStation: async (stationId, filters = {}) => {
+    logger.info(`Fetching offloads for station: ${stationId}`, filters);
+    
+    try {
+      const response = await apiService.get(`/fuel-offloads/station/${stationId}`, {
+        params: filters
+      });
+      return handleResponse(response, 'fetching offloads by station');
+    } catch (error) {
+      throw handleError(error, 'fetching offloads by station', 'Failed to fetch offloads for station');
+    }
+  },
+
+  // Get offloads by product - NEW ENDPOINT
+  getOffloadsByProduct: async (productId, filters = {}) => {
+    logger.info(`Fetching offloads for product: ${productId}`, filters);
+    
+    try {
+      const response = await apiService.get(`/fuel-offloads/product/${productId}`, {
+        params: filters
+      });
+      return handleResponse(response, 'fetching offloads by product');
+    } catch (error) {
+      throw handleError(error, 'fetching offloads by product', 'Failed to fetch offloads by product');
+    }
+  },
+
+  // Get offload summary for dashboard - MATCHES BACKEND ENDPOINT
   getOffloadSummary: async (filters = {}) => {
     logger.info('Fetching offload summary:', filters);
     
@@ -279,6 +341,20 @@ export const fuelOffloadService = {
       return handleResponse(response, 'fetching offload summary');
     } catch (error) {
       throw handleError(error, 'fetching offload summary', 'Failed to fetch offload summary');
+    }
+  },
+
+  // Get offload analytics - NEW ENDPOINT
+  getOffloadAnalytics: async (filters = {}) => {
+    logger.info('Fetching offload analytics:', filters);
+    
+    try {
+      const response = await apiService.get('/fuel-offloads/analytics/summary', {
+        params: filters
+      });
+      return handleResponse(response, 'fetching offload analytics');
+    } catch (error) {
+      throw handleError(error, 'fetching offload analytics', 'Failed to fetch offload analytics');
     }
   },
 
@@ -301,34 +377,6 @@ export const fuelOffloadService = {
     } catch (error) {
       throw handleError(error, 'fetching recent offloads', 'Failed to fetch recent offloads');
     }
-  },
-
-  // Get offloads by station - USING MAIN ENDPOINT WITH STATION FILTER
-  getOffloadsByStation: async (stationId, filters = {}) => {
-    logger.info(`Fetching offloads for station: ${stationId}`, filters);
-    
-    try {
-      const response = await apiService.get('/fuel-offloads', {
-        params: { ...filters, stationId }
-      });
-      return handleResponse(response, 'fetching offloads by station');
-    } catch (error) {
-      throw handleError(error, 'fetching offloads by station', 'Failed to fetch offloads for station');
-    }
-  },
-
-  // Get offloads by tank - USING MAIN ENDPOINT WITH TANK FILTER
-  getOffloadsByTank: async (tankId, filters = {}) => {
-    logger.info(`Fetching offloads for tank: ${tankId}`, filters);
-    
-    try {
-      const response = await apiService.get('/fuel-offloads', {
-        params: { ...filters, tankId }
-      });
-      return handleResponse(response, 'fetching offloads by tank');
-    } catch (error) {
-      throw handleError(error, 'fetching offloads by tank', 'Failed to fetch offloads for tank');
-    }
   }
 };
 
@@ -337,9 +385,27 @@ export const offloadFormatters = {
   formatOffloadForDisplay: (offload) => {
     if (!offload) return null;
     
-    const variance = offloadCalculations.calculateVariance(offload.expectedQuantity, offload.actualQuantity);
-    const variancePercentage = offloadCalculations.calculateVariancePercentage(offload.expectedQuantity, offload.actualQuantity);
-    const totalValue = offload.totalValue || offloadCalculations.calculateTotalValue(offload.actualQuantity, offload.unitPrice);
+    // Use backend-calculated values if available, otherwise calculate
+    const variance = offload.variance !== undefined ? offload.variance : 
+                    offloadCalculations.calculateVariance(offload.expectedQuantity, offload.actualQuantity);
+    
+    const variancePercentage = offloadCalculations.calculateVariancePercentage(
+      offload.expectedQuantity, 
+      offload.actualQuantity
+    );
+    
+    const totalValue = offload.totalValue || 
+                      offloadCalculations.calculateTotalValue(offload.actualQuantity, offload.unitPrice);
+
+    // Map backend status to display values
+    const statusDisplay = {
+      'UNLOADING': { label: 'Unloading', color: 'blue', variant: 'warning' },
+      'FULLY_ACCEPTED': { label: 'Fully Accepted', color: 'green', variant: 'success' },
+      'PARTIALLY_ACCEPTED': { label: 'Partially Accepted', color: 'orange', variant: 'warning' },
+      'REJECTED': { label: 'Rejected', color: 'red', variant: 'error' }
+    };
+
+    const statusInfo = statusDisplay[offload.status] || { label: offload.status, color: 'gray', variant: 'secondary' };
 
     return {
       ...offload,
@@ -348,8 +414,15 @@ export const offloadFormatters = {
       variancePercentage: variancePercentage.toFixed(2),
       totalValue: totalValue,
       
+      // Status information
+      statusDisplay: statusInfo.label,
+      statusColor: statusInfo.color,
+      statusVariant: statusInfo.variant,
+      isCompleted: offload.status === 'FULLY_ACCEPTED' || offload.status === 'PARTIALLY_ACCEPTED',
+      isInProgress: offload.status === 'UNLOADING',
+      
       // Formatted dates
-      formattedStartTime: new Date(offload.startTime).toLocaleString(),
+      formattedStartTime: offload.startTime ? new Date(offload.startTime).toLocaleString() : 'N/A',
       formattedEndTime: offload.endTime ? new Date(offload.endTime).toLocaleString() : 'In Progress',
       formattedRecordedAt: offload.recordedAt ? new Date(offload.recordedAt).toLocaleString() : 'N/A',
       
@@ -364,21 +437,19 @@ export const offloadFormatters = {
         currency: 'KES'
       }).format(offload.unitPrice || 0),
       
-      // Status information
-      statusBadge: getStatusBadge(offload.status),
-      isCompleted: offload.status === 'SUCCESSFUL',
-      isInProgress: offload.status === 'IN_PROGRESS',
+      // Quick info for display
+      productName: offload.product?.name || offload.purchaseItem?.product?.name || 'Unknown Product',
+      stationName: offload.tank?.asset?.station?.name || offload.purchaseItem?.station?.name || 'Unknown Station',
+      supplierName: offload.supplier?.name || 'Unknown Supplier',
       
       // Mobile-friendly formats
-      shortStartTime: new Date(offload.startTime).toLocaleDateString('en-KE'),
-      shortVehicle: offload.vehicleNumber?.replace(/\s/g, ''),
-      shortProduct: offload.product?.name?.substring(0, 10) || 'N/A',
-      shortStation: offload.tank?.asset?.station?.name?.split(' ')[0] || 'N/A',
+      shortStartTime: offload.startTime ? new Date(offload.startTime).toLocaleDateString('en-KE') : 'N/A',
+      shortVehicle: offload.vehicleNumber?.replace(/\s/g, '') || 'N/A',
       
       // Quick info for cards
       quickInfo: {
-        product: offload.product?.name || 'Unknown Product',
-        station: offload.tank?.asset?.station?.name || 'Unknown Station',
+        product: offload.product?.name || offload.purchaseItem?.product?.name || 'Unknown Product',
+        station: offload.tank?.asset?.station?.name || offload.purchaseItem?.station?.name || 'Unknown Station',
         supplier: offload.supplier?.name || 'Unknown Supplier',
         driver: offload.driverName || 'Unknown Driver'
       }
@@ -386,31 +457,35 @@ export const offloadFormatters = {
   },
 
   formatForMobileTable: (offloads) => {
-    return offloads.map(offload => ({
-      id: offload.id,
-      deliveryNote: offload.deliveryNoteNumber,
-      vehicle: offload.vehicleNumber,
-      driver: offload.driverName,
-      product: offload.product?.name,
-      station: offload.tank?.asset?.station?.name,
-      expected: `${offload.expectedQuantity}L`,
-      actual: `${offload.actualQuantity}L`,
-      variance: `${offload.variance}L`,
-      status: offload.status,
-      startTime: new Date(offload.startTime).toLocaleDateString('en-KE'),
+    return offloads.map(offload => {
+      const formatted = offloadFormatters.formatOffloadForDisplay(offload);
       
-      // Mobile-optimized fields
-      mobileSummary: `${offload.deliveryNoteNumber} • ${offload.vehicleNumber}`,
-      mobileDetails: `${offload.product?.name} • ${offload.actualQuantity || 0}L`,
-      mobileStatus: getStatusBadge(offload.status).label,
-      
-      // For quick actions
-      canComplete: offload.status === 'IN_PROGRESS',
-      canEdit: offload.status !== 'SUCCESSFUL'
-    }));
+      return {
+        id: offload.id,
+        deliveryNote: offload.deliveryNoteNumber,
+        vehicle: offload.vehicleNumber,
+        driver: offload.driverName,
+        product: formatted.productName,
+        station: formatted.stationName,
+        expected: `${offload.expectedQuantity}L`,
+        actual: `${offload.actualQuantity || 0}L`,
+        variance: `${formatted.variance}L`,
+        status: formatted.statusDisplay,
+        startTime: formatted.shortStartTime,
+        
+        // Mobile-optimized fields
+        mobileSummary: `${offload.deliveryNoteNumber} • ${offload.vehicleNumber}`,
+        mobileDetails: `${formatted.productName} • ${offload.actualQuantity || 0}L`,
+        mobileStatus: formatted.statusDisplay,
+        
+        // For quick actions
+        canComplete: offload.status === 'UNLOADING',
+        canEdit: offload.status !== 'FULLY_ACCEPTED' && offload.status !== 'REJECTED'
+      };
+    });
   },
 
-  // Format data for form submission
+  // Format data for form submission - UPDATED TO MATCH BACKEND SCHEMA EXACTLY
   formatForSubmission: (formData, isCompletion = false) => {
     if (isCompletion) {
       return {
@@ -422,7 +497,7 @@ export const offloadFormatters = {
           waterLevel: formData.afterDipReading.waterLevel ? parseFloat(formData.afterDipReading.waterLevel) : null,
           density: formData.afterDipReading.density ? parseFloat(formData.afterDipReading.density) : null
         },
-        afterPumpReadings: formData.afterPumpReadings.map(reading => ({
+        afterPumpReadings: (formData.afterPumpReadings || []).map(reading => ({
           pumpId: reading.pumpId,
           electricMeter: parseFloat(reading.electricMeter),
           manualMeter: reading.manualMeter ? parseFloat(reading.manualMeter) : null,
@@ -434,26 +509,40 @@ export const offloadFormatters = {
       };
     }
 
-    // Start offload format
+    // Start offload format - MATCHES FuelOffloadCreateSchema EXACTLY
     return {
       purchaseId: formData.purchaseId,
+      productId: formData.productId, // REQUIRED by backend
+      stationId: formData.stationId, // REQUIRED by backend
       tankId: formData.tankId,
       shiftId: formData.shiftId,
+      
+      // Delivery information
       transporterName: formData.transporterName,
       vehicleNumber: formData.vehicleNumber,
       driverName: formData.driverName,
       driverContact: formData.driverContact || null,
       waybillNumber: formData.waybillNumber || null,
       deliveryNoteNumber: formData.deliveryNoteNumber,
+      
+      // Quantities
       expectedQuantity: parseFloat(formData.expectedQuantity),
+      
+      // Quality control
       density: formData.density ? parseFloat(formData.density) : null,
       temperature: formData.temperature ? parseFloat(formData.temperature) : null,
       waterContent: formData.waterContent ? parseFloat(formData.waterContent) : null,
+      
+      // Financials
       unitPrice: parseFloat(formData.unitPrice),
       taxAmount: formData.taxAmount ? parseFloat(formData.taxAmount) : null,
       transportationCost: formData.transportationCost ? parseFloat(formData.transportationCost) : null,
+      
+      // Documentation
       supplierInvoice: formData.supplierInvoice || null,
       documentRef: formData.documentRef,
+      
+      // Pre-offload readings
       beforeDipReading: {
         dipValue: parseFloat(formData.beforeDipReading.dipValue),
         volume: parseFloat(formData.beforeDipReading.volume),
@@ -467,22 +556,10 @@ export const offloadFormatters = {
         manualMeter: reading.manualMeter ? parseFloat(reading.manualMeter) : null,
         cashMeter: reading.cashMeter ? parseFloat(reading.cashMeter) : null
       })),
+      
       startTime: formData.startTime || new Date().toISOString()
     };
   }
-};
-
-// Helper function for status badges - UPDATED FOR BACKEND STATUSES
-const getStatusBadge = (status) => {
-  const statusConfig = {
-    'PENDING': { color: 'gray', label: 'Pending', variant: 'secondary' },
-    'IN_PROGRESS': { color: 'blue', label: 'In Progress', variant: 'warning' },
-    'SUCCESSFUL': { color: 'green', label: 'Completed', variant: 'success' },
-    'PARTIAL': { color: 'orange', label: 'Partial', variant: 'warning' },
-    'FAILED': { color: 'red', label: 'Failed', variant: 'error' }
-  };
-  
-  return statusConfig[status] || { color: 'gray', label: status, variant: 'secondary' };
 };
 
 // Export default service
