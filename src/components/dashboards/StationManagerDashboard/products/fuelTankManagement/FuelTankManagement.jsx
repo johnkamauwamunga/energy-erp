@@ -9,6 +9,7 @@ import { useApp } from '../../../context/AppContext';
 import CreateAssetModal from './CreateAssetModal';
 import AssetAttachmentsTab from '../../features/assets/AssetAttachmentsTab';
 import { assetService } from '../../../services/assetService/assetService';
+import { fuelService} from '../../../services/fuelService/fuelService'
 
 const CompanyAssetManagement = () => {
   const { state, dispatch } = useApp();

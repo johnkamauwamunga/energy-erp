@@ -1,6 +1,6 @@
 import { apiService } from '../apiService';
 
-// Simple logging utility
+// Enhanced logging utility
 const logger = {
   debug: (...args) => console.log('🔍 [FuelService]', ...args),
   info: (...args) => console.log('ℹ️ [FuelService]', ...args),
@@ -8,10 +8,26 @@ const logger = {
   error: (...args) => console.error('❌ [FuelService]', ...args)
 };
 
-// Response handler utility
+// Request/Response debugging utilities
+const debugRequest = (method, url, data) => {
+  logger.debug(`➡️ ${method} ${url}`, data || '');
+};
+
+const debugResponse = (method, url, response) => {
+  logger.debug(`⬅️ ${method} ${url} Response:`, response.data);
+};
+
+// Enhanced response handler utility
 const handleResponse = (response, operation) => {
-  if (response.data) {
+  // Handle nested success structure from backend
+  if (response.data && response.data.success) {
     logger.debug(`${operation} successful`);
+    return response.data.data; // Return the actual data payload
+  }
+  
+  // Handle case where backend returns data directly
+  if (response.data) {
+    logger.debug(`${operation} successful (direct data)`);
     return response.data;
   }
   
@@ -19,7 +35,7 @@ const handleResponse = (response, operation) => {
   throw new Error('Invalid response format from server');
 };
 
-// Error handler utility
+// Enhanced error handler utility
 const handleError = (error, operation, defaultMessage) => {
   logger.error(`Error during ${operation}:`, error);
   
@@ -40,11 +56,20 @@ const handleError = (error, operation, defaultMessage) => {
       throw new Error('Requested resource not found');
     }
     
-    if (status === 400 && data.errors) {
-      const errorMessages = data.errors.map(err => err.message).join(', ');
-      throw new Error(`Validation failed: ${errorMessages}`);
+    if (status === 400) {
+      // Handle backend validation errors
+      if (data.message) {
+        throw new Error(data.message);
+      }
+      if (data.errors) {
+        const errorMessages = Array.isArray(data.errors) 
+          ? data.errors.map(err => err.message || err).join(', ')
+          : JSON.stringify(data.errors);
+        throw new Error(`Validation failed: ${errorMessages}`);
+      }
     }
     
+    // Handle backend error format
     if (data && data.message) {
       throw new Error(data.message);
     }
@@ -62,9 +87,11 @@ export const fuelService = {
   
   createFuelCategory: async (categoryData) => {
     logger.info('Creating fuel category:', categoryData);
+    debugRequest('POST', '/fuel/categories', categoryData);
     
     try {
       const response = await apiService.post('/fuel/categories', categoryData);
+      debugResponse('POST', '/fuel/categories', response);
       return handleResponse(response, 'creating fuel category');
     } catch (error) {
       throw handleError(error, 'creating fuel category', 'Failed to create fuel category');
@@ -75,7 +102,15 @@ export const fuelService = {
     logger.info('Updating fuel category:', categoryData);
     
     try {
-      const response = await apiService.put('/fuel/categories', categoryData);
+      // Extract ID from data and use in URL (RESTful pattern)
+      const { id, ...updateData } = categoryData;
+      if (!id) {
+        throw new Error('Category ID is required for update');
+      }
+      
+      debugRequest('PUT', `/fuel/categories/${id}`, updateData);
+      const response = await apiService.put(`/fuel/categories/${id}`, updateData);
+      debugResponse('PUT', `/fuel/categories/${id}`, response);
       return handleResponse(response, 'updating fuel category');
     } catch (error) {
       throw handleError(error, 'updating fuel category', 'Failed to update fuel category');
@@ -94,7 +129,9 @@ export const fuelService = {
       });
       
       const url = params.toString() ? `/fuel/categories?${params.toString()}` : '/fuel/categories';
+      debugRequest('GET', url);
       const response = await apiService.get(url);
+      debugResponse('GET', url, response);
       return handleResponse(response, 'fetching fuel categories');
     } catch (error) {
       throw handleError(error, 'fetching fuel categories', 'Failed to fetch fuel categories');
@@ -105,7 +142,9 @@ export const fuelService = {
     logger.info(`Fetching fuel category: ${categoryId}`);
     
     try {
+      debugRequest('GET', `/fuel/categories/${categoryId}`);
       const response = await apiService.get(`/fuel/categories/${categoryId}`);
+      debugResponse('GET', `/fuel/categories/${categoryId}`, response);
       return handleResponse(response, 'fetching fuel category');
     } catch (error) {
       throw handleError(error, 'fetching fuel category', 'Failed to fetch fuel category');
@@ -118,9 +157,11 @@ export const fuelService = {
 
   createFuelSubType: async (subTypeData) => {
     logger.info('Creating fuel subtype:', subTypeData);
+    debugRequest('POST', '/fuel/subtypes', subTypeData);
     
     try {
       const response = await apiService.post('/fuel/subtypes', subTypeData);
+      debugResponse('POST', '/fuel/subtypes', response);
       return handleResponse(response, 'creating fuel subtype');
     } catch (error) {
       throw handleError(error, 'creating fuel subtype', 'Failed to create fuel subtype');
@@ -131,7 +172,15 @@ export const fuelService = {
     logger.info('Updating fuel subtype:', subTypeData);
     
     try {
-      const response = await apiService.put('/fuel/subtypes', subTypeData);
+      // Extract ID from data and use in URL (RESTful pattern)
+      const { id, ...updateData } = subTypeData;
+      if (!id) {
+        throw new Error('SubType ID is required for update');
+      }
+      
+      debugRequest('PUT', `/fuel/subtypes/${id}`, updateData);
+      const response = await apiService.put(`/fuel/subtypes/${id}`, updateData);
+      debugResponse('PUT', `/fuel/subtypes/${id}`, response);
       return handleResponse(response, 'updating fuel subtype');
     } catch (error) {
       throw handleError(error, 'updating fuel subtype', 'Failed to update fuel subtype');
@@ -150,7 +199,9 @@ export const fuelService = {
       });
       
       const url = params.toString() ? `/fuel/subtypes?${params.toString()}` : '/fuel/subtypes';
+      debugRequest('GET', url);
       const response = await apiService.get(url);
+      debugResponse('GET', url, response);
       return handleResponse(response, 'fetching fuel subtypes');
     } catch (error) {
       throw handleError(error, 'fetching fuel subtypes', 'Failed to fetch fuel subtypes');
@@ -161,7 +212,9 @@ export const fuelService = {
     logger.info(`Fetching fuel subtype: ${subTypeId}`);
     
     try {
+      debugRequest('GET', `/fuel/subtypes/${subTypeId}`);
       const response = await apiService.get(`/fuel/subtypes/${subTypeId}`);
+      debugResponse('GET', `/fuel/subtypes/${subTypeId}`, response);
       return handleResponse(response, 'fetching fuel subtype');
     } catch (error) {
       throw handleError(error, 'fetching fuel subtype', 'Failed to fetch fuel subtype');
@@ -174,9 +227,11 @@ export const fuelService = {
 
   createFuelProduct: async (productData) => {
     logger.info('Creating fuel product:', productData);
+    debugRequest('POST', '/fuel/products', productData);
     
     try {
       const response = await apiService.post('/fuel/products', productData);
+      debugResponse('POST', '/fuel/products', response);
       return handleResponse(response, 'creating fuel product');
     } catch (error) {
       throw handleError(error, 'creating fuel product', 'Failed to create fuel product');
@@ -187,7 +242,15 @@ export const fuelService = {
     logger.info('Updating fuel product:', productData);
     
     try {
-      const response = await apiService.put('/fuel/products', productData);
+      // Extract ID from data and use in URL (RESTful pattern)
+      const { id, ...updateData } = productData;
+      if (!id) {
+        throw new Error('Product ID is required for update');
+      }
+      
+      debugRequest('PUT', `/fuel/products/${id}`, updateData);
+      const response = await apiService.put(`/fuel/products/${id}`, updateData);
+      debugResponse('PUT', `/fuel/products/${id}`, response);
       return handleResponse(response, 'updating fuel product');
     } catch (error) {
       throw handleError(error, 'updating fuel product', 'Failed to update fuel product');
@@ -206,7 +269,9 @@ export const fuelService = {
       });
       
       const url = params.toString() ? `/fuel/products?${params.toString()}` : '/fuel/products';
+      debugRequest('GET', url);
       const response = await apiService.get(url);
+      debugResponse('GET', url, response);
       return handleResponse(response, 'fetching fuel products');
     } catch (error) {
       throw handleError(error, 'fetching fuel products', 'Failed to fetch fuel products');
@@ -217,7 +282,9 @@ export const fuelService = {
     logger.info(`Fetching fuel product: ${productId}`);
     
     try {
+      debugRequest('GET', `/fuel/products/${productId}`);
       const response = await apiService.get(`/fuel/products/${productId}`);
+      debugResponse('GET', `/fuel/products/${productId}`, response);
       return handleResponse(response, 'fetching fuel product');
     } catch (error) {
       throw handleError(error, 'fetching fuel product', 'Failed to fetch fuel product');
@@ -232,7 +299,9 @@ export const fuelService = {
     logger.info('Fetching fuel hierarchy');
     
     try {
+      debugRequest('GET', '/fuel/hierarchy');
       const response = await apiService.get('/fuel/hierarchy');
+      debugResponse('GET', '/fuel/hierarchy', response);
       return handleResponse(response, 'fetching fuel hierarchy');
     } catch (error) {
       throw handleError(error, 'fetching fuel hierarchy', 'Failed to fetch fuel hierarchy');
@@ -243,7 +312,9 @@ export const fuelService = {
     logger.info('Creating fuel hierarchy sequentially:', hierarchyData);
     
     try {
+      debugRequest('POST', '/fuel/hierarchy/sequential', hierarchyData);
       const response = await apiService.post('/fuel/hierarchy/sequential', hierarchyData);
+      debugResponse('POST', '/fuel/hierarchy/sequential', response);
       return handleResponse(response, 'creating fuel hierarchy sequentially');
     } catch (error) {
       throw handleError(error, 'creating fuel hierarchy sequentially', 'Failed to create fuel hierarchy');
@@ -412,7 +483,107 @@ export const fuelService = {
         ? `${product.minSellingPrice} - ${product.maxSellingPrice}`
         : 'Not set'
     };
+  },
+
+  // =====================
+  // NEW UTILITY METHODS
+  // =====================
+
+  // Helper to extract IDs for RESTful URLs
+  extractIdForUrl: (data, resourceName) => {
+    const id = data.id;
+    if (!id) {
+      throw new Error(`${resourceName} ID is required for this operation`);
+    }
+    return id;
+  },
+
+  // Batch operations helper
+  batchCreateFuelProducts: async (productsData) => {
+    logger.info('Batch creating fuel products:', productsData.length);
+    
+    try {
+      const promises = productsData.map(productData => 
+        this.createFuelProduct(productData)
+      );
+      
+      const results = await Promise.allSettled(promises);
+      
+      const successful = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+      const failed = results.filter(r => r.status === 'rejected').map(r => r.reason);
+      
+      return {
+        successful,
+        failed,
+        total: productsData.length,
+        successCount: successful.length,
+        failureCount: failed.length
+      };
+    } catch (error) {
+      throw handleError(error, 'batch creating fuel products', 'Failed to batch create fuel products');
+    }
+  },
+
+  // Search across all fuel entities
+  searchFuelEntities: async (searchTerm, companyId) => {
+    logger.info(`Searching fuel entities for: "${searchTerm}"`);
+    
+    try {
+      const [categories, subTypes, products] = await Promise.all([
+        this.getFuelCategories({ search: searchTerm }),
+        this.getFuelSubTypes({ search: searchTerm }),
+        this.getFuelProducts({ search: searchTerm })
+      ]);
+
+      return {
+        categories: categories || [],
+        subTypes: subTypes || [],
+        products: products || [],
+        searchTerm,
+        totalResults: (categories?.length || 0) + (subTypes?.length || 0) + (products?.length || 0)
+      };
+    } catch (error) {
+      throw handleError(error, 'searching fuel entities', 'Failed to search fuel entities');
+    }
+  },
+  // Add to fuelService object in fuelService.js
+
+// =====================
+// DELETE METHODS
+// =====================
+
+deleteFuelCategory: async (categoryId) => {
+  logger.info(`Deleting fuel category: ${categoryId}`);
+  
+  try {
+    const response = await apiService.delete(`/fuel/categories/${categoryId}`);
+    return handleResponse(response, 'deleting fuel category');
+  } catch (error) {
+    throw handleError(error, 'deleting fuel category', 'Failed to delete fuel category');
   }
+},
+
+deleteFuelSubType: async (subTypeId) => {
+  logger.info(`Deleting fuel subtype: ${subTypeId}`);
+  
+  try {
+    const response = await apiService.delete(`/fuel/subtypes/${subTypeId}`);
+    return handleResponse(response, 'deleting fuel subtype');
+  } catch (error) {
+    throw handleError(error, 'deleting fuel subtype', 'Failed to delete fuel subtype');
+  }
+},
+
+deleteFuelProduct: async (productId) => {
+  logger.info(`Deleting fuel product: ${productId}`);
+  
+  try {
+    const response = await apiService.delete(`/fuel/products/${productId}`);
+    return handleResponse(response, 'deleting fuel product');
+  } catch (error) {
+    throw handleError(error, 'deleting fuel product', 'Failed to delete fuel product');
+  }
+},
 };
 
 export default fuelService;

@@ -15,7 +15,7 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   
-  // Shift core data - only start time now
+  // Shift core data
   const [shiftDetails, setShiftDetails] = useState({
     startDate: '',
     startTime: '',
@@ -27,6 +27,7 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated }) => {
   const [currentIslandIndex, setCurrentIslandIndex] = useState(0);
   const [currentPumpIndex, setCurrentPumpIndex] = useState(0);
   const [islandConnections, setIslandConnections] = useState([]);
+  const [connectedIslands, setConnectedIslands] = useState([]); // ✅ Fixed: Derived state
   const [pumpReadings, setPumpReadings] = useState({});
   
   // Staff management
@@ -48,6 +49,29 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated }) => {
   const currentStationId = state.currentStation?.id;
   const stationIslands = (state.islands || []).filter(island => island.stationId === currentStationId);
   
+  // ✅ FIXED: Derived state for connected islands
+  useEffect(() => {
+    if (!stationIslands?.length || !islandConnections?.length) {
+      setConnectedIslands([]);
+      return;
+    }
+
+    const islandsWithPumps = stationIslands.map(island => {
+      const pumps = islandConnections
+        .filter(conn => conn.type === 'PUMP_TO_ISLAND' && conn.assetB?.id === island.id)
+        .map(conn => conn.assetA);
+
+      return {
+        ...island,
+        pumps
+      };
+    }).filter(island => island.pumps.length > 0);
+
+    setConnectedIslands(islandsWithPumps);
+    
+    console.log("✅ Connected islands with pumps:", islandsWithPumps);
+  }, [islandConnections, stationIslands]);
+
   // Debug useEffect for state changes
   useEffect(() => {
     console.log("✅ [UPDATED SUPERVISORS] ", availableSupervisors);
@@ -75,6 +99,7 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated }) => {
     setSelectedIslands([]);
     setCurrentStep(1);
     setErrors({});
+    setConnectedIslands([]); // Reset connected islands
   }, [isOpen]);
 
   // Load initial data
@@ -91,20 +116,13 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated }) => {
         const processedTopology = assetConnectionService.processTopologyData(topologyData);
 
         const newConnections = processedTopology?.connections || [];
-
-        setIslandConnections(newConnections);
-
-       
+        setIslandConnections(newConnections); // This will trigger the connectedIslands effect
 
         // Load staff
         const [attendantsResp, supervisorsResp] = await Promise.all([
           userService.getStationAttendants(currentStationId),
           userService.getStationSupervisors(currentStationId)
         ]);
-
-          console.log("islands on newConnections ",newConnections);
-
-          console.log("islands on state",islandConnections);
 
         console.log("📊 Raw attendants response:", attendantsResp);
         console.log("📊 Raw supervisors response:", supervisorsResp);
@@ -130,7 +148,7 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated }) => {
     loadInitialData();
   }, [currentStationId, isOpen, state.warehouses]);
 
-  // Date and time validation (simplified)
+  // Date and time validation
   const validateDateTime = () => {
     const newErrors = {};
     
@@ -154,55 +172,11 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated }) => {
     return Object.keys(newErrors).length === 0;
   };
 
-  // Get islands with PUMP_TO_ISLAND connections
-// 1. Helper: get islands with pumps
-const getConnectedIslands = () => {
-  if (!stationIslands?.length || !islandConnections?.length) return [];
-
-  return stationIslands.map(island => {
-    const pumps = islandConnections
-      .filter(conn => conn.type === 'PUMP_TO_ISLAND' && conn.assetB?.id === island.id)
-      .map(conn => conn.assetA); // assetA is the pump
-
-    return {
-      ...island,
-      pumps
-    };
-  }).filter(island => island.pumps.length > 0);
-};
-
-
-// 2. Log once islandConnections updates
-useEffect(() => {
-  if (!islandConnections.length) return;
-
-  const connectedIslands = getConnectedIslands();
-
-  console.log("connected islands ",connectedIslands)
-
-  console.log("✅ Connected islands with pumps:");
-  connectedIslands.forEach(island => {
-    console.log(
-      `🌍 ${island.name} → pumps: ${island.pumps.map(p => p.name).join(", ")}`
-    );
-  });
-}, [islandConnections, stationIslands]);
-
-  // Get pumps for an island
-  const getIslandPumps = (islandId) => {
-    return newConnections
-      .filter(conn => conn.type === 'PUMP_TO_ISLAND' && conn.assetB?.id === islandId)
-      .map(conn => conn.assetA) // Assuming assetA is the pump
-      .filter(Boolean);
-  };
-
   // Handle island selection
   const handleIslandSelect = (island) => {
     if (!selectedIslands.find(i => i.id === island.id)) {
-      const islandPumps = getIslandPumps(island.id);
       setSelectedIslands(prev => [...prev, {
         ...island,
-        pumps: islandPumps,
         completed: false
       }]);
     }
@@ -422,8 +396,6 @@ useEffect(() => {
 
   // Step 1: Shift Time and Island Selection
   const Step1DateTimeIslands = () => {
-    const connectedIslands = getConnectedIslands();
-    
     return (
       <Card title="1. Set Shift Time & Select Islands">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -468,7 +440,7 @@ useEffect(() => {
             
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {connectedIslands.map(island => {
-                const pumpCount = getIslandPumps(island.id).length;
+                const pumpCount = island.pumps?.length || 0;
                 const isSelected = selectedIslands.some(i => i.id === island.id);
                 
                 return (
@@ -504,7 +476,7 @@ useEffect(() => {
               })}
             </div>
             
-            {connectedIslands.length === 0 && (
+            {connectedIslands.length === 0 && !loading && (
               <Alert variant="warning" className="mt-4">
                 No islands with pump connections found. Please set up island-to-pump connections first.
               </Alert>
@@ -518,13 +490,13 @@ useEffect(() => {
           </Button>
           <Button
             onClick={() => {
-              // if (validateDateTime() && selectedIslands.length > 0) {
+              if (validateDateTime() && selectedIslands.length > 0) {
                 setCurrentStep(2);
                 setCurrentIslandIndex(0);
                 setCurrentPumpIndex(0);
-              // }
+              }
             }}
-            // disabled={selectedIslands.length === 0}
+            disabled={selectedIslands.length === 0}
             icon={ChevronRight}
           >
             Next: Pump Meters
@@ -537,9 +509,7 @@ useEffect(() => {
   // Step 2: Pump Meter Recording
   const Step2PumpMeters = () => {
     const currentIsland = selectedIslands[currentIslandIndex];
-
     const islandPumps = currentIsland?.pumps || [];
-    console.log("islands ",currentIsland,' pumps ',islandPumps)
     const currentPump = islandPumps[currentPumpIndex];
     const currentReading = pumpReadings[currentIsland?.id]?.[currentPump?.id] || {};
 

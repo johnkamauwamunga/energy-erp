@@ -56,7 +56,7 @@ const handleError = (error, operation, defaultMessage) => {
   throw new Error(defaultMessage || 'An unexpected error occurred');
 };
 
-// Validation utilities
+// Validation utilities - UPDATED TO MATCH BACKEND SCHEMA
 export const offloadValidators = {
   validateOffloadData: (offloadData) => {
     const errors = [];
@@ -68,18 +68,38 @@ export const offloadValidators = {
     if (!offloadData.vehicleNumber) errors.push('Vehicle number is required');
     if (!offloadData.driverName) errors.push('Driver name is required');
     if (!offloadData.transporterName) errors.push('Transporter name is required');
+    if (!offloadData.documentRef) errors.push('Document reference is required');
     
-    if (!offloadData.beforeDipReading || !offloadData.beforeDipReading.dipValue) {
-      errors.push('Before dip reading with dip value is required');
-    }
-    
-    if (!offloadData.beforePumpReadings || offloadData.beforePumpReadings.length === 0) {
-      errors.push('At least one pump reading is required');
+    if (!offloadData.expectedQuantity || offloadData.expectedQuantity <= 0) {
+      errors.push('Expected quantity must be positive');
     }
     
     if (!offloadData.unitPrice || offloadData.unitPrice <= 0) {
       errors.push('Unit price must be positive');
     }
+    
+    if (!offloadData.beforeDipReading) {
+      errors.push('Before dip reading is required');
+    } else {
+      if (!offloadData.beforeDipReading.dipValue || offloadData.beforeDipReading.dipValue <= 0) {
+        errors.push('Dip value must be positive');
+      }
+      if (!offloadData.beforeDipReading.volume || offloadData.beforeDipReading.volume <= 0) {
+        errors.push('Dip volume must be positive');
+      }
+    }
+    
+    // Pump readings are optional at start (can be added later)
+    if (offloadData.beforePumpReadings) {
+      offloadData.beforePumpReadings.forEach((reading, index) => {
+        if (!reading.pumpId) errors.push(`Pump ${index + 1}: Pump ID is required`);
+        if (!reading.electricMeter && reading.electricMeter !== 0) {
+          errors.push(`Pump ${index + 1}: Electric meter reading is required`);
+        }
+      });
+    }
+    
+    if (!offloadData.startTime) errors.push('Start time is required');
     
     return { isValid: errors.length === 0, errors };
   },
@@ -91,29 +111,52 @@ export const offloadValidators = {
       errors.push('Actual quantity must be positive');
     }
     
-    if (!completionData.afterDipReading || !completionData.afterDipReading.dipValue) {
-      errors.push('After dip reading with dip value is required');
+    if (!completionData.afterDipReading) {
+      errors.push('After dip reading is required');
+    } else {
+      if (!completionData.afterDipReading.dipValue || completionData.afterDipReading.dipValue <= 0) {
+        errors.push('After dip value must be positive');
+      }
+      if (!completionData.afterDipReading.volume || completionData.afterDipReading.volume <= 0) {
+        errors.push('After dip volume must be positive');
+      }
     }
     
     if (!completionData.afterPumpReadings || completionData.afterPumpReadings.length === 0) {
       errors.push('At least one after pump reading is required');
+    } else {
+      completionData.afterPumpReadings.forEach((reading, index) => {
+        if (!reading.pumpId) errors.push(`After Pump ${index + 1}: Pump ID is required`);
+        if (!reading.electricMeter && reading.electricMeter !== 0) {
+          errors.push(`After Pump ${index + 1}: Electric meter reading is required`);
+        }
+      });
     }
+    
+    if (!completionData.endTime) errors.push('End time is required');
     
     return { isValid: errors.length === 0, errors };
   }
 };
 
-// Calculation utilities
+// Calculation utilities - UPDATED FOR BACKEND COMPATIBILITY
 export const offloadCalculations = {
+  calculateVariance: (expected, actual) => actual - expected,
+  
   calculateVariancePercentage: (expected, actual) => {
     if (expected === 0) return actual === 0 ? 0 : 100;
     return ((actual - expected) / expected) * 100;
   },
 
-  calculateVolumeFromDip: (dipValue, tankCapacity) => dipValue * (tankCapacity / 100),
+  calculateVolumeFromDip: (dipValue, tankCapacity) => {
+    // Simple calculation - adjust based on your tank calibration
+    return dipValue * (tankCapacity / 100);
+  },
   
   calculateSalesDuringOffload: (beforeReadings, afterReadings) => {
     let totalSales = 0;
+    if (!beforeReadings || !afterReadings) return totalSales;
+    
     beforeReadings.forEach(beforeReading => {
       const afterReading = afterReadings.find(after => after.pumpId === beforeReading.pumpId);
       if (afterReading && beforeReading.electricMeter != null && afterReading.electricMeter != null) {
@@ -122,12 +165,16 @@ export const offloadCalculations = {
       }
     });
     return totalSales;
-  }
+  },
+  
+  calculateTotalValue: (quantity, unitPrice) => quantity * unitPrice,
+  
+  calculateDipVolumeChange: (beforeVolume, afterVolume) => afterVolume - beforeVolume
 };
 
-// Main service
+// Main service - UPDATED TO MATCH BACKEND ENDPOINTS
 export const fuelOffloadService = {
-  // Start a new fuel offload
+  // Start a new fuel offload - MATCHES BACKEND
   startOffload: async (offloadData) => {
     logger.info('Starting fuel offload:', offloadData);
     
@@ -144,7 +191,7 @@ export const fuelOffloadService = {
     }
   },
 
-  // Complete an offload
+  // Complete an offload - MATCHES BACKEND
   completeOffload: async (offloadId, completionData) => {
     logger.info(`Completing offload ${offloadId}:`, completionData);
     
@@ -161,7 +208,7 @@ export const fuelOffloadService = {
     }
   },
 
-  // Get offload by ID
+  // Get offload by ID - MATCHES BACKEND
   getOffloadById: async (offloadId) => {
     logger.info(`Fetching offload: ${offloadId}`);
     
@@ -173,19 +220,21 @@ export const fuelOffloadService = {
     }
   },
 
-  // Get paginated offloads with advanced filtering
+  // Get paginated offloads with filtering - MATCHES BACKEND
   getOffloads: async (filters = {}) => {
     logger.info('Fetching offloads with filters:', filters);
     
+    // Default parameters that match backend
+    const defaultParams = {
+      page: 1,
+      limit: 20,
+      sortBy: 'startTime',
+      sortOrder: 'desc'
+    };
+    
     try {
       const response = await apiService.get('/fuel-offloads', { 
-        params: {
-          page: 1,
-          limit: 50, // Increased for better mobile scrolling
-          sortBy: 'startTime',
-          sortOrder: 'desc',
-          ...filters
-        }
+        params: { ...defaultParams, ...filters }
       });
       return handleResponse(response, 'fetching offloads');
     } catch (error) {
@@ -193,7 +242,7 @@ export const fuelOffloadService = {
     }
   },
 
-  // Update offload
+  // Update offload - MATCHES BACKEND
   updateOffload: async (offloadId, updateData) => {
     logger.info(`Updating offload ${offloadId}:`, updateData);
     
@@ -205,47 +254,21 @@ export const fuelOffloadService = {
     }
   },
 
-  // Delete offload
-  deleteOffload: async (offloadId) => {
-    logger.info(`Deleting offload: ${offloadId}`);
+  // Get offloads by purchase ID - NEW ENDPOINT
+  getOffloadsByPurchase: async (purchaseId, filters = {}) => {
+    logger.info(`Fetching offloads for purchase: ${purchaseId}`, filters);
     
     try {
-      const response = await apiService.delete(`/fuel-offloads/${offloadId}`);
-      return handleResponse(response, 'deleting offload');
-    } catch (error) {
-      throw handleError(error, 'deleting offload', 'Failed to delete fuel offload');
-    }
-  },
-
-  // Get offloads by station
-  getOffloadsByStation: async (stationId, filters = {}) => {
-    logger.info(`Fetching offloads for station: ${stationId}`, filters);
-    
-    try {
-      const response = await apiService.get('/fuel-offloads', {
-        params: { ...filters, stationId }
+      const response = await apiService.get(`/fuel-offloads/purchase/${purchaseId}`, {
+        params: filters
       });
-      return handleResponse(response, 'fetching offloads by station');
+      return handleResponse(response, 'fetching offloads by purchase');
     } catch (error) {
-      throw handleError(error, 'fetching offloads by station', 'Failed to fetch offloads for station');
+      throw handleError(error, 'fetching offloads by purchase', 'Failed to fetch offloads for purchase');
     }
   },
 
-  // Get offloads by tank
-  getOffloadsByTank: async (tankId, filters = {}) => {
-    logger.info(`Fetching offloads for tank: ${tankId}`, filters);
-    
-    try {
-      const response = await apiService.get('/fuel-offloads', {
-        params: { ...filters, tankId }
-      });
-      return handleResponse(response, 'fetching offloads by tank');
-    } catch (error) {
-      throw handleError(error, 'fetching offloads by tank', 'Failed to fetch offloads for tank');
-    }
-  },
-
-  // Get offload summary for dashboard
+  // Get offload summary for dashboard - MATCHES BACKEND
   getOffloadSummary: async (filters = {}) => {
     logger.info('Fetching offload summary:', filters);
     
@@ -259,20 +282,20 @@ export const fuelOffloadService = {
     }
   },
 
-  // Get recent offloads
-  getRecentOffloads: async (stationId = null) => {
+  // Get recent offloads - USING MAIN ENDPOINT WITH FILTERS
+  getRecentOffloads: async (stationId = null, limit = 10) => {
     logger.info(`Fetching recent offloads for station: ${stationId || 'all'}`);
     
+    const params = { 
+      limit, 
+      page: 1, 
+      sortBy: 'startTime', 
+      sortOrder: 'desc' 
+    };
+    
+    if (stationId) params.stationId = stationId;
+    
     try {
-      const params = { 
-        limit: 10, 
-        page: 1, 
-        sortBy: 'startTime', 
-        sortOrder: 'desc' 
-      };
-      
-      if (stationId) params.stationId = stationId;
-      
       const response = await apiService.get('/fuel-offloads', { params });
       return handleResponse(response, 'fetching recent offloads');
     } catch (error) {
@@ -280,42 +303,85 @@ export const fuelOffloadService = {
     }
   },
 
-  // Verify offload
-  verifyOffload: async (offloadId, verificationData) => {
-    logger.info(`Verifying offload ${offloadId}:`, verificationData);
+  // Get offloads by station - USING MAIN ENDPOINT WITH STATION FILTER
+  getOffloadsByStation: async (stationId, filters = {}) => {
+    logger.info(`Fetching offloads for station: ${stationId}`, filters);
     
     try {
-      const response = await apiService.post(`/fuel-offloads/${offloadId}/verify`, verificationData);
-      return handleResponse(response, 'verifying offload');
+      const response = await apiService.get('/fuel-offloads', {
+        params: { ...filters, stationId }
+      });
+      return handleResponse(response, 'fetching offloads by station');
     } catch (error) {
-      throw handleError(error, 'verifying offload', 'Failed to verify offload');
+      throw handleError(error, 'fetching offloads by station', 'Failed to fetch offloads for station');
+    }
+  },
+
+  // Get offloads by tank - USING MAIN ENDPOINT WITH TANK FILTER
+  getOffloadsByTank: async (tankId, filters = {}) => {
+    logger.info(`Fetching offloads for tank: ${tankId}`, filters);
+    
+    try {
+      const response = await apiService.get('/fuel-offloads', {
+        params: { ...filters, tankId }
+      });
+      return handleResponse(response, 'fetching offloads by tank');
+    } catch (error) {
+      throw handleError(error, 'fetching offloads by tank', 'Failed to fetch offloads for tank');
     }
   }
 };
 
-// Data formatting utilities
+// Data formatting utilities - UPDATED FOR BACKEND RESPONSE STRUCTURE
 export const offloadFormatters = {
   formatOffloadForDisplay: (offload) => {
     if (!offload) return null;
     
-    const variancePercentage = offload.expectedQuantity > 0 
-      ? offloadCalculations.calculateVariancePercentage(offload.expectedQuantity, offload.actualQuantity)
-      : 0;
+    const variance = offloadCalculations.calculateVariance(offload.expectedQuantity, offload.actualQuantity);
+    const variancePercentage = offloadCalculations.calculateVariancePercentage(offload.expectedQuantity, offload.actualQuantity);
+    const totalValue = offload.totalValue || offloadCalculations.calculateTotalValue(offload.actualQuantity, offload.unitPrice);
 
     return {
       ...offload,
+      // Calculations
+      variance: variance,
+      variancePercentage: variancePercentage.toFixed(2),
+      totalValue: totalValue,
+      
+      // Formatted dates
       formattedStartTime: new Date(offload.startTime).toLocaleString(),
       formattedEndTime: offload.endTime ? new Date(offload.endTime).toLocaleString() : 'In Progress',
-      variancePercentage: variancePercentage.toFixed(2),
-      statusBadge: getStatusBadge(offload.status),
-      totalValueFormatted: new Intl.NumberFormat('en-US', {
+      formattedRecordedAt: offload.recordedAt ? new Date(offload.recordedAt).toLocaleString() : 'N/A',
+      
+      // Currency formatting
+      totalValueFormatted: new Intl.NumberFormat('en-KE', {
         style: 'currency',
-        currency: 'USD'
-      }).format(offload.totalValue || 0),
-      // Mobile-friendly short formats
-      shortStartTime: new Date(offload.startTime).toLocaleDateString(),
+        currency: 'KES'
+      }).format(totalValue),
+      
+      unitPriceFormatted: new Intl.NumberFormat('en-KE', {
+        style: 'currency',
+        currency: 'KES'
+      }).format(offload.unitPrice || 0),
+      
+      // Status information
+      statusBadge: getStatusBadge(offload.status),
+      isCompleted: offload.status === 'SUCCESSFUL',
+      isInProgress: offload.status === 'IN_PROGRESS',
+      
+      // Mobile-friendly formats
+      shortStartTime: new Date(offload.startTime).toLocaleDateString('en-KE'),
       shortVehicle: offload.vehicleNumber?.replace(/\s/g, ''),
-      shortStation: offload.tank?.asset?.station?.name?.split(' ')[0] || 'N/A'
+      shortProduct: offload.product?.name?.substring(0, 10) || 'N/A',
+      shortStation: offload.tank?.asset?.station?.name?.split(' ')[0] || 'N/A',
+      
+      // Quick info for cards
+      quickInfo: {
+        product: offload.product?.name || 'Unknown Product',
+        station: offload.tank?.asset?.station?.name || 'Unknown Station',
+        supplier: offload.supplier?.name || 'Unknown Supplier',
+        driver: offload.driverName || 'Unknown Driver'
+      }
     };
   },
 
@@ -327,29 +393,97 @@ export const offloadFormatters = {
       driver: offload.driverName,
       product: offload.product?.name,
       station: offload.tank?.asset?.station?.name,
-      expected: offload.expectedQuantity,
-      actual: offload.actualQuantity,
-      variance: offload.variance,
+      expected: `${offload.expectedQuantity}L`,
+      actual: `${offload.actualQuantity}L`,
+      variance: `${offload.variance}L`,
       status: offload.status,
-      startTime: new Date(offload.startTime).toLocaleDateString(),
+      startTime: new Date(offload.startTime).toLocaleDateString('en-KE'),
+      
       // Mobile-optimized fields
       mobileSummary: `${offload.deliveryNoteNumber} • ${offload.vehicleNumber}`,
-      mobileDetails: `${offload.product?.name} • ${offload.actualQuantity}L`
+      mobileDetails: `${offload.product?.name} • ${offload.actualQuantity || 0}L`,
+      mobileStatus: getStatusBadge(offload.status).label,
+      
+      // For quick actions
+      canComplete: offload.status === 'IN_PROGRESS',
+      canEdit: offload.status !== 'SUCCESSFUL'
     }));
+  },
+
+  // Format data for form submission
+  formatForSubmission: (formData, isCompletion = false) => {
+    if (isCompletion) {
+      return {
+        actualQuantity: parseFloat(formData.actualQuantity),
+        afterDipReading: {
+          dipValue: parseFloat(formData.afterDipReading.dipValue),
+          volume: parseFloat(formData.afterDipReading.volume),
+          temperature: formData.afterDipReading.temperature ? parseFloat(formData.afterDipReading.temperature) : null,
+          waterLevel: formData.afterDipReading.waterLevel ? parseFloat(formData.afterDipReading.waterLevel) : null,
+          density: formData.afterDipReading.density ? parseFloat(formData.afterDipReading.density) : null
+        },
+        afterPumpReadings: formData.afterPumpReadings.map(reading => ({
+          pumpId: reading.pumpId,
+          electricMeter: parseFloat(reading.electricMeter),
+          manualMeter: reading.manualMeter ? parseFloat(reading.manualMeter) : null,
+          cashMeter: reading.cashMeter ? parseFloat(reading.cashMeter) : null
+        })),
+        endTime: formData.endTime || new Date().toISOString(),
+        notes: formData.notes || null,
+        driverSignature: formData.driverSignature || null
+      };
+    }
+
+    // Start offload format
+    return {
+      purchaseId: formData.purchaseId,
+      tankId: formData.tankId,
+      shiftId: formData.shiftId,
+      transporterName: formData.transporterName,
+      vehicleNumber: formData.vehicleNumber,
+      driverName: formData.driverName,
+      driverContact: formData.driverContact || null,
+      waybillNumber: formData.waybillNumber || null,
+      deliveryNoteNumber: formData.deliveryNoteNumber,
+      expectedQuantity: parseFloat(formData.expectedQuantity),
+      density: formData.density ? parseFloat(formData.density) : null,
+      temperature: formData.temperature ? parseFloat(formData.temperature) : null,
+      waterContent: formData.waterContent ? parseFloat(formData.waterContent) : null,
+      unitPrice: parseFloat(formData.unitPrice),
+      taxAmount: formData.taxAmount ? parseFloat(formData.taxAmount) : null,
+      transportationCost: formData.transportationCost ? parseFloat(formData.transportationCost) : null,
+      supplierInvoice: formData.supplierInvoice || null,
+      documentRef: formData.documentRef,
+      beforeDipReading: {
+        dipValue: parseFloat(formData.beforeDipReading.dipValue),
+        volume: parseFloat(formData.beforeDipReading.volume),
+        temperature: formData.beforeDipReading.temperature ? parseFloat(formData.beforeDipReading.temperature) : null,
+        waterLevel: formData.beforeDipReading.waterLevel ? parseFloat(formData.beforeDipReading.waterLevel) : null,
+        density: formData.beforeDipReading.density ? parseFloat(formData.beforeDipReading.density) : null
+      },
+      beforePumpReadings: (formData.beforePumpReadings || []).map(reading => ({
+        pumpId: reading.pumpId,
+        electricMeter: parseFloat(reading.electricMeter),
+        manualMeter: reading.manualMeter ? parseFloat(reading.manualMeter) : null,
+        cashMeter: reading.cashMeter ? parseFloat(reading.cashMeter) : null
+      })),
+      startTime: formData.startTime || new Date().toISOString()
+    };
   }
 };
 
-// Helper function for status badges
+// Helper function for status badges - UPDATED FOR BACKEND STATUSES
 const getStatusBadge = (status) => {
   const statusConfig = {
+    'PENDING': { color: 'gray', label: 'Pending', variant: 'secondary' },
     'IN_PROGRESS': { color: 'blue', label: 'In Progress', variant: 'warning' },
     'SUCCESSFUL': { color: 'green', label: 'Completed', variant: 'success' },
-    'FAILED': { color: 'red', label: 'Failed', variant: 'error' },
-    'CANCELLED': { color: 'gray', label: 'Cancelled', variant: 'secondary' },
-    'PARTIAL': { color: 'orange', label: 'Partial', variant: 'warning' }
+    'PARTIAL': { color: 'orange', label: 'Partial', variant: 'warning' },
+    'FAILED': { color: 'red', label: 'Failed', variant: 'error' }
   };
   
   return statusConfig[status] || { color: 'gray', label: status, variant: 'secondary' };
 };
 
+// Export default service
 export default fuelOffloadService;

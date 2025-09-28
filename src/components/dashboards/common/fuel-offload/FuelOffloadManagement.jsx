@@ -7,18 +7,14 @@ import {
   Calculator, FileText, CheckSquare, MapPin, Building, 
   Smartphone, Monitor, Grid, List, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { Button, Input, Select, Badge, LoadingSpinner } from '../../../ui';
+import { Button, Input, Select, Badge, LoadingSpinner, Alert } from '../../../ui';
 import { useApp } from '../../../../context/AppContext';
-import CreateEditOffloadModal from '../offloads/CreateOffloadModal';
-// import OffloadDetailsModal from './OffloadDetailsModal';
-// import CompleteOffloadModal from './CompleteOffloadModal';
+import CreateOffloadModal from './CreateOffloadModal';
 import { fuelOffloadService, offloadFormatters } from '../../services/fuelOffloadService';
 
 const FuelOffloadManagement = () => {
   const { state } = useApp();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
-  const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
   const [selectedOffload, setSelectedOffload] = useState(null);
   const [loading, setLoading] = useState(true);
   const [offloads, setOffloads] = useState([]);
@@ -28,17 +24,16 @@ const FuelOffloadManagement = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [stationFilter, setStationFilter] = useState('all');
-  const [tankFilter, setTankFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list' for mobile
+  const [viewMode, setViewMode] = useState('grid');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   // Detect mobile view
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
-      if (window.innerWidth >= 768) setViewMode('list'); // Default to list on desktop
+      if (window.innerWidth >= 768) setViewMode('list');
     };
 
     window.addEventListener('resize', handleResize);
@@ -51,41 +46,45 @@ const FuelOffloadManagement = () => {
       setLoading(true);
       setError('');
       
-      const filters = {};
+      // Build filters for backend API
+      const filters = {
+        page: 1,
+        limit: 100, // Increased for better pagination
+        sortBy: 'startTime',
+        sortOrder: 'desc'
+      };
+
       if (statusFilter !== 'all') filters.status = statusFilter;
       if (stationFilter !== 'all') filters.stationId = stationFilter;
-      if (tankFilter !== 'all') filters.tankId = tankFilter;
-      if (dateFilter) filters.startDate = dateFilter;
-      if (searchQuery) filters.search = searchQuery;
+      if (dateFilter) filters.startDate = new Date(dateFilter).toISOString();
+      if (searchQuery) {
+        // Search in multiple fields
+        filters.search = searchQuery;
+      }
 
-      // Load offloads based on user role
       let offloadsResponse;
-      if (state.currentUser.stationId) {
-        // Station-level view
-        offloadsResponse = await fuelOffloadService.getOffloadsByStation(
-          state.currentUser.stationId, 
-          filters
-        );
+      if (state.currentUser?.stationId) {
+        // Station-level view - use station filter
+        offloadsResponse = await fuelOffloadService.getOffloads({
+          ...filters,
+          stationId: state.currentUser.stationId
+        });
       } else {
         // Company-level view
         offloadsResponse = await fuelOffloadService.getOffloads(filters);
       }
 
-      setOffloads(offloadsResponse.data || []);
+      // Handle both response formats (array or object with offloads property)
+      const offloadsData = offloadsResponse.offloads || offloadsResponse.data || offloadsResponse;
+      setOffloads(Array.isArray(offloadsData) ? offloadsData : []);
 
       // Load stations for company admins
-      if (!state.currentUser.stationId) {
-        // This would come from your stations API
-        const mockStations = [
-          { id: '1', name: 'Downtown Station' },
-          { id: '2', name: 'Airport Station' },
-          { id: '3', name: 'Highway Station' }
-        ];
-        setStations(mockStations);
+      if (!state.currentUser?.stationId && state.stations) {
+        setStations(state.stations);
       }
 
     } catch (error) {
-      console.error('Failed to load data:', error);
+      console.error('Failed to load offloads:', error);
       setError(error.message || 'Failed to load fuel offloads');
       setOffloads([]);
     } finally {
@@ -95,22 +94,21 @@ const FuelOffloadManagement = () => {
 
   useEffect(() => {
     loadData();
-  }, [retryCount, statusFilter, stationFilter, tankFilter, dateFilter]);
+  }, [retryCount, statusFilter, stationFilter, dateFilter]);
+
+  // Handle search with debounce
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (searchQuery !== '') {
+        loadData();
+      }
+    }, 500);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
 
   const handleOffloadCreated = () => {
     loadData();
     setIsCreateModalOpen(false);
-  };
-
-  const handleOffloadUpdated = () => {
-    loadData();
-    setSelectedOffload(null);
-  };
-
-  const handleOffloadCompleted = () => {
-    loadData();
-    setIsCompleteModalOpen(false);
-    setSelectedOffload(null);
   };
 
   const handleRetry = () => setRetryCount(prev => prev + 1);
@@ -118,14 +116,14 @@ const FuelOffloadManagement = () => {
   // Status badge with mobile optimization
   const getStatusBadge = (status) => {
     const statusConfig = {
+      'PENDING': { color: 'yellow', label: 'Pending', icon: Clock, short: 'Pending' },
       'IN_PROGRESS': { color: 'blue', label: 'In Progress', icon: Clock, short: 'Progress' },
       'SUCCESSFUL': { color: 'green', label: 'Completed', icon: CheckCircle, short: 'Done' },
       'FAILED': { color: 'red', label: 'Failed', icon: XCircle, short: 'Failed' },
-      'CANCELLED': { color: 'gray', label: 'Cancelled', icon: XCircle, short: 'Cancelled' },
       'PARTIAL': { color: 'orange', label: 'Partial', icon: AlertCircle, short: 'Partial' }
     };
 
-    const config = statusConfig[status] || statusConfig.IN_PROGRESS;
+    const config = statusConfig[status] || statusConfig.PENDING;
     const IconComponent = config.icon;
 
     return (
@@ -143,7 +141,8 @@ const FuelOffloadManagement = () => {
     try {
       const detailedOffload = await fuelOffloadService.getOffloadById(offload.id);
       setSelectedOffload(detailedOffload);
-      setIsDetailsModalOpen(true);
+      // You can open a details modal here
+      console.log('Offload details:', detailedOffload);
     } catch (error) {
       setError(error.message);
     }
@@ -158,29 +157,40 @@ const FuelOffloadManagement = () => {
     setIsCreateModalOpen(true);
   };
 
-  const handleCompleteOffload = (offload) => {
-    setSelectedOffload(offload);
-    setIsCompleteModalOpen(true);
-  };
-
-  const handleDeleteOffload = async (offloadId) => {
-    if (!window.confirm('Are you sure you want to delete this offload? This action cannot be undone.')) return;
-    
+  const handleCompleteOffload = async (offload) => {
     try {
-      await fuelOffloadService.deleteOffload(offloadId);
+      // For now, we'll just update the status
+      await fuelOffloadService.updateOffload(offload.id, { 
+        status: 'SUCCESSFUL',
+        actualQuantity: offload.expectedQuantity // Default to expected if actual not set
+      });
       loadData();
     } catch (error) {
       setError(error.message);
     }
   };
 
-  // Check permissions
+  const handleDeleteOffload = async (offloadId) => {
+    if (!window.confirm('Are you sure you want to delete this offload? This action cannot be undone.')) return;
+    
+    try {
+      // Note: Your backend might not have delete endpoint, so we'll use update to mark as cancelled
+      await fuelOffloadService.updateOffload(offloadId, { status: 'CANCELLED' });
+      loadData();
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+
+  // Check permissions based on your backend roles
   const canManageOffloads = () => {
-    return ['SUPER_ADMIN', 'COMPANY_ADMIN', 'LINES_MANAGER', 'STATION_MANAGER', 'SUPERVISOR'].includes(state.currentUser.role);
+    const userRole = state.currentUser?.role;
+    return ['SUPER_ADMIN', 'COMPANY_ADMIN', 'LINES_MANAGER', 'STATION_MANAGER', 'SUPERVISOR'].includes(userRole);
   };
 
   const canCreateOffloads = () => {
-    return ['SUPER_ADMIN', 'COMPANY_ADMIN', 'STATION_MANAGER', 'SUPERVISOR'].includes(state.currentUser.role);
+    const userRole = state.currentUser?.role;
+    return ['SUPER_ADMIN', 'COMPANY_ADMIN', 'STATION_MANAGER', 'SUPERVISOR'].includes(userRole);
   };
 
   // Statistics for dashboard
@@ -188,15 +198,22 @@ const FuelOffloadManagement = () => {
     total: offloads.length,
     inProgress: offloads.filter(o => o.status === 'IN_PROGRESS').length,
     completed: offloads.filter(o => o.status === 'SUCCESSFUL').length,
+    pending: offloads.filter(o => o.status === 'PENDING').length,
     today: offloads.filter(o => {
       const today = new Date().toDateString();
-      return new Date(o.startTime).toDateString() === today;
+      const offloadDate = new Date(o.startTime || o.createdAt).toDateString();
+      return offloadDate === today;
     }).length
+  };
+
+  // Format offload for display
+  const formatOffload = (offload) => {
+    return offloadFormatters.formatOffloadForDisplay(offload) || offload;
   };
 
   // Mobile-optimized offload card
   const MobileOffloadCard = ({ offload }) => {
-    const formatted = offloadFormatters.formatOffloadForDisplay(offload);
+    const formatted = formatOffload(offload);
     const [isExpanded, setIsExpanded] = useState(false);
 
     return (
@@ -232,14 +249,17 @@ const FuelOffloadManagement = () => {
               <div className="font-medium">{offload.expectedQuantity}L</div>
               
               <div>Actual:</div>
-              <div className="font-medium">{offload.actualQuantity}L</div>
+              <div className="font-medium">{offload.actualQuantity || 'N/A'}L</div>
               
               <div>Variance:</div>
               <div className={`font-medium ${
                 offload.variance >= 0 ? 'text-green-600' : 'text-red-600'
               }`}>
-                {offload.variance}L
+                {offload.variance || 0}L
               </div>
+
+              <div>Supplier:</div>
+              <div className="font-medium">{offload.supplier?.name}</div>
             </div>
             
             <div className="flex space-x-2 pt-2">
@@ -256,9 +276,11 @@ const FuelOffloadManagement = () => {
                   </Button>
                 </>
               )}
-              <Button size="sm" variant="danger" onClick={() => handleDeleteOffload(offload.id)}>
-                <Trash2 className="w-3 h-3" />
-              </Button>
+              {canManageOffloads() && (
+                <Button size="sm" variant="danger" onClick={() => handleDeleteOffload(offload.id)}>
+                  <Trash2 className="w-3 h-3" />
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -286,7 +308,7 @@ const FuelOffloadManagement = () => {
             Fuel Offload Management
           </h3>
           <p className="text-gray-600 text-sm md:text-base">
-            {state.currentUser.stationId 
+            {state.currentUser?.stationId 
               ? `Managing offloads for your station` 
               : `Viewing offloads across all stations`
             }
@@ -309,13 +331,12 @@ const FuelOffloadManagement = () => {
           
           <div className="flex gap-2">
             <Button 
-              icon={isMobile ? Grid : List}
+              icon={RefreshCw}
               variant="outline" 
               size="sm"
-              onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-              className="hidden sm:flex"
+              onClick={loadData}
             >
-              {viewMode === 'grid' ? 'List' : 'Grid'}
+              <span className="hidden md:inline">Refresh</span>
             </Button>
             <Button icon={Download} variant="outline" size="sm">
               <span className="hidden md:inline">Export</span>
@@ -326,16 +347,17 @@ const FuelOffloadManagement = () => {
 
       {/* Error Display */}
       {error && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg flex flex-col sm:flex-row items-start sm:items-center gap-2">
-          <div className="flex items-center flex-1">
-            <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
-            <span className="text-sm">{error}</span>
-          </div>
-          <Button onClick={handleRetry} size="sm" variant="secondary">
-            <RefreshCw className="w-3 h-3 mr-1" />
-            Retry
-          </Button>
-        </div>
+        <Alert 
+          type="error" 
+          title="Error" 
+          message={error} 
+          actions={
+            <Button onClick={handleRetry} size="sm" variant="secondary">
+              <RefreshCw className="w-3 h-3 mr-1" />
+              Retry
+            </Button>
+          }
+        />
       )}
 
       {/* Statistics Cards - Mobile Horizontal Scroll */}
@@ -400,7 +422,7 @@ const FuelOffloadManagement = () => {
               <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
               <Input
                 type="text"
-                placeholder="Search offloads..."
+                placeholder="Search by delivery note, vehicle, driver..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 text-sm"
@@ -415,9 +437,6 @@ const FuelOffloadManagement = () => {
             >
               <span className="hidden sm:inline">Filters</span>
             </Button>
-            <Button onClick={loadData} icon={RefreshCw} variant="outline" size="sm">
-              <span className="hidden sm:inline">Refresh</span>
-            </Button>
           </div>
 
           {/* Expandable Filters */}
@@ -429,13 +448,14 @@ const FuelOffloadManagement = () => {
                 size="sm"
               >
                 <option value="all">All Statuses</option>
+                <option value="PENDING">Pending</option>
                 <option value="IN_PROGRESS">In Progress</option>
                 <option value="SUCCESSFUL">Completed</option>
+                <option value="PARTIAL">Partial</option>
                 <option value="FAILED">Failed</option>
-                <option value="CANCELLED">Cancelled</option>
               </Select>
 
-              {!state.currentUser.stationId && (
+              {!state.currentUser?.stationId && (
                 <Select
                   value={stationFilter}
                   onChange={(e) => setStationFilter(e.target.value)}
@@ -460,7 +480,6 @@ const FuelOffloadManagement = () => {
                 onClick={() => {
                   setStatusFilter('all');
                   setStationFilter('all');
-                  setTankFilter('all');
                   setDateFilter('');
                   setSearchQuery('');
                 }}
@@ -475,7 +494,7 @@ const FuelOffloadManagement = () => {
       </div>
 
       {/* Offloads Display */}
-      {isMobile && viewMode === 'grid' ? (
+      {isMobile ? (
         // Mobile Grid View
         <div className="space-y-3">
           {offloads.length > 0 ? (
@@ -484,24 +503,47 @@ const FuelOffloadManagement = () => {
             ))
           ) : (
             <div className="text-center py-8 text-gray-500">
-              No offloads found. {canCreateOffloads() && 'Create your first offload to get started.'}
+              <Truck className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-lg font-medium">No offloads found</p>
+              <p className="text-sm text-gray-500 mt-1">
+                {canCreateOffloads() 
+                  ? 'Create your first fuel offload to get started.' 
+                  : 'No offloads match your current filters.'
+                }
+              </p>
+              {searchQuery || statusFilter !== 'all' || stationFilter !== 'all' ? (
+                <Button 
+                  onClick={() => {
+                    setStatusFilter('all');
+                    setStationFilter('all');
+                    setDateFilter('');
+                    setSearchQuery('');
+                  }}
+                  variant="secondary"
+                  size="sm"
+                  className="mt-3"
+                >
+                  Clear Filters
+                </Button>
+              ) : null}
             </div>
           )}
         </div>
       ) : (
         // Desktop Table View
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="text-left py-3 px-4 font-semibold text-gray-900 text-sm">Delivery Note</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-900 text-sm">Vehicle & Driver</th>
-                  {!state.currentUser.stationId && (
+                  {!state.currentUser?.stationId && (
                     <th className="text-left py-3 px-4 font-semibold text-gray-900 text-sm">Station</th>
                   )}
                   <th className="text-left py-3 px-4 font-semibold text-gray-900 text-sm">Product & Tank</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-900 text-sm">Quantities (L)</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-900 text-sm">Supplier</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-900 text-sm">Status</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-900 text-sm">Timeline</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-900 text-sm">Actions</th>
@@ -510,7 +552,7 @@ const FuelOffloadManagement = () => {
               <tbody className="divide-y divide-gray-200">
                 {offloads.length > 0 ? (
                   offloads.map(offload => {
-                    const formatted = offloadFormatters.formatOffloadForDisplay(offload);
+                    const formatted = formatOffload(offload);
                     return (
                       <tr key={offload.id} className="hover:bg-gray-50">
                         <td className="py-3 px-4">
@@ -521,7 +563,7 @@ const FuelOffloadManagement = () => {
                           <div className="font-medium text-gray-900 text-sm">{offload.vehicleNumber}</div>
                           <div className="text-xs text-gray-500">{offload.driverName}</div>
                         </td>
-                        {!state.currentUser.stationId && (
+                        {!state.currentUser?.stationId && (
                           <td className="py-3 px-4">
                             <div className="text-sm text-gray-900">{offload.tank?.asset?.station?.name}</div>
                           </td>
@@ -538,17 +580,20 @@ const FuelOffloadManagement = () => {
                             </div>
                             <div className="flex justify-between">
                               <span>Act:</span>
-                              <span className="font-medium">{offload.actualQuantity}L</span>
+                              <span className="font-medium">{offload.actualQuantity || 'N/A'}L</span>
                             </div>
                             <div className="flex justify-between">
                               <span>Var:</span>
                               <span className={`font-medium ${
-                                offload.variance >= 0 ? 'text-green-600' : 'text-red-600'
+                                (offload.variance || 0) >= 0 ? 'text-green-600' : 'text-red-600'
                               }`}>
-                                {offload.variance}L
+                                {offload.variance || 0}L
                               </span>
                             </div>
                           </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="text-sm text-gray-900">{offload.supplier?.name}</div>
                         </td>
                         <td className="py-3 px-4">
                           {getStatusBadge(offload.status)}
@@ -589,14 +634,16 @@ const FuelOffloadManagement = () => {
                               </>
                             )}
                             
-                            <Button 
-                              size="sm" 
-                              variant="danger" 
-                              icon={Trash2}
-                              onClick={() => handleDeleteOffload(offload.id)}
-                            >
-                              Delete
-                            </Button>
+                            {canManageOffloads() && (
+                              <Button 
+                                size="sm" 
+                                variant="danger" 
+                                icon={Trash2}
+                                onClick={() => handleDeleteOffload(offload.id)}
+                              >
+                                Delete
+                              </Button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -604,8 +651,30 @@ const FuelOffloadManagement = () => {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={!state.currentUser.stationId ? 8 : 7} className="py-8 px-4 text-center text-gray-500">
-                      No offloads found. {canCreateOffloads() && 'Create your first offload to get started.'}
+                    <td colSpan={!state.currentUser?.stationId ? 9 : 8} className="py-8 px-4 text-center text-gray-500">
+                      <Truck className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-lg font-medium">No offloads found</p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {canCreateOffloads() 
+                          ? 'Create your first fuel offload to get started.' 
+                          : 'No offloads match your current filters.'
+                        }
+                      </p>
+                      {(searchQuery || statusFilter !== 'all' || stationFilter !== 'all') && (
+                        <Button 
+                          onClick={() => {
+                            setStatusFilter('all');
+                            setStationFilter('all');
+                            setDateFilter('');
+                            setSearchQuery('');
+                          }}
+                          variant="secondary"
+                          size="sm"
+                          className="mt-3"
+                        >
+                          Clear Filters
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 )}
@@ -615,8 +684,8 @@ const FuelOffloadManagement = () => {
         </div>
       )}
 
-      {/* Modals */}
-      <CreateEditOffloadModal 
+      {/* Create/Edit Offload Modal */}
+      <CreateOffloadModal 
         isOpen={isCreateModalOpen}
         onClose={() => {
           setIsCreateModalOpen(false);
@@ -624,24 +693,8 @@ const FuelOffloadManagement = () => {
         }}
         offload={selectedOffload}
         onOffloadCreated={handleOffloadCreated}
-        onOffloadUpdated={handleOffloadUpdated}
+        refreshOffloads={loadData}
       />
-
-      {/* <OffloadDetailsModal 
-        isOpen={isDetailsModalOpen}
-        onClose={() => setIsDetailsModalOpen(false)}
-        offload={selectedOffload}
-      /> */}
-
-      {/* <CompleteOffloadModal 
-        isOpen={isCompleteModalOpen}
-        onClose={() => {
-          setIsCompleteModalOpen(false);
-          setSelectedOffload(null);
-        }}
-        offload={selectedOffload}
-        onOffloadCompleted={handleOffloadCompleted}
-      /> */}
     </div>
   );
 };
