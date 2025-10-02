@@ -3,7 +3,7 @@ import { Modal, Button, Select, Card, Input, Table, Alert } from '../../../ui';
 import { useApp } from '../../../../context/AppContext';
 import { Plus, X, Zap, Gauge, Fuel, Calendar, Clock, Truck, User, FileText, DollarSign } from 'lucide-react';
 import clsx from 'clsx';
-import fuelOffloadService, { offloadValidators, offloadCalculations, offloadFormatters } from '../../../../services/fuelOffloadService';
+import fuelOffloadService, { offloadValidators, offloadCalculations, offloadFormatters } from '../../../../services/offloadService/offloadService';
 
 const CreateOffloadModal = ({ onClose, refreshOffloads }) => {
   const { state, dispatch } = useApp();

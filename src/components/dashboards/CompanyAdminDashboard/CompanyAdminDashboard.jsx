@@ -14,6 +14,7 @@ import CreateAssetModal from './CreateAssetModal';
 import CompanyAssetManagement from './CompanyAssetManagement';
 import CompanyUserManagement from './CompanyUserManagement';
 import CompanyStationsManagement from './stations/CompanyStationsManagement';
+import FuelPurchaseManagement from './purchases/FuelPurchaseManagement';
 
 const CompanyAdminDashboard = () => {
   const { state } = useApp();
@@ -36,6 +37,7 @@ const CompanyAdminDashboard = () => {
     { id: 'assets', label: 'Assets', icon: Building2 },
     { id: 'islands', label: 'Island Management', icon: MapPin },
     { id: 'warehouses', label: 'Warehouse', icon: Warehouse },
+    { id: 'purchase', label: 'Purchase', icon: TrendingUp },
     { id: 'shifts', label: 'Shift Management', icon: Clock },
     { id: 'staff', label: 'Staff Management', icon: Users },
     { id: 'matching', label: 'Document Matching', icon: FileCheck },
@@ -52,8 +54,8 @@ const CompanyAdminDashboard = () => {
         return <CompanyStationsManagement />;
       case 'assets':
         return <CompanyAssetManagement />;
-      case 'islands':
-        return <PlaceholderComponent title="Island Management" icon={MapPin} />;
+      case 'purchase':
+        return <FuelPurchaseManagement />;
       case 'warehouses':
         return <PlaceholderComponent title="Warehouse Management" icon={Warehouse} />;
       case 'shifts':

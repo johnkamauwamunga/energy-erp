@@ -4,10 +4,10 @@ import {
   Fuel, Clock, CheckCircle, XCircle, AlertCircle,
   Download, Upload, BarChart3, Truck
 } from 'lucide-react';
-import { Button, Input, Select, Badge } from '../../../components/ui';
-import { useApp } from '../../../context/AppContext';
-import CreateFuelPurchaseModal from './CreateFuelPurchaseModal';
-import { fuelPurchaseService } from '../../../services/fuelPurchaseService';
+import { Button, Input, Select, Badge } from '../../../ui';
+import { useApp } from '../../../../context/AppContext';
+import CreateFuelPurchaseModal from './create/CreateFuelPurchaseModal';
+import { fuelPurchaseService } from '../../../../services/fuelPurchaseService/fuelPurchaseService';
 
 const FuelPurchaseManagement = () => {
   const { state } = useApp();

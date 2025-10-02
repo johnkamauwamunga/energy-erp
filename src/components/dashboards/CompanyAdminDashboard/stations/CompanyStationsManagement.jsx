@@ -120,6 +120,8 @@ const CompanyStationsManagement = () => {
   // Use serviceStations from state instead of stations
   const stations = state.serviceStations || [];
 
+  console.log("stations be ",stations)
+
   if (isLoading) {
     return (
       <div className="p-6 flex justify-center items-center h-64">

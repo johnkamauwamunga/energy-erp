@@ -20,6 +20,7 @@ export { default as SearchInput } from './SearchInput';
 export { default as FilterDropdown } from './FilterDropdown';
 export { default as EmptyState } from './EmptyState';
 export { default as Tooltip } from './Tooltip';
+export { default as Pagination } from './Pagination';
 
 
 // Add other exports as neededj

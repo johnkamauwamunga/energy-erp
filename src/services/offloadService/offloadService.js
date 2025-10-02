@@ -1,5 +1,5 @@
 // src/services/fuelOffloadService.js
-import { apiService } from './apiService';
+import { apiService } from '../apiService';
 
 // Enhanced logging utility
 const logger = {

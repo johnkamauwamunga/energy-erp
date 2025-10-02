@@ -100,17 +100,11 @@ export const fuelService = {
 
   updateFuelCategory: async (categoryData) => {
     logger.info('Updating fuel category:', categoryData);
+    debugRequest('PUT', '/fuel/categories', categoryData);
     
     try {
-      // Extract ID from data and use in URL (RESTful pattern)
-      const { id, ...updateData } = categoryData;
-      if (!id) {
-        throw new Error('Category ID is required for update');
-      }
-      
-      debugRequest('PUT', `/fuel/categories/${id}`, updateData);
-      const response = await apiService.put(`/fuel/categories/${id}`, updateData);
-      debugResponse('PUT', `/fuel/categories/${id}`, response);
+      const response = await apiService.put('/fuel/categories', categoryData);
+      debugResponse('PUT', '/fuel/categories', response);
       return handleResponse(response, 'updating fuel category');
     } catch (error) {
       throw handleError(error, 'updating fuel category', 'Failed to update fuel category');
@@ -170,17 +164,11 @@ export const fuelService = {
 
   updateFuelSubType: async (subTypeData) => {
     logger.info('Updating fuel subtype:', subTypeData);
+    debugRequest('PUT', '/fuel/subtypes', subTypeData);
     
     try {
-      // Extract ID from data and use in URL (RESTful pattern)
-      const { id, ...updateData } = subTypeData;
-      if (!id) {
-        throw new Error('SubType ID is required for update');
-      }
-      
-      debugRequest('PUT', `/fuel/subtypes/${id}`, updateData);
-      const response = await apiService.put(`/fuel/subtypes/${id}`, updateData);
-      debugResponse('PUT', `/fuel/subtypes/${id}`, response);
+      const response = await apiService.put('/fuel/subtypes', subTypeData);
+      debugResponse('PUT', '/fuel/subtypes', response);
       return handleResponse(response, 'updating fuel subtype');
     } catch (error) {
       throw handleError(error, 'updating fuel subtype', 'Failed to update fuel subtype');
@@ -240,17 +228,11 @@ export const fuelService = {
 
   updateFuelProduct: async (productData) => {
     logger.info('Updating fuel product:', productData);
+    debugRequest('PUT', '/fuel/products', productData);
     
     try {
-      // Extract ID from data and use in URL (RESTful pattern)
-      const { id, ...updateData } = productData;
-      if (!id) {
-        throw new Error('Product ID is required for update');
-      }
-      
-      debugRequest('PUT', `/fuel/products/${id}`, updateData);
-      const response = await apiService.put(`/fuel/products/${id}`, updateData);
-      debugResponse('PUT', `/fuel/products/${id}`, response);
+      const response = await apiService.put('/fuel/products', productData);
+      debugResponse('PUT', '/fuel/products', response);
       return handleResponse(response, 'updating fuel product');
     } catch (error) {
       throw handleError(error, 'updating fuel product', 'Failed to update fuel product');
@@ -372,10 +354,6 @@ export const fuelService = {
       errors.push('Category code is required');
     }
 
-    if (categoryData.typicalDensity && categoryData.typicalDensity <= 0) {
-      errors.push('Typical density must be positive');
-    }
-
     return errors;
   },
 
@@ -445,26 +423,10 @@ export const fuelService = {
       'default': '#666666'
     };
     
-    const defaultDensities = {
-      'DIESEL': 0.85,
-      'PETROL': 0.74,
-      'KEROSENE': 0.81,
-      'default': 0.80
-    };
-    
-    const defaultHazardClasses = {
-      'DIESEL': 'Class 3',
-      'PETROL': 'Class 3',
-      'KEROSENE': 'Class 3',
-      'default': 'Class 3'
-    };
-
     const upperName = categoryName?.toUpperCase() || '';
     
     return {
-      color: defaultCategoryColors[upperName] || defaultCategoryColors.default,
-      density: defaultDensities[upperName] || defaultDensities.default,
-      hazardClass: defaultHazardClasses[upperName] || defaultHazardClasses.default
+      color: defaultCategoryColors[upperName] || defaultCategoryColors.default
     };
   },
 
@@ -483,19 +445,6 @@ export const fuelService = {
         ? `${product.minSellingPrice} - ${product.maxSellingPrice}`
         : 'Not set'
     };
-  },
-
-  // =====================
-  // NEW UTILITY METHODS
-  // =====================
-
-  // Helper to extract IDs for RESTful URLs
-  extractIdForUrl: (data, resourceName) => {
-    const id = data.id;
-    if (!id) {
-      throw new Error(`${resourceName} ID is required for this operation`);
-    }
-    return id;
   },
 
   // Batch operations helper
@@ -525,7 +474,7 @@ export const fuelService = {
   },
 
   // Search across all fuel entities
-  searchFuelEntities: async (searchTerm, companyId) => {
+  searchFuelEntities: async (searchTerm) => {
     logger.info(`Searching fuel entities for: "${searchTerm}"`);
     
     try {
@@ -538,52 +487,81 @@ export const fuelService = {
       return {
         categories: categories || [],
         subTypes: subTypes || [],
-        products: products || [],
+        products: products?.products || products || [],
         searchTerm,
-        totalResults: (categories?.length || 0) + (subTypes?.length || 0) + (products?.length || 0)
+        totalResults: (categories?.length || 0) + (subTypes?.length || 0) + (products?.products?.length || products?.length || 0)
       };
     } catch (error) {
       throw handleError(error, 'searching fuel entities', 'Failed to search fuel entities');
     }
-  },
-  // Add to fuelService object in fuelService.js
-
-// =====================
-// DELETE METHODS
-// =====================
-
-deleteFuelCategory: async (categoryId) => {
-  logger.info(`Deleting fuel category: ${categoryId}`);
-  
-  try {
-    const response = await apiService.delete(`/fuel/categories/${categoryId}`);
-    return handleResponse(response, 'deleting fuel category');
-  } catch (error) {
-    throw handleError(error, 'deleting fuel category', 'Failed to delete fuel category');
   }
-},
-
-deleteFuelSubType: async (subTypeId) => {
-  logger.info(`Deleting fuel subtype: ${subTypeId}`);
-  
-  try {
-    const response = await apiService.delete(`/fuel/subtypes/${subTypeId}`);
-    return handleResponse(response, 'deleting fuel subtype');
-  } catch (error) {
-    throw handleError(error, 'deleting fuel subtype', 'Failed to delete fuel subtype');
-  }
-},
-
-deleteFuelProduct: async (productId) => {
-  logger.info(`Deleting fuel product: ${productId}`);
-  
-  try {
-    const response = await apiService.delete(`/fuel/products/${productId}`);
-    return handleResponse(response, 'deleting fuel product');
-  } catch (error) {
-    throw handleError(error, 'deleting fuel product', 'Failed to delete fuel product');
-  }
-},
 };
+
+// =====================================================================
+// PAYLOAD EXAMPLES FOR FUEL MANAGEMENT
+// =====================================================================
+
+/*
+// CREATE FUEL CATEGORY PAYLOAD:
+const categoryPayload = {
+  name: "Diesel",
+  code: "DSL",
+  defaultColor: "#0047AB" // Optional
+};
+
+// CREATE FUEL SUBTYPE PAYLOAD:
+const subTypePayload = {
+  name: "Ultra Low Sulfur Diesel",
+  code: "ULSD",
+  categoryId: "CATEGORY_ID_FROM_CREATION",
+  specification: "ULSD with maximum 15ppm sulfur content", // Optional
+  minQualityStandards: { // Optional
+    sulfurContent: 15,
+    cetaneNumber: 51,
+    flashPoint: 60
+  }
+};
+
+// CREATE FUEL PRODUCT PAYLOAD:
+const productPayload = {
+  name: "ULSD Premium Diesel",
+  fuelCode: "ULSD-PRM",
+  fuelSubTypeId: "SUBTYPE_ID_FROM_CREATION",
+  unit: "LITER",
+  octaneRating: null, // Optional - for petrol products
+  sulfurContent: 10, // Optional
+  colorCode: "#0047AB", // Optional
+  density: 0.85, // Optional
+  flashPoint: 62, // Optional
+  sku: "ULSD-PRM-001", // Optional
+  barcode: "123456789012", // Optional
+  brand: "Premium Fuels Inc", // Optional
+  modelNumber: "PF-ULSD-2024", // Optional
+  packSize: "Bulk", // Optional
+  isBatchTracked: true, // Optional
+  isSerialTracked: false, // Optional
+  baseCostPrice: 120.50, // Optional
+  minSellingPrice: 135.00, // Optional
+  maxSellingPrice: 150.00 // Optional
+};
+
+// SEQUENTIAL HIERARCHY CREATION PAYLOAD:
+const hierarchyPayload = {
+  categoryName: "Diesel",
+  categoryCode: "DSL",
+  categoryColor: "#0047AB",
+  subTypeName: "Ultra Low Sulfur Diesel", 
+  subTypeCode: "ULSD",
+  subTypeSpecification: "ULSD with max 15ppm sulfur",
+  productName: "ULSD Premium Diesel",
+  productFuelCode: "ULSD-PRM",
+  productUnit: "LITER",
+  sulfurContent: 10,
+  density: 0.85,
+  baseCostPrice: 120.50,
+  minSellingPrice: 135.00,
+  maxSellingPrice: 150.00
+};
+*/
 
 export default fuelService;

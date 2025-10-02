@@ -1,5 +1,4 @@
-// CreateShiftModal.js
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, Button, Select, Card, Input, Table, Badge, Alert } from '../../../ui';
 import { useApp } from '../../../../context/AppContext';
 import { userService } from '../../../../services/userService/userService';
@@ -7,25 +6,14 @@ import { assetConnectionService } from '../../../../services/assetConnection/ass
 import { 
   Calendar, Clock, User, UserCheck, Package, Zap, MapPin, 
   CheckCircle, ChevronRight, ChevronLeft, X, Search, Fuel,
-  PlayCircle, SkipForward, AlertCircle, Settings
+  PlayCircle, SkipForward, AlertCircle
 } from 'lucide-react';
 import clsx from 'clsx';
-import { dummyShiftData, createTestShiftJourney } from './dummyData';
 
-const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true }) => {
-  const { state: appState } = useApp();
-  
-  // Use dummy data or real app state based on flag
-  const state = useDummyData ? {
-    currentStation: dummyShiftData.currentStation,
-    islands: dummyShiftData.islands,
-    warehouses: dummyShiftData.warehouses,
-    ...appState // Merge with real app state for other properties
-  } : appState;
-
+const CreateShiftModal = ({ isOpen, onClose, onShiftCreated }) => {
+  const { state } = useApp();
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [testScenario, setTestScenario] = useState('completeFlow');
   
   // Shift core data
   const [shiftDetails, setShiftDetails] = useState({
@@ -39,7 +27,7 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
   const [currentIslandIndex, setCurrentIslandIndex] = useState(0);
   const [currentPumpIndex, setCurrentPumpIndex] = useState(0);
   const [islandConnections, setIslandConnections] = useState([]);
-  const [connectedIslands, setConnectedIslands] = useState([]);
+  const [connectedIslands, setConnectedIslands] = useState([]); // ✅ Fixed: Derived state
   const [pumpReadings, setPumpReadings] = useState({});
   
   // Staff management
@@ -61,30 +49,6 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
   const currentStationId = state.currentStation?.id;
   const stationIslands = (state.islands || []).filter(island => island.stationId === currentStationId);
   
-  // Initialize with dummy or real data
-  useEffect(() => {
-    if (!isOpen) return;
-    
-    if (useDummyData) {
-      // Load dummy data
-      setAvailableAttendants(dummyShiftData.attendants);
-      setAvailableSupervisors(dummyShiftData.supervisors);
-      setWarehouseItems(dummyShiftData.warehouses[0]?.nonFuelItems || []);
-      setIslandConnections(dummyShiftData.assetConnections);
-      
-      // Set today's date and current time
-      const today = new Date().toISOString().split('T')[0];
-      const now = new Date();
-      const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-      
-      setShiftDetails(prev => ({
-        ...prev,
-        startDate: today,
-        startTime: currentTime
-      }));
-    }
-  }, [isOpen, useDummyData]);
-
   // ✅ FIXED: Derived state for connected islands
   useEffect(() => {
     if (!stationIslands?.length || !islandConnections?.length) {
@@ -95,11 +59,7 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
     const islandsWithPumps = stationIslands.map(island => {
       const pumps = islandConnections
         .filter(conn => conn.type === 'PUMP_TO_ISLAND' && conn.assetB?.id === island.id)
-        .map(conn => {
-          const pumpId = conn.assetA.id;
-          return island.pumps?.find(pump => pump.id === pumpId) || null;
-        })
-        .filter(Boolean);
+        .map(conn => conn.assetA);
 
       return {
         ...island,
@@ -108,39 +68,18 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
     }).filter(island => island.pumps.length > 0);
 
     setConnectedIslands(islandsWithPumps);
+    
+    console.log("✅ Connected islands with pumps:", islandsWithPumps);
   }, [islandConnections, stationIslands]);
 
-  // Load real data if not using dummy data
+  // Debug useEffect for state changes
   useEffect(() => {
-    if (useDummyData || !currentStationId || !isOpen) return;
+    console.log("✅ [UPDATED SUPERVISORS] ", availableSupervisors);
+  }, [availableSupervisors]);
 
-    const loadInitialData = async () => {
-      setLoading(true);
-      try {
-        const [topologyData, attendantsResp, supervisorsResp] = await Promise.all([
-          assetConnectionService.getStationTopology(currentStationId),
-          userService.getStationAttendants(currentStationId),
-          userService.getStationSupervisors(currentStationId)
-        ]);
-
-        const processedTopology = assetConnectionService.processTopologyData(topologyData);
-        setIslandConnections(processedTopology?.connections || []);
-        setAvailableAttendants(Array.isArray(attendantsResp) ? attendantsResp : []);
-        setAvailableSupervisors(Array.isArray(supervisorsResp) ? supervisorsResp : []);
-        
-        const warehouse = (state.warehouses || []).find(wh => wh.stationId === currentStationId);
-        setWarehouseItems(warehouse?.nonFuelItems || []);
-        
-      } catch (error) {
-        console.error('❌ Failed to load initial data:', error);
-        setErrors({ load: 'Failed to load required data' });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadInitialData();
-  }, [currentStationId, isOpen, state.warehouses, useDummyData]);
+  useEffect(() => {
+    console.log("✅ [UPDATED ATTENDANTS] ", availableAttendants);
+  }, [availableAttendants]);
 
   // Initialize dates with current date and time
   useEffect(() => {
@@ -160,42 +99,54 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
     setSelectedIslands([]);
     setCurrentStep(1);
     setErrors({});
-    setConnectedIslands([]);
-    setPumpReadings({});
-    setAttendantAssignments({});
-    setNonFuelAssignments({});
-    setSelectedAttendants([]);
+    setConnectedIslands([]); // Reset connected islands
   }, [isOpen]);
 
-  // Test scenario loader
-  const loadTestScenario = useCallback((scenario) => {
-    const testJourney = createTestShiftJourney(scenario);
-    
-    // Set selected islands
-    setSelectedIslands(testJourney.step1.selectedIslands);
-    
-    // Set pump readings if any
-    if (testJourney.step2.pumpReadings) {
-      setPumpReadings(testJourney.step2.pumpReadings);
-    }
-    
-    // Set supervisor
-    if (testJourney.step3.supervisorId) {
-      setShiftDetails(prev => ({ ...prev, supervisorId: testJourney.step3.supervisorId }));
-    }
-    
-    // Set attendant assignments
-    if (testJourney.step3.attendantAssignments) {
-      setAttendantAssignments(testJourney.step3.attendantAssignments);
-    }
-    
-    // Set non-fuel assignments
-    if (testJourney.step4.nonFuelAssignments) {
-      setNonFuelAssignments(testJourney.step4.nonFuelAssignments);
-    }
-    
-    setTestScenario(scenario);
-  }, []);
+  // Load initial data
+  useEffect(() => {
+    if (!currentStationId || !isOpen) return;
+
+    const loadInitialData = async () => {
+      setLoading(true);
+      try {
+        console.log("📡 Loading data for station:", currentStationId);
+
+        // Load connections
+        const topologyData = await assetConnectionService.getStationTopology(currentStationId);
+        const processedTopology = assetConnectionService.processTopologyData(topologyData);
+
+        const newConnections = processedTopology?.connections || [];
+        setIslandConnections(newConnections); // This will trigger the connectedIslands effect
+
+        // Load staff
+        const [attendantsResp, supervisorsResp] = await Promise.all([
+          userService.getStationAttendants(currentStationId),
+          userService.getStationSupervisors(currentStationId)
+        ]);
+
+        console.log("📊 Raw attendants response:", attendantsResp);
+        console.log("📊 Raw supervisors response:", supervisorsResp);
+        
+        const attendants = Array.isArray(attendantsResp) ? attendantsResp : [];
+        const supervisors = Array.isArray(supervisorsResp) ? supervisorsResp : [];
+
+        setAvailableAttendants(attendants);
+        setAvailableSupervisors(supervisors);
+        
+        // Load warehouse items
+        const warehouse = (state.warehouses || []).find(wh => wh.stationId === currentStationId);
+        setWarehouseItems(warehouse?.nonFuelItems || []);
+        
+      } catch (error) {
+        console.error('❌ Failed to load initial data:', error);
+        setErrors({ load: 'Failed to load required data' });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadInitialData();
+  }, [currentStationId, isOpen, state.warehouses]);
 
   // Date and time validation
   const validateDateTime = () => {
@@ -248,13 +199,6 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
       delete newReadings[islandId];
       return newReadings;
     });
-
-    // Remove non-fuel assignments for this island
-    setNonFuelAssignments(prev => {
-      const newAssignments = { ...prev };
-      delete newAssignments[islandId];
-      return newAssignments;
-    });
   };
 
   // Update pump reading
@@ -268,7 +212,7 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
         ...prev[currentIsland.id],
         [currentPump.id]: {
           ...prev[currentIsland.id]?.[currentPump.id],
-          [field]: parseFloat(value) || 0
+          [field]: value
         }
       }
     }));
@@ -380,6 +324,16 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
     );
   };
 
+  // Calculate duration (for display - will be calculated on shift close)
+  const calculateDuration = () => {
+    return "Will be calculated when shift closes";
+  };
+
+  // Format date and time
+  const formatDateTime = (date, time) => {
+    return new Date(`${date}T${time}`).toLocaleString();
+  };
+
   // Get total pumps
   const getTotalPumps = () => {
     return selectedIslands.reduce((total, island) => total + (island.pumps?.length || 0), 0);
@@ -395,61 +349,34 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
     return Object.values(nonFuelAssignments).reduce((total, items) => total + items.length, 0);
   };
 
-  // Check if all required pump readings are completed
-  const areAllPumpReadingsComplete = useMemo(() => {
-    for (const island of selectedIslands) {
-      const islandReadings = pumpReadings[island.id] || {};
-      for (const pump of island.pumps || []) {
-        const pumpReading = islandReadings[pump.id] || {};
-        if (!pumpReading.electric || !pumpReading.cash) {
-          return false;
-        }
-      }
-    }
-    return true;
-  }, [selectedIslands, pumpReadings]);
-
   // Handle shift creation
   const handleCreateShift = async () => {
     if (!validateDateTime()) return;
 
     setLoading(true);
     try {
-      const openingData = {
-        startTime: new Date(`${shiftDetails.startDate}T${shiftDetails.startTime}`).toISOString(),
+      const shiftData = {
         stationId: currentStationId,
+        startDate: shiftDetails.startDate,
+        startTime: shiftDetails.startTime,
         supervisorId: shiftDetails.supervisorId,
         islands: selectedIslands.map(island => ({
           islandId: island.id,
-          pumps: (island.pumps || []).map(pump => {
-            const readings = pumpReadings[island.id]?.[pump.id] || {};
-            return {
-              pumpId: pump.id,
-              electricMeter: readings.electric || 0,
-              manualMeter: readings.manual || 0,
-              cashMeter: readings.cash || 0
-            };
-          }),
+          pumps: (island.pumps || []).map(pump => ({
+            pumpId: pump.id,
+            readings: pumpReadings[island.id]?.[pump.id] || {}
+          })),
           attendants: attendantAssignments[island.id] || [],
-          nonFuelProducts: (nonFuelAssignments[island.id] || []).map(item => ({
-            productId: item.itemId,
-            openingStock: item.openingStock
-          }))
+          nonFuelItems: nonFuelAssignments[island.id] || []
         }))
       };
 
-      console.log("📤 Creating shift with payload:", openingData);
+      console.log("📤 Creating shift with data:", shiftData);
+      // TODO: Call your shift creation API here
+      // await shiftService.createShift(shiftData);
       
-      // TODO: Call your actual shift creation API here
-      // await shiftService.createShift(openingData);
-      
-      // For now, just log and simulate success
-      setTimeout(() => {
-        console.log("✅ Shift created successfully!");
-        onShiftCreated?.(openingData);
-        onClose();
-      }, 1000);
-      
+      onShiftCreated?.();
+      onClose();
     } catch (error) {
       console.error('❌ Failed to create shift:', error);
       setErrors({ submit: 'Failed to create shift' });
@@ -467,41 +394,10 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
     { number: 5, title: 'Review', icon: CheckCircle, completed: false }
   ];
 
-  // Test Scenario Selector (only show in dummy mode)
-  const TestScenarioSelector = () => {
-    if (!useDummyData) return null;
-
-    return (
-      <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <Settings className="w-4 h-4 mr-2 text-purple-600" />
-            <span className="text-sm font-medium text-purple-800">Test Scenarios</span>
-          </div>
-          <Select
-            value={testScenario}
-            onChange={(e) => loadTestScenario(e.target.value)}
-            options={[
-              { value: 'completeFlow', label: 'Complete Flow' },
-              { value: 'minimalFlow', label: 'Minimal Flow' },
-              { value: 'partialMeters', label: 'Partial Meters' }
-            ]}
-            size="sm"
-          />
-        </div>
-        <div className="text-xs text-purple-600 mt-1">
-          Load pre-configured test scenarios
-        </div>
-      </div>
-    );
-  };
-
   // Step 1: Shift Time and Island Selection
   const Step1DateTimeIslands = () => {
     return (
       <Card title="1. Set Shift Time & Select Islands">
-        <TestScenarioSelector />
-        
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           {/* Date and Time Selection */}
           <div className="space-y-4">
@@ -559,9 +455,7 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
                     <div className="flex justify-between items-center">
                       <div>
                         <div className="font-medium">{island.name}</div>
-                        <div className="text-sm text-gray-600">
-                          {pumpCount} pump(s) • {island.pumps?.map(p => p.fuelType).join(', ')}
-                        </div>
+                        <div className="text-sm text-gray-600">{pumpCount} pump(s) connected</div>
                       </div>
                       {isSelected ? (
                         <div className="flex items-center">
@@ -605,7 +499,7 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
             disabled={selectedIslands.length === 0}
             icon={ChevronRight}
           >
-            Next: Pump Meters ({getTotalPumps()} pumps)
+            Next: Pump Meters
           </Button>
         </div>
       </Card>
@@ -620,11 +514,6 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
     const currentReading = pumpReadings[currentIsland?.id]?.[currentPump?.id] || {};
 
     if (!currentIsland) return null;
-
-    // Get connected tank for this pump
-    const connectedTank = dummyShiftData.tanks.find(tank => 
-      tank.connectedPumps?.includes(currentPump?.id)
-    );
 
     return (
       <Card title={`2. Record Pump Meters - ${currentIsland.name}`}>
@@ -654,36 +543,11 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
           </div>
         </div>
 
-        {/* Pump Information */}
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
-          <h4 className="font-medium text-lg mb-2">{currentPump?.name}</h4>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div>
-              <span className="text-gray-600">Code:</span>
-              <div className="font-medium">{currentPump?.code}</div>
-            </div>
-            <div>
-              <span className="text-gray-600">Fuel Type:</span>
-              <div className="font-medium capitalize">{currentPump?.fuelType}</div>
-            </div>
-            <div>
-              <span className="text-gray-600">Connected Tank:</span>
-              <div className="font-medium">{connectedTank?.name || 'None'}</div>
-            </div>
-            {currentPump?.currentMeter && (
-              <div>
-                <span className="text-gray-600">Last Reading:</span>
-                <div className="font-medium">{currentPump.currentMeter.electric}</div>
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Pump Meter Form */}
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-6">
           <h3 className="font-semibold text-lg mb-4 flex items-center">
             <Zap className="w-5 h-5 mr-2" />
-            Opening Meter Readings
+            {currentPump?.name || currentPump?.code} - Opening Meter Readings
           </h3>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -694,7 +558,6 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
               value={currentReading.electric || ''}
               onChange={e => updatePumpReading('electric', e.target.value)}
               min="0"
-              placeholder={currentPump?.currentMeter?.electric}
               error={!currentReading.electric ? 'Required' : undefined}
             />
             
@@ -705,7 +568,6 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
               value={currentReading.cash || ''}
               onChange={e => updatePumpReading('cash', e.target.value)}
               min="0"
-              placeholder={currentPump?.currentMeter?.cash}
               error={!currentReading.cash ? 'Required' : undefined}
             />
             
@@ -716,7 +578,6 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
               value={currentReading.manual || ''}
               onChange={e => updatePumpReading('manual', e.target.value)}
               min="0"
-              placeholder={currentPump?.currentMeter?.manual}
             />
           </div>
         </div>
@@ -731,24 +592,15 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
             Previous
           </Button>
           
-          <div className="space-x-2">
-            <Button
-              variant="outline"
-              onClick={() => setCurrentStep(3)}
-              icon={SkipForward}
-            >
-              Skip Pump Meters
-            </Button>
-            <Button
-              onClick={handlePumpReadingSave}
-              disabled={!currentReading.electric || !currentReading.cash}
-              icon={currentPumpIndex === islandPumps.length - 1 ? CheckCircle : ChevronRight}
-            >
-              {currentPumpIndex === islandPumps.length - 1 ? 
-                `Complete ${currentIsland.name}` : 'Next Pump'
-              }
-            </Button>
-          </div>
+          <Button
+            onClick={handlePumpReadingSave}
+            disabled={!currentReading.electric || !currentReading.cash}
+            icon={currentPumpIndex === islandPumps.length - 1 ? CheckCircle : ChevronRight}
+          >
+            {currentPumpIndex === islandPumps.length - 1 ? 
+              `Complete ${currentIsland.name}` : 'Next Pump'
+            }
+          </Button>
         </div>
       </Card>
     );
@@ -941,7 +793,6 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
                   onChange={e => setOpeningStock(e.target.value)}
                   min="0"
                   max={selectedItem.currentStock}
-                  placeholder={`Max: ${selectedItem.currentStock}`}
                 />
                 <div className="text-sm text-gray-600">
                   Available stock: {selectedItem.currentStock} {selectedItem.unit}
@@ -1038,9 +889,7 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="text-sm text-gray-600">Start</div>
-                <div className="font-medium">
-                  {new Date(`${shiftDetails.startDate}T${shiftDetails.startTime}`).toLocaleString()}
-                </div>
+                <div className="font-medium">{formatDateTime(shiftDetails.startDate, shiftDetails.startTime)}</div>
               </div>
               <div>
                 <div className="text-sm text-gray-600">End</div>
@@ -1052,14 +901,6 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
             </div>
           </div>
 
-          {/* Validation Warnings */}
-          {!areAllPumpReadingsComplete && (
-            <Alert variant="warning" className="flex items-center">
-              <AlertCircle className="w-4 h-4 mr-2" />
-              Some pump meters are incomplete. You can still create the shift, but missing readings will be set to 0.
-            </Alert>
-          )}
-
           {/* Detailed Breakdown */}
           <div className="space-y-4">
             {selectedIslands.map(island => (
@@ -1070,35 +911,8 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
                 attendants={attendantAssignments[island.id] || []}
                 nonFuelItems={nonFuelAssignments[island.id] || []}
                 availableAttendants={availableAttendants}
-                availableSupervisors={availableSupervisors}
               />
             ))}
-          </div>
-
-          {/* Final Payload Preview */}
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h3 className="font-medium mb-2">Payload Preview</h3>
-            <pre className="text-xs bg-gray-100 p-3 rounded overflow-auto max-h-40">
-              {JSON.stringify({
-                startTime: new Date(`${shiftDetails.startDate}T${shiftDetails.startTime}`).toISOString(),
-                stationId: currentStationId,
-                supervisorId: shiftDetails.supervisorId,
-                islands: selectedIslands.map(island => ({
-                  islandId: island.id,
-                  pumps: (island.pumps || []).map(pump => ({
-                    pumpId: pump.id,
-                    electricMeter: pumpReadings[island.id]?.[pump.id]?.electric || 0,
-                    manualMeter: pumpReadings[island.id]?.[pump.id]?.manual || 0,
-                    cashMeter: pumpReadings[island.id]?.[pump.id]?.cash || 0
-                  })),
-                  attendants: attendantAssignments[island.id] || [],
-                  nonFuelProducts: (nonFuelAssignments[island.id] || []).map(item => ({
-                    productId: item.itemId,
-                    openingStock: item.openingStock
-                  }))
-                }))
-              }, null, 2)}
-            </pre>
           </div>
         </div>
 
@@ -1124,16 +938,7 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
     <Modal 
       isOpen={isOpen} 
       onClose={onClose} 
-      title={
-        <div className="flex items-center">
-          Create New Shift
-          {useDummyData && (
-            <Badge variant="purple" className="ml-2">
-              TEST MODE
-            </Badge>
-          )}
-        </div>
-      } 
+      title="Create New Shift" 
       size="3xl"
     >
       <div className="space-y-6">
@@ -1166,7 +971,7 @@ const CreateShiftModal = ({ isOpen, onClose, onShiftCreated, useDummyData = true
   );
 };
 
-// Supporting components (same as before)
+// Supporting components
 const StepIndicator = ({ steps, currentStep, onStepClick }) => (
   <div className="flex justify-center space-x-4">
     {steps.map(step => (
@@ -1207,29 +1012,21 @@ const SummaryCard = ({ title, value, color }) => (
   </div>
 );
 
-const IslandReview = ({ island, readings, attendants, nonFuelItems, availableAttendants, availableSupervisors }) => (
+const IslandReview = ({ island, readings, attendants, nonFuelItems, availableAttendants }) => (
   <div className="border rounded-lg p-4">
     <h4 className="font-medium mb-3">{island.name}</h4>
     
     {/* Pumps */}
     <div className="mb-3">
-      <div className="text-sm font-medium text-gray-600 mb-2">Pumps</div>
+      <div className="text-sm font-medium text-gray-600">Pumps</div>
       {island.pumps?.map(pump => {
         const reading = readings[pump.id] || {};
-        const hasReadings = reading.electric || reading.cash || reading.manual;
-        
         return (
-          <div key={pump.id} className="text-sm ml-4 mt-1 p-2 bg-gray-50 rounded">
-            <div className="font-medium">{pump.name} ({pump.fuelType})</div>
-            {hasReadings ? (
-              <div className="grid grid-cols-3 gap-2 mt-1">
-                <div>Electric: <span className="font-medium">{reading.electric || 'Not set'}</span></div>
-                <div>Cash: <span className="font-medium">{reading.cash || 'Not set'}</span></div>
-                <div>Manual: <span className="font-medium">{reading.manual || 'Not set'}</span></div>
-              </div>
-            ) : (
-              <div className="text-red-500">No readings entered</div>
-            )}
+          <div key={pump.id} className="text-sm ml-4 mt-1">
+            <div className="font-medium">{pump.name}</div>
+            <div>Electric: {reading.electric || 'Not set'}</div>
+            <div>Cash: {reading.cash || 'Not set'}</div>
+            {reading.manual && <div>Manual: {reading.manual}</div>}
           </div>
         );
       })}
@@ -1241,7 +1038,7 @@ const IslandReview = ({ island, readings, attendants, nonFuelItems, availableAtt
       <div className="text-sm ml-4">
         {attendants.length > 0 
           ? attendants.map(id => availableAttendants.find(a => a.id === id)?.name).join(', ')
-          : <span className="text-red-500">None assigned</span>
+          : 'None assigned'
         }
       </div>
     </div>

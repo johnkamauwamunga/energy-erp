@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Input, Button, Select, LoadingSpinner } from '../../ui';
-import Dialog from '../../ui/Dialog';
-import { useApp } from '../../../context/AppContext';
-import { fuelPurchaseService } from '../../../services/fuelPurchaseService';
-import { supplierService } from '../../../services/supplierService';
-import { stationService } from '../../../services/stationService';
-import { productService } from '../../../services/productService';
+import { Input, Button, Select, LoadingSpinner,Dialog } from '../../../../ui';
+import { useApp } from '../../../../../context/AppContext';
+import { fuelPurchaseService } from '../../../../../services/fuelPurchaseService/fuelPurchaseService';
+import { supplierService } from '../../../../../services/supplierService/supplierService';
+import { stationService } from '../../../../../services/stationService/stationService';
+import { fuelService } from '../../../../../services/fuelService/fuelService';
 import { Plus, Minus, Fuel, Truck, Calendar, DollarSign } from 'lucide-react';
 
 const CreateFuelPurchaseModal = ({ isOpen, onClose, onPurchaseCreated }) => {
@@ -73,7 +72,7 @@ const CreateFuelPurchaseModal = ({ isOpen, onClose, onPurchaseCreated }) => {
       const [suppliersData, stationsData, productsData] = await Promise.all([
         supplierService.getSuppliers(),
         stationService.getCompanyStations(),
-        productService.getProducts({ type: 'FUEL' })
+        fuelService.getProducts({ type: 'FUEL' })
       ]);
 
       setSuppliers(suppliersData || []);

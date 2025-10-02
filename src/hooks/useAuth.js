@@ -11,6 +11,8 @@ export const useAuth = () => {
     const initializeAuth = () => {
       try {
         const storedAuthData = localStorage.getItem('authData');
+       
+
         const accessToken = localStorage.getItem('accessToken');
         const refreshToken = localStorage.getItem('refreshToken');
      
