@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Stepper, Alert, LoadingSpinner } from '../../../ui';
-import { CheckCircle, Clock, Fuel, Zap, Package, ArrowLeft, ArrowRight } from 'lucide-react';
+import { CheckCircle, Clock, Fuel, Zap, Package, ArrowLeft, ArrowRight, Truck, Calculator } from 'lucide-react';
 
 // Import steps
 import PurchaseTankSelectionStep from './PurchaseTankSelectionStep';
@@ -40,11 +40,9 @@ const FuelOffloadWizard = ({ purchaseId, onSuccess, onCancel }) => {
   const initializeData = async () => {
     setIsLoading(true);
     try {
-      // Use dummy purchase data
       const purchase = await mockOffloadServices.purchaseService.getPurchaseById(purchaseId);
       setPurchaseData(purchase);
       
-      // Pre-populate with sample tank offloads
       setOffloadData(prev => ({
         ...prev,
         purchaseId: purchaseId || 'purchase-123',
@@ -107,7 +105,6 @@ const FuelOffloadWizard = ({ purchaseId, onSuccess, onCancel }) => {
     setError(null);
     
     try {
-      // Calculate totals
       const totalActualVolume = offloadData.tankOffloads.reduce((sum, tank) => 
         sum + (tank.actualVolume || 0), 0
       );
@@ -170,69 +167,97 @@ const FuelOffloadWizard = ({ purchaseId, onSuccess, onCancel }) => {
 
   if (isLoading && !purchaseData) {
     return (
-      <div className="max-w-6xl mx-auto p-6">
+      <div className="max-w-7xl mx-auto p-6">
         <LoadingSpinner />
       </div>
     );
   }
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      <Card title={`Fuel Offload - ${purchaseData?.purchaseNumber}`} className="mb-6">
-        {/* Stepper */}
-        <div className="mb-8">
+    <div className="max-w-7xl mx-auto p-6">
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-center gap-3 mb-2">
+          <Truck className="w-8 h-8 text-blue-600" />
+          <h1 className="text-3xl font-bold text-gray-900">Fuel Offload</h1>
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-gray-600 mb-1">
+              Purchase: <span className="font-semibold text-gray-900">{purchaseData?.purchaseNumber}</span>
+            </p>
+            <p className="text-sm text-gray-500">
+              Supplier: {purchaseData?.supplier.name} • Product: {purchaseData?.items[0]?.product.name}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-lg font-semibold text-blue-600">
+              {purchaseData?.items[0]?.orderedQty.toLocaleString()}L
+            </p>
+            <p className="text-sm text-gray-500">Total Quantity</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Stepper */}
+      <Card className="mb-8">
+        <div className="p-6">
           <Stepper steps={steps} currentStep={currentStep} />
         </div>
+      </Card>
 
-        {/* Error Alert */}
-        {error && (
-          <Alert variant="error" className="mb-4">
-            {error}
-          </Alert>
-        )}
+      {/* Error Alert */}
+      {error && (
+        <Alert variant="error" className="mb-6">
+          {error}
+        </Alert>
+      )}
 
-        {/* Step Content */}
-        <div className="min-h-[500px]">
-          {renderStepContent()}
-        </div>
+      {/* Step Content */}
+      <div className="mb-6">
+        {renderStepContent()}
+      </div>
 
-        {/* Navigation Buttons */}
-        <div className="flex justify-between pt-6 border-t">
-          <div>
-            {currentStep > 1 && (
-              <Button 
-                variant="secondary" 
-                onClick={handleBack}
-                icon={ArrowLeft}
-              >
-                Back
-              </Button>
-            )}
-          </div>
-          
-          <div className="flex gap-3">
-            <Button variant="outline" onClick={onCancel}>
-              Cancel
-            </Button>
+      {/* Navigation Buttons */}
+      <Card>
+        <div className="p-6 border-t">
+          <div className="flex justify-between items-center">
+            <div>
+              {currentStep > 1 && (
+                <Button 
+                  variant="secondary" 
+                  onClick={handleBack}
+                  icon={ArrowLeft}
+                >
+                  Back
+                </Button>
+              )}
+            </div>
             
-            {currentStep < steps.length ? (
-              <Button 
-                variant="cosmic" 
-                onClick={handleNext}
-                icon={ArrowRight}
-              >
-                Next
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={onCancel}>
+                Cancel
               </Button>
-            ) : (
-              <Button 
-                variant="cosmic" 
-                onClick={handleCompleteOffload}
-                loading={isLoading}
-                icon={CheckCircle}
-              >
-                Complete Offload
-              </Button>
-            )}
+              
+              {currentStep < steps.length ? (
+                <Button 
+                  variant="cosmic" 
+                  onClick={handleNext}
+                  icon={ArrowRight}
+                >
+                  Next
+                </Button>
+              ) : (
+                <Button 
+                  variant="cosmic" 
+                  onClick={handleCompleteOffload}
+                  loading={isLoading}
+                  icon={CheckCircle}
+                >
+                  Complete Offload
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </Card>

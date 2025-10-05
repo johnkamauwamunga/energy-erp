@@ -5,13 +5,15 @@ import {
   BarChart3, Activity, Clock, Users, FileText, 
   Flame, X, Menu, MapPin, DollarSign, Truck,Building2
 } from 'lucide-react';
-import { Button } from '../../../components/ui';
-import DashboardOverview from '../common/DashboardOverview';
+import { Button } from '../../ui';
+// import DashboardOverview from '../components/dashboard/common/DashboardOverview';
+import DashboardOverview from '../../../components/dashboards/common/CompanyOverview';
 import PlaceholderComponent from './PlaceholderComponent';
 // import OffloadManagement from '../common/offloads/OffloadManagement';
 // import StationAssetManagement from '../common/assets/station/StationAssetManagement';
 import StationAssetManagement from './assets/StationAssetManagement';
 import StationAssetsOverview from './assets/StationAssetsOverview';
+import StationDashboard from '../common/StationDashboard';
 // import AssetAssignmentManager from './assets/AssetAssignmentManager'
 import SalesManagement from '../common/sales/SalesManagement';
 import StationUserManagement from './staff/StationUserManagement';
@@ -59,7 +61,7 @@ console.log("station",station);
   const renderContent = () => {
     switch (activeSection) {
       case 'dashboard':
-         return <DashboardOverview />;
+         return <StationDashboard />;
       case 'assets':
         return <StationAssetManagement />;
            case 'assets-mant':

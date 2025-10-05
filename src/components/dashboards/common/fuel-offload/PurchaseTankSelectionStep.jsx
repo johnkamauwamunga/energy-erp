@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, Alert, Badge, Input, Button } from '../../../ui';
-import { Package, Fuel, Plus, Minus } from 'lucide-react';
+import { Package, Fuel, Plus, Minus, Building2, Zap } from 'lucide-react';
 import { dummyData } from './dummyDataForOffload';
 
 const PurchaseTankSelectionStep = ({ purchaseData, offloadData, onChange }) => {
@@ -10,11 +10,9 @@ const PurchaseTankSelectionStep = ({ purchaseData, offloadData, onChange }) => {
     const existingIndex = offloadData.tankOffloads.findIndex(t => t.tankId === tank.id);
     
     if (existingIndex >= 0) {
-      // Remove tank
       const updatedTanks = offloadData.tankOffloads.filter(t => t.tankId !== tank.id);
       onChange({ tankOffloads: updatedTanks });
     } else {
-      // Add tank with initial structure
       const newTankOffload = {
         tankId: tank.id,
         tankName: tank.name,
@@ -55,140 +53,186 @@ const PurchaseTankSelectionStep = ({ purchaseData, offloadData, onChange }) => {
 
   return (
     <div className="space-y-6">
-      <Alert variant="info">
-        <div className="flex items-start gap-3">
-          <Package className="w-5 h-5 mt-0.5" />
-          <div>
-            <h4 className="font-semibold mb-1">Select Tanks for Offloading</h4>
-            <p className="text-sm">
-              Choose which tanks to offload fuel into and allocate volumes. 
-              Total purchase: {purchaseData.items[0].orderedQty}L of {purchaseData.items[0].product.name}
-            </p>
-          </div>
-        </div>
-      </Alert>
-
       {/* Purchase Summary */}
-      <Card title="Purchase Details" className="p-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div>
-            <span className="text-gray-600">Purchase #</span>
-            <p className="font-semibold">{purchaseData.purchaseNumber}</p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <Card className="p-6 text-center bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+          <div className="flex items-center justify-center gap-2 mb-3">
+            <Package className="w-6 h-6 text-blue-600" />
+            <span className="font-semibold text-blue-900">Total Ordered</span>
           </div>
-          <div>
-            <span className="text-gray-600">Supplier</span>
-            <p className="font-semibold">{purchaseData.supplier.name}</p>
-          </div>
-          <div>
-            <span className="text-gray-600">Product</span>
-            <p className="font-semibold">{purchaseData.items[0].product.name}</p>
-          </div>
-          <div>
-            <span className="text-gray-600">Total Quantity</span>
-            <p className="font-semibold">{purchaseData.items[0].orderedQty}L</p>
-          </div>
-        </div>
-      </Card>
+          <p className="text-3xl font-bold text-blue-600 mb-1">
+            {purchaseData.items[0].orderedQty.toLocaleString()}L
+          </p>
+          <p className="text-sm text-blue-700">{purchaseData.items[0].product.name}</p>
+        </Card>
 
-      {/* Volume Allocation Summary */}
-      <Card title="Volume Allocation" className="p-4">
-        <div className="grid grid-cols-3 gap-4 text-center">
-          <div>
-            <p className="text-2xl font-bold text-blue-600">{purchaseData.items[0].orderedQty}L</p>
-            <p className="text-sm text-gray-600">Total Ordered</p>
+        <Card className="p-6 text-center bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+          <div className="flex items-center justify-center gap-2 mb-3">
+            <Fuel className="w-6 h-6 text-green-600" />
+            <span className="font-semibold text-green-900">Allocated</span>
           </div>
-          <div>
-            <p className="text-2xl font-bold text-green-600">{totalAllocatedVolume}L</p>
-            <p className="text-sm text-gray-600">Allocated to Tanks</p>
+          <p className="text-3xl font-bold text-green-600 mb-1">
+            {totalAllocatedVolume.toLocaleString()}L
+          </p>
+          <p className="text-sm text-green-700">To {offloadData.tankOffloads.length} tanks</p>
+        </Card>
+
+        <Card className={`p-6 text-center bg-gradient-to-br ${
+          remainingVolume >= 0 
+            ? 'from-gray-50 to-gray-100 border-gray-200' 
+            : 'from-red-50 to-red-100 border-red-200'
+        }`}>
+          <div className="flex items-center justify-center gap-2 mb-3">
+            <Building2 className="w-6 h-6 text-gray-600" />
+            <span className="font-semibold text-gray-900">Remaining</span>
           </div>
-          <div>
-            <p className={`text-2xl font-bold ${
-              remainingVolume >= 0 ? 'text-gray-600' : 'text-red-600'
-            }`}>
-              {remainingVolume}L
-            </p>
-            <p className="text-sm text-gray-600">Remaining</p>
-          </div>
-        </div>
-      </Card>
+          <p className={`text-3xl font-bold mb-1 ${
+            remainingVolume >= 0 ? 'text-gray-600' : 'text-red-600'
+          }`}>
+            {remainingVolume.toLocaleString()}L
+          </p>
+          <p className="text-sm text-gray-600">To allocate</p>
+        </Card>
+      </div>
 
       {/* Available Tanks */}
-      <Card title="Available Tanks" className="p-6">
-        <div className="space-y-4">
-          {availableTanks.map(tank => {
-            const isSelected = isTankSelected(tank.id);
-            const tankOffload = offloadData.tankOffloads.find(t => t.tankId === tank.id);
-            
-            return (
-              <Card key={tank.id} className={`p-4 border-2 ${
-                isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-              }`}>
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
+      <Card>
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex items-center gap-3">
+            <Fuel className="w-6 h-6 text-orange-600" />
+            <div>
+              <h3 className="text-xl font-semibold text-gray-900">Available Tanks</h3>
+              <p className="text-gray-600">Select tanks and allocate volumes for offloading</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {availableTanks.map(tank => {
+              const isSelected = isTankSelected(tank.id);
+              const tankOffload = offloadData.tankOffloads.find(t => t.tankId === tank.id);
+              const availableCapacity = tank.capacity - tank.currentVolume;
+              
+              return (
+                <Card key={tank.id} className={`p-6 transition-all duration-200 ${
+                  isSelected 
+                    ? 'border-2 border-blue-500 bg-blue-50 shadow-md' 
+                    : 'border border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                }`}>
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h4 className="font-semibold text-lg text-gray-900">{tank.name}</h4>
+                        <Badge variant={isSelected ? "success" : "outline"}>
+                          {isSelected ? "Selected" : "Available"}
+                        </Badge>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                        <div>
+                          <span className="text-gray-600">Capacity:</span>
+                          <p className="font-semibold">{tank.capacity.toLocaleString()}L</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Current:</span>
+                          <p className="font-semibold">{tank.currentVolume.toLocaleString()}L</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Available:</span>
+                          <p className="font-semibold text-green-600">{availableCapacity.toLocaleString()}L</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Product:</span>
+                          <p className="font-semibold">{tank.product.name}</p>
+                        </div>
+                      </div>
+
+                      {/* Connected Pumps */}
+                      <div className="mb-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Zap className="w-4 h-4 text-yellow-600" />
+                          <span className="font-medium text-sm text-gray-700">Connected Pumps:</span>
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                          {tank.connectedPumps.map(pump => (
+                            <Badge key={pump.id} variant="outline" className="text-xs bg-white">
+                              {pump.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    
                     <Button
-                      variant={isSelected ? "cosmic" : "outline"}
+                      variant={isSelected ? "secondary" : "cosmic"}
                       onClick={() => handleTankToggle(tank)}
                       icon={isSelected ? Minus : Plus}
                       size="sm"
                     >
                       {isSelected ? 'Remove' : 'Add'}
                     </Button>
-                    <div>
-                      <h4 className="font-semibold">{tank.name}</h4>
-                      <p className="text-sm text-gray-600">
-                        Capacity: {tank.capacity}L • Current: {tank.currentVolume}L • 
-                        Available: {tank.capacity - tank.currentVolume}L
-                      </p>
-                      <div className="flex gap-2 mt-1">
-                        <Badge variant="success">{tank.connectedPumps.length} Pumps</Badge>
-                        <Badge variant="outline">{tank.product.name}</Badge>
+                  </div>
+
+                  {/* Volume Allocation */}
+                  {isSelected && (
+                    <div className="p-4 bg-white border border-gray-200 rounded-lg">
+                      <h5 className="font-semibold text-gray-900 mb-3">Volume Allocation</h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input
+                          label="Expected Volume (Liters)"
+                          type="number"
+                          value={tankOffload?.expectedVolume || ''}
+                          onChange={(e) => handleVolumeChange(tank.id, 'expectedVolume', e.target.value)}
+                          placeholder="Enter volume"
+                          max={availableCapacity}
+                          min="0"
+                        />
+                        <div className="space-y-2">
+                          <p className="text-sm text-gray-600">Capacity After Offload:</p>
+                          <p className="font-semibold text-lg">
+                            {tank.currentVolume + (tankOffload?.expectedVolume || 0)} / {tank.capacity}L
+                          </p>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div 
+                              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                              style={{ 
+                                width: `${Math.min(
+                                  ((tank.currentVolume + (tankOffload?.expectedVolume || 0)) / tank.capacity) * 100, 
+                                  100
+                                )}%` 
+                              }}
+                            ></div>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  
-                  <Badge variant={isSelected ? "success" : "outline"}>
-                    {isSelected ? "Selected" : "Available"}
-                  </Badge>
-                </div>
-
-                {/* Connected Pumps */}
-                <div className="mb-4">
-                  <h5 className="font-medium text-sm mb-2">Connected Pumps:</h5>
-                  <div className="flex gap-2 flex-wrap">
-                    {tank.connectedPumps.map(pump => (
-                      <Badge key={pump.id} variant="outline" className="text-xs">
-                        {pump.name} ({pump.island})
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Volume Allocation (only if selected) */}
-                {isSelected && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
-                    <Input
-                      label="Expected Volume (L)"
-                      type="number"
-                      value={tankOffload?.expectedVolume || ''}
-                      onChange={(e) => handleVolumeChange(tank.id, 'expectedVolume', e.target.value)}
-                      placeholder="Enter volume"
-                      max={tank.capacity - tank.currentVolume}
-                    />
-                    <div className="flex items-end">
-                      <div className="text-sm">
-                        <p className="text-gray-600">Tank capacity after offload:</p>
-                        <p className="font-semibold">
-                          {tank.currentVolume + (tankOffload?.expectedVolume || 0)} / {tank.capacity}L
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </Card>
-            );
-          })}
+                  )}
+                </Card>
+              );
+            })}
+          </div>
         </div>
       </Card>
+
+      {/* Selection Summary */}
+      {offloadData.tankOffloads.length > 0 && (
+        <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+          <div className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-semibold text-blue-900 mb-1">Ready to Proceed</h4>
+                <p className="text-blue-700">
+                  {offloadData.tankOffloads.length} tank(s) selected • {totalAllocatedVolume.toLocaleString()}L allocated
+                </p>
+              </div>
+              <Badge variant="success" className="text-lg px-4 py-2">
+                {remainingVolume === 0 ? 'Fully Allocated' : `${remainingVolume}L Remaining`}
+              </Badge>
+            </div>
+          </div>
+        </Card>
+      )}
     </div>
   );
 };

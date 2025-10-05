@@ -7,7 +7,7 @@ import {
 import { Button } from '../../ui';
 import { useApp, useAppDispatch, logout } from '../../../context/AppContext';
 import CompanyOverview from '@/components/dashboards/common/CompanyOverview';
-import DashboardOverview from '../common/DashboardOverview';
+import DashboardOverview from '@/components/dashboards/common/DashboardOverview';
 import ServiceStationManagement from '@/components/features/stations/ServiceStationManagement';
 import PlaceholderComponent from './PlaceholderComponent';
 import CreateAssetModal from './CreateAssetModal';
@@ -17,6 +17,7 @@ import CompanyStationsManagement from './stations/CompanyStationsManagement';
 import FuelPurchaseManagement from './purchases/PurchaseManagement';
 import FuelManagement from './products/FuelManagement';
 import ShiftCreationWizard from '../common/shiftWizard/ShiftCreationWizard';
+import CompanyDashboardOverview from '../common/CompanyDashboardOverview';
 
 const CompanyAdminDashboard = () => {
   const { state } = useApp();
@@ -50,7 +51,7 @@ const CompanyAdminDashboard = () => {
   const renderContent = () => {
     switch (activeSection) {
       case 'overview':
-        return <DashboardOverview />;
+        return <CompanyDashboardOverview />;
       case 'stations':
         return <CompanyStationsManagement />;
       case 'assets':

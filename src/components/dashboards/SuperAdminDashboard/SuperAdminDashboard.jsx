@@ -1,17 +1,24 @@
 import React, { useState } from 'react';
 import { 
   BarChart3, Building2, Users, Server, TrendingUp, 
-  Flame, Eye, Edit, Plus, Shield 
+  Flame, Eye, Edit, Plus, Shield, 
+  TrendingDown,
+  Logs
 } from 'lucide-react';
 import { Button } from '../../../components/ui';
 import { useApp,useAppDispatch,logout } from '../../../context/AppContext';
 import OverviewSection from './OverviewSection';
 import DashboardOverview from '../common/DashboardOverview';
+import SuperAdminDashboardOverView from '../common/SuperAdminDashBoardOverView';
+//import SalesMetrics from './sales/SalesMetrics';
+import ActivityManagement from '../common/activityLogs/ActivityManagement';
 import CompanyManagement from './CompanyManagement';
 import UserManagement from './UserManagement';
 import SystemManagement from './SystemManagement';
 import SystemAnalytics from './SystemAnalytics';
 import CreateCompanyModal from './CreateCompanyModal';
+import PlaceholderComponent from '../CompanyAdminDashboard/PlaceholderComponent';
+
 
 const SuperAdminDashboard = () => {
   const { state } = useApp();
@@ -23,8 +30,10 @@ const SuperAdminDashboard = () => {
     { id: 'overview', label: 'Overview', icon: BarChart3 },
     { id: 'companies', label: 'Companies', icon: Building2 },
     { id: 'users', label: 'Users', icon: Users },
+      { id: 'sales', label: 'Sales', icon: TrendingUp },
     { id: 'system', label: 'System', icon: Server },
-    { id: 'analytics', label: 'Analytics', icon: TrendingUp }
+    { id: 'analytics', label: 'Analytics', icon: TrendingDown },
+    { id: 'activity', label: 'Activity', icon: Logs }
   ];
 
 
@@ -46,15 +55,20 @@ const SuperAdminDashboard = () => {
   const renderContent = () => {
     switch (activeSection) {
       case 'overview':
-        return <DashboardOverview />;
+        return <SuperAdminDashboardOverView />;
       case 'companies':
         return <CompanyManagement onCreateCompany={() => setShowCreateCompanyModal(true)} />;
       case 'users':
         return <UserManagement />;
+        case 'sales':
+         // return <SalesMetrics />;
+         return <PlaceholderComponent title="sales coming soon"/>
       case 'system':
         return <SystemManagement />;
       case 'analytics':
         return <SystemAnalytics />;
+        case 'activity':
+          return <ActivityManagement />;
       default:
         return <OverviewSection />;
     }
