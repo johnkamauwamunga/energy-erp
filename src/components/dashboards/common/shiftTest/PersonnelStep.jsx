@@ -15,17 +15,13 @@ const PersonnelStep = ({ data, onChange, stationId }) => {
   const fetchPersonnel = async () => {
     setLoading(true);
     try {
-      // Use mock service
       const stationUsers = await mockServices.userService.getStationUsers(stationId);
-      
       const supervisorsList = stationUsers.filter(user => 
         user.role === 'SUPERVISOR' && user.status === 'ACTIVE'
       );
-      
       const attendantsList = stationUsers.filter(user => 
         user.role === 'ATTENDANT' && user.status === 'ACTIVE'
       );
-
       setSupervisors(supervisorsList);
       setAttendants(attendantsList);
     } catch (error) {
@@ -44,7 +40,6 @@ const PersonnelStep = ({ data, onChange, stationId }) => {
     const updatedAttendants = isSelected
       ? data.attendants.filter(id => id !== attendantId)
       : [...data.attendants, attendantId];
-    
     onChange({ attendants: updatedAttendants });
   };
 
@@ -53,42 +48,41 @@ const PersonnelStep = ({ data, onChange, stationId }) => {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Supervisor Selection */}
-      <Card title="Assign Supervisor" className="p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <UserCheck className="w-5 h-5 text-green-600" />
-          <span className="font-semibold">Select Shift Supervisor</span>
+    <div className="space-y-4">
+      {/* Supervisor Selection - Compact */}
+      <Card className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <UserCheck className="w-4 h-4 text-green-600" />
+          <span className="font-semibold text-sm">Shift Supervisor</span>
         </div>
 
         <Select
-          label="Supervisor"
           value={data.supervisorId}
           onChange={handleSupervisorSelect}
           options={supervisors.map(sup => ({
             value: sup.id,
             label: `${sup.firstName} ${sup.lastName}`
           }))}
-          placeholder="Select a supervisor..."
+          placeholder="Select supervisor..."
           required
+          size="sm"
         />
         
         {data.supervisorId && (
-          <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
-            <div className="flex items-center gap-3">
+          <div className="mt-3 p-3 bg-green-50 rounded border border-green-200">
+            <div className="flex items-center gap-2">
               <Avatar 
                 name={getSelectedSupervisor()?.firstName || ''}
-                size="sm"
-                className="bg-green-100 text-green-800"
+                size="xs"
+                className="bg-green-100 text-green-800 text-xs"
               />
-              <div className="flex-1">
-                <p className="font-semibold text-green-900">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-green-900 text-sm truncate">
                   {getSelectedSupervisor()?.firstName} {getSelectedSupervisor()?.lastName}
                 </p>
-                <p className="text-green-700 text-sm">{getSelectedSupervisor()?.email}</p>
-                <p className="text-green-600 text-xs">{getSelectedSupervisor()?.phone}</p>
+                <p className="text-green-700 text-xs truncate">{getSelectedSupervisor()?.email}</p>
               </div>
-              <Badge variant="success" className="text-xs">
+              <Badge variant="success" size="sm">
                 Supervisor
               </Badge>
             </div>
@@ -96,55 +90,51 @@ const PersonnelStep = ({ data, onChange, stationId }) => {
         )}
       </Card>
 
-      {/* Attendants Selection */}
-      <Card title="Select Attendants" className="p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <Users className="w-5 h-5 text-blue-600" />
-          <span className="font-semibold">
-            Available Attendants ({data.attendants.length} selected)
+      {/* Attendants Selection - Compact */}
+      <Card className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Users className="w-4 h-4 text-blue-600" />
+          <span className="font-semibold text-sm">
+            Attendants ({data.attendants.length} selected)
           </span>
         </div>
 
-        <Alert variant="info" className="mb-4">
-          <div className="flex items-start gap-3">
-            <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm">
-                Select attendants who will be working this shift. You'll assign them to specific islands in the next step.
-              </p>
-            </div>
+        <Alert variant="info" className="mb-3 text-xs" size="sm">
+          <div className="flex items-start gap-2">
+            <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+            <p>Select attendants for this shift. Island assignments come next.</p>
           </div>
         </Alert>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
+        <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-64 overflow-y-auto">
           {attendants.map(attendant => (
             <div
               key={attendant.id}
-              className={`p-4 border rounded-lg cursor-pointer transition-all ${
+              className={`p-2 border rounded-md cursor-pointer transition-colors ${
                 data.attendants.includes(attendant.id)
-                  ? 'border-blue-500 bg-blue-50 shadow-sm'
+                  ? 'border-blue-500 bg-blue-50'
                   : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
               }`}
               onClick={() => toggleAttendantSelection(attendant.id)}
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Avatar 
-                    name={attendant.firstName} 
-                    size="sm"
-                    className={data.attendants.includes(attendant.id) ? 'bg-blue-100 text-blue-800' : 'bg-gray-100'}
-                  />
-                  <div>
-                    <p className="font-medium">
-                      {attendant.firstName} {attendant.lastName}
-                    </p>
-                    <p className="text-sm text-gray-600">{attendant.email}</p>
-                  </div>
+              <div className="flex items-center gap-2">
+                <Avatar 
+                  name={attendant.firstName} 
+                  size="xs"
+                  className={data.attendants.includes(attendant.id) 
+                    ? 'bg-blue-100 text-blue-800 text-xs' 
+                    : 'bg-gray-100 text-xs'
+                  }
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">
+                    {attendant.firstName} {attendant.lastName}
+                  </p>
+                  <p className="text-gray-600 text-xs truncate">{attendant.email}</p>
                 </div>
-                
                 {data.attendants.includes(attendant.id) && (
-                  <Badge variant="success" className="text-xs">
-                    Selected
+                  <Badge variant="success" size="sm" className="flex-shrink-0">
+                    ✓
                   </Badge>
                 )}
               </div>
@@ -153,31 +143,31 @@ const PersonnelStep = ({ data, onChange, stationId }) => {
         </div>
 
         {attendants.length === 0 && !loading && (
-          <div className="text-center py-8 text-gray-500">
-            <User className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p>No active attendants found for this station</p>
+          <div className="text-center py-4 text-gray-500">
+            <User className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+            <p className="text-sm">No active attendants found</p>
           </div>
         )}
       </Card>
 
-      {/* Selection Summary */}
+      {/* Compact Summary */}
       {(data.supervisorId || data.attendants.length > 0) && (
-        <Card title="Assignment Summary" className="p-4 bg-gray-50">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <div className="bg-gray-50 rounded-lg p-3 border">
+          <div className="grid grid-cols-2 gap-3 text-xs">
             {data.supervisorId && (
               <div>
-                <p className="font-semibold text-gray-700">Supervisor</p>
-                <p className="text-gray-900">
+                <p className="font-semibold text-gray-600">Supervisor</p>
+                <p className="text-gray-900 truncate">
                   {getSelectedSupervisor()?.firstName} {getSelectedSupervisor()?.lastName}
                 </p>
               </div>
             )}
             <div>
-              <p className="font-semibold text-gray-700">Attendants Selected</p>
-              <p className="text-gray-900">{data.attendants.length} attendants</p>
+              <p className="font-semibold text-gray-600">Attendants</p>
+              <p className="text-gray-900">{data.attendants.length} selected</p>
             </div>
           </div>
-        </Card>
+        </div>
       )}
     </div>
   );

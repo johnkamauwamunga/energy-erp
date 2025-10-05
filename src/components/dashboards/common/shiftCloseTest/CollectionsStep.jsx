@@ -79,22 +79,21 @@ const CollectionsStep = ({ shiftData, closingData, onChange }) => {
   };
 
   return (
-    <div className="space-y-6">
-      <Alert variant="info">
-        <div className="flex items-start gap-3">
-          <Calculator className="w-5 h-5 mt-0.5" />
+    <div className="space-y-4">
+      {/* Compact Alert */}
+      <Alert variant="info" className="text-sm" size="sm">
+        <div className="flex items-start gap-2">
+          <Calculator className="w-3 h-3 mt-0.5 flex-shrink-0" />
           <div>
-            <h4 className="font-semibold mb-1">Record Island Collections</h4>
-            <p className="text-sm">
-              Enter actual collections for each island. Compare with expected amounts calculated from pump sales.
-            </p>
+            <p className="font-medium">Record Island Collections</p>
+            <p>Enter actual collections. Compare with expected amounts from pump sales.</p>
           </div>
         </div>
       </Alert>
 
-      <Card title="Island Collections" className="p-6">
-        {/* Islands Tabs */}
-        <Tabs value={activeIslandTab} onChange={setActiveIslandTab}>
+      <Card className="p-4">
+        {/* Compact Islands Tabs */}
+        <Tabs value={activeIslandTab} onChange={setActiveIslandTab} size="sm">
           {shiftIslandAttedant.map(assignment => {
             const isCompleted = getIslandCompletionStatus(assignment.islandId);
             const collection = islandCollections.find(col => col.islandId === assignment.islandId);
@@ -108,15 +107,15 @@ const CollectionsStep = ({ shiftData, closingData, onChange }) => {
                 value={assignment.islandId}
                 badge={isCompleted ? '✓' : null}
               >
-                <div className="flex items-center gap-2">
-                  {assignment.island.name}
+                <div className="flex items-center gap-1 text-xs">
+                  <span className="truncate max-w-20">{assignment.island.name}</span>
                   {isCompleted && varianceStatus === 'exact' && (
-                    <CheckCircle className="w-4 h-4 text-green-500" />
+                    <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />
                   )}
                   {isCompleted && varianceStatus !== 'exact' && (
                     varianceStatus === 'over' ? 
-                      <TrendingUp className="w-4 h-4 text-orange-500" /> :
-                      <TrendingDown className="w-4 h-4 text-red-500" />
+                      <TrendingUp className="w-3 h-3 text-orange-500 flex-shrink-0" /> :
+                      <TrendingDown className="w-3 h-3 text-red-500 flex-shrink-0" />
                   )}
                 </div>
               </Tab>
@@ -126,43 +125,43 @@ const CollectionsStep = ({ shiftData, closingData, onChange }) => {
 
         {/* Island Collection Content */}
         {getCurrentIsland() && (
-          <div className="mt-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h4 className="font-semibold text-lg">
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex-1 min-w-0">
+                <h4 className="font-semibold text-sm truncate">
                   {getCurrentIsland().island.name} Collections
                 </h4>
-                <p className="text-sm text-gray-600">
-                  Attendant: {getCurrentIsland().attendant.firstName} {getCurrentIsland().attendant.lastName}
+                <p className="text-gray-600 text-xs truncate">
+                  {getCurrentIsland().attendant.firstName}
                 </p>
               </div>
               
               <Badge variant={
                 getIslandCompletionStatus(getCurrentIsland().islandId) ? "success" : "warning"
-              }>
-                {getIslandCompletionStatus(getCurrentIsland().islandId) ? "Recorded" : "Pending"}
+              } size="sm">
+                {getIslandCompletionStatus(getCurrentIsland().islandId) ? "✓" : "Pending"}
               </Badge>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Left Column: Expected Amount & Sales Breakdown */}
-              <div>
-                <div className="bg-blue-50 p-4 rounded-lg mb-6">
-                  <h5 className="font-medium mb-3 text-blue-900 flex items-center gap-2">
-                    <Calculator className="w-4 h-4" />
+              <div className="space-y-3">
+                <div className="bg-blue-50 p-3 rounded border border-blue-200">
+                  <h5 className="font-medium mb-2 text-blue-900 text-sm flex items-center gap-1">
+                    <Calculator className="w-3 h-3" />
                     Expected Collection
                   </h5>
                   
-                  <div className="space-y-3">
+                  <div className="space-y-2 text-xs">
                     <div className="flex justify-between items-center">
                       <span className="text-blue-700">Fuel Sales:</span>
                       <span className="font-semibold text-blue-900">
-                        KES {getCurrentIslandCollection().expectedAmount?.toFixed(2) || '0.00'}
+                        KES {(getCurrentIslandCollection().expectedAmount || 0).toFixed(0)}
                       </span>
                     </div>
                     
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-blue-600">Pumps in Island:</span>
+                    <div className="flex justify-between items-center">
+                      <span className="text-blue-600">Pumps:</span>
                       <span className="text-blue-800">
                         {pumpReadings.filter(p => {
                           const pump = shiftData.meterReadings.find(mr => mr.pumpId === p.pumpId);
@@ -170,32 +169,13 @@ const CollectionsStep = ({ shiftData, closingData, onChange }) => {
                         }).length}
                       </span>
                     </div>
-
-                    {/* Pump Sales Breakdown */}
-                    <div className="mt-3 pt-3 border-t border-blue-200">
-                      <h6 className="font-medium text-blue-900 mb-2 text-sm">Pump Sales Breakdown:</h6>
-                      {pumpReadings
-                        .filter(p => {
-                          const pump = shiftData.meterReadings.find(mr => mr.pumpId === p.pumpId);
-                          return pump?.pump?.islandId === getCurrentIsland().islandId;
-                        })
-                        .map(pump => {
-                          const pumpData = shiftData.meterReadings.find(mr => mr.pumpId === pump.pumpId);
-                          return (
-                            <div key={pump.pumpId} className="flex justify-between items-center text-xs mb-1">
-                              <span className="text-blue-600">{pumpData?.pump?.asset.name}:</span>
-                              <span className="text-blue-800">KES {(pump.salesValue || 0).toFixed(2)}</span>
-                            </div>
-                          );
-                        })}
-                    </div>
                   </div>
                 </div>
 
                 {/* Variance Display */}
                 {getCurrentIslandCollection().expectedAmount > 0 && 
                  closingCalculations.calculateTotalCollected(getCurrentIslandCollection()) > 0 && (
-                  <div className={`p-4 rounded-lg border ${
+                  <div className={`p-3 rounded border text-xs ${
                     getVarianceStatus(
                       getCurrentIslandCollection().expectedAmount,
                       closingCalculations.calculateTotalCollected(getCurrentIslandCollection())
@@ -203,38 +183,38 @@ const CollectionsStep = ({ shiftData, closingData, onChange }) => {
                       ? 'bg-green-50 border-green-200' 
                       : 'bg-orange-50 border-orange-200'
                   }`}>
-                    <h5 className="font-medium mb-2 flex items-center gap-2">
+                    <h5 className="font-medium mb-2 flex items-center gap-1">
                       {getVarianceStatus(
                         getCurrentIslandCollection().expectedAmount,
                         closingCalculations.calculateTotalCollected(getCurrentIslandCollection())
                       ) === 'exact' ? (
-                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        <CheckCircle className="w-3 h-3 text-green-600" />
                       ) : getVarianceStatus(
                         getCurrentIslandCollection().expectedAmount,
                         closingCalculations.calculateTotalCollected(getCurrentIslandCollection())
                       ) === 'over' ? (
-                        <TrendingUp className="w-4 h-4 text-orange-600" />
+                        <TrendingUp className="w-3 h-3 text-orange-600" />
                       ) : (
-                        <TrendingDown className="w-4 h-4 text-red-600" />
+                        <TrendingDown className="w-3 h-3 text-red-600" />
                       )}
-                      Collection Variance
+                      Variance
                     </h5>
                     
-                    <div className="space-y-2 text-sm">
+                    <div className="space-y-1">
                       <div className="flex justify-between">
                         <span>Expected:</span>
                         <span className="font-semibold">
-                          KES {getCurrentIslandCollection().expectedAmount.toFixed(2)}
+                          KES {(getCurrentIslandCollection().expectedAmount || 0).toFixed(0)}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Actual:</span>
                         <span className="font-semibold">
-                          KES {closingCalculations.calculateTotalCollected(getCurrentIslandCollection()).toFixed(2)}
+                          KES {closingCalculations.calculateTotalCollected(getCurrentIslandCollection()).toFixed(0)}
                         </span>
                       </div>
-                      <div className="flex justify-between pt-2 border-t">
-                        <span>Variance:</span>
+                      <div className="flex justify-between pt-1 border-t">
+                        <span>Difference:</span>
                         <span className={`font-semibold ${
                           getVarianceStatus(
                             getCurrentIslandCollection().expectedAmount,
@@ -247,8 +227,8 @@ const CollectionsStep = ({ shiftData, closingData, onChange }) => {
                         }`}>
                           KES {(
                             closingCalculations.calculateTotalCollected(getCurrentIslandCollection()) - 
-                            getCurrentIslandCollection().expectedAmount
-                          ).toFixed(2)}
+                            (getCurrentIslandCollection().expectedAmount || 0)
+                          ).toFixed(0)}
                         </span>
                       </div>
                     </div>
@@ -258,83 +238,91 @@ const CollectionsStep = ({ shiftData, closingData, onChange }) => {
 
               {/* Right Column: Collection Inputs */}
               <div>
-                <h5 className="font-medium mb-4 flex items-center gap-2">
-                  <DollarSign className="w-4 h-4" />
+                <h5 className="font-medium mb-3 text-sm flex items-center gap-1">
+                  <DollarSign className="w-3 h-3" />
                   Actual Collections
                 </h5>
 
-                <div className="space-y-4">
-                  <Input
-                    label="Cash Amount"
-                    type="number"
-                    value={getCurrentIslandCollection().cashAmount || ''}
-                    onChange={(e) => 
-                      handleCollectionUpdate(getCurrentIsland().islandId, 'cashAmount', e.target.value)
-                    }
-                    placeholder="0.00"
-                  />
-                  
-                  <Input
-                    label="Mobile Money"
-                    type="number"
-                    value={getCurrentIslandCollection().mobileMoneyAmount || ''}
-                    onChange={(e) => 
-                      handleCollectionUpdate(getCurrentIsland().islandId, 'mobileMoneyAmount', e.target.value)
-                    }
-                    placeholder="0.00"
-                  />
-
-                  <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
                     <Input
-                      label="Visa Card"
+                      label="Cash"
                       type="number"
+                      size="sm"
+                      value={getCurrentIslandCollection().cashAmount || ''}
+                      onChange={(e) => 
+                        handleCollectionUpdate(getCurrentIsland().islandId, 'cashAmount', e.target.value)
+                      }
+                      placeholder="0"
+                    />
+                    
+                    <Input
+                      label="Mobile Money"
+                      type="number"
+                      size="sm"
+                      value={getCurrentIslandCollection().mobileMoneyAmount || ''}
+                      onChange={(e) => 
+                        handleCollectionUpdate(getCurrentIsland().islandId, 'mobileMoneyAmount', e.target.value)
+                      }
+                      placeholder="0"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      label="Visa"
+                      type="number"
+                      size="sm"
                       value={getCurrentIslandCollection().visaAmount || ''}
                       onChange={(e) => 
                         handleCollectionUpdate(getCurrentIsland().islandId, 'visaAmount', e.target.value)
                       }
-                      placeholder="0.00"
+                      placeholder="0"
                     />
                     
                     <Input
                       label="MasterCard"
                       type="number"
+                      size="sm"
                       value={getCurrentIslandCollection().mastercardAmount || ''}
                       onChange={(e) => 
                         handleCollectionUpdate(getCurrentIsland().islandId, 'mastercardAmount', e.target.value)
                       }
-                      placeholder="0.00"
+                      placeholder="0"
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-2">
                     <Input
-                      label="Debt Amount"
+                      label="Debt"
                       type="number"
+                      size="sm"
                       value={getCurrentIslandCollection().debtAmount || ''}
                       onChange={(e) => 
                         handleCollectionUpdate(getCurrentIsland().islandId, 'debtAmount', e.target.value)
                       }
-                      placeholder="0.00"
+                      placeholder="0"
                     />
                     
                     <Input
-                      label="Other Amount"
+                      label="Other"
                       type="number"
+                      size="sm"
                       value={getCurrentIslandCollection().otherAmount || ''}
                       onChange={(e) => 
                         handleCollectionUpdate(getCurrentIsland().islandId, 'otherAmount', e.target.value)
                       }
-                      placeholder="0.00"
+                      placeholder="0"
                     />
                   </div>
 
                   {/* Total Collected Display */}
                   {closingCalculations.calculateTotalCollected(getCurrentIslandCollection()) > 0 && (
-                    <div className="bg-gray-50 p-3 rounded-lg">
+                    <div className="bg-gray-50 p-2 rounded text-xs">
                       <div className="flex justify-between items-center">
-                        <span className="font-medium">Total Collected:</span>
-                        <span className="text-lg font-bold text-green-600">
-                          KES {closingCalculations.calculateTotalCollected(getCurrentIslandCollection()).toFixed(2)}
+                        <span className="font-medium">Total:</span>
+                        <span className="font-bold text-green-600">
+                          KES {closingCalculations.calculateTotalCollected(getCurrentIslandCollection()).toFixed(0)}
                         </span>
                       </div>
                     </div>
@@ -346,9 +334,9 @@ const CollectionsStep = ({ shiftData, closingData, onChange }) => {
         )}
       </Card>
 
-      {/* Progress Summary */}
-      <Card title="Collection Progress" className="p-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Compact Progress Summary */}
+      <div className="bg-gray-50 rounded-lg p-3 border">
+        <div className="grid grid-cols-2 xs:grid-cols-4 gap-3 text-xs">
           {shiftIslandAttedant.map(assignment => {
             const collection = islandCollections.find(col => col.islandId === assignment.islandId);
             const expected = collection?.expectedAmount || 0;
@@ -357,38 +345,38 @@ const CollectionsStep = ({ shiftData, closingData, onChange }) => {
             const isCompleted = getIslandCompletionStatus(assignment.islandId);
 
             return (
-              <div key={assignment.islandId} className="text-center p-3 border rounded-lg">
-                <p className="font-semibold text-gray-700 mb-2">{assignment.island.name}</p>
+              <div key={assignment.islandId} className="text-center">
+                <p className="font-semibold text-gray-700 truncate mb-1">{assignment.island.name}</p>
                 
                 {isCompleted ? (
                   <>
-                    <div className={`text-lg font-bold mb-1 ${
+                    <div className={`text-base font-bold mb-1 ${
                       varianceStatus === 'exact' ? 'text-green-600' :
                       varianceStatus === 'over' ? 'text-orange-600' : 'text-red-600'
                     }`}>
                       KES {actual.toFixed(0)}
                     </div>
-                    <div className="flex items-center justify-center gap-1 text-xs">
-                      {varianceStatus === 'exact' && <CheckCircle className="w-3 h-3 text-green-500" />}
-                      {varianceStatus === 'over' && <TrendingUp className="w-3 h-3 text-orange-500" />}
-                      {varianceStatus === 'under' && <TrendingDown className="w-3 h-3 text-red-500" />}
+                    <div className="flex items-center justify-center gap-1">
+                      {varianceStatus === 'exact' && <CheckCircle className="w-2 h-2 text-green-500" />}
+                      {varianceStatus === 'over' && <TrendingUp className="w-2 h-2 text-orange-500" />}
+                      {varianceStatus === 'under' && <TrendingDown className="w-2 h-2 text-red-500" />}
                       <span className={
                         varianceStatus === 'exact' ? 'text-green-600' :
                         varianceStatus === 'over' ? 'text-orange-600' : 'text-red-600'
                       }>
-                        {varianceStatus === 'exact' ? 'Exact' : 
-                         varianceStatus === 'over' ? 'Over' : 'Under'}
+                        {varianceStatus === 'exact' ? '✓' : 
+                         varianceStatus === 'over' ? '+' : '-'}
                       </span>
                     </div>
                   </>
                 ) : (
-                  <div className="text-orange-600 text-sm">Pending</div>
+                  <div className="text-orange-600">Pending</div>
                 )}
               </div>
             );
           })}
         </div>
-      </Card>
+      </div>
     </div>
   );
 };

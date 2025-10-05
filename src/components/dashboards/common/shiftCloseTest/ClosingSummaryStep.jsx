@@ -49,265 +49,276 @@ const ClosingSummaryStep = ({ shiftData, closingData }) => {
   const fuelVariance = getVarianceStatus(fuelReconciliationVariance, 0);
 
   return (
-    <div className="space-y-6">
-      <Alert variant="success">
-        <div className="flex items-center gap-3">
-          <CheckCircle className="w-5 h-5" />
+    <div className="space-y-4">
+      {/* Compact Alert */}
+      <Alert variant="success" className="text-sm" size="sm">
+        <div className="flex items-center gap-2">
+          <CheckCircle className="w-4 h-4" />
           <div>
-            <h4 className="font-semibold">Ready to Close Shift</h4>
-            <p>Review all closing data below before finalizing the shift.</p>
+            <p className="font-medium">Ready to Close Shift</p>
+            <p>Review all closing data before finalizing.</p>
           </div>
         </div>
       </Alert>
 
-      {/* Key Metrics Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="p-4 text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Zap className="w-5 h-5 text-blue-600" />
-            <span className="font-semibold">Fuel Sales</span>
+      {/* Compact Key Metrics */}
+      <div className="grid grid-cols-2 xs:grid-cols-4 gap-3">
+        <div className="bg-blue-50 p-3 rounded border border-blue-200 text-center">
+          <div className="flex items-center justify-center gap-1 mb-1">
+            <Zap className="w-3 h-3 text-blue-600" />
+            <span className="font-semibold text-xs">Sales</span>
           </div>
-          <p className="text-2xl font-bold text-blue-600">
-            KES {totalSales.toFixed(2)}
+          <p className="text-lg font-bold text-blue-600">
+            KES {totalSales.toFixed(0)}
           </p>
-          <p className="text-sm text-gray-600">{totalFuelDispensed.toFixed(2)} L</p>
-        </Card>
+          <p className="text-xs text-gray-600">{totalFuelDispensed.toFixed(0)}L</p>
+        </div>
 
-        <Card className="p-4 text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <DollarSign className="w-5 h-5 text-green-600" />
-            <span className="font-semibold">Collections</span>
+        <div className="bg-green-50 p-3 rounded border border-green-200 text-center">
+          <div className="flex items-center justify-center gap-1 mb-1">
+            <DollarSign className="w-3 h-3 text-green-600" />
+            <span className="font-semibold text-xs">Collections</span>
           </div>
-          <p className="text-2xl font-bold text-green-600">
-            KES {totalCollections.toFixed(2)}
+          <p className="text-lg font-bold text-green-600">
+            KES {totalCollections.toFixed(0)}
           </p>
-          <p className="text-sm text-gray-600">{islandCollections.length} islands</p>
-        </Card>
+          <p className="text-xs text-gray-600">{islandCollections.length} islands</p>
+        </div>
 
-        <Card className="p-4 text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            {cashVariance.status === 'exact' && <CheckCircle className="w-5 h-5 text-green-600" />}
-            {cashVariance.status === 'over' && <TrendingUp className="w-5 h-5 text-orange-600" />}
-            {cashVariance.status === 'under' && <TrendingDown className="w-5 h-5 text-red-600" />}
-            <span className="font-semibold">Cash Variance</span>
+        <div className="bg-orange-50 p-3 rounded border border-orange-200 text-center">
+          <div className="flex items-center justify-center gap-1 mb-1">
+            {cashVariance.status === 'exact' && <CheckCircle className="w-3 h-3 text-green-600" />}
+            {cashVariance.status === 'over' && <TrendingUp className="w-3 h-3 text-orange-600" />}
+            {cashVariance.status === 'under' && <TrendingDown className="w-3 h-3 text-red-600" />}
+            <span className="font-semibold text-xs">Cash Var</span>
           </div>
-          <p className={`text-2xl font-bold ${
+          <p className={`text-lg font-bold ${
             cashVariance.color === 'green' ? 'text-green-600' :
             cashVariance.color === 'orange' ? 'text-orange-600' : 'text-red-600'
           }`}>
-            KES {totalVariance.toFixed(2)}
+            KES {totalVariance.toFixed(0)}
           </p>
-          <p className="text-sm text-gray-600">{variancePercentage.toFixed(2)}%</p>
-        </Card>
+          <p className="text-xs text-gray-600">{variancePercentage.toFixed(1)}%</p>
+        </div>
 
-        <Card className="p-4 text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Fuel className="w-5 h-5 text-purple-600" />
-            <span className="font-semibold">Fuel Variance</span>
+        <div className="bg-purple-50 p-3 rounded border border-purple-200 text-center">
+          <div className="flex items-center justify-center gap-1 mb-1">
+            <Fuel className="w-3 h-3 text-purple-600" />
+            <span className="font-semibold text-xs">Fuel Var</span>
           </div>
-          <p className={`text-xl font-bold ${
+          <p className={`text-base font-bold ${
             Math.abs(fuelReconciliationVariance) < 10 ? 'text-green-600' : 'text-orange-600'
           }`}>
-            {fuelReconciliationVariance.toFixed(2)} L
+            {fuelReconciliationVariance.toFixed(0)}L
           </p>
-          <p className="text-sm text-gray-600">Reconciliation</p>
-        </Card>
+          <p className="text-xs text-gray-600">Recon</p>
+        </div>
       </div>
 
-      {/* Pump Sales Summary */}
-      <Card title="Pump Sales Summary" className="p-6">
-        <Table>
-          <thead>
-            <tr>
-              <th>Pump</th>
-              <th>Island</th>
-              <th>Liters Dispensed</th>
-              <th>Sales Value</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pumpReadings.map((reading, index) => {
-              const pump = shiftData.meterReadings.find(mr => mr.pumpId === reading.pumpId);
-              const islandId = pump?.pump?.islandId;
-              
-              return (
-                <tr key={index}>
-                  <td className="font-medium">{getPumpName(reading.pumpId)}</td>
-                  <td>{islandId ? getIslandName(islandId) : 'N/A'}</td>
-                  <td>{reading.litersDispensed?.toFixed(2) || '0.00'} L</td>
-                  <td>KES {(reading.salesValue || 0).toFixed(2)}</td>
-                  <td>
-                    <Badge variant={reading.electricMeter > 0 ? "success" : "warning"}>
-                      {reading.electricMeter > 0 ? "Recorded" : "Missing"}
-                    </Badge>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </Table>
+      {/* Compact Pump Sales Summary */}
+      <Card className="p-4">
+        <h3 className="font-semibold text-sm mb-3 flex items-center gap-1">
+          <Zap className="w-3 h-3" />
+          Pump Sales ({pumpReadings.length})
+        </h3>
+        <div className="overflow-x-auto">
+          <Table size="sm">
+            <thead>
+              <tr>
+                <th className="text-xs">Pump</th>
+                <th className="text-xs">Island</th>
+                <th className="text-xs">Liters</th>
+                <th className="text-xs">Sales</th>
+                <th className="text-xs">Status</th>
+              </tr>
+            </thead>
+            <tbody className="text-xs">
+              {pumpReadings.map((reading, index) => {
+                const pump = shiftData.meterReadings.find(mr => mr.pumpId === reading.pumpId);
+                const islandId = pump?.pump?.islandId;
+                
+                return (
+                  <tr key={index}>
+                    <td className="font-medium truncate max-w-16">{getPumpName(reading.pumpId)}</td>
+                    <td className="truncate max-w-16">{islandId ? getIslandName(islandId) : 'N/A'}</td>
+                    <td>{(reading.litersDispensed || 0).toFixed(0)}L</td>
+                    <td>KES {(reading.salesValue || 0).toFixed(0)}</td>
+                    <td>
+                      <Badge variant={reading.electricMeter > 0 ? "success" : "warning"} size="sm">
+                        {reading.electricMeter > 0 ? "✓" : "⋯"}
+                      </Badge>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        </div>
         
         {pumpReadings.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
-            <Zap className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p>No pump readings recorded</p>
+          <div className="text-center py-4 text-gray-500 text-xs">
+            <Zap className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+            <p>No pump readings</p>
           </div>
         )}
       </Card>
 
-      {/* Tank Readings Summary */}
-      <Card title="Tank Readings Summary" className="p-6">
-        <Table>
-          <thead>
-            <tr>
-              <th>Tank</th>
-              <th>START Dip</th>
-              <th>END Dip</th>
-              <th>Volume Change</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tankReadings.map((reading, index) => {
-              const startReading = shiftData.dipReadings.find(dr => dr.tankId === reading.tankId);
-              const volumeChange = startReading ? reading.volume - startReading.volume : 0;
-              
-              return (
-                <tr key={index}>
-                  <td className="font-medium">{getTankName(reading.tankId)}</td>
-                  <td>{startReading?.dipValue?.toFixed(2) || '0.00'} m</td>
-                  <td>{reading.dipValue?.toFixed(2) || '0.00'} m</td>
-                  <td className={volumeChange < 0 ? 'text-red-600' : 'text-green-600'}>
-                    {volumeChange.toFixed(2)} L
-                  </td>
-                  <td>
-                    <Badge variant={reading.dipValue > 0 ? "success" : "warning"}>
-                      {reading.dipValue > 0 ? "Recorded" : "Missing"}
-                    </Badge>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </Table>
+      {/* Compact Tank Readings Summary */}
+      <Card className="p-4">
+        <h3 className="font-semibold text-sm mb-3 flex items-center gap-1">
+          <Fuel className="w-3 h-3" />
+          Tank Readings ({tankReadings.length})
+        </h3>
+        <div className="overflow-x-auto">
+          <Table size="sm">
+            <thead>
+              <tr>
+                <th className="text-xs">Tank</th>
+                <th className="text-xs">START</th>
+                <th className="text-xs">END</th>
+                <th className="text-xs">Change</th>
+                <th className="text-xs">Status</th>
+              </tr>
+            </thead>
+            <tbody className="text-xs">
+              {tankReadings.map((reading, index) => {
+                const startReading = shiftData.dipReadings.find(dr => dr.tankId === reading.tankId);
+                const volumeChange = startReading ? reading.volume - startReading.volume : 0;
+                
+                return (
+                  <tr key={index}>
+                    <td className="font-medium truncate max-w-16">{getTankName(reading.tankId)}</td>
+                    <td>{(startReading?.dipValue || 0).toFixed(1)}m</td>
+                    <td>{(reading.dipValue || 0).toFixed(1)}m</td>
+                    <td className={volumeChange < 0 ? 'text-red-600' : 'text-green-600'}>
+                      {volumeChange.toFixed(0)}L
+                    </td>
+                    <td>
+                      <Badge variant={reading.dipValue > 0 ? "success" : "warning"} size="sm">
+                        {reading.dipValue > 0 ? "✓" : "⋯"}
+                      </Badge>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        </div>
         
         {tankReadings.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
-            <Fuel className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p>No tank readings recorded</p>
+          <div className="text-center py-4 text-gray-500 text-xs">
+            <Fuel className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+            <p>No tank readings</p>
           </div>
         )}
       </Card>
 
-      {/* Collections Summary */}
-      <Card title="Collections Summary" className="p-6">
-        <Table>
-          <thead>
-            <tr>
-              <th>Island</th>
-              <th>Attendant</th>
-              <th>Expected</th>
-              <th>Actual</th>
-              <th>Variance</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {islandCollections.map((collection, index) => {
-              const assignment = shiftIslandAttedant.find(a => a.islandId === collection.islandId);
-              const expected = collection.expectedAmount || 0;
-              const actual = closingCalculations.calculateTotalCollected(collection);
-              const variance = actual - expected;
-              const variancePercent = expected > 0 ? (variance / expected) * 100 : 0;
-              const varianceInfo = getVarianceStatus(variance, variancePercent);
+      {/* Compact Collections Summary */}
+      <Card className="p-4">
+        <h3 className="font-semibold text-sm mb-3 flex items-center gap-1">
+          <DollarSign className="w-3 h-3" />
+          Collections ({islandCollections.length})
+        </h3>
+        <div className="overflow-x-auto">
+          <Table size="sm">
+            <thead>
+              <tr>
+                <th className="text-xs">Island</th>
+                <th className="text-xs">Expected</th>
+                <th className="text-xs">Actual</th>
+                <th className="text-xs">Variance</th>
+                <th className="text-xs">Status</th>
+              </tr>
+            </thead>
+            <tbody className="text-xs">
+              {islandCollections.map((collection, index) => {
+                const expected = collection.expectedAmount || 0;
+                const actual = closingCalculations.calculateTotalCollected(collection);
+                const variance = actual - expected;
+                const variancePercent = expected > 0 ? (variance / expected) * 100 : 0;
+                const varianceInfo = getVarianceStatus(variance, variancePercent);
 
-              return (
-                <tr key={index}>
-                  <td className="font-medium">{getIslandName(collection.islandId)}</td>
-                  <td>
-                    {assignment ? 
-                      `${assignment.attendant.firstName} ${assignment.attendant.lastName}` : 
-                      'N/A'
-                    }
-                  </td>
-                  <td>KES {expected.toFixed(2)}</td>
-                  <td>KES {actual.toFixed(2)}</td>
-                  <td className={
-                    varianceInfo.color === 'green' ? 'text-green-600' :
-                    varianceInfo.color === 'orange' ? 'text-orange-600' : 'text-red-600'
-                  }>
-                    KES {variance.toFixed(2)} ({variancePercent.toFixed(2)}%)
-                  </td>
-                  <td>
-                    <Badge variant={actual > 0 ? "success" : "warning"}>
-                      {actual > 0 ? "Recorded" : "Missing"}
-                    </Badge>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </Table>
+                return (
+                  <tr key={index}>
+                    <td className="font-medium truncate max-w-16">{getIslandName(collection.islandId)}</td>
+                    <td>KES {expected.toFixed(0)}</td>
+                    <td>KES {actual.toFixed(0)}</td>
+                    <td className={
+                      varianceInfo.color === 'green' ? 'text-green-600' :
+                      varianceInfo.color === 'orange' ? 'text-orange-600' : 'text-red-600'
+                    }>
+                      KES {variance.toFixed(0)}
+                    </td>
+                    <td>
+                      <Badge variant={actual > 0 ? "success" : "warning"} size="sm">
+                        {actual > 0 ? "✓" : "⋯"}
+                      </Badge>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        </div>
         
         {islandCollections.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
-            <DollarSign className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p>No collections recorded</p>
+          <div className="text-center py-4 text-gray-500 text-xs">
+            <DollarSign className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+            <p>No collections</p>
           </div>
         )}
       </Card>
 
-      {/* Final Summary Card */}
-      <Card title="Closing Summary" className="p-6 bg-gradient-to-r from-green-50 to-blue-50">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 text-center">
+      {/* Compact Final Summary */}
+      <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-lg p-4 border">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center text-sm">
           <div>
-            <p className="text-sm text-gray-600 mb-1">Total Sales</p>
-            <p className="text-2xl font-bold text-green-600">KES {totalSales.toFixed(2)}</p>
+            <p className="text-gray-600 mb-1">Sales</p>
+            <p className="text-lg font-bold text-green-600">KES {totalSales.toFixed(0)}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-600 mb-1">Total Collections</p>
-            <p className="text-2xl font-bold text-blue-600">KES {totalCollections.toFixed(2)}</p>
+            <p className="text-gray-600 mb-1">Collections</p>
+            <p className="text-lg font-bold text-blue-600">KES {totalCollections.toFixed(0)}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-600 mb-1">Cash Variance</p>
-            <p className={`text-xl font-bold ${
+            <p className="text-gray-600 mb-1">Cash Var</p>
+            <p className={`text-base font-bold ${
               cashVariance.color === 'green' ? 'text-green-600' :
               cashVariance.color === 'orange' ? 'text-orange-600' : 'text-red-600'
             }`}>
-              KES {totalVariance.toFixed(2)}
+              KES {totalVariance.toFixed(0)}
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-600 mb-1">Fuel Variance</p>
-            <p className={`text-xl font-bold ${
+            <p className="text-gray-600 mb-1">Fuel Var</p>
+            <p className={`text-base font-bold ${
               Math.abs(fuelReconciliationVariance) < 10 ? 'text-green-600' : 'text-orange-600'
             }`}>
-              {fuelReconciliationVariance.toFixed(2)} L
+              {fuelReconciliationVariance.toFixed(0)}L
             </p>
           </div>
         </div>
 
-        {/* Overall Status */}
-        <div className="mt-6 p-4 bg-white rounded-lg border">
+        {/* Compact Overall Status */}
+        <div className="mt-4 p-3 bg-white rounded border text-xs">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-semibold">Overall Closing Status</p>
-              <p className="text-sm text-gray-600">
-                {pumpReadings.length} pumps • {tankReadings.length} tanks • {islandCollections.length} islands
+              <p className="font-semibold">Overall Status</p>
+              <p className="text-gray-600">
+                {pumpReadings.length}P • {tankReadings.length}T • {islandCollections.length}I
               </p>
             </div>
             <Badge variant={
               pumpReadings.length > 0 && tankReadings.length > 0 && islandCollections.length > 0 ? 
               "success" : "warning"
-            }>
+            } size="sm">
               {pumpReadings.length > 0 && tankReadings.length > 0 && islandCollections.length > 0 ?
-                "Ready to Close" : "Incomplete"
+                "Ready" : "Incomplete"
               }
             </Badge>
           </div>
         </div>
-      </Card>
+      </div>
     </div>
   );
 };

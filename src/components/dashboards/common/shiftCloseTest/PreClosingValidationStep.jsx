@@ -10,72 +10,74 @@ const PreClosingValidationStep = ({ shiftData, closingData }) => {
       id: 'shiftStatus',
       label: 'Shift Status',
       status: shiftData.status === 'OPEN',
-      message: shiftData.status === 'OPEN' ? 'Shift is open and ready for closing' : 'Shift is not open'
+      message: shiftData.status === 'OPEN' ? 'Shift is open' : 'Shift not open'
     },
     {
       id: 'openingChecks',
-      label: 'Opening Checks Passed',
+      label: 'Opening Checks',
       status: shiftOpeningCheck?.checksPassed || false,
-      message: shiftOpeningCheck?.checksPassed ? 'All opening checks passed' : 'Opening checks not completed'
+      message: shiftOpeningCheck?.checksPassed ? 'All checks passed' : 'Checks incomplete'
     },
     {
       id: 'pumpReadings',
-      label: 'Opening Pump Readings',
+      label: 'Pump Readings',
       status: meterReadings.length > 0,
-      message: `${meterReadings.length} pump START readings recorded`
+      message: `${meterReadings.length} START readings`
     },
     {
       id: 'tankReadings', 
-      label: 'Opening Tank Readings',
+      label: 'Tank Readings',
       status: dipReadings.length > 0,
-      message: `${dipReadings.length} tank START readings recorded`
+      message: `${dipReadings.length} START readings`
     },
     {
       id: 'islandAssignments',
       label: 'Island Assignments',
       status: shiftIslandAttedant.length > 0,
-      message: `${shiftIslandAttedant.length} islands with attendants assigned`
+      message: `${shiftIslandAttedant.length} islands assigned`
     }
   ];
 
   const allChecksPassed = validationChecks.every(check => check.status);
 
   return (
-    <div className="space-y-6">
-      <Alert variant={allChecksPassed ? "success" : "warning"}>
-        <div className="flex items-center gap-3">
-          {allChecksPassed ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+    <div className="space-y-4">
+      {/* Compact Alert */}
+      <Alert variant={allChecksPassed ? "success" : "warning"} className="text-sm" size="sm">
+        <div className="flex items-center gap-2">
+          {allChecksPassed ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
           <div>
-            <h4 className="font-semibold">
+            <p className="font-medium">
               {allChecksPassed ? 'Ready to Close Shift' : 'Shift Closing Requirements'}
-            </h4>
+            </p>
             <p>
               {allChecksPassed 
-                ? 'All pre-closing checks passed. You can proceed with closing the shift.'
-                : 'Some requirements need attention before closing the shift.'
+                ? 'All pre-closing checks passed. Proceed with closing.'
+                : 'Some requirements need attention before closing.'
               }
             </p>
           </div>
         </div>
       </Alert>
 
-      {/* Validation Checks */}
-      <Card title="Pre-Closing Validation" className="p-6">
-        <div className="space-y-4">
+      {/* Compact Validation Checks */}
+      <Card className="p-4">
+        <h3 className="font-semibold text-sm mb-3">Pre-Closing Validation</h3>
+        <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-2">
           {validationChecks.map(check => (
-            <div key={check.id} className="flex items-center justify-between p-3 border rounded-lg">
-              <div className="flex items-center gap-3">
-                {check.status ? (
-                  <CheckCircle className="w-5 h-5 text-green-500" />
-                ) : (
-                  <XCircle className="w-5 h-5 text-red-500" />
-                )}
-                <div>
-                  <p className="font-medium">{check.label}</p>
-                  <p className="text-sm text-gray-600">{check.message}</p>
-                </div>
+            <div key={check.id} className={`flex items-center gap-2 p-2 border rounded text-xs ${
+              check.status ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
+            }`}>
+              {check.status ? (
+                <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />
+              ) : (
+                <XCircle className="w-3 h-3 text-red-500 flex-shrink-0" />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate">{check.label}</p>
+                <p className="text-gray-600 truncate">{check.message}</p>
               </div>
-              <Badge variant={check.status ? "success" : "error"}>
+              <Badge variant={check.status ? "success" : "error"} size="sm" className="flex-shrink-0">
                 {check.status ? "PASS" : "FAIL"}
               </Badge>
             </div>
@@ -83,79 +85,91 @@ const PreClosingValidationStep = ({ shiftData, closingData }) => {
         </div>
       </Card>
 
-      {/* Opening Data Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="p-4 text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Zap className="w-5 h-5 text-blue-600" />
-            <span className="font-semibold">Pumps</span>
+      {/* Compact Summary Cards */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-blue-50 p-3 rounded border border-blue-200 text-center">
+          <div className="flex items-center justify-center gap-1 mb-1">
+            <Zap className="w-3 h-3 text-blue-600" />
+            <span className="font-semibold text-xs">Pumps</span>
           </div>
-          <p className="text-2xl font-bold text-blue-600">{meterReadings.length}</p>
-          <p className="text-sm text-gray-600">START readings recorded</p>
-        </Card>
+          <p className="text-lg font-bold text-blue-600">{meterReadings.length}</p>
+          <p className="text-xs text-gray-600">START</p>
+        </div>
 
-        <Card className="p-4 text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Fuel className="w-5 h-5 text-orange-600" />
-            <span className="font-semibold">Tanks</span>
+        <div className="bg-orange-50 p-3 rounded border border-orange-200 text-center">
+          <div className="flex items-center justify-center gap-1 mb-1">
+            <Fuel className="w-3 h-3 text-orange-600" />
+            <span className="font-semibold text-xs">Tanks</span>
           </div>
-          <p className="text-2xl font-bold text-orange-600">{dipReadings.length}</p>
-          <p className="text-sm text-gray-600">START dips recorded</p>
-        </Card>
+          <p className="text-lg font-bold text-orange-600">{dipReadings.length}</p>
+          <p className="text-xs text-gray-600">START</p>
+        </div>
 
-        <Card className="p-4 text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Package className="w-5 h-5 text-green-600" />
-            <span className="font-semibold">Islands</span>
+        <div className="bg-green-50 p-3 rounded border border-green-200 text-center">
+          <div className="flex items-center justify-center gap-1 mb-1">
+            <Package className="w-3 h-3 text-green-600" />
+            <span className="font-semibold text-xs">Islands</span>
           </div>
-          <p className="text-2xl font-bold text-green-600">{shiftIslandAttedant.length}</p>
-          <p className="text-sm text-gray-600">With attendants</p>
-        </Card>
+          <p className="text-lg font-bold text-green-600">{shiftIslandAttedant.length}</p>
+          <p className="text-xs text-gray-600">Assigned</p>
+        </div>
       </div>
 
-      {/* Island Assignments Table */}
-      <Card title="Island Assignments" className="p-6">
-        <Table>
-          <thead>
-            <tr>
-              <th>Island</th>
-              <th>Attendant</th>
-              <th>Assignment</th>
-              <th>Pumps</th>
-            </tr>
-          </thead>
-          <tbody>
-            {shiftIslandAttedant.map(assignment => {
-              const islandPumps = meterReadings.filter(reading => 
-                reading.pump?.islandId === assignment.islandId
-              );
-              
-              return (
-                <tr key={assignment.islandId}>
-                  <td className="font-medium">
-                    {assignment.island.name} ({assignment.island.code})
-                  </td>
-                  <td>
-                    {assignment.attendant.firstName} {assignment.attendant.lastName}
-                  </td>
-                  <td>
-                    <Badge variant="success">{assignment.assignmentType}</Badge>
-                  </td>
-                  <td>{islandPumps.length} pumps</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </Table>
+      {/* Compact Island Assignments Table */}
+      <Card className="p-4">
+        <h3 className="font-semibold text-sm mb-3">Island Assignments</h3>
+        <div className="overflow-x-auto">
+          <Table size="sm">
+            <thead>
+              <tr>
+                <th className="text-xs">Island</th>
+                <th className="text-xs">Attendant</th>
+                <th className="text-xs">Type</th>
+                <th className="text-xs">Pumps</th>
+              </tr>
+            </thead>
+            <tbody className="text-xs">
+              {shiftIslandAttedant.map(assignment => {
+                const islandPumps = meterReadings.filter(reading => 
+                  reading.pump?.islandId === assignment.islandId
+                );
+                
+                return (
+                  <tr key={assignment.islandId}>
+                    <td className="font-medium">
+                      <div className="truncate max-w-20">
+                        {assignment.island.name}
+                      </div>
+                      <div className="text-gray-500 text-xs">
+                        {assignment.island.code}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="truncate max-w-20">
+                        {assignment.attendant.firstName} {assignment.attendant.lastName}
+                      </div>
+                    </td>
+                    <td>
+                      <Badge variant="success" size="sm" className="text-xs">
+                        {assignment.assignmentType}
+                      </Badge>
+                    </td>
+                    <td>{islandPumps.length}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        </div>
       </Card>
 
       {!allChecksPassed && (
-        <Alert variant="error">
-          <div className="flex items-start gap-3">
-            <Info className="w-5 h-5 mt-0.5" />
+        <Alert variant="error" className="text-sm" size="sm">
+          <div className="flex items-start gap-2">
+            <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
             <div>
-              <p className="font-semibold">Cannot Proceed</p>
-              <p>Please ensure all opening requirements are met before closing the shift.</p>
+              <p className="font-medium">Cannot Proceed</p>
+              <p>Ensure all opening requirements are met before closing the shift.</p>
             </div>
           </div>
         </Alert>

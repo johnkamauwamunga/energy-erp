@@ -149,23 +149,21 @@ const AfterOffloadStep = ({ purchaseData, offloadData, onChange }) => {
   };
 
   return (
-    <div className="space-y-6">
-      <Alert variant="success">
-        <div className="flex items-start gap-3">
-          <CheckCircle className="w-5 h-5 mt-0.5" />
+    <div className="space-y-4">
+      {/* Compact Alert */}
+      <Alert variant="success" className="text-sm" size="sm">
+        <div className="flex items-start gap-2">
+          <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
           <div>
-            <h4 className="font-semibold mb-1">AFTER Offload Readings</h4>
-            <p className="text-sm">
-              Record tank dip readings, pump meter readings, and actual offloaded volumes AFTER completing the offload.
-              Also track any sales that occurred during the offload process.
-            </p>
+            <p className="font-medium">AFTER Offload Readings</p>
+            <p>Record tank dip, pump meter readings, and actual volumes AFTER offload.</p>
           </div>
         </div>
       </Alert>
 
-      <Card title="After Offload Readings" className="p-6">
-        {/* Tank Tabs */}
-        <Tabs value={activeTankTab} onChange={setActiveTankTab}>
+      <Card className="p-4">
+        {/* Compact Tank Tabs */}
+        <Tabs value={activeTankTab} onChange={setActiveTankTab} size="sm">
           {offloadData.tankOffloads.map(tank => {
             const completion = getTankCompletion(tank.tankId);
             return (
@@ -174,10 +172,10 @@ const AfterOffloadStep = ({ purchaseData, offloadData, onChange }) => {
                 value={tank.tankId}
                 badge={`${completion.pumps}/${completion.totalPumps}`}
               >
-                <div className="flex items-center gap-2">
-                  {tank.tankName}
+                <div className="flex items-center gap-1 text-xs">
+                  <span className="truncate max-w-20">{tank.tankName}</span>
                   {completion.dip && completion.volume && completion.pumps === completion.totalPumps && (
-                    <CheckCircle className="w-4 h-4 text-green-500" />
+                    <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />
                   )}
                 </div>
               </Tab>
@@ -187,40 +185,52 @@ const AfterOffloadStep = ({ purchaseData, offloadData, onChange }) => {
 
         {/* Tank Content */}
         {getCurrentTank() && (
-          <div className="mt-6 space-y-6">
-            {/* Actual Volume Input */}
-            <Card title="Offload Volume" className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="mt-4 space-y-4">
+            {/* Compact Actual Volume Input */}
+            <div className="bg-blue-50 p-3 rounded border border-blue-200">
+              <h4 className="font-semibold text-sm mb-3 flex items-center gap-1">
+                <Fuel className="w-3 h-3" />
+                Offload Volume
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Input
-                  label="Actual Volume Offloaded (L)"
+                  label="Actual Volume (L)"
                   type="number"
+                  size="sm"
                   value={getCurrentTank().actualVolume || ''}
                   onChange={(e) => handleActualVolumeUpdate(e.target.value)}
-                  placeholder="Enter actual volume"
+                  placeholder="0"
                 />
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-600">Expected Volume:</p>
-                  <p className="font-semibold">{getCurrentTank().expectedVolume}L</p>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Expected:</span>
+                    <span className="font-semibold">{getCurrentTank().expectedVolume}L</span>
+                  </div>
                   {getCurrentTank().actualVolume > 0 && (
-                    <div className={`text-sm ${
+                    <div className={`font-semibold ${
                       getCurrentTank().actualVolume === getCurrentTank().expectedVolume 
                         ? 'text-green-600' 
                         : 'text-orange-600'
                     }`}>
-                      Variance: {getCurrentTank().actualVolume - getCurrentTank().expectedVolume}L
+                      Var: {getCurrentTank().actualVolume - getCurrentTank().expectedVolume}L
                     </div>
                   )}
                 </div>
               </div>
-            </Card>
+            </div>
 
-            {/* Tank Dip Reading */}
-            <Card title="Tank Dip Reading - AFTER Offload" className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Compact Tank Dip Reading */}
+            <Card className="p-3">
+              <div className="flex items-center gap-2 mb-3">
+                <Fuel className="w-3 h-3 text-orange-600" />
+                <h4 className="font-semibold text-sm">Tank Dip - AFTER</h4>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 <Input
-                  label="Dip Value (m)"
+                  label="Dip (m)"
                   type="number"
                   step="0.001"
+                  size="sm"
                   value={getCurrentTank().dipAfter?.dipValue || ''}
                   onChange={(e) => handleDipReadingUpdate('dipValue', e.target.value)}
                   placeholder="0.000"
@@ -228,22 +238,25 @@ const AfterOffloadStep = ({ purchaseData, offloadData, onChange }) => {
                 <Input
                   label="Volume (L)"
                   type="number"
+                  size="sm"
                   value={getCurrentTank().dipAfter?.volume || ''}
                   onChange={(e) => handleDipReadingUpdate('volume', e.target.value)}
                   placeholder="0"
                 />
                 <Input
-                  label="Temperature (°C)"
+                  label="Temp (°C)"
                   type="number"
                   step="0.1"
+                  size="sm"
                   value={getCurrentTank().dipAfter?.temperature || ''}
                   onChange={(e) => handleDipReadingUpdate('temperature', e.target.value)}
                   placeholder="25.0"
                 />
                 <Input
-                  label="Density (kg/L)"
+                  label="Density"
                   type="number"
                   step="0.001"
+                  size="sm"
                   value={getCurrentTank().dipAfter?.density || purchaseData.items[0].product.density}
                   onChange={(e) => handleDipReadingUpdate('density', e.target.value)}
                   placeholder="0.850"
@@ -252,17 +265,23 @@ const AfterOffloadStep = ({ purchaseData, offloadData, onChange }) => {
               
               {/* Volume Calculation from Dips */}
               {calculateVolumeFromDips() !== null && (
-                <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-blue-800">
-                    Calculated volume from dips: <strong>{calculateVolumeFromDips()}L</strong>
+                <div className="mt-3 p-2 bg-blue-50 rounded border border-blue-200 text-xs">
+                  <p className="text-blue-800">
+                    Calculated from dips: <strong>{calculateVolumeFromDips()}L</strong>
                   </p>
                 </div>
               )}
             </Card>
 
-            {/* Pump Meter Readings */}
-            <Card title="Pump Meter Readings - AFTER Offload" className="p-4">
-              <div className="space-y-4">
+            {/* Compact Pump Meter Readings */}
+            <Card className="p-3">
+              <div className="flex items-center gap-2 mb-3">
+                <Zap className="w-3 h-3 text-yellow-600" />
+                <h4 className="font-semibold text-sm">
+                  Pump Readings - AFTER ({getCurrentTank().connectedPumps.length})
+                </h4>
+              </div>
+              <div className="space-y-3">
                 {getCurrentTank().connectedPumps.map(pump => {
                   const beforeReading = getPumpReading(pump.id, 'before');
                   const afterReading = getPumpReading(pump.id, 'after');
@@ -271,83 +290,88 @@ const AfterOffloadStep = ({ purchaseData, offloadData, onChange }) => {
                   const litersDispensed = afterReading.electricMeter - beforeReading.electricMeter;
                   
                   return (
-                    <div key={pump.id} className="p-4 border rounded-lg space-y-4">
+                    <div key={pump.id} className="p-3 border rounded space-y-3 text-xs">
                       <div className="flex items-center justify-between">
-                        <h5 className="font-semibold">{pump.name}</h5>
+                        <h5 className="font-semibold truncate">{pump.name}</h5>
                         <Badge variant={
                           afterReading.electricMeter > 0 ? "success" : "warning"
-                        }>
-                          {afterReading.electricMeter > 0 ? "Recorded" : "Pending"}
+                        } size="sm">
+                          {afterReading.electricMeter > 0 ? "✓" : "⋯"}
                         </Badge>
                       </div>
                       
-                      {/* Meter Readings */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Compact Meter Readings */}
+                      <div className="grid grid-cols-3 gap-2">
                         <Input
-                          label="Electric Meter"
+                          label="Electric"
                           type="number"
                           step="0.01"
+                          size="sm"
                           value={afterReading.electricMeter || ''}
                           onChange={(e) => handlePumpReadingUpdate(pump.id, 'electricMeter', e.target.value)}
-                          placeholder="0.00"
+                          placeholder="0"
                         />
                         <Input
-                          label="Manual Meter"
+                          label="Manual"
                           type="number"
                           step="0.01"
+                          size="sm"
                           value={afterReading.manualMeter || ''}
                           onChange={(e) => handlePumpReadingUpdate(pump.id, 'manualMeter', e.target.value)}
-                          placeholder="0.00"
+                          placeholder="0"
                         />
                         <Input
-                          label="Cash Meter"
+                          label="Cash"
                           type="number"
                           step="0.01"
+                          size="sm"
                           value={afterReading.cashMeter || ''}
                           onChange={(e) => handlePumpReadingUpdate(pump.id, 'cashMeter', e.target.value)}
-                          placeholder="0.00"
+                          placeholder="0"
                         />
                       </div>
 
-                      {/* Sales During Offload */}
-                      <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                        <h6 className="font-medium text-yellow-800 mb-3 flex items-center gap-2">
-                          <DollarSign className="w-4 h-4" />
+                      {/* Compact Sales During Offload */}
+                      <div className="p-2 bg-yellow-50 rounded border border-yellow-200">
+                        <h6 className="font-medium text-yellow-800 mb-2 flex items-center gap-1">
+                          <DollarSign className="w-2 h-2" />
                           Sales During Offload
                         </h6>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-2">
                           <Input
-                            label="Liters Sold During Offload"
+                            label="Liters Sold"
                             type="number"
                             step="0.01"
+                            size="sm"
                             value={salesReading.litersSold || ''}
                             onChange={(e) => handleSalesDuringOffload(pump.id, 'litersSold', e.target.value)}
-                            placeholder="0.00"
+                            placeholder="0"
                           />
                           <Input
-                            label="Sales Value (KES)"
+                            label="Sales (KES)"
                             type="number"
                             step="0.01"
+                            size="sm"
                             value={salesReading.salesValue || ''}
                             onChange={(e) => handleSalesDuringOffload(pump.id, 'salesValue', e.target.value)}
-                            placeholder="0.00"
+                            placeholder="0"
                           />
                         </div>
                       </div>
 
-                      {/* Calculated Values */}
+                      {/* Compact Calculated Values */}
                       {litersDispensed > 0 && (
-                        <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                          <h6 className="font-medium text-green-800 mb-2">Calculated During Offload</h6>
-                          <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="p-2 bg-green-50 rounded border border-green-200">
+                          <h6 className="font-medium text-green-800 mb-1">Calculated</h6>
+                          <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <span className="text-green-700">Liters Dispensed:</span>
-                              <p className="font-semibold text-green-900">{litersDispensed.toFixed(2)}L</p>
+                              <span className="text-green-700">Dispensed:</span>
+                              <p className="font-semibold text-green-900">{litersDispensed.toFixed(1)}L</p>
                             </div>
                             <div>
                               <span className="text-green-700">From Sales:</span>
                               <p className="font-semibold text-green-900">
-                                {(salesReading.litersSold || 0).toFixed(2)}L
+                                {(salesReading.litersSold || 0).toFixed(1)}L
                               </p>
                             </div>
                           </div>
@@ -362,36 +386,38 @@ const AfterOffloadStep = ({ purchaseData, offloadData, onChange }) => {
         )}
       </Card>
 
-      {/* Progress Summary */}
-      <Card title="Progress Summary" className="p-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+      {/* Compact Progress Summary */}
+      <div className="bg-gray-50 rounded-lg p-3 border">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
           {offloadData.tankOffloads.map(tank => {
             const completion = getTankCompletion(tank.tankId);
             return (
               <div key={tank.tankId} className="text-center">
-                <p className="font-semibold text-gray-700">{tank.tankName}</p>
-                <div className="space-y-1">
-                  <p className={`text-xs font-bold ${
-                    completion.dip ? 'text-green-600' : 'text-orange-600'
-                  }`}>
-                    Dip: {completion.dip ? '✓' : '✗'}
-                  </p>
-                  <p className={`text-xs font-bold ${
-                    completion.volume ? 'text-green-600' : 'text-orange-600'
-                  }`}>
-                    Volume: {completion.volume ? '✓' : '✗'}
-                  </p>
-                  <p className={`text-xs font-bold ${
+                <p className="font-semibold text-gray-700 truncate">{tank.tankName}</p>
+                <div className="space-y-1 mt-1">
+                  <div className="flex justify-center gap-2">
+                    <span className={`font-bold ${
+                      completion.dip ? 'text-green-600' : 'text-orange-600'
+                    }`}>
+                      D:{completion.dip ? '✓' : '✗'}
+                    </span>
+                    <span className={`font-bold ${
+                      completion.volume ? 'text-green-600' : 'text-orange-600'
+                    }`}>
+                      V:{completion.volume ? '✓' : '✗'}
+                    </span>
+                  </div>
+                  <p className={`font-bold ${
                     completion.pumps === completion.totalPumps ? 'text-green-600' : 'text-blue-600'
                   }`}>
-                    Pumps: {completion.pumps}/{completion.totalPumps}
+                    P:{completion.pumps}/{completion.totalPumps}
                   </p>
                 </div>
               </div>
             );
           })}
         </div>
-      </Card>
+      </div>
     </div>
   );
 };
