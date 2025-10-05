@@ -1,436 +1,479 @@
 import { apiService } from '../apiService';
 
-// Enhanced logging utility
-const logger = {
-  debug: (...args) => console.log('🔍 [FuelService]', ...args),
-  info: (...args) => console.log('ℹ️ [FuelService]', ...args),
-  warn: (...args) => console.warn('⚠️ [FuelService]', ...args),
-  error: (...args) => console.error('❌ [FuelService]', ...args)
-};
-
-// Request/Response debugging utilities
-const debugRequest = (method, url, data) => {
-  logger.debug(`➡️ ${method} ${url}`, data || '');
-};
-
-const debugResponse = (method, url, response) => {
-  logger.debug(`⬅️ ${method} ${url} Response:`, response.data);
-};
-
-// Enhanced response handler utility
-const handleResponse = (response, operation) => {
-  // Handle nested success structure from backend
-  if (response.data && response.data.success) {
-    logger.debug(`${operation} successful`);
-    return response.data.data; // Return the actual data payload
+class FuelService {
+  constructor() {
+    this.logger = {
+      debug: (...args) => console.log('🔍 [FuelService]', ...args),
+      info: (...args) => console.log('ℹ️ [FuelService]', ...args),
+      warn: (...args) => console.warn('⚠️ [FuelService]', ...args),
+      error: (...args) => console.error('❌ [FuelService]', ...args)
+    };
+    
+    this.cache = new Map();
+    this.CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   }
-  
-  // Handle case where backend returns data directly
-  if (response.data) {
-    logger.debug(`${operation} successful (direct data)`);
-    return response.data;
-  }
-  
-  logger.warn(`Unexpected response structure for ${operation}:`, response);
-  throw new Error('Invalid response format from server');
-};
 
-// Enhanced error handler utility
-const handleError = (error, operation, defaultMessage) => {
-  logger.error(`Error during ${operation}:`, error);
-  
-  if (error.response) {
-    const { status, data } = error.response;
-    
-    if (status === 401) {
-      localStorage.removeItem('accessToken');
-      window.location.href = '/login';
-      throw new Error('Authentication failed. Please login again.');
-    }
-    
-    if (status === 403) {
-      throw new Error('You do not have permission to perform this action');
-    }
-    
-    if (status === 404) {
-      throw new Error('Requested resource not found');
-    }
-    
-    if (status === 400) {
-      // Handle backend validation errors
-      if (data.message) {
-        throw new Error(data.message);
-      }
-      if (data.errors) {
-        const errorMessages = Array.isArray(data.errors) 
-          ? data.errors.map(err => err.message || err).join(', ')
-          : JSON.stringify(data.errors);
-        throw new Error(`Validation failed: ${errorMessages}`);
-      }
-    }
-    
-    // Handle backend error format
-    if (data && data.message) {
-      throw new Error(data.message);
-    }
-  } else if (error.request) {
-    throw new Error('Network error. Please check your connection and try again.');
-  }
-  
-  throw new Error(defaultMessage || 'An unexpected error occurred');
-};
-
-export const fuelService = {
   // =====================
-  // FUEL CATEGORY METHODS
+  // CORE UTILITIES
   // =====================
-  
-  createFuelCategory: async (categoryData) => {
-    logger.info('Creating fuel category:', categoryData);
-    debugRequest('POST', '/fuel/categories', categoryData);
+
+  debugRequest = (method, url, data) => {
+    this.logger.debug(`➡️ ${method} ${url}`, data || '');
+  };
+
+  debugResponse = (method, url, response) => {
+    this.logger.debug(`⬅️ ${method} ${url} Response:`, response.data);
+  };
+
+  handleResponse = (response, operation) => {
+    if (response.data?.success) {
+      this.logger.debug(`${operation} successful`);
+      return response.data.data;
+    }
+    
+    if (response.data) {
+      this.logger.debug(`${operation} successful (direct data)`);
+      return response.data;
+    }
+    
+    this.logger.warn(`Unexpected response structure for ${operation}`);
+    throw new Error('Invalid response format from server');
+  };
+
+  handleError = (error, operation, defaultMessage) => {
+    this.logger.error(`${operation} failed:`, error);
+
+    // Network errors
+    if (error.code === 'ECONNABORTED') {
+      throw new Error('Request timeout. Please try again.');
+    }
+    
+    if (error.request) {
+      throw new Error('Network error. Please check your connection.');
+    }
+
+    // HTTP errors
+    if (error.response) {
+      const { status, data } = error.response;
+      
+      switch (status) {
+        case 401:
+          localStorage.removeItem('accessToken');
+          window.location.href = '/login';
+          throw new Error('Authentication failed. Please login again.');
+        
+        case 403:
+          throw new Error('You do not have permission to perform this action.');
+        
+        case 404:
+          throw new Error('Requested resource not found.');
+        
+        case 400:
+          return this.handleValidationError(data);
+        
+        default:
+          if (data?.message) throw new Error(data.message);
+      }
+    }
+
+    throw new Error(defaultMessage || 'An unexpected error occurred');
+  };
+
+  handleValidationError = (data) => {
+    if (data.message) throw new Error(data.message);
+    if (data.errors) {
+      const errorMessages = Array.isArray(data.errors) 
+        ? data.errors.map(err => err.message || err).join(', ')
+        : JSON.stringify(data.errors);
+      throw new Error(`Validation failed: ${errorMessages}`);
+    }
+    throw new Error('Validation failed');
+  };
+
+  buildQueryParams = (filters) => {
+    const params = new URLSearchParams();
+    Object.keys(filters).forEach(key => {
+      if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+        params.append(key, filters[key]);
+      }
+    });
+    return params.toString();
+  };
+
+  // =====================
+  // CACHE MANAGEMENT
+  // =====================
+
+  getCached = (key) => {
+    const cached = this.cache.get(key);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      this.logger.debug(`Cache hit: ${key}`);
+      return cached.data;
+    }
+    this.cache.delete(key);
+    return null;
+  };
+
+  setCached = (key, data) => {
+    this.cache.set(key, { data, timestamp: Date.now() });
+  };
+
+  clearCache = (pattern = null) => {
+    if (pattern) {
+      for (const key of this.cache.keys()) {
+        if (key.includes(pattern)) this.cache.delete(key);
+      }
+    } else {
+      this.cache.clear();
+    }
+  };
+
+  // =====================
+  // FUEL CATEGORIES
+  // =====================
+
+  createFuelCategory = async (categoryData) => {
+    this.logger.info('Creating fuel category:', categoryData);
+    this.debugRequest('POST', '/fuel/categories', categoryData);
     
     try {
       const response = await apiService.post('/fuel/categories', categoryData);
-      debugResponse('POST', '/fuel/categories', response);
-      return handleResponse(response, 'creating fuel category');
+      this.debugResponse('POST', '/fuel/categories', response);
+      this.clearCache('categories');
+      return this.handleResponse(response, 'Category creation');
     } catch (error) {
-      throw handleError(error, 'creating fuel category', 'Failed to create fuel category');
+      throw this.handleError(error, 'Category creation', 'Failed to create fuel category');
     }
-  },
+  };
 
-  updateFuelCategory: async (categoryData) => {
-    logger.info('Updating fuel category:', categoryData);
-    debugRequest('PUT', '/fuel/categories', categoryData);
+  updateFuelCategory = async (categoryData) => {
+    this.logger.info('Updating fuel category:', categoryData);
+    this.debugRequest('PUT', '/fuel/categories', categoryData);
     
     try {
       const response = await apiService.put('/fuel/categories', categoryData);
-      debugResponse('PUT', '/fuel/categories', response);
-      return handleResponse(response, 'updating fuel category');
+      this.debugResponse('PUT', '/fuel/categories', response);
+      this.clearCache('categories');
+      return this.handleResponse(response, 'Category update');
     } catch (error) {
-      throw handleError(error, 'updating fuel category', 'Failed to update fuel category');
+      throw this.handleError(error, 'Category update', 'Failed to update fuel category');
     }
-  },
+  };
 
-  getFuelCategories: async (filters = {}) => {
-    logger.info('Fetching fuel categories with filters:', filters);
+  getFuelCategories = async (filters = {}, forceRefresh = false) => {
+    this.logger.info('Fetching fuel categories:', filters);
     
+    const cacheKey = `categories-${JSON.stringify(filters)}`;
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
     try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          params.append(key, filters[key]);
-        }
-      });
+      const query = this.buildQueryParams(filters);
+      const url = query ? `/fuel/categories?${query}` : '/fuel/categories';
       
-      const url = params.toString() ? `/fuel/categories?${params.toString()}` : '/fuel/categories';
-      debugRequest('GET', url);
+      this.debugRequest('GET', url);
       const response = await apiService.get(url);
-      debugResponse('GET', url, response);
-      return handleResponse(response, 'fetching fuel categories');
+      this.debugResponse('GET', url, response);
+      
+      const data = this.handleResponse(response, 'Categories fetch');
+      this.setCached(cacheKey, data);
+      return data;
     } catch (error) {
-      throw handleError(error, 'fetching fuel categories', 'Failed to fetch fuel categories');
+      throw this.handleError(error, 'Categories fetch', 'Failed to fetch fuel categories');
     }
-  },
+  };
 
-  getFuelCategoryById: async (categoryId) => {
-    logger.info(`Fetching fuel category: ${categoryId}`);
+  getFuelCategoryById = async (categoryId) => {
+    this.logger.info(`Fetching fuel category: ${categoryId}`);
     
+    const cacheKey = `category-${categoryId}`;
+    const cached = this.getCached(cacheKey);
+    if (cached) return cached;
+
     try {
-      debugRequest('GET', `/fuel/categories/${categoryId}`);
+      this.debugRequest('GET', `/fuel/categories/${categoryId}`);
       const response = await apiService.get(`/fuel/categories/${categoryId}`);
-      debugResponse('GET', `/fuel/categories/${categoryId}`, response);
-      return handleResponse(response, 'fetching fuel category');
+      this.debugResponse('GET', `/fuel/categories/${categoryId}`, response);
+      
+      const data = this.handleResponse(response, 'Category fetch');
+      this.setCached(cacheKey, data);
+      return data;
     } catch (error) {
-      throw handleError(error, 'fetching fuel category', 'Failed to fetch fuel category');
+      throw this.handleError(error, 'Category fetch', 'Failed to fetch fuel category');
     }
-  },
+  };
 
   // =====================
-  // FUEL SUBTYPE METHODS
+  // FUEL SUBTYPES
   // =====================
 
-  createFuelSubType: async (subTypeData) => {
-    logger.info('Creating fuel subtype:', subTypeData);
-    debugRequest('POST', '/fuel/subtypes', subTypeData);
+  createFuelSubType = async (subTypeData) => {
+    this.logger.info('Creating fuel subtype:', subTypeData);
+    this.debugRequest('POST', '/fuel/subtypes', subTypeData);
     
     try {
       const response = await apiService.post('/fuel/subtypes', subTypeData);
-      debugResponse('POST', '/fuel/subtypes', response);
-      return handleResponse(response, 'creating fuel subtype');
+      this.debugResponse('POST', '/fuel/subtypes', response);
+      this.clearCache('subtypes');
+      return this.handleResponse(response, 'Subtype creation');
     } catch (error) {
-      throw handleError(error, 'creating fuel subtype', 'Failed to create fuel subtype');
+      throw this.handleError(error, 'Subtype creation', 'Failed to create fuel subtype');
     }
-  },
+  };
 
-  updateFuelSubType: async (subTypeData) => {
-    logger.info('Updating fuel subtype:', subTypeData);
-    debugRequest('PUT', '/fuel/subtypes', subTypeData);
+  updateFuelSubType = async (subTypeData) => {
+    this.logger.info('Updating fuel subtype:', subTypeData);
+    this.debugRequest('PUT', '/fuel/subtypes', subTypeData);
     
     try {
       const response = await apiService.put('/fuel/subtypes', subTypeData);
-      debugResponse('PUT', '/fuel/subtypes', response);
-      return handleResponse(response, 'updating fuel subtype');
+      this.debugResponse('PUT', '/fuel/subtypes', response);
+      this.clearCache('subtypes');
+      return this.handleResponse(response, 'Subtype update');
     } catch (error) {
-      throw handleError(error, 'updating fuel subtype', 'Failed to update fuel subtype');
+      throw this.handleError(error, 'Subtype update', 'Failed to update fuel subtype');
     }
-  },
+  };
 
-  getFuelSubTypes: async (filters = {}) => {
-    logger.info('Fetching fuel subtypes with filters:', filters);
+  getFuelSubTypes = async (filters = {}, forceRefresh = false) => {
+    this.logger.info('Fetching fuel subtypes:', filters);
     
+    const cacheKey = `subtypes-${JSON.stringify(filters)}`;
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
     try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          params.append(key, filters[key]);
-        }
-      });
+      const query = this.buildQueryParams(filters);
+      const url = query ? `/fuel/subtypes?${query}` : '/fuel/subtypes';
       
-      const url = params.toString() ? `/fuel/subtypes?${params.toString()}` : '/fuel/subtypes';
-      debugRequest('GET', url);
+      this.debugRequest('GET', url);
       const response = await apiService.get(url);
-      debugResponse('GET', url, response);
-      return handleResponse(response, 'fetching fuel subtypes');
+      this.debugResponse('GET', url, response);
+      
+      const data = this.handleResponse(response, 'Subtypes fetch');
+      this.setCached(cacheKey, data);
+      return data;
     } catch (error) {
-      throw handleError(error, 'fetching fuel subtypes', 'Failed to fetch fuel subtypes');
+      throw this.handleError(error, 'Subtypes fetch', 'Failed to fetch fuel subtypes');
     }
-  },
+  };
 
-  getFuelSubTypeById: async (subTypeId) => {
-    logger.info(`Fetching fuel subtype: ${subTypeId}`);
+  getFuelSubTypeById = async (subTypeId) => {
+    this.logger.info(`Fetching fuel subtype: ${subTypeId}`);
     
+    const cacheKey = `subtype-${subTypeId}`;
+    const cached = this.getCached(cacheKey);
+    if (cached) return cached;
+
     try {
-      debugRequest('GET', `/fuel/subtypes/${subTypeId}`);
+      this.debugRequest('GET', `/fuel/subtypes/${subTypeId}`);
       const response = await apiService.get(`/fuel/subtypes/${subTypeId}`);
-      debugResponse('GET', `/fuel/subtypes/${subTypeId}`, response);
-      return handleResponse(response, 'fetching fuel subtype');
+      this.debugResponse('GET', `/fuel/subtypes/${subTypeId}`, response);
+      
+      const data = this.handleResponse(response, 'Subtype fetch');
+      this.setCached(cacheKey, data);
+      return data;
     } catch (error) {
-      throw handleError(error, 'fetching fuel subtype', 'Failed to fetch fuel subtype');
+      throw this.handleError(error, 'Subtype fetch', 'Failed to fetch fuel subtype');
     }
-  },
+  };
 
   // =====================
-  // FUEL PRODUCT METHODS
+  // FUEL PRODUCTS
   // =====================
 
-  createFuelProduct: async (productData) => {
-    logger.info('Creating fuel product:', productData);
-    debugRequest('POST', '/fuel/products', productData);
+  createFuelProduct = async (productData) => {
+    this.logger.info('Creating fuel product:', productData);
+    this.debugRequest('POST', '/fuel/products', productData);
     
     try {
       const response = await apiService.post('/fuel/products', productData);
-      debugResponse('POST', '/fuel/products', response);
-      return handleResponse(response, 'creating fuel product');
+      this.debugResponse('POST', '/fuel/products', response);
+      this.clearCache('products');
+      return this.handleResponse(response, 'Product creation');
     } catch (error) {
-      throw handleError(error, 'creating fuel product', 'Failed to create fuel product');
+      throw this.handleError(error, 'Product creation', 'Failed to create fuel product');
     }
-  },
+  };
 
-  updateFuelProduct: async (productData) => {
-    logger.info('Updating fuel product:', productData);
-    debugRequest('PUT', '/fuel/products', productData);
+  updateFuelProduct = async (productData) => {
+    this.logger.info('Updating fuel product:', productData);
+    this.debugRequest('PUT', '/fuel/products', productData);
     
     try {
       const response = await apiService.put('/fuel/products', productData);
-      debugResponse('PUT', '/fuel/products', response);
-      return handleResponse(response, 'updating fuel product');
+      this.debugResponse('PUT', '/fuel/products', response);
+      this.clearCache('products');
+      return this.handleResponse(response, 'Product update');
     } catch (error) {
-      throw handleError(error, 'updating fuel product', 'Failed to update fuel product');
+      throw this.handleError(error, 'Product update', 'Failed to update fuel product');
     }
-  },
+  };
 
-  getFuelProducts: async (filters = {}) => {
-    logger.info('Fetching fuel products with filters:', filters);
+  getFuelProducts = async (filters = {}, forceRefresh = false) => {
+    this.logger.info('Fetching fuel products:', filters);
     
+    const cacheKey = `products-${JSON.stringify(filters)}`;
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
     try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          params.append(key, filters[key]);
-        }
-      });
+      const query = this.buildQueryParams(filters);
+      const url = query ? `/fuel/products?${query}` : '/fuel/products';
       
-      const url = params.toString() ? `/fuel/products?${params.toString()}` : '/fuel/products';
-      debugRequest('GET', url);
+      this.debugRequest('GET', url);
       const response = await apiService.get(url);
-      debugResponse('GET', url, response);
-      return handleResponse(response, 'fetching fuel products');
+      this.debugResponse('GET', url, response);
+      
+      const data = this.handleResponse(response, 'Products fetch');
+      this.setCached(cacheKey, data);
+      return data;
     } catch (error) {
-      throw handleError(error, 'fetching fuel products', 'Failed to fetch fuel products');
+      throw this.handleError(error, 'Products fetch', 'Failed to fetch fuel products');
     }
-  },
+  };
 
-  getFuelProductById: async (productId) => {
-    logger.info(`Fetching fuel product: ${productId}`);
+  getFuelProductById = async (productId) => {
+    this.logger.info(`Fetching fuel product: ${productId}`);
     
+    const cacheKey = `product-${productId}`;
+    const cached = this.getCached(cacheKey);
+    if (cached) return cached;
+
     try {
-      debugRequest('GET', `/fuel/products/${productId}`);
+      this.debugRequest('GET', `/fuel/products/${productId}`);
       const response = await apiService.get(`/fuel/products/${productId}`);
-      debugResponse('GET', `/fuel/products/${productId}`, response);
-      return handleResponse(response, 'fetching fuel product');
+      this.debugResponse('GET', `/fuel/products/${productId}`, response);
+      
+      const data = this.handleResponse(response, 'Product fetch');
+      this.setCached(cacheKey, data);
+      return data;
     } catch (error) {
-      throw handleError(error, 'fetching fuel product', 'Failed to fetch fuel product');
+      throw this.handleError(error, 'Product fetch', 'Failed to fetch fuel product');
     }
-  },
+  };
 
   // =====================
-  // FUEL HIERARCHY METHODS
+  // FUEL HIERARCHY
   // =====================
 
-  getFuelHierarchy: async () => {
-    logger.info('Fetching fuel hierarchy');
+  getFuelHierarchy = async (forceRefresh = false) => {
+    this.logger.info('Fetching fuel hierarchy');
     
+    const cacheKey = 'hierarchy';
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
     try {
-      debugRequest('GET', '/fuel/hierarchy');
+      this.debugRequest('GET', '/fuel/hierarchy');
       const response = await apiService.get('/fuel/hierarchy');
-      debugResponse('GET', '/fuel/hierarchy', response);
-      return handleResponse(response, 'fetching fuel hierarchy');
+      this.debugResponse('GET', '/fuel/hierarchy', response);
+      
+      const data = this.handleResponse(response, 'Hierarchy fetch');
+      this.setCached(cacheKey, data);
+      return data;
     } catch (error) {
-      throw handleError(error, 'fetching fuel hierarchy', 'Failed to fetch fuel hierarchy');
+      throw this.handleError(error, 'Hierarchy fetch', 'Failed to fetch fuel hierarchy');
     }
-  },
+  };
 
-  createFuelHierarchySequential: async (hierarchyData) => {
-    logger.info('Creating fuel hierarchy sequentially:', hierarchyData);
+  createFuelHierarchySequential = async (hierarchyData) => {
+    this.logger.info('Creating fuel hierarchy sequentially:', hierarchyData);
     
     try {
-      debugRequest('POST', '/fuel/hierarchy/sequential', hierarchyData);
+      this.debugRequest('POST', '/fuel/hierarchy/sequential', hierarchyData);
       const response = await apiService.post('/fuel/hierarchy/sequential', hierarchyData);
-      debugResponse('POST', '/fuel/hierarchy/sequential', response);
-      return handleResponse(response, 'creating fuel hierarchy sequentially');
+      this.debugResponse('POST', '/fuel/hierarchy/sequential', response);
+      this.clearCache();
+      return this.handleResponse(response, 'Sequential hierarchy creation');
     } catch (error) {
-      throw handleError(error, 'creating fuel hierarchy sequentially', 'Failed to create fuel hierarchy');
+      throw this.handleError(error, 'Sequential hierarchy creation', 'Failed to create fuel hierarchy');
     }
-  },
+  };
 
   // =====================
   // VALIDATION UTILITIES
   // =====================
 
-  validateFuelProduct: (productData) => {
+  validateFuelCategory = (categoryData) => {
     const errors = [];
+    if (!categoryData.name?.trim()) errors.push('Category name is required');
+    if (!categoryData.code?.trim()) errors.push('Category code is required');
+    return errors;
+  };
 
-    if (!productData.name?.trim()) {
-      errors.push('Product name is required');
-    }
+  validateFuelSubType = (subTypeData) => {
+    const errors = [];
+    if (!subTypeData.name?.trim()) errors.push('Subtype name is required');
+    if (!subTypeData.code?.trim()) errors.push('Subtype code is required');
+    if (!subTypeData.categoryId) errors.push('Category is required');
+    return errors;
+  };
 
-    if (!productData.fuelCode?.trim()) {
-      errors.push('Fuel code is required');
-    }
-
-    if (!productData.fuelSubTypeId) {
-      errors.push('Fuel subtype is required');
-    }
-
+  validateFuelProduct = (productData) => {
+    const errors = [];
+    if (!productData.name?.trim()) errors.push('Product name is required');
+    if (!productData.fuelCode?.trim()) errors.push('Fuel code is required');
+    if (!productData.fuelSubTypeId) errors.push('Fuel subtype is required');
+    
     if (productData.density && (productData.density <= 0 || productData.density > 1.5)) {
       errors.push('Density must be between 0 and 1.5 kg/L');
     }
-
+    
     if (productData.octaneRating && (productData.octaneRating < 0 || productData.octaneRating > 100)) {
       errors.push('Octane rating must be between 0 and 100');
     }
-
-    if (productData.sulfurContent && productData.sulfurContent < 0) {
-      errors.push('Sulfur content cannot be negative');
-    }
-
+    
     if (productData.minSellingPrice && productData.maxSellingPrice) {
       if (productData.minSellingPrice > productData.maxSellingPrice) {
         errors.push('Minimum selling price cannot be greater than maximum selling price');
       }
     }
-
+    
     return errors;
-  },
-
-  validateFuelCategory: (categoryData) => {
-    const errors = [];
-
-    if (!categoryData.name?.trim()) {
-      errors.push('Category name is required');
-    }
-
-    if (!categoryData.code?.trim()) {
-      errors.push('Category code is required');
-    }
-
-    return errors;
-  },
-
-  validateFuelSubType: (subTypeData) => {
-    const errors = [];
-
-    if (!subTypeData.name?.trim()) {
-      errors.push('Subtype name is required');
-    }
-
-    if (!subTypeData.code?.trim()) {
-      errors.push('Subtype code is required');
-    }
-
-    if (!subTypeData.categoryId) {
-      errors.push('Category is required');
-    }
-
-    return errors;
-  },
+  };
 
   // =====================
   // UTILITY METHODS
   // =====================
 
-  getDefaultQualityStandards: (categoryName) => {
+  getDefaultQualityStandards = (categoryName) => {
     const upperName = categoryName?.toUpperCase() || '';
     
     if (upperName.includes('DIESEL')) {
-      return {
-        sulfurContent: 10,
-        cetaneNumber: 51,
-        flashPoint: 60,
-        viscosity: 2.0,
-        waterContent: 200
-      };
+      return { sulfurContent: 10, cetaneNumber: 51, flashPoint: 60, viscosity: 2.0, waterContent: 200 };
     } else if (upperName.includes('PETROL') || upperName.includes('GASOLINE')) {
-      return {
-        sulfurContent: 50,
-        octaneNumber: 91,
-        benzeneContent: 1.0,
-        vaporPressure: 45,
-        leadContent: 0.0
-      };
+      return { sulfurContent: 50, octaneNumber: 91, benzeneContent: 1.0, vaporPressure: 45, leadContent: 0.0 };
     } else if (upperName.includes('KEROSENE')) {
-      return {
-        sulfurContent: 50,
-        flashPoint: 38,
-        smokePoint: 20,
-        freezePoint: -47
-      };
+      return { sulfurContent: 50, flashPoint: 38, smokePoint: 20, freezePoint: -47 };
     }
     
-    return {
-      sulfurContent: 50,
-      flashPoint: 60,
-      density: 0.80
-    };
-  },
+    return { sulfurContent: 50, flashPoint: 60, density: 0.80 };
+  };
 
-  getDefaultCategoryProperties: (categoryName) => {
-    const defaultCategoryColors = {
-      'DIESEL': '#0047AB',
-      'PETROL': '#FF0000',
-      'KEROSENE': '#FFFF00',
-      'LUBRICANTS': '#808080',
-      'default': '#666666'
+  getDefaultCategoryProperties = (categoryName) => {
+    const colors = {
+      'DIESEL': '#0047AB', 'PETROL': '#FF0000', 'KEROSENE': '#FFFF00', 
+      'LUBRICANTS': '#808080', 'default': '#666666'
     };
     
     const upperName = categoryName?.toUpperCase() || '';
-    
-    return {
-      color: defaultCategoryColors[upperName] || defaultCategoryColors.default
-    };
-  },
+    return { color: colors[upperName] || colors.default };
+  };
 
-  formatFuelProduct: (product) => {
+  formatFuelProduct = (product) => {
     if (!product) return null;
     
     return {
@@ -445,11 +488,14 @@ export const fuelService = {
         ? `${product.minSellingPrice} - ${product.maxSellingPrice}`
         : 'Not set'
     };
-  },
+  };
 
-  // Batch operations helper
-  batchCreateFuelProducts: async (productsData) => {
-    logger.info('Batch creating fuel products:', productsData.length);
+  // =====================
+  // BATCH OPERATIONS
+  // =====================
+
+  batchCreateFuelProducts = async (productsData) => {
+    this.logger.info(`Batch creating ${productsData.length} fuel products`);
     
     try {
       const promises = productsData.map(productData => 
@@ -469,13 +515,16 @@ export const fuelService = {
         failureCount: failed.length
       };
     } catch (error) {
-      throw handleError(error, 'batch creating fuel products', 'Failed to batch create fuel products');
+      throw this.handleError(error, 'Batch product creation', 'Failed to batch create fuel products');
     }
-  },
+  };
 
-  // Search across all fuel entities
-  searchFuelEntities: async (searchTerm) => {
-    logger.info(`Searching fuel entities for: "${searchTerm}"`);
+  // =====================
+  // SEARCH OPERATIONS
+  // =====================
+
+  searchFuelEntities = async (searchTerm) => {
+    this.logger.info(`Searching fuel entities for: "${searchTerm}"`);
     
     try {
       const [categories, subTypes, products] = await Promise.all([
@@ -492,76 +541,10 @@ export const fuelService = {
         totalResults: (categories?.length || 0) + (subTypes?.length || 0) + (products?.products?.length || products?.length || 0)
       };
     } catch (error) {
-      throw handleError(error, 'searching fuel entities', 'Failed to search fuel entities');
+      throw this.handleError(error, 'Fuel entities search', 'Failed to search fuel entities');
     }
-  }
-};
+  };
+}
 
-// =====================================================================
-// PAYLOAD EXAMPLES FOR FUEL MANAGEMENT
-// =====================================================================
-
-/*
-// CREATE FUEL CATEGORY PAYLOAD:
-const categoryPayload = {
-  name: "Diesel",
-  code: "DSL",
-  defaultColor: "#0047AB" // Optional
-};
-
-// CREATE FUEL SUBTYPE PAYLOAD:
-const subTypePayload = {
-  name: "Ultra Low Sulfur Diesel",
-  code: "ULSD",
-  categoryId: "CATEGORY_ID_FROM_CREATION",
-  specification: "ULSD with maximum 15ppm sulfur content", // Optional
-  minQualityStandards: { // Optional
-    sulfurContent: 15,
-    cetaneNumber: 51,
-    flashPoint: 60
-  }
-};
-
-// CREATE FUEL PRODUCT PAYLOAD:
-const productPayload = {
-  name: "ULSD Premium Diesel",
-  fuelCode: "ULSD-PRM",
-  fuelSubTypeId: "SUBTYPE_ID_FROM_CREATION",
-  unit: "LITER",
-  octaneRating: null, // Optional - for petrol products
-  sulfurContent: 10, // Optional
-  colorCode: "#0047AB", // Optional
-  density: 0.85, // Optional
-  flashPoint: 62, // Optional
-  sku: "ULSD-PRM-001", // Optional
-  barcode: "123456789012", // Optional
-  brand: "Premium Fuels Inc", // Optional
-  modelNumber: "PF-ULSD-2024", // Optional
-  packSize: "Bulk", // Optional
-  isBatchTracked: true, // Optional
-  isSerialTracked: false, // Optional
-  baseCostPrice: 120.50, // Optional
-  minSellingPrice: 135.00, // Optional
-  maxSellingPrice: 150.00 // Optional
-};
-
-// SEQUENTIAL HIERARCHY CREATION PAYLOAD:
-const hierarchyPayload = {
-  categoryName: "Diesel",
-  categoryCode: "DSL",
-  categoryColor: "#0047AB",
-  subTypeName: "Ultra Low Sulfur Diesel", 
-  subTypeCode: "ULSD",
-  subTypeSpecification: "ULSD with max 15ppm sulfur",
-  productName: "ULSD Premium Diesel",
-  productFuelCode: "ULSD-PRM",
-  productUnit: "LITER",
-  sulfurContent: 10,
-  density: 0.85,
-  baseCostPrice: 120.50,
-  minSellingPrice: 135.00,
-  maxSellingPrice: 150.00
-};
-*/
-
+export const fuelService = new FuelService();
 export default fuelService;

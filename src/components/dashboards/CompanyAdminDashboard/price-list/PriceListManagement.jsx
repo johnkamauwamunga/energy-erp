@@ -1,17 +1,17 @@
-// src/components/fuel-pricing/FuelPriceManagement.js
+// src/components/pricing/PriceListManagement.jsx
 import React, { useState, useEffect } from 'react';
 import { 
   Plus, Eye, Edit, Trash2, Search, Filter, RefreshCw, 
   CheckCircle, XCircle, Play, Pause, BarChart3, Download,
-  DollarSign, Calendar, Users, Tag, AlertCircle
+  DollarSign, Calendar, Users, Tag, AlertCircle, Clock, Archive
 } from 'lucide-react';
 import { Button, Input, Select, Badge, LoadingSpinner } from '../../ui';
 import { useApp } from '../../context/AppContext';
-import CreateEditPriceListModal from './CreateEditPriceListModal';
+import CreatePriceListModal from './CreatePriceListModal';
 import PriceListDetailsModal from './PriceListDetailsModal';
-import { fuelPriceService, PRICE_LIST_TYPES, PRICE_LIST_STATUS } from '../../services/fuelPriceService';
+import { pricingService, PRICE_LIST_TYPES, PRICE_LIST_STATUS } from '../../services/pricingService';
 
-const FuelPriceManagement = () => {
+const PriceListManagement = () => {
   const { state } = useApp();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
@@ -23,20 +23,36 @@ const FuelPriceManagement = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    pages: 0
+  });
 
   // Load price lists from backend
-  const loadPriceLists = async () => {
+  const loadPriceLists = async (page = 1) => {
     try {
       setLoading(true);
       setError('');
       
-      const filters = {};
+      const filters = {
+        page,
+        limit: pagination.limit
+      };
+      
       if (statusFilter !== 'all') filters.status = statusFilter;
       if (typeFilter !== 'all') filters.type = typeFilter;
       if (searchQuery) filters.search = searchQuery;
 
-      const response = await fuelPriceService.getPriceLists(filters);
-      setPriceLists(response.data || []);
+      const response = await pricingService.getPriceLists(filters);
+      setPriceLists(response.priceLists || []);
+      setPagination(prev => ({
+        ...prev,
+        page,
+        total: response.pagination?.total || 0,
+        pages: response.pagination?.pages || 0
+      }));
     } catch (error) {
       console.error('Failed to load price lists:', error);
       setError(error.message || 'Failed to load price lists');
@@ -47,16 +63,25 @@ const FuelPriceManagement = () => {
   };
 
   useEffect(() => {
-    loadPriceLists();
+    loadPriceLists(1);
   }, [retryCount, statusFilter, typeFilter]);
 
+  useEffect(() => {
+    // Debounced search
+    const timer = setTimeout(() => {
+      loadPriceLists(1);
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   const handlePriceListCreated = () => {
-    loadPriceLists();
+    loadPriceLists(1);
     setIsCreateModalOpen(false);
   };
 
   const handlePriceListUpdated = () => {
-    loadPriceLists();
+    loadPriceLists(pagination.page);
     setSelectedPriceList(null);
   };
 
@@ -72,14 +97,15 @@ const FuelPriceManagement = () => {
       APPROVED: { color: 'blue', label: 'Approved', icon: CheckCircle },
       ACTIVE: { color: 'green', label: 'Active', icon: Play },
       EXPIRED: { color: 'red', label: 'Expired', icon: XCircle },
-      ARCHIVED: { color: 'gray', label: 'Archived', icon: Archive }
+      ARCHIVED: { color: 'gray', label: 'Archived', icon: Archive },
+      INACTIVE: { color: 'gray', label: 'Inactive', icon: Pause }
     };
 
     const config = statusConfig[status] || statusConfig.DRAFT;
     const IconComponent = config.icon;
 
     return (
-      <Badge variant={config.color} className="flex items-center gap-1">
+      <Badge variant={config.color} className="flex items-center gap-1 w-fit">
         <IconComponent className="w-3 h-3" />
         {config.label}
       </Badge>
@@ -105,8 +131,8 @@ const FuelPriceManagement = () => {
   // Action handlers
   const handleViewDetails = async (priceList) => {
     try {
-      const detailedPriceList = await fuelPriceService.getPriceListById(priceList.id);
-      setSelectedPriceList(detailedPriceList.data);
+      const detailedPriceList = await pricingService.getPriceListById(priceList.id);
+      setSelectedPriceList(detailedPriceList);
       setIsDetailsModalOpen(true);
     } catch (error) {
       setError(error.message);
@@ -124,17 +150,17 @@ const FuelPriceManagement = () => {
 
   const handleApprovePriceList = async (priceListId) => {
     try {
-      await fuelPriceService.approvePriceList(priceListId);
-      loadPriceLists();
+      await pricingService.approvePriceList(priceListId);
+      loadPriceLists(pagination.page);
     } catch (error) {
       setError(error.message);
     }
   };
 
-  const handleActivatePriceList = async (priceListId) => {
+  const handleActivatePriceList = async (priceListId, effectiveFrom = null) => {
     try {
-      await fuelPriceService.activatePriceList(priceListId);
-      loadPriceLists();
+      await pricingService.activatePriceList(priceListId, effectiveFrom);
+      loadPriceLists(pagination.page);
     } catch (error) {
       setError(error.message);
     }
@@ -142,8 +168,8 @@ const FuelPriceManagement = () => {
 
   const handleDeactivatePriceList = async (priceListId) => {
     try {
-      await fuelPriceService.deactivatePriceList(priceListId);
-      loadPriceLists();
+      await pricingService.deactivatePriceList(priceListId);
+      loadPriceLists(pagination.page);
     } catch (error) {
       setError(error.message);
     }
@@ -153,8 +179,8 @@ const FuelPriceManagement = () => {
     if (!window.confirm('Are you sure you want to delete this price list? This action cannot be undone.')) return;
     
     try {
-      // You'll need to add a delete method to your service
-      setError('Delete functionality not implemented yet');
+      await pricingService.deletePriceList(priceListId);
+      loadPriceLists(pagination.page);
     } catch (error) {
       setError(error.message);
     }
@@ -162,30 +188,23 @@ const FuelPriceManagement = () => {
 
   // Check user permissions
   const canManagePricing = () => {
-    return ['SUPER_ADMIN', 'COMPANY_ADMIN', 'COMPANY_MANAGER'].includes(state.currentUser.role);
+    return state.currentUser?.permissions?.includes('priceLists.manage') || 
+           ['SUPER_ADMIN', 'COMPANY_ADMIN', 'COMPANY_MANAGER'].includes(state.currentUser?.role);
   };
 
-  // Filter price lists based on search
-  const filteredPriceLists = priceLists.filter(priceList => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      return (
-        priceList.name?.toLowerCase().includes(query) ||
-        priceList.description?.toLowerCase().includes(query)
-      );
-    }
-    return true;
-  });
+  const canViewPricing = () => {
+    return state.currentUser?.permissions?.includes('priceLists.view') || canManagePricing();
+  };
 
   // Statistics
   const stats = {
-    total: priceLists.length,
+    total: pagination.total,
     active: priceLists.filter(p => p.status === 'ACTIVE').length,
     draft: priceLists.filter(p => p.status === 'DRAFT').length,
     pending: priceLists.filter(p => p.status === 'PENDING_APPROVAL').length
   };
 
-  if (loading) {
+  if (loading && priceLists.length === 0) {
     return (
       <div className="p-6 flex justify-center items-center h-64">
         <div className="text-center">
@@ -201,9 +220,9 @@ const FuelPriceManagement = () => {
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h3 className="text-2xl font-bold text-gray-900 mb-2">Fuel Price Management</h3>
+          <h3 className="text-2xl font-bold text-gray-900 mb-2">Price List Management</h3>
           <p className="text-gray-600">
-            Manage fuel pricing lists, rules, and calculations
+            Manage product pricing lists, rules, and calculations
           </p>
         </div>
         
@@ -328,7 +347,7 @@ const FuelPriceManagement = () => {
 
           {/* Actions */}
           <div className="flex space-x-2">
-            <Button onClick={loadPriceLists} icon={RefreshCw} variant="outline" className="flex-1">
+            <Button onClick={() => loadPriceLists(1)} icon={RefreshCw} variant="outline" className="flex-1">
               Refresh
             </Button>
           </div>
@@ -351,8 +370,8 @@ const FuelPriceManagement = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredPriceLists.length > 0 ? (
-                filteredPriceLists.map(priceList => (
+              {priceLists.length > 0 ? (
+                priceLists.map(priceList => (
                   <tr key={priceList.id} className="hover:bg-gray-50">
                     <td className="py-4 px-6">
                       <div className="font-medium text-gray-900">{priceList.name}</div>
@@ -372,7 +391,7 @@ const FuelPriceManagement = () => {
                     </td>
                     <td className="py-4 px-6">
                       <div className="text-sm text-gray-900">
-                        {priceList._count?.items || 0} products
+                        {priceList.items?.length || 0} products
                       </div>
                     </td>
                     <td className="py-4 px-6 text-sm text-gray-500">
@@ -432,6 +451,17 @@ const FuelPriceManagement = () => {
                             Deactivate
                           </Button>
                         )}
+                        
+                        {['DRAFT', 'INACTIVE'].includes(priceList.status) && canManagePricing() && (
+                          <Button 
+                            size="sm" 
+                            variant="danger" 
+                            icon={Trash2}
+                            onClick={() => handleDeletePriceList(priceList.id)}
+                          >
+                            Delete
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -449,10 +479,39 @@ const FuelPriceManagement = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {pagination.pages > 1 && (
+          <div className="px-6 py-4 border-t border-gray-200">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-700">
+                Showing page {pagination.page} of {pagination.pages} • {pagination.total} total price lists
+              </div>
+              <div className="flex space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadPriceLists(pagination.page - 1)}
+                  disabled={pagination.page === 1}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadPriceLists(pagination.page + 1)}
+                  disabled={pagination.page === pagination.pages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modals */}
-      <CreateEditPriceListModal 
+      <CreatePriceListModal 
         isOpen={isCreateModalOpen}
         onClose={() => {
           setIsCreateModalOpen(false);
@@ -472,4 +531,4 @@ const FuelPriceManagement = () => {
   );
 };
 
-export default FuelPriceManagement;
+export default PriceListManagement;

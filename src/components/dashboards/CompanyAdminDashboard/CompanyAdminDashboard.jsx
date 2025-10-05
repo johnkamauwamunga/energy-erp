@@ -4,7 +4,7 @@ import {
   TrendingUp, FileText, Warehouse, Flame, X, Menu,
   User, Settings, LogOut
 } from 'lucide-react';
-import { Button } from '../../../components/ui';
+import { Button } from '../../ui';
 import { useApp, useAppDispatch, logout } from '../../../context/AppContext';
 import CompanyOverview from '@/components/dashboards/common/CompanyOverview';
 import DashboardOverview from '../common/DashboardOverview';
@@ -14,7 +14,9 @@ import CreateAssetModal from './CreateAssetModal';
 import CompanyAssetManagement from './CompanyAssetManagement';
 import CompanyUserManagement from './CompanyUserManagement';
 import CompanyStationsManagement from './stations/CompanyStationsManagement';
-import FuelPurchaseManagement from './purchases/FuelPurchaseManagement';
+import FuelPurchaseManagement from './purchases/PurchaseManagement';
+import FuelManagement from './products/FuelManagement';
+import ShiftCreationWizard from '../common/shiftWizard/ShiftCreationWizard';
 
 const CompanyAdminDashboard = () => {
   const { state } = useApp();
@@ -35,8 +37,7 @@ const CompanyAdminDashboard = () => {
     { id: 'overview', label: 'Dashboard', icon: BarChart3 },
     { id: 'stations', label: 'Service Stations', icon: Building2 },
     { id: 'assets', label: 'Assets', icon: Building2 },
-    { id: 'islands', label: 'Island Management', icon: MapPin },
-    { id: 'warehouses', label: 'Warehouse', icon: Warehouse },
+    {id:  'products_mant', label: 'Product Management', icon: MapPin },
     { id: 'purchase', label: 'Purchase', icon: TrendingUp },
     { id: 'shifts', label: 'Shift Management', icon: Clock },
     { id: 'staff', label: 'Staff Management', icon: Users },
@@ -54,16 +55,14 @@ const CompanyAdminDashboard = () => {
         return <CompanyStationsManagement />;
       case 'assets':
         return <CompanyAssetManagement />;
+      case 'products_mant':
+        return <FuelManagement />;
       case 'purchase':
         return <FuelPurchaseManagement />;
-      case 'warehouses':
-        return <PlaceholderComponent title="Warehouse Management" icon={Warehouse} />;
       case 'shifts':
-        return <PlaceholderComponent title="Shift Management" icon={Clock} />;
+        return <ShiftCreationWizard />;
       case 'staff':
         return <CompanyUserManagement />;
-      case 'matching':
-        return <PlaceholderComponent title="Document Matching" icon={FileCheck} />;
       case 'offloads':
         return <PlaceholderComponent title="Fuel Offloads" icon={Truck} />;
       case 'sales':

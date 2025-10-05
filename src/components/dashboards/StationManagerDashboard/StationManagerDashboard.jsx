@@ -8,15 +8,17 @@ import {
 import { Button } from '../../../components/ui';
 import DashboardOverview from '../common/DashboardOverview';
 import PlaceholderComponent from './PlaceholderComponent';
-import ShiftManagement from '../common/shift/ShiftManagement';
-import OffloadManagement from '../common/offloads/OffloadManagement';
+// import OffloadManagement from '../common/offloads/OffloadManagement';
 // import StationAssetManagement from '../common/assets/station/StationAssetManagement';
 import StationAssetManagement from './assets/StationAssetManagement';
 import StationAssetsOverview from './assets/StationAssetsOverview';
 // import AssetAssignmentManager from './assets/AssetAssignmentManager'
 import SalesManagement from '../common/sales/SalesManagement';
 import StationUserManagement from './staff/StationUserManagement';
-// import FuelOffloadManagement from '../common/fuel-offload/FuelOffloadManagement';
+//import ShiftCreationWizard from '../common/shiftWizard/ShiftCreationWizard';
+import ShiftCreationWizard from '../common/shiftTest/ShiftCreationWizard';
+import ShiftClosingWizard from '../common/shiftCloseTest/ShiftClosingWizard';
+import FuelOffloadWizard from '../common/fuel-offload/FuelOffloadWizard';
 
 const StationManagerDashboard = () => {
   const { state } = useApp();
@@ -61,15 +63,15 @@ console.log("station",station);
       case 'assets':
         return <StationAssetManagement />;
            case 'assets-mant':
-        return <StationAssetsOverview />;
+        return <ShiftClosingWizard />;
         case 'fuel_tank':
         return <PlaceholderComponent title="Fuel Tank Management" icon={Truck} />;
       case 'operations':
         return <PlaceholderComponent title="Station Operations" icon={Activity} />;
       case 'shifts':
-        return <ShiftManagement />;
+        return <ShiftCreationWizard />;
         case 'offloads':
-        return <PlaceholderComponent title="Offload Under Maaintenance" icon={BarChart3} />;
+        return <FuelOffloadWizard />;
       case 'staff':
            return <StationUserManagement />;
        case 'sales':

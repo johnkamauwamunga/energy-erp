@@ -1,459 +1,456 @@
 import { apiService } from '../apiService';
 
-// Enhanced logging utility
+// Enhanced logging utility with production control
 const logger = {
-  debug: (...args) => console.log('🔍 [SupplierService]', ...args),
+  debug: (...args) => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 [SupplierService]', ...args);
+    }
+  },
   info: (...args) => console.log('ℹ️ [SupplierService]', ...args),
   warn: (...args) => console.warn('⚠️ [SupplierService]', ...args),
   error: (...args) => console.error('❌ [SupplierService]', ...args)
 };
 
-// Request/Response debugging utilities
-const debugRequest = (method, url, data) => {
-  logger.debug(`➡️ ${method} ${url}`, data || '');
-};
+// Enhanced error handler with more specific messages
+const handleError = (error, operation, context = {}) => {
+  const errorMessages = {
+    createSupplier: 'Failed to create supplier',
+    updateSupplier: 'Failed to update supplier',
+    getSuppliers: 'Failed to fetch suppliers',
+    getSupplierById: 'Failed to fetch supplier details',
+    deleteSupplier: 'Failed to delete supplier',
+    addSupplierProduct: 'Failed to add product to supplier',
+    updateSupplierProduct: 'Failed to update supplier product',
+    getSupplierProducts: 'Failed to fetch supplier products',
+    removeSupplierProduct: 'Failed to remove supplier product',
+    bulkAddSupplierProducts: 'Failed to add products in bulk',
+    getSupplierPerformance: 'Failed to fetch supplier performance',
+    getSuppliersForProduct: 'Failed to fetch suppliers for product'
+  };
 
-const debugResponse = (method, url, response) => {
-  logger.debug(`⬅️ ${method} ${url} Response:`, response.data);
-};
+  logger.error(`Error during ${operation}:`, { error, context });
 
-// Enhanced response handler utility
-const handleResponse = (response, operation) => {
-  // Handle nested success structure from backend
-  if (response.data && response.data.success) {
-    logger.debug(`${operation} successful`);
-    return response.data.data; // Return the actual data payload
-  }
-  
-  // Handle case where backend returns data directly
-  if (response.data) {
-    logger.debug(`${operation} successful (direct data)`);
-    return response.data;
-  }
-  
-  logger.warn(`Unexpected response structure for ${operation}:`, response);
-  throw new Error('Invalid response format from server');
-};
-
-// Enhanced error handler utility
-const handleError = (error, operation, defaultMessage) => {
-  logger.error(`Error during ${operation}:`, error);
-  
   if (error.response) {
     const { status, data } = error.response;
     
-    if (status === 401) {
-      localStorage.removeItem('accessToken');
-      window.location.href = '/login';
-      throw new Error('Authentication failed. Please login again.');
-    }
-    
-    if (status === 403) {
-      throw new Error('You do not have permission to perform this action');
-    }
-    
-    if (status === 404) {
-      throw new Error('Requested resource not found');
-    }
-    
-    if (status === 400) {
-      // Handle backend validation errors
-      if (data.message) {
-        throw new Error(data.message);
-      }
-      if (data.errors) {
-        const errorMessages = Array.isArray(data.errors) 
-          ? data.errors.map(err => err.message || err).join(', ')
-          : JSON.stringify(data.errors);
-        throw new Error(`Validation failed: ${errorMessages}`);
-      }
-    }
-    
-    // Handle backend error format
-    if (data && data.message) {
-      throw new Error(data.message);
+    switch (status) {
+      case 400:
+        throw new Error(data.message || 'Invalid request data');
+      case 401:
+        localStorage.removeItem('accessToken');
+        window.location.href = '/login';
+        throw new Error('Session expired. Please login again.');
+      case 403:
+        throw new Error('You do not have permission for this action');
+      case 404:
+        throw new Error('Requested resource not found');
+      case 409:
+        throw new Error(data.message || 'Resource already exists');
+      case 422:
+        const validationErrors = data.errors 
+          ? Object.values(data.errors).flat().join(', ')
+          : data.message;
+        throw new Error(`Validation failed: ${validationErrors}`);
+      case 500:
+        throw new Error('Server error. Please try again later.');
+      default:
+        throw new Error(data?.message || errorMessages[operation] || 'Operation failed');
     }
   } else if (error.request) {
-    throw new Error('Network error. Please check your connection and try again.');
+    throw new Error('Network error. Please check your connection.');
+  } else {
+    throw new Error(error.message || errorMessages[operation] || 'Unexpected error occurred');
   }
-  
-  throw new Error(defaultMessage || 'An unexpected error occurred');
 };
 
-export const supplierService = {
+// Response handler
+const handleResponse = (response, operation) => {
+  if (response.data && response.data.success) {
+    return response.data.data;
+  }
+  
+  if (response.data) {
+    return response.data;
+  }
+  
+  logger.warn(`Unexpected response structure for ${operation}`);
+  throw new Error('Invalid server response format');
+};
+
+// Request builder with query parameters
+const buildQueryString = (filters = {}) => {
+  const params = new URLSearchParams();
+  
+  Object.keys(filters).forEach(key => {
+    const value = filters[key];
+    if (value !== undefined && value !== null && value !== '') {
+      if (Array.isArray(value)) {
+        value.forEach(item => params.append(key, item));
+      } else {
+        params.append(key, value);
+      }
+    }
+  });
+  
+  return params.toString();
+};
+
+class SupplierService {
   // =====================
   // SUPPLIER CRUD METHODS
   // =====================
   
-  createSupplier: async (supplierData) => {
-    logger.info('Creating supplier:', supplierData);
-    debugRequest('POST', '/suppliers', supplierData);
-    
+  async createSupplier(supplierData) {
     try {
+      logger.info('Creating supplier:', supplierData);
       const response = await apiService.post('/suppliers', supplierData);
-      debugResponse('POST', '/suppliers', response);
-      return handleResponse(response, 'creating supplier');
+      return handleResponse(response, 'createSupplier');
     } catch (error) {
-      throw handleError(error, 'creating supplier', 'Failed to create supplier');
+      throw handleError(error, 'createSupplier', { supplierData });
     }
-  },
+  }
 
-  updateSupplier: async (supplierData) => {
-    logger.info('Updating supplier:', supplierData);
-    debugRequest('PUT', '/suppliers', supplierData);
-    
+  async updateSupplier(supplierData) {
     try {
+      logger.info('Updating supplier:', supplierData);
       const response = await apiService.put('/suppliers', supplierData);
-      debugResponse('PUT', '/suppliers', response);
-      return handleResponse(response, 'updating supplier');
+      return handleResponse(response, 'updateSupplier');
     } catch (error) {
-      throw handleError(error, 'updating supplier', 'Failed to update supplier');
+      throw handleError(error, 'updateSupplier', { supplierData });
     }
-  },
+  }
 
-  getSuppliers: async (filters = {}) => {
-    logger.info('Fetching suppliers with filters:', filters);
-    
+  async getSuppliers(filters = {}) {
     try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          params.append(key, filters[key]);
-        }
-      });
+      logger.info('Fetching suppliers with filters:', filters);
+      const queryString = buildQueryString(filters);
+      const url = queryString ? `/suppliers?${queryString}` : '/suppliers';
       
-      const url = params.toString() ? `/suppliers?${params.toString()}` : '/suppliers';
-      debugRequest('GET', url);
       const response = await apiService.get(url);
-      debugResponse('GET', url, response);
-      return handleResponse(response, 'fetching suppliers');
+      return handleResponse(response, 'getSuppliers');
     } catch (error) {
-      throw handleError(error, 'fetching suppliers', 'Failed to fetch suppliers');
+      throw handleError(error, 'getSuppliers', { filters });
     }
-  },
+  }
 
-  getSupplierById: async (supplierId) => {
-    logger.info(`Fetching supplier: ${supplierId}`);
-    
+  async getSupplierById(supplierId) {
     try {
-      debugRequest('GET', `/suppliers/${supplierId}`);
+      logger.info(`Fetching supplier: ${supplierId}`);
       const response = await apiService.get(`/suppliers/${supplierId}`);
-      debugResponse('GET', `/suppliers/${supplierId}`, response);
-      return handleResponse(response, 'fetching supplier');
+      return handleResponse(response, 'getSupplierById');
     } catch (error) {
-      throw handleError(error, 'fetching supplier', 'Failed to fetch supplier');
+      throw handleError(error, 'getSupplierById', { supplierId });
     }
-  },
+  }
 
-  deleteSupplier: async (supplierId) => {
-    logger.info(`Deleting supplier: ${supplierId}`);
-    
+  async deleteSupplier(supplierId) {
     try {
-      debugRequest('DELETE', `/suppliers/${supplierId}`);
+      logger.info(`Deleting supplier: ${supplierId}`);
       const response = await apiService.delete(`/suppliers/${supplierId}`);
-      debugResponse('DELETE', `/suppliers/${supplierId}`, response);
-      return handleResponse(response, 'deleting supplier');
+      return handleResponse(response, 'deleteSupplier');
     } catch (error) {
-      throw handleError(error, 'deleting supplier', 'Failed to delete supplier');
+      throw handleError(error, 'deleteSupplier', { supplierId });
     }
-  },
+  }
 
   // =====================
   // SUPPLIER PRODUCT METHODS
   // =====================
 
-  addSupplierProduct: async (supplierProductData) => {
-    logger.info('Adding supplier product:', supplierProductData);
-    debugRequest('POST', '/suppliers/products', supplierProductData);
-    
+  async addSupplierProduct(supplierProductData) {
     try {
+      logger.info('Adding supplier product:', supplierProductData);
       const response = await apiService.post('/suppliers/products', supplierProductData);
-      debugResponse('POST', '/suppliers/products', response);
-      return handleResponse(response, 'adding supplier product');
+      return handleResponse(response, 'addSupplierProduct');
     } catch (error) {
-      throw handleError(error, 'adding supplier product', 'Failed to add supplier product');
+      throw handleError(error, 'addSupplierProduct', { supplierProductData });
     }
-  },
+  }
 
-  updateSupplierProduct: async (supplierProductData) => {
-    logger.info('Updating supplier product:', supplierProductData);
-    debugRequest('PUT', '/suppliers/products', supplierProductData);
-    
+  async updateSupplierProduct(supplierProductData) {
     try {
+      logger.info('Updating supplier product:', supplierProductData);
       const response = await apiService.put('/suppliers/products', supplierProductData);
-      debugResponse('PUT', '/suppliers/products', response);
-      return handleResponse(response, 'updating supplier product');
+      return handleResponse(response, 'updateSupplierProduct');
     } catch (error) {
-      throw handleError(error, 'updating supplier product', 'Failed to update supplier product');
+      throw handleError(error, 'updateSupplierProduct', { supplierProductData });
     }
-  },
+  }
 
-  getSupplierProducts: async (filters = {}) => {
-    logger.info('Fetching supplier products with filters:', filters);
-    
+  async getSupplierProducts(filters = {}) {
     try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          params.append(key, filters[key]);
-        }
-      });
+      logger.info('Fetching supplier products with filters:', filters);
+      const queryString = buildQueryString(filters);
+      const url = queryString ? `/suppliers/products/all?${queryString}` : '/suppliers/products/all';
       
-      const url = params.toString() ? `/suppliers/products/all?${params.toString()}` : '/suppliers/products/all';
-      debugRequest('GET', url);
       const response = await apiService.get(url);
-      debugResponse('GET', url, response);
-      return handleResponse(response, 'fetching supplier products');
+      return handleResponse(response, 'getSupplierProducts');
     } catch (error) {
-      throw handleError(error, 'fetching supplier products', 'Failed to fetch supplier products');
+      throw handleError(error, 'getSupplierProducts', { filters });
     }
-  },
+  }
 
-  removeSupplierProduct: async (supplierProductId) => {
-    logger.info(`Removing supplier product: ${supplierProductId}`);
-    
+  async removeSupplierProduct(supplierProductId) {
     try {
-      debugRequest('DELETE', `/suppliers/products/${supplierProductId}`);
+      logger.info(`Removing supplier product: ${supplierProductId}`);
       const response = await apiService.delete(`/suppliers/products/${supplierProductId}`);
-      debugResponse('DELETE', `/suppliers/products/${supplierProductId}`, response);
-      return handleResponse(response, 'removing supplier product');
+      return handleResponse(response, 'removeSupplierProduct');
     } catch (error) {
-      throw handleError(error, 'removing supplier product', 'Failed to remove supplier product');
+      throw handleError(error, 'removeSupplierProduct', { supplierProductId });
     }
-  },
+  }
 
   // =====================
   // BULK OPERATIONS
   // =====================
 
-  bulkAddSupplierProducts: async (bulkData) => {
-    logger.info('Bulk adding supplier products:', bulkData);
-    debugRequest('POST', '/suppliers/products/bulk', bulkData);
-    
+  async bulkAddSupplierProducts(bulkData) {
     try {
+      logger.info('Bulk adding supplier products:', bulkData);
       const response = await apiService.post('/suppliers/products/bulk', bulkData);
-      debugResponse('POST', '/suppliers/products/bulk', response);
-      return handleResponse(response, 'bulk adding supplier products');
+      return handleResponse(response, 'bulkAddSupplierProducts');
     } catch (error) {
-      throw handleError(error, 'bulk adding supplier products', 'Failed to bulk add supplier products');
+      throw handleError(error, 'bulkAddSupplierProducts', { bulkData });
     }
-  },
+  }
 
   // =====================
   // PERFORMANCE & ANALYTICS
   // =====================
 
-  getSupplierPerformance: async (supplierId) => {
-    logger.info(`Fetching supplier performance: ${supplierId}`);
-    
+  async getSupplierPerformance(supplierId) {
     try {
-      debugRequest('GET', `/suppliers/${supplierId}/performance`);
+      logger.info(`Fetching supplier performance: ${supplierId}`);
       const response = await apiService.get(`/suppliers/${supplierId}/performance`);
-      debugResponse('GET', `/suppliers/${supplierId}/performance`, response);
-      return handleResponse(response, 'fetching supplier performance');
+      return handleResponse(response, 'getSupplierPerformance');
     } catch (error) {
-      throw handleError(error, 'fetching supplier performance', 'Failed to fetch supplier performance');
+      throw handleError(error, 'getSupplierPerformance', { supplierId });
     }
-  },
+  }
 
-  getSuppliersForProduct: async (productId) => {
-    logger.info(`Fetching suppliers for product: ${productId}`);
-    
+  async getSuppliersForProduct(productId) {
     try {
-      debugRequest('GET', `/suppliers/product/${productId}/suppliers`);
+      logger.info(`Fetching suppliers for product: ${productId}`);
       const response = await apiService.get(`/suppliers/product/${productId}/suppliers`);
-      debugResponse('GET', `/suppliers/product/${productId}/suppliers`, response);
-      return handleResponse(response, 'fetching suppliers for product');
+      return handleResponse(response, 'getSuppliersForProduct');
     } catch (error) {
-      throw handleError(error, 'fetching suppliers for product', 'Failed to fetch suppliers for product');
+      throw handleError(error, 'getSuppliersForProduct', { productId });
     }
-  },
+  }
 
   // =====================
-  // VALIDATION UTILITIES
+  // ENHANCED UTILITY METHODS
   // =====================
 
-  validateSupplier: (supplierData) => {
-    const errors = [];
+  validateSupplier(supplierData) {
+    const errors = {};
 
-    if (!supplierData.name?.trim()) {
-      errors.push('Supplier name is required');
+    if (!supplierData.name || !supplierData.name.trim()) {
+      errors.name = 'Supplier name is required';
     }
 
     if (supplierData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supplierData.email)) {
-      errors.push('Invalid email format');
+      errors.email = 'Invalid email format';
     }
 
     if (supplierData.phone && !/^\+?[\d\s\-()]+$/.test(supplierData.phone)) {
-      errors.push('Invalid phone number format');
+      errors.phone = 'Invalid phone number format';
     }
 
     if (supplierData.paymentTerms && supplierData.paymentTerms < 0) {
-      errors.push('Payment terms cannot be negative');
+      errors.paymentTerms = 'Payment terms cannot be negative';
     }
 
     if (supplierData.creditLimit && supplierData.creditLimit < 0) {
-      errors.push('Credit limit cannot be negative');
+      errors.creditLimit = 'Credit limit cannot be negative';
     }
 
-    return errors;
-  },
+    return {
+      isValid: Object.keys(errors).length === 0,
+      errors
+    };
+  }
 
-  validateSupplierProduct: (supplierProductData) => {
-    const errors = [];
+  validateSupplierProduct(supplierProductData) {
+    const errors = {};
 
     if (!supplierProductData.supplierId) {
-      errors.push('Supplier ID is required');
+      errors.supplierId = 'Supplier is required';
     }
 
     if (!supplierProductData.productId) {
-      errors.push('Product ID is required');
+      errors.productId = 'Product is required';
     }
 
     if (!supplierProductData.costPrice || supplierProductData.costPrice <= 0) {
-      errors.push('Valid cost price is required');
+      errors.costPrice = 'Valid cost price is required';
     }
 
-    return errors;
-  },
+    return {
+      isValid: Object.keys(errors).length === 0,
+      errors
+    };
+  }
 
-  // =====================
-  // UTILITY METHODS
-  // =====================
-
-  formatSupplier: (supplier) => {
+  // Enhanced formatting utilities
+  formatSupplier(supplier) {
     if (!supplier) return null;
     
+    const statusColors = {
+      ACTIVE: 'success',
+      INACTIVE: 'secondary',
+      ON_HOLD: 'warning',
+      BLACKLISTED: 'error'
+    };
+
     return {
       ...supplier,
       displayName: `${supplier.name} (${supplier.code})`,
-      contactInfo: supplier.contactPerson ? `${supplier.contactPerson} - ${supplier.phone}` : supplier.phone,
+      contactInfo: supplier.contactPerson ? 
+        `${supplier.contactPerson} - ${supplier.phone}` : supplier.phone,
       addressDisplay: [supplier.address, supplier.city, supplier.state, supplier.country]
         .filter(Boolean)
         .join(', '),
-      productCount: supplier.supplierProducts?.length || 0,
-      statusBadge: supplier.status?.toLowerCase() || 'active'
+      productCount: supplier.supplierProducts ? supplier.supplierProducts.length : 0,
+      purchaseCount: supplier._count ? supplier._count.purchases : 0,
+      statusColor: statusColors[supplier.status] || 'default',
+      isActive: supplier.status === 'ACTIVE'
     };
-  },
+  }
 
-  formatSupplierProduct: (supplierProduct) => {
+  formatSupplierProduct(supplierProduct) {
     if (!supplierProduct) return null;
+    
+    const product = supplierProduct.product || {};
+    const supplier = supplierProduct.supplier || {};
     
     return {
       ...supplierProduct,
-      displayName: supplierProduct.supplierProductName || supplierProduct.product?.name,
-      supplierName: supplierProduct.supplier?.name,
-      productCode: supplierProduct.product?.fuelCode,
-      categoryPath: supplierProduct.product?.fuelSubType 
-        ? `${supplierProduct.product.fuelSubType.category?.name} → ${supplierProduct.product.fuelSubType.name}`
+      displayName: supplierProduct.supplierProductName || product.name,
+      supplierName: supplier.name,
+      productCode: product.fuelCode,
+      categoryPath: product.fuelSubType 
+        ? `${product.fuelSubType.category ? product.fuelSubType.category.name + ' → ' : ''}${product.fuelSubType.name}`
         : 'N/A',
-      priceDisplay: `${supplierProduct.costPrice} ${supplierProduct.currency}`,
-      availabilityBadge: supplierProduct.isAvailable ? 'available' : 'unavailable'
+      priceDisplay: `${supplierProduct.costPrice ? supplierProduct.costPrice.toLocaleString() : '0'} ${supplierProduct.currency || 'KES'}`,
+      availabilityBadge: supplierProduct.isAvailable ? 'available' : 'unavailable',
+      isExpired: supplierProduct.contractEndDate && 
+        new Date(supplierProduct.contractEndDate) < new Date()
     };
-  },
+  }
 
-  // Search suppliers with advanced filtering
-  searchSuppliers: async (searchTerm, additionalFilters = {}) => {
-    logger.info(`Searching suppliers for: "${searchTerm}"`, additionalFilters);
-    
+  // Search and filter utilities
+  async searchSuppliers(searchTerm, additionalFilters = {}) {
     try {
       const filters = {
         search: searchTerm,
         ...additionalFilters
       };
-      
       return await this.getSuppliers(filters);
     } catch (error) {
-      throw handleError(error, 'searching suppliers', 'Failed to search suppliers');
+      throw handleError(error, 'searchSuppliers', { searchTerm, additionalFilters });
     }
-  },
+  }
 
-  // Get primary suppliers for a product
-  getPrimarySuppliersForProduct: async (productId) => {
-    logger.info(`Fetching primary suppliers for product: ${productId}`);
-    
+  async getPrimarySuppliersForProduct(productId) {
     try {
       const suppliers = await this.getSuppliersForProduct(productId);
       return suppliers.filter(sp => sp.isPrimary);
     } catch (error) {
-      throw handleError(error, 'fetching primary suppliers', 'Failed to fetch primary suppliers');
+      throw handleError(error, 'getPrimarySuppliersForProduct', { productId });
     }
   }
-};
 
-// =====================================================================
-// PAYLOAD EXAMPLES FOR SUPPLIER MANAGEMENT
-// =====================================================================
-
-/*
-// CREATE SUPPLIER PAYLOAD (Vivo Energies Example):
-const supplierPayload = {
-  name: "Vivo Energies Kenya Limited",
-  code: "VIVO",
-  contactPerson: "John Kamau",
-  email: "supplier@vivoenergies.co.ke",
-  phone: "+254712345678",
-  alternatePhone: "+254734567890",
-  address: "Vivo Energy House, Muthangari Drive, Westlands",
-  city: "Nairobi",
-  state: "Nairobi County", 
-  country: "Kenya",
-  taxId: "P051234567K",
-  businessRegNumber: "CPT-2012-123456",
-  paymentTerms: 30,
-  creditLimit: 1000000,
-  supplierType: "FUEL_WHOLESALER",
-  deliveryLeadTime: 2,
-  deliveryAreas: "Nairobi, Mombasa, Kisumu, Nakuru, Eldoret"
-};
-
-// ADD SUPPLIER PRODUCT PAYLOAD:
-const supplierProductPayload = {
-  supplierId: "SUPPLIER_ID_FROM_CREATION",
-  productId: "PRODUCT_ID_FROM_FUEL_SYSTEM",
-  supplierSku: "VIVO-PDL-001",
-  supplierProductName: "Vivo Premium Diesel",
-  costPrice: 120.50,
-  currency: "KES",
-  minOrderQty: 1000,
-  maxOrderQty: 50000,
-  leadTime: 2,
-  isAvailable: true,
-  isPrimary: true,
-  priority: 1,
-  qualitySpecifications: {
-    sulfurContent: 10,
-    cetaneNumber: 51,
-    density: 0.85,
-    flashPoint: 62
-  },
-  certification: "KEBS Certified",
-  contractStartDate: "2025-01-01T00:00:00.000Z",
-  contractEndDate: "2025-12-31T23:59:59.000Z"
-};
-
-// BULK ADD SUPPLIER PRODUCTS PAYLOAD:
-const bulkSupplierProductsPayload = {
-  supplierId: "SUPPLIER_ID_FROM_CREATION",
-  products: [
-    {
-      productId: "PRODUCT_ID_1",
-      supplierSku: "VIVO-PDL-001",
-      supplierProductName: "Vivo Premium Diesel",
-      costPrice: 120.50,
-      isAvailable: true,
-      isPrimary: true
-    },
-    {
-      productId: "PRODUCT_ID_2", 
-      supplierSku: "VIVO-RDL-001",
-      supplierProductName: "Vivo Regular Diesel",
-      costPrice: 115.75,
-      isAvailable: true,
-      isPrimary: false
+  // Supplier statistics
+  async getSupplierStats() {
+    try {
+      const suppliers = await this.getSuppliers();
+      
+      const activeSuppliers = suppliers.filter(s => s.status === 'ACTIVE');
+      const onHoldSuppliers = suppliers.filter(s => s.status === 'ON_HOLD');
+      const blacklistedSuppliers = suppliers.filter(s => s.status === 'BLACKLISTED');
+      const suppliersWithProducts = suppliers.filter(s => {
+        const productCount = s.supplierProducts ? s.supplierProducts.length : 0;
+        return productCount > 0;
+      });
+      
+      return {
+        totalSuppliers: suppliers.length,
+        activeSuppliers: activeSuppliers.length,
+        onHoldSuppliers: onHoldSuppliers.length,
+        blacklistedSuppliers: blacklistedSuppliers.length,
+        suppliersWithProducts: suppliersWithProducts.length
+      };
+    } catch (error) {
+      throw handleError(error, 'getSupplierStats');
     }
-  ]
+  }
+
+  // Export utilities
+  prepareExportData(suppliers) {
+    return suppliers.map(supplier => ({
+      'Supplier Code': supplier.code,
+      'Supplier Name': supplier.name,
+      'Contact Person': supplier.contactPerson,
+      'Email': supplier.email,
+      'Phone': supplier.phone,
+      'Status': supplier.status,
+      'Type': supplier.supplierType,
+      'Payment Terms': supplier.paymentTerms,
+      'Credit Limit': supplier.creditLimit,
+      'Products Count': supplier.supplierProducts ? supplier.supplierProducts.length : 0
+    }));
+  }
+}
+
+// Create and export a singleton instance
+export const supplierService = new SupplierService();
+
+// Example usage patterns for common operations
+export const supplierExamples = {
+  createSupplier: {
+    name: "Vivo Energies Kenya Limited",
+    code: "VIVO",
+    contactPerson: "John Kamau",
+    email: "supplier@vivoenergies.co.ke",
+    phone: "+254712345678",
+    address: "Vivo Energy House, Muthangari Drive, Westlands",
+    city: "Nairobi",
+    country: "Kenya",
+    taxId: "P051234567K",
+    paymentTerms: 30,
+    supplierType: "FUEL_WHOLESALER"
+  },
+
+  addSupplierProduct: {
+    supplierId: "supplier-uuid",
+    productId: "product-uuid",
+    supplierSku: "VIVO-PDL-001",
+    costPrice: 120.50,
+    currency: "KES",
+    minOrderQty: 1000,
+    isAvailable: true,
+    isPrimary: true
+  },
+
+  bulkAddProducts: {
+    supplierId: "supplier-uuid",
+    products: [
+      {
+        productId: "product-uuid-1",
+        supplierSku: "VIVO-PDL-001",
+        costPrice: 120.50,
+        isPrimary: true
+      },
+      {
+        productId: "product-uuid-2",
+        supplierSku: "VIVO-RDL-001",
+        costPrice: 115.75,
+        isPrimary: false
+      }
+    ]
+  }
 };
-*/
 
 export default supplierService;

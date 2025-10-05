@@ -1,0 +1,74 @@
+.supplier-management {
+  padding: 24px;
+}
+
+.stats-row {
+  margin-bottom: 24px;
+}
+
+.filters-card {
+  margin-bottom: 24px;
+}
+
+.filters-card .ant-card-body {
+  padding: 16px;
+}
+
+.supplier-name {
+  font-weight: 600;
+  color: #1890ff;
+}
+
+.supplier-contact {
+  font-size: 12px;
+  color: #666;
+}
+
+.text-muted {
+  color: #999;
+}
+
+.small {
+  font-size: 12px;
+}
+
+.product-name {
+  font-weight: 500;
+}
+
+.product-code {
+  font-size: 12px;
+}
+
+.price {
+  font-weight: 600;
+  color: #52c41a;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .supplier-management {
+    padding: 16px;
+  }
+  
+  .stats-row .ant-col {
+    margin-bottom: 16px;
+  }
+  
+  .filters-card .ant-col {
+    margin-bottom: 16px;
+  }
+}
+
+/* Table responsive */
+.ant-table-wrapper {
+  overflow-x: auto;
+}
+
+/* Status tags */
+.ant-tag {
+  border: none;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}

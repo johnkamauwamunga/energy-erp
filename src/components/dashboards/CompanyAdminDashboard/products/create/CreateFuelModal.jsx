@@ -1,38 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { Input, Button, Select, Stepper, Alert } from '../../../components/ui';
-import Dialog from '../../../components/ui/Dialog';
-import { fuelService } from '../../../services/fuelService';
-import { Fuel, Package, Layers, Plus, Check, ArrowRight, ArrowLeft, Zap, Info } from 'lucide-react';
+import { Input, Button, Select1 as Select, Alert, Stepper,Dialog } from '../../../../ui';
+import { fuelService } from '../../../../../services/fuelService/fuelService';
+import { Fuel, Package, Layers, Plus, Check, ArrowRight, ArrowLeft } from 'lucide-react';
 
-const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId }) => {
+const CreateFuelModal = ({ isOpen, onClose, onFuelCreated, companyId }) => {
   const [currentStep, setCurrentStep] = useState(0);
-  const [selectedType, setSelectedType] = useState(createType || 'category');
+  const [selectedType, setSelectedType] = useState('');
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [categories, setCategories] = useState([]);
   const [subTypes, setSubTypes] = useState([]);
-  const [loadingCategories, setLoadingCategories] = useState(false);
-  const [loadingSubTypes, setLoadingSubTypes] = useState(false);
-  const [suggestions, setSuggestions] = useState({});
-  const [sequentialMode, setSequentialMode] = useState(false);
-  const [createdItems, setCreatedItems] = useState({});
+  const [loading, setLoading] = useState(false);
 
   const steps = [
-    { key: 'type', label: 'Select Type', icon: Zap },
-    { key: 'form', label: 'Enter Details', icon: Edit },
+    { key: 'type', label: 'Select Type', icon: Layers },
+    { key: 'form', label: 'Enter Details', icon: Plus },
     { key: 'review', label: 'Review', icon: Check }
   ];
 
-  // Initialize modal
+  // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
-      setSelectedType(createType || 'category');
-      setCurrentStep(createType ? 1 : 0);
       resetForm();
       loadCategories();
     }
-  }, [isOpen, createType]);
+  }, [isOpen]);
 
   // Load subtypes when category is selected for products
   useEffect(() => {
@@ -41,80 +34,51 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
     }
   }, [selectedType, formData.categoryId]);
 
-  // Generate suggestions when category name changes
-  useEffect(() => {
-    if (selectedType === 'category' && formData.name) {
-      const newSuggestions = fuelService.getDefaultCategoryProperties(formData.name);
-      setSuggestions(newSuggestions);
-    }
-  }, [formData.name, selectedType]);
-
   const resetForm = () => {
+    setCurrentStep(0);
+    setSelectedType('');
     setFormData({});
     setErrors({});
-    setSuggestions({});
-    setCreatedItems({});
-    setSequentialMode(false);
+    setSubTypes([]);
   };
 
   const loadCategories = async () => {
     try {
-      setLoadingCategories(true);
+      setLoading(true);
       const response = await fuelService.getFuelCategories();
-      setCategories(response?.data || response || []);
+      setCategories(response || []);
     } catch (error) {
       console.error('Failed to load categories:', error);
       setErrors({ general: 'Failed to load categories' });
     } finally {
-      setLoadingCategories(false);
+      setLoading(false);
     }
   };
 
   const loadSubTypes = async (categoryId) => {
     try {
-      setLoadingSubTypes(true);
       const response = await fuelService.getFuelSubTypes({ categoryId });
-      setSubTypes(response?.data || response || []);
+      setSubTypes(response || []);
     } catch (error) {
       console.error('Failed to load sub types:', error);
       setErrors({ general: 'Failed to load sub types' });
-    } finally {
-      setLoadingSubTypes(false);
-    }
-  };
-
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    
-    // Clear field error when user starts typing
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
-    }
-    
-    // Auto-apply suggestions for category creation
-    if (selectedType === 'category' && field === 'name' && value) {
-      const newSuggestions = fuelService.getDefaultCategoryProperties(value);
-      setSuggestions(newSuggestions);
-      
-      setFormData(prev => ({
-        ...prev,
-        defaultColor: prev.defaultColor || newSuggestions.color,
-        typicalDensity: prev.typicalDensity || newSuggestions.density,
-        hazardClass: prev.hazardClass || newSuggestions.hazardClass
-      }));
     }
   };
 
   const handleTypeSelect = (type) => {
     setSelectedType(type);
     setCurrentStep(1);
+  };
+
+  const handleInputChange = (field, value) => {
+    // Handle both direct values and event objects from Select
+    const actualValue = value && value.target ? value.target.value : value;
     
-    // Pre-fill form with sequential data if available
-    if (sequentialMode && createdItems.category && type === 'subtype') {
-      setFormData(prev => ({ ...prev, categoryId: createdItems.category.id }));
-    }
-    if (sequentialMode && createdItems.subtype && type === 'product') {
-      setFormData(prev => ({ ...prev, fuelSubTypeId: createdItems.subtype.id }));
+    setFormData(prev => ({ ...prev, [field]: actualValue }));
+    
+    // Clear field error when user starts typing
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }));
     }
   };
 
@@ -125,7 +89,14 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
   };
 
   const handleBack = () => {
-    setCurrentStep(currentStep - 1);
+    if (currentStep === 1) {
+      // If we're on form step, go back to type selection
+      setCurrentStep(0);
+      setSelectedType('');
+      setFormData({});
+    } else {
+      setCurrentStep(currentStep - 1);
+    }
   };
 
   const validateCurrentStep = () => {
@@ -136,9 +107,6 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
         case 'category':
           if (!formData.name?.trim()) newErrors.name = 'Category name is required';
           if (!formData.code?.trim()) newErrors.code = 'Category code is required';
-          if (formData.code && categories.some(cat => cat.code === formData.code)) {
-            newErrors.code = 'Category code must be unique';
-          }
           break;
 
         case 'subtype':
@@ -150,10 +118,13 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
         case 'product':
           if (!formData.name?.trim()) newErrors.name = 'Product name is required';
           if (!formData.fuelCode?.trim()) newErrors.fuelCode = 'Fuel code is required';
-          if (!formData.fuelSubTypeId) newErrors.fuelSubTypeId = 'Fuel sub type is required';
+          if (!formData.categoryId) newErrors.categoryId = 'Category is required';
+          if (!formData.fuelSubTypeId) newErrors.fuelSubTypeId = 'Sub type is required';
+          
           if (formData.density && (formData.density <= 0 || formData.density > 1.5)) {
             newErrors.density = 'Density must be between 0.1 and 1.5 kg/L';
           }
+          
           if (formData.octaneRating && (formData.octaneRating < 0 || formData.octaneRating > 100)) {
             newErrors.octaneRating = 'Octane rating must be between 0 and 100';
           }
@@ -171,7 +142,18 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
     setIsSubmitting(true);
 
     try {
-      const data = { ...formData, companyId };
+      const data = { 
+        ...formData, 
+        companyId,
+        // Ensure numeric fields are properly formatted
+        density: formData.density ? parseFloat(formData.density) : undefined,
+        octaneRating: formData.octaneRating ? parseInt(formData.octaneRating) : undefined,
+        sulfurContent: formData.sulfurContent ? parseFloat(formData.sulfurContent) : undefined,
+        baseCostPrice: formData.baseCostPrice ? parseFloat(formData.baseCostPrice) : undefined,
+        minSellingPrice: formData.minSellingPrice ? parseFloat(formData.minSellingPrice) : undefined,
+        maxSellingPrice: formData.maxSellingPrice ? parseFloat(formData.maxSellingPrice) : undefined
+      };
+      
       let response;
 
       switch (selectedType) {
@@ -186,30 +168,8 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
           break;
       }
 
-      setCreatedItems(prev => ({ ...prev, [selectedType]: response }));
-
-      // Sequential creation flow
-      if (sequentialMode) {
-        if (selectedType === 'category') {
-          // Move to create subtype for the same category
-          setSelectedType('subtype');
-          setFormData({ categoryId: response.id });
-          setCurrentStep(1);
-        } else if (selectedType === 'subtype') {
-          // Move to create product for the same subtype
-          setSelectedType('product');
-          setFormData({ fuelSubTypeId: response.id });
-          setCurrentStep(1);
-        } else {
-          // Complete the sequential flow
-          onFuelCreated(response);
-          onClose();
-        }
-      } else {
-        // Single creation flow
-        onFuelCreated(response);
-        onClose();
-      }
+      onFuelCreated(response);
+      onClose();
     } catch (error) {
       console.error('Failed to create:', error);
       setErrors({ general: error.message || `Failed to create ${selectedType}` });
@@ -218,35 +178,10 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
     }
   };
 
-  const getTypeIcon = (type) => {
-    switch (type) {
-      case 'category': return <Layers className="w-5 h-5" />;
-      case 'subtype': return <Package className="w-5 h-5" />;
-      case 'product': return <Fuel className="w-5 h-5" />;
-      default: return <Plus className="w-5 h-5" />;
-    }
-  };
-
-  const getTypeColor = (type) => {
-    switch (type) {
-      case 'category': return 'blue';
-      case 'subtype': return 'green';
-      case 'product': return 'orange';
-      default: return 'gray';
-    }
-  };
-
   const renderStepContent = () => {
     switch (currentStep) {
       case 0:
-        return (
-          <TypeSelectionStep 
-            onTypeSelect={handleTypeSelect} 
-            selectedType={selectedType}
-            sequentialMode={sequentialMode}
-            onSequentialModeChange={setSequentialMode}
-          />
-        );
+        return <TypeSelectionStep onTypeSelect={handleTypeSelect} />;
       case 1:
         return (
           <FormStep 
@@ -255,12 +190,8 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
             errors={errors}
             categories={categories}
             subTypes={subTypes}
-            suggestions={suggestions}
-            loadingCategories={loadingCategories}
-            loadingSubTypes={loadingSubTypes}
             onInputChange={handleInputChange}
-            sequentialMode={sequentialMode}
-            createdItems={createdItems}
+            loading={loading}
           />
         );
       case 2:
@@ -292,7 +223,6 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
       onClose={onClose}
       title={getStepTitle()}
       size="lg"
-      className="max-w-2xl"
     >
       <div className="space-y-6">
         {/* Stepper */}
@@ -302,25 +232,6 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
             currentStep={currentStep}
             className="mb-6"
           />
-        )}
-
-        {/* Sequential Mode Alert */}
-        {sequentialMode && currentStep === 1 && (
-          <Alert type="info" icon={Info}>
-            <div className="flex items-center justify-between">
-              <span>
-                Sequential mode enabled: After creating this {selectedType}, 
-                you'll continue to create the next level.
-              </span>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setSequentialMode(false)}
-              >
-                Exit Sequential
-              </Button>
-            </div>
-          </Alert>
         )}
 
         {/* Error Display */}
@@ -345,17 +256,16 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
           </Button>
           
           <div className="flex space-x-3">
-            {!isLastStep && (
+            {!isLastStep ? (
               <Button
-                variant="outline"
-                onClick={onClose}
+                variant="cosmic"
+                onClick={handleNext}
+                icon={ArrowRight}
                 disabled={isSubmitting}
               >
-                Save as Draft
+                Continue
               </Button>
-            )}
-            
-            {isLastStep ? (
+            ) : (
               <Button
                 variant="cosmic"
                 onClick={handleSubmit}
@@ -364,15 +274,6 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
                 disabled={isSubmitting}
               >
                 Create {selectedType.charAt(0).toUpperCase() + selectedType.slice(1)}
-              </Button>
-            ) : (
-              <Button
-                variant="cosmic"
-                onClick={handleNext}
-                icon={ArrowRight}
-                disabled={isSubmitting}
-              >
-                Continue
               </Button>
             )}
           </div>
@@ -383,7 +284,7 @@ const CreateFuelModal = ({ isOpen, onClose, createType, onFuelCreated, companyId
 };
 
 // Step 1: Type Selection
-const TypeSelectionStep = ({ onTypeSelect, selectedType, sequentialMode, onSequentialModeChange }) => (
+const TypeSelectionStep = ({ onTypeSelect }) => (
   <div className="space-y-6">
     <div>
       <h4 className="text-lg font-medium text-gray-900 mb-2">What would you like to create?</h4>
@@ -416,11 +317,7 @@ const TypeSelectionStep = ({ onTypeSelect, selectedType, sequentialMode, onSeque
       ].map(({ key, label, icon: Icon, description, color }) => (
         <button
           key={key}
-          className={`p-4 border-2 rounded-lg text-left transition-all hover:shadow-md ${
-            selectedType === key
-              ? `border-${color}-500 bg-${color}-50 text-${color}-700`
-              : 'border-gray-300 text-gray-700 hover:border-gray-400'
-          }`}
+          className={`p-4 border-2 rounded-lg text-left transition-all hover:shadow-md border-${color}-500 bg-${color}-50 text-${color}-700 hover:border-${color}-600`}
           onClick={() => onTypeSelect(key)}
         >
           <div className="flex items-center mb-2">
@@ -433,24 +330,6 @@ const TypeSelectionStep = ({ onTypeSelect, selectedType, sequentialMode, onSeque
         </button>
       ))}
     </div>
-
-    {/* Sequential Creation Option */}
-    <div className="border-t pt-4 mt-4">
-      <label className="flex items-center space-x-3 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={sequentialMode}
-          onChange={(e) => onSequentialModeChange(e.target.checked)}
-          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-        />
-        <div>
-          <span className="font-medium text-gray-900">Enable sequential creation</span>
-          <p className="text-sm text-gray-600">
-            Create a complete fuel hierarchy (Category → Sub Type → Product) in one flow
-          </p>
-        </div>
-      </label>
-    </div>
   </div>
 );
 
@@ -461,43 +340,13 @@ const FormStep = ({
   errors, 
   categories, 
   subTypes, 
-  suggestions,
-  loadingCategories,
-  loadingSubTypes,
   onInputChange,
-  sequentialMode,
-  createdItems 
+  loading 
 }) => {
-  const getCategoryName = (categoryId) => {
-    const category = categories.find(cat => cat.id === categoryId);
-    return category?.name || 'Loading...';
-  };
-
-  const getSubTypeName = (subTypeId) => {
-    const subType = subTypes.find(st => st.id === subTypeId);
-    return subType?.name || 'Loading...';
-  };
-
   return (
     <div className="space-y-6">
-      {/* Sequential Progress */}
-      {sequentialMode && (
-        <div className="bg-gray-50 rounded-lg p-4">
-          <div className="flex items-center justify-between text-sm">
-            <span className={`font-medium ${createdItems.category ? 'text-green-600' : 'text-gray-500'}`}>
-              Category {createdItems.category ? '✓' : '○'}
-            </span>
-            <span className={`font-medium ${createdItems.subtype ? 'text-green-600' : 'text-gray-500'}`}>
-              Sub Type {createdItems.subtype ? '✓' : '○'}
-            </span>
-            <span className={`font-medium ${selectedType === 'product' ? 'text-blue-600' : 'text-gray-500'}`}>
-              Product {selectedType === 'product' ? '●' : '○'}
-            </span>
-          </div>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* CATEGORY FORM */}
         {selectedType === 'category' && (
           <>
             <div className="md:col-span-2">
@@ -510,11 +359,6 @@ const FormStep = ({
                 required
                 autoFocus
               />
-              {suggestions.color && (
-                <p className="text-sm text-gray-500 mt-1">
-                  Suggested: {suggestions.color} • {suggestions.density} kg/L • {suggestions.hazardClass}
-                </p>
-              )}
             </div>
 
             <Input
@@ -530,29 +374,9 @@ const FormStep = ({
             <Input
               label="Default Color"
               type="color"
-              value={formData.defaultColor || suggestions.color || '#666666'}
+              value={formData.defaultColor || '#666666'}
               onChange={(e) => onInputChange('defaultColor', e.target.value)}
               error={errors.defaultColor}
-            />
-
-            <Input
-              label="Typical Density (kg/L)"
-              type="number"
-              step="0.001"
-              min="0.1"
-              max="1.5"
-              value={formData.typicalDensity || suggestions.density || ''}
-              onChange={(e) => onInputChange('typicalDensity', parseFloat(e.target.value))}
-              error={errors.typicalDensity}
-              placeholder="0.85"
-            />
-
-            <Input
-              label="Hazard Class"
-              value={formData.hazardClass || suggestions.hazardClass || ''}
-              onChange={(e) => onInputChange('hazardClass', e.target.value)}
-              error={errors.hazardClass}
-              placeholder="e.g., Class 3"
             />
 
             <div className="md:col-span-2">
@@ -569,27 +393,23 @@ const FormStep = ({
           </>
         )}
 
+        {/* SUBTYPE FORM */}
         {selectedType === 'subtype' && (
           <>
             <div className="md:col-span-2">
               <Select
                 label="Parent Category"
                 value={formData.categoryId || ''}
-                onChange={(value) => onInputChange('categoryId', value)}
+                onChange={(event) => onInputChange('categoryId', event)}
                 options={[
-                  { value: '', label: 'Select a category' },
+                  { value: '', label: 'Select a category', disabled: true },
                   ...categories.map(cat => ({ value: cat.id, label: cat.name }))
                 ]}
                 error={errors.categoryId}
                 required
-                loading={loadingCategories}
-                disabled={sequentialMode && createdItems.category}
+                loading={loading}
+                icon={Package}
               />
-              {sequentialMode && createdItems.category && (
-                <p className="text-sm text-green-600 mt-1">
-                  Using newly created category: {getCategoryName(createdItems.category.id)}
-                </p>
-              )}
             </div>
 
             <Input
@@ -612,21 +432,13 @@ const FormStep = ({
               maxLength={10}
             />
 
-            <Input
-              label="Specification"
-              value={formData.specification || ''}
-              onChange={(e) => onInputChange('specification', e.target.value)}
-              error={errors.specification}
-              placeholder="e.g., Euro 4 Standard, ULSD Specification"
-            />
-
             <div className="md:col-span-2">
               <Input
-                label="Description"
-                value={formData.description || ''}
-                onChange={(e) => onInputChange('description', e.target.value)}
-                error={errors.description}
-                placeholder="Description of this sub type"
+                label="Specification"
+                value={formData.specification || ''}
+                onChange={(e) => onInputChange('specification', e.target.value)}
+                error={errors.specification}
+                placeholder="e.g., Euro 4 Standard, ULSD Specification"
                 multiline
                 rows={3}
               />
@@ -634,42 +446,41 @@ const FormStep = ({
           </>
         )}
 
+        {/* PRODUCT FORM */}
         {selectedType === 'product' && (
           <>
             <div className="md:col-span-2">
               <Select
-                label="Parent Category"
+                label="Category"
                 value={formData.categoryId || ''}
-                onChange={(value) => onInputChange('categoryId', value)}
+                onChange={(event) => onInputChange('categoryId', event)}
                 options={[
-                  { value: '', label: 'Select a category' },
+                  { value: '', label: 'Select a category', disabled: true },
                   ...categories.map(cat => ({ value: cat.id, label: cat.name }))
                 ]}
                 error={errors.categoryId}
                 required
-                loading={loadingCategories}
-                disabled={sequentialMode && createdItems.subtype}
+                loading={loading}
+                icon={Layers}
               />
             </div>
 
             <div className="md:col-span-2">
               <Select
-                label="Fuel Sub Type"
+                label="Sub Type"
                 value={formData.fuelSubTypeId || ''}
-                onChange={(value) => onInputChange('fuelSubTypeId', value)}
+                onChange={(event) => onInputChange('fuelSubTypeId', event)}
                 options={[
-                  { value: '', label: 'Select a sub type' },
+                  { value: '', label: 'Select a sub type', disabled: true },
                   ...subTypes.map(st => ({ value: st.id, label: st.name }))
                 ]}
                 error={errors.fuelSubTypeId}
                 required
-                loading={loadingSubTypes}
-                disabled={!formData.categoryId || (sequentialMode && createdItems.subtype)}
+                disabled={!formData.categoryId || subTypes.length === 0}
+                icon={Package}
               />
-              {sequentialMode && createdItems.subtype && (
-                <p className="text-sm text-green-600 mt-1">
-                  Using newly created sub type: {getSubTypeName(createdItems.subtype.id)}
-                </p>
+              {!formData.categoryId && (
+                <p className="text-sm text-gray-500 mt-1">Please select a category first</p>
               )}
             </div>
 
@@ -699,7 +510,7 @@ const FormStep = ({
               min="0"
               max="100"
               value={formData.octaneRating || ''}
-              onChange={(e) => onInputChange('octaneRating', parseInt(e.target.value))}
+              onChange={(e) => onInputChange('octaneRating', e.target.value)}
               error={errors.octaneRating}
               placeholder="91"
             />
@@ -711,9 +522,19 @@ const FormStep = ({
               min="0.1"
               max="1.5"
               value={formData.density || ''}
-              onChange={(e) => onInputChange('density', parseFloat(e.target.value))}
+              onChange={(e) => onInputChange('density', e.target.value)}
               error={errors.density}
               placeholder="0.74"
+            />
+
+            <Input
+              label="Sulfur Content (ppm)"
+              type="number"
+              step="0.1"
+              min="0"
+              value={formData.sulfurContent || ''}
+              onChange={(e) => onInputChange('sulfurContent', e.target.value)}
+              placeholder="10"
             />
 
             <Input
@@ -721,18 +542,38 @@ const FormStep = ({
               type="color"
               value={formData.colorCode || '#666666'}
               onChange={(e) => onInputChange('colorCode', e.target.value)}
-              error={errors.colorCode}
             />
 
             <Input
-              label="Flash Point (°C)"
+              label="Base Cost Price"
               type="number"
-              step="0.1"
+              step="0.01"
               min="0"
-              value={formData.flashPoint || ''}
-              onChange={(e) => onInputChange('flashPoint', parseFloat(e.target.value))}
-              error={errors.flashPoint}
-              placeholder="60"
+              value={formData.baseCostPrice || ''}
+              onChange={(e) => onInputChange('baseCostPrice', e.target.value)}
+              placeholder="120.50"
+            />
+
+            <Input
+              label="Min Selling Price"
+              type="number"
+              step="0.01"
+              min="0"
+              value={formData.minSellingPrice || ''}
+              onChange={(e) => onInputChange('minSellingPrice', e.target.value)}
+              error={errors.minSellingPrice}
+              placeholder="135.00"
+            />
+
+            <Input
+              label="Max Selling Price"
+              type="number"
+              step="0.01"
+              min="0"
+              value={formData.maxSellingPrice || ''}
+              onChange={(e) => onInputChange('maxSellingPrice', e.target.value)}
+              error={errors.maxSellingPrice}
+              placeholder="150.00"
             />
 
             <div className="md:col-span-2">
@@ -740,7 +581,6 @@ const FormStep = ({
                 label="Description"
                 value={formData.description || ''}
                 onChange={(e) => onInputChange('description', e.target.value)}
-                error={errors.description}
                 placeholder="Product description and specifications"
                 multiline
                 rows={3}
@@ -772,10 +612,8 @@ const ReviewStep = ({ selectedType, formData, categories, subTypes }) => {
           <div className="space-y-4">
             <ReviewField label="Name" value={formData.name} />
             <ReviewField label="Code" value={formData.code} />
-            <ReviewField label="Description" value={formData.description} />
             <ReviewField label="Default Color" value={formData.defaultColor} type="color" />
-            <ReviewField label="Typical Density" value={formData.typicalDensity ? `${formData.typicalDensity} kg/L` : ''} />
-            <ReviewField label="Hazard Class" value={formData.hazardClass} />
+            <ReviewField label="Description" value={formData.description} />
           </div>
         );
       
@@ -798,11 +636,21 @@ const ReviewStep = ({ selectedType, formData, categories, subTypes }) => {
             <ReviewField label="Product Name" value={formData.name} />
             <ReviewField label="Fuel Code" value={formData.fuelCode} />
             <div className="grid grid-cols-2 gap-4">
-              <ReviewField label="Octane Rating" value={formData.octaneRating ? `RON ${formData.octaneRating}` : ''} />
-              <ReviewField label="Density" value={formData.density ? `${formData.density} kg/L` : ''} />
+              <ReviewField label="Octane Rating" value={formData.octaneRating ? `RON ${formData.octaneRating}` : 'Not set'} />
+              <ReviewField label="Density" value={formData.density ? `${formData.density} kg/L` : 'Not set'} />
             </div>
-            <ReviewField label="Color" value={formData.colorCode} type="color" />
-            <ReviewField label="Flash Point" value={formData.flashPoint ? `${formData.flashPoint}°C` : ''} />
+            <div className="grid grid-cols-2 gap-4">
+              <ReviewField label="Sulfur Content" value={formData.sulfurContent ? `${formData.sulfurContent} ppm` : 'Not set'} />
+              <ReviewField label="Color" value={formData.colorCode} type="color" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <ReviewField label="Base Cost" value={formData.baseCostPrice ? `$${formData.baseCostPrice}` : 'Not set'} />
+              <ReviewField label="Price Range" value={
+                formData.minSellingPrice && formData.maxSellingPrice 
+                  ? `$${formData.minSellingPrice} - $${formData.maxSellingPrice}`
+                  : 'Not set'
+              } />
+            </div>
             <ReviewField label="Description" value={formData.description} />
           </div>
         );
@@ -816,12 +664,12 @@ const ReviewStep = ({ selectedType, formData, categories, subTypes }) => {
     <div className="space-y-6">
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-center">
-          <Info className="w-5 h-5 text-blue-600 mr-2" />
+          <Check className="w-5 h-5 text-blue-600 mr-2" />
           <span className="text-blue-800 font-medium">Review your {selectedType} details before creating</span>
         </div>
       </div>
 
-      <div className="border rounded-lg divide-y">
+      <div className="border rounded-lg divide-y divide-gray-200">
         {renderReviewContent()}
       </div>
     </div>
@@ -830,21 +678,21 @@ const ReviewStep = ({ selectedType, formData, categories, subTypes }) => {
 
 // Helper component for review fields
 const ReviewField = ({ label, value, type = 'text' }) => {
-  if (!value) return null;
+  if (!value && value !== 0) return null;
 
   return (
-    <div className="flex justify-between items-center p-4 hover:bg-gray-50">
+    <div className="flex justify-between items-center p-4 hover:bg-gray-50 transition-colors">
       <span className="font-medium text-gray-700">{label}:</span>
       {type === 'color' ? (
         <div className="flex items-center space-x-2">
           <div 
-            className="w-6 h-6 rounded border border-gray-300"
+            className="w-6 h-6 rounded border border-gray-300 shadow-sm"
             style={{ backgroundColor: value }}
           />
-          <span className="text-gray-900">{value}</span>
+          <span className="text-gray-900 font-mono text-sm">{value}</span>
         </div>
       ) : (
-        <span className="text-gray-900">{value}</span>
+        <span className="text-gray-900 text-right">{value}</span>
       )}
     </div>
   );

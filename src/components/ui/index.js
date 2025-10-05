@@ -21,6 +21,12 @@ export { default as FilterDropdown } from './FilterDropdown';
 export { default as EmptyState } from './EmptyState';
 export { default as Tooltip } from './Tooltip';
 export { default as Pagination } from './Pagination';
+export { default as ConfirmDialog } from './ConfirmDialog';
+export { default as Stepper } from './Stepper';
+export { default as Select1 } from './Select1';
+export { default as Textarea } from './Textarea'
+export { default as Dropdown } from './Dropdown'
+export { default as Avatar } from './Avatar'
 
 
 // Add other exports as neededj
