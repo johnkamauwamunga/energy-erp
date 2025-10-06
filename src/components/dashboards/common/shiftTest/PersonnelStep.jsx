@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Select, Card, Badge, Avatar, Alert } from '../../../ui';
 import { User, UserCheck, Users, Info } from 'lucide-react';
 import { dummyData, mockServices, dummyDataHelpers } from './dummyData';
+import { userService } from '../../../../services/userService/userService';
 
 const PersonnelStep = ({ data, onChange, stationId }) => {
   const [supervisors, setSupervisors] = useState([]);
@@ -30,6 +31,36 @@ const PersonnelStep = ({ data, onChange, stationId }) => {
       setLoading(false);
     }
   };
+
+   useEffect(() => {
+       const stationId='bcbd0ff7-0d74-4b26-a419-c11ead677561';
+  const fetchSupervisor=async()=>{
+ 
+    
+    try{
+ const supervisors = await userService.getStationSupervisors(stationId)
+
+ console.log("station supervisors ",supervisors)
+    }catch(e){
+console.log("error on getting supervisor ",e)
+    }
+
+  }
+
+  const fetchAttedants = async()=>{
+    try{
+    const attedants = await userService.getStationAttendants(stationId)
+
+    console.log("station attedants are ",attedants)
+    }catch(e){
+        console.log("error fetching attedants ",e)
+    }
+  }
+
+    fetchAttedants();
+  fetchSupervisor();
+
+},[])
 
   const handleSupervisorSelect = (supervisorId) => {
     onChange({ supervisorId });

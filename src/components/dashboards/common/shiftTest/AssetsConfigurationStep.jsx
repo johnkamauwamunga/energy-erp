@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Tabs, Tab, Input, Badge, Alert } from '../../../ui';
 import { Zap, Package, Fuel, User, CheckCircle, AlertCircle } from 'lucide-react';
 import { dummyData, mockServices, dummyDataHelpers } from './dummyData';
+import {connectedAssetService} from '../../../../services/connectedAssetsService/connectedAssetsService'
 
 const AssetsConfigurationStep = ({ data, onChange, stationId }) => {
   const [islands, setIslands] = useState([]);
@@ -13,6 +14,20 @@ const AssetsConfigurationStep = ({ data, onChange, stationId }) => {
   useEffect(() => {
     fetchStationAssets();
   }, [stationId]);
+
+   useEffect(()=>{
+      const fetchAssets= async()=>{
+         let theStation='bcbd0ff7-0d74-4b26-a419-c11ead677561';
+     try{
+     const result = await connectedAssetService.getStationAssetsSimplified(theStation);
+     console.log('connected assets ',result)
+     }catch(e){
+        console.log("failed to get assets",e)
+     }
+   
+  }
+   fetchAssets()
+   },[])
 
   const fetchStationAssets = async () => {
     setLoading(true);

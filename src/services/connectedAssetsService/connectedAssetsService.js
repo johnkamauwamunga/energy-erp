@@ -93,9 +93,9 @@ export const connectedAssetService = {
     logger.info(`Fetching complete asset structure for station: ${stationId}`);
     
     try {
-      debugRequest('GET', `/assets/station/${stationId}`);
-      const response = await apiService.get(`/assets/station/${stationId}`);
-      debugResponse('GET', `/assets/station/${stationId}`, response);
+      debugRequest('GET', `/connected-assets/station/${stationId}`);
+      const response = await apiService.get(`/connected-assets/station/${stationId}`);
+      debugResponse('GET', `/connected-assets/station/${stationId}`, response);
       return handleResponse(response, 'fetching station assets');
     } catch (error) {
       throw handleError(error, 'fetching station assets', 'Failed to fetch station assets');
@@ -109,9 +109,9 @@ export const connectedAssetService = {
     logger.info(`Fetching simplified asset structure for station: ${stationId}`);
     
     try {
-      debugRequest('GET', `/assets/station/${stationId}/simplified`);
-      const response = await apiService.get(`/assets/station/${stationId}/simplified`);
-      debugResponse('GET', `/assets/station/${stationId}/simplified`, response);
+      debugRequest('GET', `/connected-assets/station/${stationId}/simplified`);
+      const response = await apiService.get(`/connected-assets/station/${stationId}/simplified`);
+      debugResponse('GET', `/connected-assets/station/${stationId}/simplified`, response);
       return handleResponse(response, 'fetching simplified station assets');
     } catch (error) {
       throw handleError(error, 'fetching simplified station assets', 'Failed to fetch simplified station assets');
@@ -125,9 +125,9 @@ export const connectedAssetService = {
     logger.info(`Fetching pumps for island: ${islandId}`);
     
     try {
-      debugRequest('GET', `/assets/island/${islandId}/pumps`);
-      const response = await apiService.get(`/assets/island/${islandId}/pumps`);
-      debugResponse('GET', `/assets/island/${islandId}/pumps`, response);
+      debugRequest('GET', `/connected-assets/island/${islandId}/pumps`);
+      const response = await apiService.get(`/connected-assets/island/${islandId}/pumps`);
+      debugResponse('GET', `/connected-assets/island/${islandId}/pumps`, response);
       return handleResponse(response, 'fetching island pumps');
     } catch (error) {
       throw handleError(error, 'fetching island pumps', 'Failed to fetch island pumps');
@@ -141,9 +141,9 @@ export const connectedAssetService = {
     logger.info(`Fetching tanks for ${pumpIds.length} pumps`);
     
     try {
-      debugRequest('POST', '/assets/pumps/tanks', { pumpIds });
-      const response = await apiService.post('/assets/pumps/tanks', { pumpIds });
-      debugResponse('POST', '/assets/pumps/tanks', response);
+      debugRequest('POST', '/connected-assets/pumps/tanks', { pumpIds });
+      const response = await apiService.post('/connected-assets/pumps/tanks', { pumpIds });
+      debugResponse('POST', '/connected-assets/pumps/tanks', response);
       return handleResponse(response, 'fetching pump tanks');
     } catch (error) {
       throw handleError(error, 'fetching pump tanks', 'Failed to fetch pump tanks');
@@ -157,13 +157,299 @@ export const connectedAssetService = {
     logger.info(`Fetching non-fuel products for station: ${stationId}`);
     
     try {
-      debugRequest('GET', `/assets/station/${stationId}/non-fuel`);
-      const response = await apiService.get(`/assets/station/${stationId}/non-fuel`);
-      debugResponse('GET', `/assets/station/${stationId}/non-fuel`, response);
+      debugRequest('GET', `/connected-assets/station/${stationId}/non-fuel`);
+      const response = await apiService.get(`/connected-assets/station/${stationId}/non-fuel`);
+      debugResponse('GET', `/connected-assets/station/${stationId}/non-fuel`, response);
       return handleResponse(response, 'fetching station non-fuel products');
     } catch (error) {
       throw handleError(error, 'fetching station non-fuel products', 'Failed to fetch non-fuel products');
     }
+  },
+
+  // =====================
+  // SHIFT ASSETS STRUCTURE METHODS - NEW
+  // =====================
+
+  /**
+   * Get complete shift assets structure with readings and attendants
+   */
+  async getShiftAssetsStructure(shiftId, options = {}) {
+    logger.info(`Fetching shift assets structure for shift: ${shiftId}`, options);
+    
+    try {
+      const { 
+        includeReadings = true, 
+        includeAttendants = true, 
+        simplified = false 
+      } = options;
+
+      const params = new URLSearchParams({
+        includeReadings: includeReadings.toString(),
+        includeAttendants: includeAttendants.toString(),
+        simplified: simplified.toString()
+      });
+
+      const url = `/connected-assets/shift/${shiftId}/assets-structure?${params}`;
+      debugRequest('GET', url);
+      
+      const response = await apiService.get(url);
+      debugResponse('GET', url, response);
+      return handleResponse(response, 'fetching shift assets structure');
+    } catch (error) {
+      throw handleError(error, 'fetching shift assets structure', 'Failed to fetch shift assets structure');
+    }
+  },
+
+  /**
+   * Get shift assets structure filtered by specific island
+   */
+  async getShiftAssetsStructureByIsland(shiftId, islandId, options = {}) {
+    logger.info(`Fetching shift assets structure for shift: ${shiftId}, island: ${islandId}`, options);
+    
+    try {
+      const { 
+        includeReadings = true, 
+        includeAttendants = true 
+      } = options;
+
+      const params = new URLSearchParams({
+        includeReadings: includeReadings.toString(),
+        includeAttendants: includeAttendants.toString()
+      });
+
+      const url = `/connected-assets/shift/${shiftId}/island/${islandId}/assets-structure?${params}`;
+      debugRequest('GET', url);
+      
+      const response = await apiService.get(url);
+      debugResponse('GET', url, response);
+      return handleResponse(response, 'fetching shift assets structure by island');
+    } catch (error) {
+      throw handleError(error, 'fetching shift assets structure by island', 'Failed to fetch shift assets structure by island');
+    }
+  },
+
+  // =====================
+  // SHIFT ASSETS UTILITIES - NEW
+  // =====================
+
+  /**
+   * Transform shift assets structure for frontend consumption
+   */
+  transformShiftAssetsForUI(shiftAssets) {
+    if (!shiftAssets) return null;
+
+    const transformed = {
+      shift: shiftAssets.shift,
+      attendants: shiftAssets.attendants || [],
+      islands: shiftAssets.islands || [],
+      tanks: shiftAssets.tanks || [],
+      summary: shiftAssets.summary || {},
+      metadata: shiftAssets.metadata || {}
+    };
+
+    // Add convenience methods for common operations
+    transformed.getIslandById = (islandId) => {
+      return transformed.islands.find(island => island.islandId === islandId);
+    };
+
+    transformed.getPumpById = (pumpId) => {
+      for (const island of transformed.islands) {
+        const pump = island.pumps.find(p => p.pumpId === pumpId);
+        if (pump) return pump;
+      }
+      return null;
+    };
+
+    transformed.getTankById = (tankId) => {
+      return transformed.tanks.find(tank => tank.tankId === tankId);
+    };
+
+    transformed.getAttendantsByIsland = (islandId) => {
+      return transformed.attendants.filter(attendant => attendant.islandId === islandId);
+    };
+
+    transformed.getReadingsSummary = () => {
+      return transformed.summary.readingStatus || {};
+    };
+
+    transformed.hasOpeningReadings = () => {
+      const readings = transformed.getReadingsSummary();
+      return {
+        pumps: readings.shiftCriticalReadings?.pumps?.start > 0,
+        tanks: readings.shiftCriticalReadings?.tanks?.start > 0
+      };
+    };
+
+    transformed.hasClosingReadings = () => {
+      const readings = transformed.getReadingsSummary();
+      return {
+        pumps: readings.shiftCriticalReadings?.pumps?.end > 0,
+        tanks: readings.shiftCriticalReadings?.tanks?.end > 0
+      };
+    };
+
+    transformed.isShiftReadyForClose = () => {
+      const readings = transformed.getReadingsSummary();
+      const critical = readings.shiftCriticalReadings;
+      if (!critical) return false;
+
+      return (
+        critical.pumps.start === critical.pumps.totalRequired / 2 &&
+        critical.pumps.end === critical.pumps.totalRequired / 2 &&
+        critical.tanks.start === critical.tanks.totalRequired / 2 &&
+        critical.tanks.end === critical.tanks.totalRequired / 2
+      );
+    };
+
+    return transformed;
+  },
+
+  /**
+   * Extract readings for specific pump
+   */
+  extractPumpReadings(shiftAssets, pumpId) {
+    const pump = shiftAssets.islands
+      .flatMap(island => island.pumps)
+      .find(p => p.pumpId === pumpId);
+
+    return pump?.meterReadings || [];
+  },
+
+  /**
+   * Extract readings for specific tank
+   */
+  extractTankReadings(shiftAssets, tankId) {
+    const tank = shiftAssets.tanks.find(t => t.tankId === tankId);
+    return tank?.dipReadings || [];
+  },
+
+  /**
+   * Get opening readings for shift
+   */
+  getOpeningReadings(shiftAssets) {
+    const openingReadings = {
+      pumps: [],
+      tanks: []
+    };
+
+    shiftAssets.islands.forEach(island => {
+      island.pumps.forEach(pump => {
+        const openingReading = pump.meterReadings?.find(r => r.readingType === 'START');
+        if (openingReading) {
+          openingReadings.pumps.push({
+            ...openingReading,
+            islandName: island.islandName,
+            pumpName: pump.pumpName
+          });
+        }
+      });
+    });
+
+    shiftAssets.tanks.forEach(tank => {
+      const openingReading = tank.dipReadings?.find(r => r.readingType === 'START');
+      if (openingReading) {
+        openingReadings.tanks.push({
+          ...openingReading,
+          tankName: tank.tankName
+        });
+      }
+    });
+
+    return openingReadings;
+  },
+
+  /**
+   * Get closing readings for shift
+   */
+  getClosingReadings(shiftAssets) {
+    const closingReadings = {
+      pumps: [],
+      tanks: []
+    };
+
+    shiftAssets.islands.forEach(island => {
+      island.pumps.forEach(pump => {
+        const closingReading = pump.meterReadings?.find(r => r.readingType === 'END');
+        if (closingReading) {
+          closingReadings.pumps.push({
+            ...closingReading,
+            islandName: island.islandName,
+            pumpName: pump.pumpName
+          });
+        }
+      });
+    });
+
+    shiftAssets.tanks.forEach(tank => {
+      const closingReading = tank.dipReadings?.find(r => r.readingType === 'END');
+      if (closingReading) {
+        closingReadings.tanks.push({
+          ...closingReading,
+          tankName: tank.tankName
+        });
+      }
+    });
+
+    return closingReadings;
+  },
+
+  /**
+   * Calculate shift totals from readings
+   */
+  calculateShiftTotals(shiftAssets) {
+    const openingReadings = this.getOpeningReadings(shiftAssets);
+    const closingReadings = this.getClosingReadings(shiftAssets);
+
+    let totalSales = 0;
+    let totalLiters = 0;
+    let totalCash = 0;
+
+    // Calculate pump totals
+    shiftAssets.islands.forEach(island => {
+      island.pumps.forEach(pump => {
+        const opening = pump.meterReadings?.find(r => r.readingType === 'START');
+        const closing = pump.meterReadings?.find(r => r.readingType === 'END');
+
+        if (opening && closing) {
+          const sales = (closing.salesValue || 0) - (opening.salesValue || 0);
+          const liters = (closing.litersDispensed || 0) - (opening.litersDispensed || 0);
+          const cash = (closing.cashMeter || 0) - (opening.cashMeter || 0);
+
+          totalSales += sales;
+          totalLiters += liters;
+          totalCash += cash;
+        }
+      });
+    });
+
+    // Calculate tank usage
+    let totalTankUsage = 0;
+    shiftAssets.tanks.forEach(tank => {
+      const opening = tank.dipReadings?.find(r => r.readingType === 'START');
+      const closing = tank.dipReadings?.find(r => r.readingType === 'END');
+
+      if (opening && closing) {
+        const usage = (opening.volume || 0) - (closing.volume || 0);
+        totalTankUsage += usage;
+      }
+    });
+
+    return {
+      sales: {
+        total: totalSales,
+        cash: totalCash,
+        electronic: totalSales - totalCash
+      },
+      volume: {
+        dispensed: totalLiters,
+        tankUsage: totalTankUsage,
+        variance: totalLiters - totalTankUsage
+      },
+      efficiency: {
+        salesPerLiter: totalLiters > 0 ? totalSales / totalLiters : 0,
+        cashPercentage: totalSales > 0 ? (totalCash / totalSales) * 100 : 0
+      }
+    };
   },
 
   // =====================
@@ -491,75 +777,6 @@ export const connectedAssetService = {
   },
 
   // =====================
-  // FILTERING & SEARCH UTILITIES
-  // =====================
-
-  /**
-   * Filter assets by product type
-   */
-  filterAssetsByProduct(assetChain, productType) {
-    const filteredPumps = assetChain.pumps.filter(pump => 
-      pump.product?.type === productType
-    );
-    
-    const filteredTanks = assetChain.tanks.filter(tank =>
-      tank.product?.type === productType
-    );
-
-    const connectedIslandIds = [...new Set(
-      filteredPumps.flatMap(pump => pump.sourceIslands)
-    )];
-
-    const filteredIslands = assetChain.islands.filter(island =>
-      connectedIslandIds.includes(island.id)
-    );
-
-    return {
-      islands: filteredIslands,
-      pumps: filteredPumps,
-      tanks: filteredTanks,
-      productType,
-      summary: {
-        islands: filteredIslands.length,
-        pumps: filteredPumps.length,
-        tanks: filteredTanks.length
-      }
-    };
-  },
-
-  /**
-   * Find assets by name or code
-   */
-  searchAssets(assetChain, searchTerm) {
-    const searchLower = searchTerm.toLowerCase();
-    
-    const matchingIslands = assetChain.islands.filter(island =>
-      island.name.toLowerCase().includes(searchLower) ||
-      island.code.toLowerCase().includes(searchLower)
-    );
-
-    const matchingPumps = assetChain.pumps.filter(pump =>
-      pump.name.toLowerCase().includes(searchLower)
-    );
-
-    const matchingTanks = assetChain.tanks.filter(tank =>
-      tank.name.toLowerCase().includes(searchLower)
-    );
-
-    return {
-      islands: matchingIslands,
-      pumps: matchingPumps,
-      tanks: matchingTanks,
-      searchTerm,
-      summary: {
-        islands: matchingIslands.length,
-        pumps: matchingPumps.length,
-        tanks: matchingTanks.length
-      }
-    };
-  },
-
-  // =====================
   // CACHING & OPTIMIZATION
   // =====================
 
@@ -600,156 +817,6 @@ export const connectedAssetService = {
       this._cache.clear();
       logger.debug('🗑️ Cleared all cache');
     }
-  },
-
-  // =====================
-  // BATCH OPERATIONS
-  // =====================
-
-  /**
-   * Get assets for multiple stations
-   */
-  async getMultipleStationsAssets(stationIds) {
-    logger.info(`Fetching assets for ${stationIds.length} stations`);
-    
-    try {
-      const results = await Promise.allSettled(
-        stationIds.map(stationId => 
-          this.getStationAssetsSimplified(stationId)
-        )
-      );
-
-      const successful = results
-        .filter(result => result.status === 'fulfilled')
-        .map(result => result.value);
-
-      const failed = results
-        .filter(result => result.status === 'rejected')
-        .map((result, index) => ({
-          stationId: stationIds[index],
-          error: result.reason.message
-        }));
-
-      return {
-        stations: successful,
-        failed,
-        summary: {
-          total: stationIds.length,
-          successful: successful.length,
-          failed: failed.length
-        }
-      };
-    } catch (error) {
-      throw handleError(error, 'fetching multiple stations assets', 'Failed to fetch multiple stations assets');
-    }
-  },
-
-  // =====================
-  // UTILITY METHODS
-  // =====================
-
-  /**
-   * Extract unique products from asset chain
-   */
-  extractProducts(assetChain) {
-    const pumpProducts = assetChain.pumps
-      .map(pump => pump.product)
-      .filter(Boolean);
-    
-    const tankProducts = assetChain.tanks
-      .map(tank => tank.product)
-      .filter(Boolean);
-
-    const allProducts = [...pumpProducts, ...tankProducts];
-    
-    // Remove duplicates by product ID
-    const uniqueProducts = allProducts.filter((product, index, self) =>
-      index === self.findIndex(p => p.id === product.id)
-    );
-
-    return {
-      fuelProducts: uniqueProducts.filter(p => p.type === 'FUEL'),
-      nonFuelProducts: uniqueProducts.filter(p => p.type === 'NON_FUEL'),
-      all: uniqueProducts,
-      summary: {
-        total: uniqueProducts.length,
-        fuel: uniqueProducts.filter(p => p.type === 'FUEL').length,
-        nonFuel: uniqueProducts.filter(p => p.type === 'NON_FUEL').length
-      }
-    };
-  },
-
-  /**
-   * Calculate asset statistics
-   */
-  calculateAssetStatistics(assetChain) {
-    const products = this.extractProducts(assetChain);
-    
-    return {
-      totals: {
-        islands: assetChain.islands.length,
-        pumps: assetChain.pumps.length,
-        tanks: assetChain.tanks.length,
-        products: products.all.length
-      },
-      connections: {
-        totalConnections: Object.keys(assetChain.relationships.islandToPump).length + 
-                         Object.keys(assetChain.relationships.pumpToTank).length,
-        averagePumpsPerIsland: (assetChain.pumps.length / assetChain.islands.length).toFixed(1),
-        averageTanksPerPump: (assetChain.tanks.length / assetChain.pumps.length).toFixed(1)
-      },
-      products: products.summary,
-      readiness: this.validateAssetsForShift(assetChain)
-    };
-  },
-
-  /**
-   * Generate asset map for visualization
-   */
-  generateAssetMap(assetChain) {
-    return {
-      nodes: [
-        ...assetChain.islands.map(island => ({
-          id: `island-${island.id}`,
-          type: 'island',
-          data: island,
-          position: { x: 0, y: 0 } // Would be calculated based on layout
-        })),
-        ...assetChain.pumps.map(pump => ({
-          id: `pump-${pump.id}`,
-          type: 'pump',
-          data: pump,
-          position: { x: 0, y: 0 }
-        })),
-        ...assetChain.tanks.map(tank => ({
-          id: `tank-${tank.id}`,
-          type: 'tank',
-          data: tank,
-          position: { x: 0, y: 0 }
-        }))
-      ],
-      edges: [
-        // Island to Pump connections
-        ...assetChain.pumps.flatMap(pump =>
-          pump.sourceIslands.map(islandId => ({
-            id: `edge-${islandId}-${pump.id}`,
-            source: `island-${islandId}`,
-            target: `pump-${pump.id}`,
-            type: 'smoothstep',
-            data: { connectionType: pump.connectionType }
-          }))
-        ),
-        // Pump to Tank connections
-        ...assetChain.tanks.flatMap(tank =>
-          tank.connectedPumps.map(pumpId => ({
-            id: `edge-${pumpId}-${tank.id}`,
-            source: `pump-${pumpId}`,
-            target: `tank-${tank.id}`,
-            type: 'smoothstep'
-          }))
-        )
-      ]
-    };
   }
 };
 

@@ -2,12 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Input, Select, DatePicker, Alert } from '../../../ui';
 import { Calendar, Clock, Hash, CheckCircle, XCircle } from 'lucide-react';
 import { dummyData, mockServices, dummyDataHelpers } from './dummyData';
+import { shiftService } from "../../../../services/shiftService/shiftService";
+import {connectedAssetService} from "../../../../services/connectedAssetsService/connectedAssetsService";
+import { useApp } from '../../../../context/AppContext';
 
 const ShiftBasicsStep = ({ data, onChange }) => {
   const { shiftNumber, startTime, priceListId } = data;
   const [shiftNumberValid, setShiftNumberValid] = useState(null);
   const [checkingShiftNumber, setCheckingShiftNumber] = useState(false);
+  const { state } = useApp();
 
+ const currentStation=state.currentStation?.id;
+
+  console.log("this station ",currentStation);
   // Auto-check shift number when it changes
   useEffect(() => {
     const checkShiftNumber = async () => {
@@ -25,10 +32,23 @@ const ShiftBasicsStep = ({ data, onChange }) => {
         setShiftNumberValid(null);
       }
     };
-
     const timeoutId = setTimeout(checkShiftNumber, 500);
     return () => clearTimeout(timeoutId);
   }, [shiftNumber]);
+
+  useEffect(()=>{
+     const fetchAssets= async()=>{
+        let theStation='bcbd0ff7-0d74-4b26-a419-c11ead677561';
+    try{
+    const result = await connectedAssetService.getStationAssetsSimplified(theStation);
+    console.log('connected assets ',result)
+    }catch(e){
+       console.log("failed to get assets",e)
+    }
+  
+ }
+  fetchAssets()
+  },[])
 
   const handleDateChange = (date) => {
     onChange({ startTime: date ? date.toISOString() : null });
