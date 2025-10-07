@@ -11,6 +11,7 @@ const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [createdShiftId, setCreatedShiftId] = useState(null); // Add this state
   
   // Form data state
   const [shiftData, setShiftData] = useState({
@@ -66,12 +67,8 @@ const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
     setError(null);
     
     // Validate current step before proceeding
-    if (currentStep === 1 && !shiftData.shiftNumber) {
-      setError('Please enter a shift number');
-      return;
-    }
-    if (currentStep === 2 && !shiftData.supervisorId) {
-      setError('Please select a supervisor');
+    if (currentStep === 1 && !createdShiftId) { // Check if shift is created
+      setError('Please create the shift first before proceeding');
       return;
     }
     
@@ -84,6 +81,17 @@ const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
 
   const updateShiftData = (updates) => {
     setShiftData(prev => ({ ...prev, ...updates }));
+  };
+
+  // Handle shift creation from Step 1
+  const handleShiftCreated = (shiftId, shiftResult) => {
+    console.log('🎯 Shift created in wizard:', shiftId);
+    setCreatedShiftId(shiftId);
+    
+    // Store in localStorage for persistence
+    localStorage.setItem('currentShiftId', shiftId);
+    localStorage.setItem('currentShiftNumber', shiftData.shiftNumber);
+    localStorage.setItem('currentShiftStartTime', shiftData.startTime);
   };
 
   const handleCreateShift = async () => {
@@ -130,6 +138,7 @@ const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
           <ShiftBasicsStep 
             data={shiftData}
             onChange={updateShiftData}
+            onShiftCreated={handleShiftCreated} // Pass the callback
           />
         );
       case 2:
@@ -138,6 +147,7 @@ const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
             data={shiftData}
             onChange={updateShiftData}
             stationId={stationId}
+            shiftId={createdShiftId} // Pass the shift ID to personnel step
           />
         );
       case 3:
@@ -146,12 +156,14 @@ const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
             data={shiftData}
             onChange={updateShiftData}
             stationId={stationId}
+            shiftId={createdShiftId} // Also pass to assets step
           />
         );
       case 4:
         return (
           <SummaryStep 
             data={shiftData}
+            shiftId={createdShiftId} // And to summary step
           />
         );
       default:
@@ -179,6 +191,19 @@ const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
         {error && (
           <Alert variant="error" className="mb-4">
             {error}
+          </Alert>
+        )}
+
+        {/* Shift ID Display */}
+        {createdShiftId && (
+          <Alert variant="info" className="mb-4">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4" />
+              <span>Shift Created: </span>
+              <code className="text-xs bg-blue-100 px-2 py-1 rounded">
+                {createdShiftId}
+              </code>
+            </div>
           </Alert>
         )}
 
@@ -210,6 +235,7 @@ const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
               <Button 
                 variant="cosmic" 
                 onClick={handleNext}
+                disabled={currentStep === 1 && !createdShiftId} // Disable if shift not created
                 icon={ArrowRight}
               >
                 Next

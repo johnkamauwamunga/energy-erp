@@ -170,36 +170,49 @@ export const connectedAssetService = {
   // SHIFT ASSETS STRUCTURE METHODS - NEW
   // =====================
 
-  /**
-   * Get complete shift assets structure with readings and attendants
-   */
-  async getShiftAssetsStructure(shiftId, options = {}) {
-    logger.info(`Fetching shift assets structure for shift: ${shiftId}`, options);
+/**
+ * Get complete shift assets structure with readings and attendants
+ */
+async getShiftAssetsStructure(shiftId, options = {}) {
+  logger.info(`Fetching shift assets structure for shift: ${shiftId}`, options);
+  
+  try {
+    const { 
+      includeReadings = true, 
+      includeAttendants = true, 
+      simplified = false 
+    } = options;
+
+    const params = new URLSearchParams({
+      includeReadings: includeReadings.toString(),
+      includeAttendants: includeAttendants.toString(),
+      simplified: simplified.toString()
+    });
+
+    const url = `/connected-assets/shift/${shiftId}/assets-structure?${params}`;
+    debugRequest('GET', url);
     
-    try {
-      const { 
-        includeReadings = true, 
-        includeAttendants = true, 
-        simplified = false 
-      } = options;
-
-      const params = new URLSearchParams({
-        includeReadings: includeReadings.toString(),
-        includeAttendants: includeAttendants.toString(),
-        simplified: simplified.toString()
-      });
-
-      const url = `/connected-assets/shift/${shiftId}/assets-structure?${params}`;
-      debugRequest('GET', url);
-      
-      const response = await apiService.get(url);
-      debugResponse('GET', url, response);
-      return handleResponse(response, 'fetching shift assets structure');
-    } catch (error) {
-      throw handleError(error, 'fetching shift assets structure', 'Failed to fetch shift assets structure');
+    const response = await apiService.get(url);
+    //debugResponse('GET', url, response);
+    
+    console.log("structured data",response)
+    // Enhanced response handling for this specific endpoint
+    if (response.data && response.data.success && response.data.data) {
+      logger.debug('Shift assets structure retrieved successfully');
+      return response.data.data; // Return the nested data object
+    } else if (response.data) {
+      // Handle case where data might be directly in response.data
+      logger.debug('Shift assets structure retrieved (direct data)');
+      return response.data;
     }
-  },
-
+    
+    logger.warn('Unexpected response structure for shift assets structure');
+    throw new Error('Invalid response format from server');
+    
+  } catch (error) {
+    throw handleError(error, 'fetching shift assets structure', 'Failed to fetch shift assets structure');
+  }
+},
   /**
    * Get shift assets structure filtered by specific island
    */

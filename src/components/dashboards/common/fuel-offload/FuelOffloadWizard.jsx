@@ -15,12 +15,30 @@ import {
   sampleTankOffloads,
   mockOffloadServices 
 } from './dummyDataForOffload';
+import { connectedAssetService } from '../../../../services/connectedAssetsService/connectedAssetsService';
 
 const FuelOffloadWizard = ({ purchaseId, onSuccess, onCancel }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [purchaseData, setPurchaseData] = useState(null);
+
+
+  // fetch daa from service
+   useEffect(() => {
+    const stationId='bcbd0ff7-0d74-4b26-a419-c11ead677561';
+        const fetchConnected=async()=>{
+           try{
+       const connectedAssets = await connectedAssetService.getStationAssetsSimplified(stationId);
+
+       console.log("connected assets are ",connectedAssets)
+    }catch(e){
+        console.log("error fetching assets ",e)    
+    }
+        }
+
+        fetchConnected()
+   },[] )
   
   // Offload form data state
   const [offloadData, setOffloadData] = useState(initialOffloadData);

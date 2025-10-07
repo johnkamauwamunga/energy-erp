@@ -1,9 +1,9 @@
 // src/services/pricingService.js
-import { apiService } from './apiService';
+import { apiService } from '../apiService';
 
 class PricingService {
   constructor() {
-    this.basePath = '/api/pricing';
+    this.basePath = '/pricing';
     this.cache = new Map();
     this.CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
     

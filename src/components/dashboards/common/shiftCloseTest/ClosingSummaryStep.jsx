@@ -1,11 +1,70 @@
-import React from 'react';
+import React,{useState, useEffect} from 'react';
 import { Card, Table, Badge, Alert, Progress } from '../../../ui';
 import { CheckCircle, FileText, DollarSign, Zap, Fuel, Package, TrendingUp, TrendingDown } from 'lucide-react';
 import { closingCalculations } from './dummyDataForClosing';
+import {connectedAssetService} from '../../../../services/connectedAssetsService/connectedAssetsService'
+
 
 const ClosingSummaryStep = ({ shiftData, closingData }) => {
   const { shiftIslandAttedant } = shiftData;
   const { pumpReadings, tankReadings, islandCollections } = closingData;
+  const [assetsData, setAssetsData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+    useEffect(() => {
+      const fetchConnectedAssets = async () => {
+        const currentShiftId = '6bf61bc2-8dae-4bcf-9ced-97bce6f1c350';
+        
+        setLoading(true);
+        setError(null);
+  
+        try {
+          console.log('🔄 Fetching connected assets for shift:', currentShiftId);
+          
+          const result = await connectedAssetService.getShiftAssetsStructure(currentShiftId);
+          
+          console.log('✅ Connected assets for shift:', result);
+          
+          // Validate the response structure
+          if (!result) {
+            throw new Error('No data received from server');
+          }
+  
+          if (result.success === false) {
+            throw new Error(result.message || 'Failed to fetch assets');
+          }
+  
+          // Handle nested data structure (success: true, data: {...})
+          const data = result.data || result;
+          
+          if (!data) {
+            throw new Error('Invalid data structure received');
+          }
+  
+          setAssetsData(data);
+          
+          // Log specific parts for debugging
+          console.log('📊 Shift Summary:', data.summary);
+          console.log('🏝️ Islands:', data.islands?.length);
+          console.log('⛽ Pumps:', data.pumps?.length || data.islands?.flatMap(i => i.pumps).length);
+          console.log('🛢️ Tanks:', data.tanks?.length);
+          console.log('👥 Attendants:', data.attendants?.length);
+  
+        } catch (err) {
+          console.error('❌ Failed to get assets:', err);
+          setError(err.message || 'An unexpected error occurred');
+          
+          // You can also show a user-friendly message
+          // setError('Unable to load shift assets. Please try again.');
+        } finally {
+          setLoading(false);
+        }
+      };
+  
+      fetchConnectedAssets();
+    }, []); // Empty dependency array means this runs once on mount
+  
 
   // Calculate totals
   const totalSales = pumpReadings.reduce((sum, reading) => sum + (reading.salesValue || 0), 0);
