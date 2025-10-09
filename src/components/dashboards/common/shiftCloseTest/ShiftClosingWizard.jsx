@@ -16,11 +16,20 @@ import TanksStep from './TanksStep';
 import CollectionsStep from './CollectionsStep';
 import ClosingSummaryStep from './ClosingSummaryStep';
 
+import { shiftService } from '../../../../services/shiftService/shiftService';
+import { useApp } from '../../../../context/AppContext';
+// In any component
+
+
 const ShiftClosingWizard = ({ shiftId, onSuccess, onCancel }) => {
+  const { state } = useApp();
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
+//   const [error, setError] = useState(null);
   const [shiftData, setShiftData] = useState(null);
+
+const currentStation = state.currentStation?.id;
+const currentUser = state.currentUser?.id;
   
   // Closing form data state
   const [closingData, setClosingData] = useState({
@@ -48,6 +57,38 @@ const ShiftClosingWizard = ({ shiftId, onSuccess, onCancel }) => {
     { number: 4, title: 'Collections', icon: DollarSign },
     { number: 5, title: 'Review & Close', icon: CheckCircle }
   ];
+
+
+//   shft hook
+
+
+  useEffect(() => {
+  const checkCurrentShift = async () => {
+    if (!currentStation) {
+      setError('No station found');
+      return;
+    }
+    
+    try {
+      // Use the actual currentStation ID, not a hardcoded value
+      const response = await shiftService.getCurrentOpenShift(currentStation);
+      
+      if (response) {
+        console.log('Current open shift:', response);
+        // You might want to set some state here
+        // setExistingShift(currentShift);
+      } else {
+        console.log('No open shift found');
+        // setExistingShift(null);
+      }
+    } catch (error) {
+      console.error('Error checking current shift:', error);
+      setError('Failed to check current shift status');
+    }
+  };
+
+  checkCurrentShift();
+}, [currentStation]); // Add currentStation to dependency array
 
   // Fetch shift data and opening readings
   useEffect(() => {
@@ -114,38 +155,38 @@ const ShiftClosingWizard = ({ shiftId, onSuccess, onCancel }) => {
   };
 
   const handleNext = () => {
-    setError(null);
+    // setError(null);
     
-    // Validate current step before proceeding
-    if (currentStep === 2) {
-      const hasPumpReadings = closingData.pumpReadings.some(reading => 
-        reading.electricMeter > 0 || reading.manualMeter > 0
-      );
-      if (!hasPumpReadings) {
-        setError('Please enter meter readings for at least one pump');
-        return;
-      }
-    }
+    // // Validate current step before proceeding
+    // if (currentStep === 2) {
+    //   const hasPumpReadings = closingData.pumpReadings.some(reading => 
+    //     reading.electricMeter > 0 || reading.manualMeter > 0
+    //   );
+    //   if (!hasPumpReadings) {
+    //     setError('Please enter meter readings for at least one pump');
+    //     return;
+    //   }
+    // }
     
-    if (currentStep === 3) {
-      const hasTankReadings = closingData.tankReadings.some(reading => 
-        reading.dipValue > 0
-      );
-      if (!hasTankReadings) {
-        setError('Please enter dip readings for at least one tank');
-        return;
-      }
-    }
+    // if (currentStep === 3) {
+    //   const hasTankReadings = closingData.tankReadings.some(reading => 
+    //     reading.dipValue > 0
+    //   );
+    //   if (!hasTankReadings) {
+    //     setError('Please enter dip readings for at least one tank');
+    //     return;
+    //   }
+    // }
     
-    if (currentStep === 4) {
-      const hasCollections = closingData.islandCollections.some(collection => 
-        collection.cashAmount > 0 || collection.mobileMoneyAmount > 0
-      );
-      if (!hasCollections) {
-        setError('Please enter collection amounts for at least one island');
-        return;
-      }
-    }
+    // if (currentStep === 4) {
+    //   const hasCollections = closingData.islandCollections.some(collection => 
+    //     collection.cashAmount > 0 || collection.mobileMoneyAmount > 0
+    //   );
+    //   if (!hasCollections) {
+    //     setError('Please enter collection amounts for at least one island');
+    //     return;
+    //   }
+    // }
     
     setCurrentStep(prev => prev + 1);
   };
@@ -271,11 +312,11 @@ const ShiftClosingWizard = ({ shiftId, onSuccess, onCancel }) => {
         </div>
 
         {/* Error Alert */}
-        {error && (
+        {/* {error && (
           <Alert variant="error" className="mb-4">
             {error}
           </Alert>
-        )}
+        )} */}
 
         {/* Step Content */}
         <div className="min-h-[500px]">

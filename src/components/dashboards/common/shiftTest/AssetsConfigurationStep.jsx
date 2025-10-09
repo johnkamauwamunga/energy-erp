@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Card, Tabs, Tab, Input, Badge, Alert, Button } from '../../../ui';
-import { Zap, Package, Fuel, User, CheckCircle, ArrowRight, ArrowLeft, Save } from 'lucide-react';
+import { Card, Tabs, Tab, Input, Badge, Alert, Button, Table } from '../../../ui';
+import { Zap, Package, Fuel, User, CheckCircle, ArrowRight, ArrowLeft, Save, Play, CheckCircle2, AlertCircle } from 'lucide-react';
 import { dummyData, mockServices, dummyDataHelpers } from './dummyData';
 import { connectedAssetService } from '../../../../services/connectedAssetsService/connectedAssetsService';
 import { useApp } from '../../../../context/AppContext';
 import { shiftService } from '../../../../services/shiftService/shiftService';
 
-const AssetsConfigurationStep = ({ data, onChange, stationId, shiftId, onSave }) => {
+const AssetsConfigurationStep = ({ data, onChange, stationId, shiftId, onSave, onFinalCreate }) => {
   const { state } = useApp();
   const [islands, setIslands] = useState([]);
   const [tanks, setTanks] = useState([]);
@@ -19,11 +19,14 @@ const AssetsConfigurationStep = ({ data, onChange, stationId, shiftId, onSave })
   const [saveError, setSaveError] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [persistedAttendants, setPersistedAttendants] = useState([]);
+  const [showSummary, setShowSummary] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createSuccess, setCreateSuccess] = useState(false);
 
   const currentStation = state.currentStation?.id;
   const shiftDetails = localStorage.getItem("currentShiftId");
-  const currentUser = state.currentUser?.id; // This should have the supervisor/current user info
-console.log("current shift ",shiftDetails);
+  const currentUser = state.currentUser?.id;
+
   // Load attendants from localStorage
   useEffect(() => {
     const savedAttendants = localStorage.getItem('currentShiftAttendants');
@@ -43,14 +46,12 @@ console.log("current shift ",shiftDetails);
     const fetchAssets = async() => {
       try {
         const result = await connectedAssetService.getStationAssetsSimplified(currentStation);
-       // console.log('connected assets ', result);
         
         // Filter islands to only show those with pumps
         const islandsWithPumps = result.assets.filter(island => 
           island.pumps && island.pumps.length > 0
         );
         
-       // console.log("islands with pumps ",islandsWithPumps);
         setIslands(islandsWithPumps);
         
         // Extract unique tanks from all pumps
@@ -162,7 +163,7 @@ console.log("current shift ",shiftDetails);
           cashMeter: 0,
           litersDispensed: 0,
           salesValue: 0,
-          unitPrice: 150.0, // Default price
+          unitPrice: 150.0,
           [field]: parseFloat(value) || 0
         }
       ];
@@ -225,58 +226,520 @@ console.log("current shift ",shiftDetails);
   };
 
   // Save all configurations
-  const handleSaveConfiguration = async () => {
-    if (!shiftDetails) {
+//   const handleSaveConfiguration = async () => {
+//     if (!shiftDetails) {
+//       setSaveError('No shift ID available');
+//       return;
+//     }
+
+//     if (!currentUser) {
+//       setSaveError('No user information available');
+//       return;
+//     }
+
+//     setSaving(true);
+//     setSaveError(null);
+//     setSaveSuccess(false);
+
+//     console.log('💾 Saving configuration');
+//     try {
+//       const payload = {
+//         shiftId: shiftId,
+//         recordedById: currentUser,
+//         islandAssignments: data.islandAssignments,
+//         pumpReadings: data.pumpReadings,
+//         tankReadings: data.tankReadings
+//       };
+
+//       console.log('💾 Saving configuration:', payload);
+      
+//       const result = await shiftService.openShift(payload);
+//       console.log('✅ Configuration saved successfully:', result);
+      
+//       setSaveSuccess(true);
+      
+//       // Save configuration data to localStorage for summary
+//       localStorage.setItem('shiftConfigurationData', JSON.stringify({
+//         ...data,
+//         shiftId: shiftId,
+//         recordedById: currentUser,
+//         timestamp: new Date().toISOString()
+//       }));
+      
+//       // Show summary after successful save
+//       setTimeout(() => {
+//         setShowSummary(true);
+//       }, 1500);
+      
+//       // Notify parent component
+//       if (onSave) {
+//         onSave(result);
+//       }
+      
+//     } catch (error) {
+//       console.error('❌ Failed to save configuration:', error);
+//       setSaveError(error.message || 'Failed to save configuration');
+//     } finally {
+//       setSaving(false);
+//     }
+//   };
+
+ const handleClearStorage = async() =>{
+       localStorage.removeItem('currentShiftId');
+        localStorage.removeItem('currentShiftNumber');
+        localStorage.removeItem('currentShiftStartTime');
+        localStorage.removeItem('currentShiftStation');
+        localStorage.removeItem('currentShiftAttendants')
+           localStorage.removeItem('currentShiftId');
+    localStorage.removeItem('currentShiftNumber');
+    localStorage.removeItem('currentShiftStartTime');
+      localStorage.removeItem('currentStationAssets')
+       localStorage.removeItem('shiftConfigurationData')
+ }
+
+  const handleCheckStorage = async() =>{
+    const currentShift=   localStorage.getItem('currentShiftId');
+     const currentNumber=    localStorage.getItem('currentShiftNumber');
+        const startTime= localStorage.getItem('currentShiftStartTime');
+       const currentStation=  localStorage.getItem('currentShiftStation');
+        const Attedants= localStorage.getItem('currentShiftAttendants')
+      const stationAssets= localStorage.getItem('currentStationAssets')
+       const configuration= localStorage.getItem('shiftConfigurationData')
+
+       console.log("shiftId",currentShift," Number ",currentNumber,' start Time',startTime," currentStation ")
+       console.log(" station ",currentStation," Attedants ",Attedants," stationAssets ",stationAssets," configuration ",configuration)
+    }
+
+const handleSaveConfiguration = async () => {
+  if (!shiftId) {
+    setSaveError('No shift ID available');
+    return;
+  }
+
+  if (!currentUser) {
+    setSaveError('No user information available');
+    return;
+  }
+
+  setSaving(true);
+  setSaveError(null);
+  setSaveSuccess(false);
+
+  console.log('💾 Saving configuration for shift:', shiftDetails);
+  try {
+    const payload = {
+        shiftId: shiftDetails,
+      recordedById: currentUser,
+      islandAssignments: data.islandAssignments,
+      pumpReadings: data.pumpReadings,
+      tankReadings: data.tankReadings
+    };
+
+    console.log('📦 Payload:', payload);
+    
+    // Correct API call with two parameters
+    const result = await shiftService.openShift(shiftDetails, payload);
+    console.log('✅ Configuration saved successfully:', result);
+    
+    setSaveSuccess(true);
+    
+    // Save data for summary display
+    localStorage.setItem('shiftConfigurationData', JSON.stringify({
+      ...data,
+      shiftDetails: shiftDetails,
+      recordedById: currentUser,
+      timestamp: new Date().toISOString()
+    }));
+
+    localStorage.setItem('currentStationAssets', JSON.stringify({
+      islands: islands,
+      tanks: tanks
+    }));
+    
+    // Show summary after successful save
+    setTimeout(() => {
+      setShowSummary(true);
+    }, 1500);
+    
+    // Notify parent component
+    if (onSave) {
+      onSave(result);
+    }
+    
+  } catch (error) {
+    console.error('❌ Failed to save configuration:', error);
+    setSaveError(error.message || 'Failed to save configuration');
+  } finally {
+    setSaving(false);
+  }
+};
+
+  // Handle final shift creation
+  const handleFinalCreate = async () => {
+    if (!shiftId) {
       setSaveError('No shift ID available');
       return;
     }
 
-    if (!currentUser) {
-      setSaveError('No user information available');
-      return;
-    }
-
-    setSaving(true);
+    setCreating(true);
     setSaveError(null);
-    setSaveSuccess(false);
 
-    console.log('💾 Saving configuration');
     try {
-      const payload = {
-        shiftId: shiftId,
-        recordedById: currentUser,
-        islandAssignments: data.islandAssignments,
-        pumpReadings: data.pumpReadings,
-        tankReadings: data.tankReadings
-      };
-
-      console.log('💾 Saving configuration:', payload);
+      console.log('🎯 Finalizing shift creation with ID:', shiftId);
       
-      const result = await shiftService.openShift(payload);
-      console.log('✅ Configuration saved successfully:', result);
-      
-      setSaveSuccess(true);
-      
-      // Notify parent component
-      if (onSave) {
-        onSave(result);
+      if (onFinalCreate) {
+        await onFinalCreate(shiftId, data);
       }
       
-      // Auto-clear success message
-      setTimeout(() => {
-        setSaveSuccess(false);
-      }, 3000);
+      setCreateSuccess(true);
       
-    } catch (error) {
-      console.error('❌ Failed to save configuration:', error);
-      setSaveError(error.message || 'Failed to save configuration');
+      // Clear localStorage after successful creation
+      setTimeout(() => {
+        localStorage.removeItem('currentShiftId');
+        localStorage.removeItem('currentShiftAttendants');
+        localStorage.removeItem('currentShiftNumber');
+        localStorage.removeItem('currentShiftStartTime');
+        localStorage.removeItem('currentShiftStation');
+        localStorage.removeItem('shiftConfigurationData');
+      }, 2000);
+      
+    } catch (err) {
+      console.error('❌ Failed to finalize shift:', err);
+      setSaveError(err.message || 'Failed to create shift');
     } finally {
-      setSaving(false);
+      setCreating(false);
     }
   };
 
+  // Helper functions for summary
+  const getIslandName = (islandId) => {
+    const island = islands.find(i => i.islandId === islandId);
+    return island ? island.islandName : `Island ${islandId?.substring(0, 8)}`;
+  };
+
+  const getPumpName = (pumpId) => {
+    for (let island of islands) {
+      const pump = island.pumps?.find(p => p.pumpId === pumpId);
+      if (pump) return pump.pumpName;
+    }
+    return `Pump ${pumpId?.substring(0, 8)}`;
+  };
+
+  const getTankName = (tankId) => {
+    const tank = tanks.find(t => t.tankId === tankId);
+    return tank ? tank.tankName : `Tank ${tankId?.substring(0, 8)}`;
+  };
+
+  const getAttendantName = (attendantId) => {
+    const attendant = persistedAttendants.find(a => a.id === attendantId);
+    console.log("attedants are ",attendant);
+    return attendant ? `${attendant.firstName} ${attendant.lastName}` : `Attendant ${attendantId?.substring(0, 8)}`;
+  };
+
+
+  // Group island assignments by island
+  const assignmentsByIsland = data.islandAssignments.reduce((acc, assignment) => {
+    if (!acc[assignment.islandId]) {
+      acc[assignment.islandId] = [];
+    }
+    acc[assignment.islandId].push(assignment);
+    return acc;
+  }, {});
+
+  // Calculate completion statistics
+  const completionStats = {
+    islands: new Set(data.islandAssignments.map(a => a.islandId)).size,
+    pumps: data.pumpReadings.length,
+    tanks: data.tankReadings.length,
+    attendants: new Set(data.islandAssignments.map(a => a.attendantId)).size
+  };
+
+  const isConfigurationComplete = completionStats.pumps > 0 && completionStats.tanks > 0;
   const availableAttendants = persistedAttendants.length > 0 ? persistedAttendants : [];
 
+  // ========== SUMMARY VIEW ==========
+  if (showSummary) {
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900">Shift Configuration Summary</h2>
+          <p className="text-gray-600 mt-2">Review all configurations before starting the shift</p>
+        </div>
+
+        {/* Status Alert */}
+        {createSuccess ? (
+          <Alert variant="success" className="text-sm">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5" />
+              <div>
+                <p className="font-semibold">Shift Ready to Start!</p>
+                <p>All configurations have been saved successfully. The shift is now active.</p>
+              </div>
+            </div>
+          </Alert>
+        ) : isConfigurationComplete ? (
+          <Alert variant="success" className="text-sm">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5" />
+              <div>
+                <p className="font-semibold">Configuration Complete</p>
+                <p>All required configurations have been set. Ready to start the shift.</p>
+              </div>
+            </div>
+          </Alert>
+        ) : (
+          <Alert variant="warning" className="text-sm">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5" />
+              <div>
+                <p className="font-semibold">Configuration Incomplete</p>
+                <p>Some required configurations are missing. Please complete all sections.</p>
+              </div>
+            </div>
+          </Alert>
+        )}
+
+        {/* Basic Information */}
+        <Card className="p-6">
+          <h3 className="font-semibold text-lg mb-4">Shift Information</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="text-center p-4 bg-blue-50 rounded-lg">
+              <div className="text-2xl font-bold text-blue-600">{data.shiftNumber}</div>
+              <div className="text-sm text-gray-600">Shift Number</div>
+            </div>
+            <div className="text-center p-4 bg-green-50 rounded-lg">
+              <div className="text-lg font-bold text-green-600">
+                {new Date(data.startTime).toLocaleDateString()}
+              </div>
+              <div className="text-sm text-gray-600">Start Date</div>
+            </div>
+            <div className="text-center p-4 bg-purple-50 rounded-lg">
+              <div className="text-lg font-bold text-purple-600">
+                {new Date(data.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+              </div>
+              <div className="text-sm text-gray-600">Start Time</div>
+            </div>
+            <div className="text-center p-4 bg-orange-50 rounded-lg">
+              <div className="text-lg font-bold text-orange-600 truncate">
+                {state.currentUser?.firstName || 'Current User'}
+              </div>
+              <div className="text-sm text-gray-600">Supervisor</div>
+            </div>
+          </div>
+          {shiftId && (
+            <div className="mt-4 p-3 bg-gray-50 rounded border">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-semibold">Shift ID:</span>
+                <code className="bg-gray-100 px-2 py-1 rounded text-xs">{shiftId}</code>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* Island Assignments */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-lg flex items-center gap-2">
+              <Package className="w-5 h-5 text-blue-600" />
+              Island Assignments
+            </h3>
+            <Badge variant={completionStats.islands > 0 ? "success" : "warning"}>
+              {completionStats.islands} Islands Configured
+            </Badge>
+          </div>
+
+          {Object.keys(assignmentsByIsland).length === 0 ? (
+            <Alert variant="warning" className="text-sm">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                <span>No attendants assigned to islands</span>
+              </div>
+            </Alert>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {Object.entries(assignmentsByIsland).map(([islandId, assignments]) => (
+                <div key={islandId} className="border rounded-lg p-4">
+                  <h4 className="font-semibold text-blue-700 mb-3">{getIslandName(islandId)}</h4>
+                  <div className="space-y-2">
+                    {assignments.map((assignment, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-green-50 rounded">
+                        <div className="flex items-center gap-2">
+                          <User className="w-4 h-4 text-green-600" />
+                          <span className="font-medium">{getAttendantName(assignment.attendantId)}</span>
+                        </div>
+                        <Badge variant="success" size="sm">
+                          {assignment.assignmentType}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Pump Readings */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-lg flex items-center gap-2">
+              <Zap className="w-5 h-5 text-green-600" />
+              Pump Readings
+            </h3>
+            <Badge variant={completionStats.pumps > 0 ? "success" : "warning"}>
+              {completionStats.pumps} Pumps Configured
+            </Badge>
+          </div>
+
+          {data.pumpReadings.length === 0 ? (
+            <Alert variant="warning" className="text-sm">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                <span>No pump readings configured</span>
+              </div>
+            </Alert>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="text-left p-3 font-semibold">Pump</th>
+                    <th className="text-left p-3 font-semibold">Electric Meter</th>
+                    <th className="text-left p-3 font-semibold">Manual Meter</th>
+                    <th className="text-left p-3 font-semibold">Cash Meter</th>
+                    <th className="text-left p-3 font-semibold">Unit Price</th>
+                    <th className="text-left p-3 font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.pumpReadings.map((reading, index) => (
+                    <tr key={index} className="border-b hover:bg-gray-50">
+                      <td className="p-3 font-medium">{getPumpName(reading.pumpId)}</td>
+                      <td className="p-3">{reading.electricMeter.toLocaleString()}</td>
+                      <td className="p-3">{reading.manualMeter.toLocaleString()}</td>
+                      <td className="p-3">{reading.cashMeter.toLocaleString()}</td>
+                      <td className="p-3">KSh {reading.unitPrice?.toLocaleString()}</td>
+                      <td className="p-3">
+                        <Badge variant="success">Completed</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+          )}
+        </Card>
+
+        {/* Tank Readings */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-lg flex items-center gap-2">
+              <Fuel className="w-5 h-5 text-orange-600" />
+              Tank Readings
+            </h3>
+            <Badge variant={completionStats.tanks > 0 ? "success" : "warning"}>
+              {completionStats.tanks} Tanks Configured
+            </Badge>
+          </div>
+
+          {data.tankReadings.length === 0 ? (
+            <Alert variant="warning" className="text-sm">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                <span>No tank readings configured</span>
+              </div>
+            </Alert>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="text-left p-3 font-semibold">Tank</th>
+                    <th className="text-left p-3 font-semibold">Dip Value</th>
+                    <th className="text-left p-3 font-semibold">Volume</th>
+                    <th className="text-left p-3 font-semibold">Temperature</th>
+                    <th className="text-left p-3 font-semibold">Water Level</th>
+                    <th className="text-left p-3 font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.tankReadings.map((reading, index) => (
+                    <tr key={index} className="border-b hover:bg-gray-50">
+                      <td className="p-3 font-medium">{getTankName(reading.tankId)}</td>
+                      <td className="p-3">{reading.dipValue}m</td>
+                      <td className="p-3">{reading.volume.toLocaleString()}L</td>
+                      <td className="p-3">{reading.temperature}°C</td>
+                      <td className="p-3">{reading.waterLevel}m</td>
+                      <td className="p-3">
+                        <Badge variant="success">Recorded</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+          )}
+        </Card>
+
+        {/* Final Action */}
+        <Card className="p-6 bg-gradient-to-r from-green-50 to-blue-50 border-green-200">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="text-center lg:text-left">
+              <h3 className="font-semibold text-lg text-gray-900">Ready to Start Shift</h3>
+              <p className="text-gray-600 mt-1">
+                {isConfigurationComplete 
+                  ? "All configurations are complete. You can now start the shift."
+                  : "Some configurations are missing. Please complete all sections before starting."
+                }
+              </p>
+            </div>
+            {/* handleCheckStorage */}
+            <div className="flex flex-col gap-2">
+              <Button
+                onClick={handleFinalCreate}
+                disabled={creating || !isConfigurationComplete || createSuccess}
+                loading={creating}
+                icon={createSuccess ? CheckCircle2 : Play}
+                size="lg"
+                variant={createSuccess ? "success" : "cosmic"}
+                className="whitespace-nowrap"
+              >
+                {creating ? 'Starting Shift...' : 
+                 createSuccess ? 'Shift Started Successfully' : 'Start Shift Now'}
+              </Button>
+              
+              <div className="text-xs text-gray-500 text-center">
+                Shift ID: {shiftId?.substring(0, 8)}...
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Error Message */}
+        {saveError && (
+          <Alert variant="error" className="text-sm">
+            {saveError}
+          </Alert>
+        )}
+
+        {/* Back to Configuration Button */}
+        {!createSuccess && (
+          <div className="flex justify-center">
+            <Button
+              variant="outline"
+              onClick={() => setShowSummary(false)}
+              icon={ArrowLeft}
+            >
+              Back to Configuration
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ========== CONFIGURATION VIEW (YOUR ORIGINAL CODE) ==========
   return (
     <div className="space-y-6">
       {/* Header Info */}
@@ -775,6 +1238,7 @@ console.log("current shift ",shiftDetails);
           </div>
           
           <div className="flex flex-col gap-2">
+            <div>
             <Button
               onClick={handleSaveConfiguration}
               disabled={saving || !shiftDetails || !currentUser}
@@ -783,8 +1247,32 @@ console.log("current shift ",shiftDetails);
               size="lg"
               className="whitespace-nowrap"
             >
-              {saving ? 'Saving Configuration...' : 'Save All Configurations'}
+              {saving ? 'Saving Configuration...' : 'Save & View Summary'}
             </Button>
+            </div>
+
+            <div>
+            <Button
+              onClick={handleClearStorage}
+              icon={Save}
+              size="lg"
+              className="whitespace-nowrap"
+            >
+              {'Clear local Storage'}
+            </Button>
+            </div>
+
+              <div>
+            <Button
+              onClick={handleCheckStorage}
+              icon={Save}
+              size="lg"
+              className="whitespace-nowrap"
+            >
+              {'Check local Storage'}
+            </Button>
+            </div>
+
             <div className="text-xs text-gray-500 text-center">
               Recorded by: {currentUser?.firstName || 'Current User'}
             </div>
@@ -801,7 +1289,7 @@ console.log("current shift ",shiftDetails);
       
       {saveSuccess && (
         <Alert variant="success" className="text-sm">
-          All configurations saved successfully!
+          All configurations saved successfully! Loading summary...
         </Alert>
       )}
     </div>

@@ -171,6 +171,67 @@ class ShiftService {
     });
   }
 
+  // ==================== SHIFT STATUS & DIAGNOSTICS ====================
+
+/**
+ * GET CURRENT OPEN SHIFT FOR STATION
+ * Fetches the currently open shift for a given station
+ */
+async getCurrentOpenShift(stationId, forceRefresh = false) {
+  return this.#retryOperation(async () => {
+    const cacheKey = `current-open-shift-${stationId}`;
+    
+    if (!forceRefresh) {
+      const cached = this.#getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    this.logger.info(`Fetching current open shift for station: ${stationId}`);
+    const response = await apiService.get(`${this.basePath}/station/${stationId}/current`);
+    
+    const data = this.#handleResponse(response, 'Current open shift fetch');
+    
+    // Only cache if we actually found an open shift
+    if (data) {
+      this.#setCached(cacheKey, data);
+    }
+    
+    return data;
+  }).catch(error => {
+    // Don't throw error for 404 - just return null
+    if (error.message.includes('No open shift found') || error.response?.status === 404) {
+      this.logger.info(`No open shift found for station ${stationId}`);
+      return null;
+    }
+    throw this.#handleError(error, 'Current open shift fetch', 'Failed to fetch current open shift');
+  });
+}
+
+/**
+ * CHECK SHIFT OPENING STATUS
+ * Verifies if all opening checks are completed for a shift
+ */
+async checkShiftOpeningStatus(shiftId, forceRefresh = false) {
+  return this.#retryOperation(async () => {
+    const cacheKey = `opening-status-${shiftId}`;
+    
+    if (!forceRefresh) {
+      const cached = this.#getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    this.logger.info(`Checking opening status for shift: ${shiftId}`);
+    const response = await apiService.get(`${this.basePath}/${shiftId}/opening-status`);
+    
+    const data = this.#handleResponse(response, 'Shift opening status check');
+    this.#setCached(cacheKey, data);
+    return data;
+  }).catch(error => {
+    throw this.#handleError(error, 'Shift opening status check', 'Failed to check shift opening status');
+  });
+}
+
+
   async closeShift(shiftId, closingData) {
     return this.#retryOperation(async () => {
       this.logger.info(`Closing shift ${shiftId}:`, closingData);
@@ -384,6 +445,23 @@ export const SHIFT_TYPES = {
   OVERTIME: 'OVERTIME',
   HOLIDAY: 'HOLIDAY',
   SPECIAL: 'SPECIAL'
+};
+
+// Add new constants for opening checks
+export const OPENING_CHECKS = {
+  HAS_INITIAL_METER_READINGS: 'hasInitialMeterReadings',
+  HAS_INITIAL_DIP_READINGS: 'hasInitialDipReadings',
+  HAS_ATTENDANTS_ASSIGNED: 'hasAttendantsAssigned',
+  HAS_NO_OPEN_SHIFTS: 'hasNoOpenShifts',
+  HAS_VALID_PRICING: 'hasValidPricing',
+  HAS_ASSETS_CONNECTED: 'hasAssetsConnected'
+};
+
+export const SHIFT_READINESS = {
+  READY: 'READY',
+  NOT_READY: 'NOT_READY',
+  PARTIALLY_READY: 'PARTIALLY_READY',
+  UNAVAILABLE: 'UNAVAILABLE'
 };
 
 export default shiftService;

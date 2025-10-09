@@ -17,10 +17,12 @@ import StationDashboard from '../common/StationDashboard';
 // import AssetAssignmentManager from './assets/AssetAssignmentManager'
 import SalesManagement from '../common/sales/SalesManagement';
 import StationUserManagement from './staff/StationUserManagement';
+// import ShiftData from '../common/shiftCloseTest/shiftData';
 //import ShiftCreationWizard from '../common/shiftWizard/ShiftCreationWizard';
 import ShiftCreationWizard from '../common/shiftTest/ShiftCreationWizard';
 import ShiftClosingWizard from '../common/shiftCloseTest/ShiftClosingWizard';
 import FuelOffloadWizard from '../common/fuel-offload/FuelOffloadWizard';
+import ShiftData from '../common/shiftCloseTest/shiftData';
 
 const StationManagerDashboard = () => {
   const { state } = useApp();

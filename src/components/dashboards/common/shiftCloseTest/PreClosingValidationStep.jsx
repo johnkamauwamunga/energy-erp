@@ -13,7 +13,7 @@ const PreClosingValidationStep = ({ shiftData, closingData }) => {
   
     useEffect(() => {
       const fetchConnectedAssets = async () => {
-        const currentShiftId = '6bf61bc2-8dae-4bcf-9ced-97bce6f1c350';
+        const currentShiftId = 'f8df7044-ede7-4941-a311-27b4f03b2895';
         
         setLoading(true);
         setError(null);

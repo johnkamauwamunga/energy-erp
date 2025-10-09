@@ -1,97 +1,95 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Badge, Table, Alert, Button } from '../../../ui';
-import { CheckCircle, AlertCircle, Package, Zap, Fuel, User, Play, Save } from 'lucide-react';
-import { dummyData, dummyDataHelpers } from './dummyData';
-import { connectedAssetService } from '../../../../services/connectedAssetsService/connectedAssetsService';
+import { CheckCircle, AlertCircle, Package, Zap, Fuel, User, Play, DollarSign, Gauge, Thermometer, Droplets } from 'lucide-react';
 
 const SummaryStep = ({ data, shiftId, onFinalCreate }) => {
-  const [assetsData, setAssetsData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
   const [createSuccess, setCreateSuccess] = useState(false);
+  const [assetsData, setAssetsData] = useState({ islands: [], tanks: [] });
 
-  // Load the actual configuration data from localStorage or props
+  // Load assets data from localStorage
   useEffect(() => {
-    const loadConfigurationData = () => {
+    const loadAssetsData = () => {
       setLoading(true);
       try {
-        console.log('📊 Using configuration data from props:', data);
+        console.log('📊 Summary Data:', data);
         
-        // You can also load from localStorage if needed
-        const savedAttendants = localStorage.getItem('currentShiftAttendants');
-        const savedShiftId = localStorage.getItem('currentShiftId');
-        
-        console.log('💾 Loaded from localStorage:', {
-          savedAttendants: savedAttendants ? JSON.parse(savedAttendants) : null,
-          savedShiftId
-        });
-        
-        setAssetsData({
-          shiftId: shiftId || savedShiftId,
-          configuration: data
-        });
-        
+        // Load assets from localStorage (set by AssetsConfigurationStep)
+        const savedAssets = localStorage.getItem('currentStationAssets');
+        if (savedAssets) {
+          const parsedAssets = JSON.parse(savedAssets);
+          setAssetsData(parsedAssets);
+          console.log('🏝️ Loaded assets:', parsedAssets);
+        }
+
       } catch (err) {
-        console.error('❌ Error loading configuration:', err);
+        console.error('❌ Error loading data:', err);
         setError('Failed to load configuration data');
       } finally {
         setLoading(false);
       }
     };
 
-    loadConfigurationData();
-  }, [data, shiftId]);
+    loadAssetsData();
+  }, [data]);
 
-  // Helper functions to get names from actual data
-  const getIslandName = (islandId) => {
-    // Try to get from actual configuration data first
-    if (assetsData?.configuration?.islands) {
-      const island = assetsData.configuration.islands.find(i => i.islandId === islandId);
-      if (island) return island.islandName;
-    }
+  // Get attendant name from data.attendants
+  const getAttendantName = (attendantId) => {
+    if (!attendantId) return 'Unknown Attendant';
     
-    // Fallback to dummy data
-    const island = dummyData.stationAssets.assets.find(i => i.islandId === islandId);
-    return island ? island.islandName : `Island ${islandId?.substring(0, 8)}`;
-  };
-
-  const getPumpName = (pumpId) => {
-    // Try to get from actual configuration data first
-    if (assetsData?.configuration?.islands) {
-      for (let island of assetsData.configuration.islands) {
-        const pump = island.pumps?.find(p => p.pumpId === pumpId);
-        if (pump) return pump.pumpName;
+    if (data.attendants && Array.isArray(data.attendants)) {
+      const attendant = data.attendants.find(a => a.id === attendantId);
+      if (attendant) {
+        return `${attendant.firstName} ${attendant.lastName}`.trim();
       }
     }
     
-    // Fallback to dummy data
-    for (let island of dummyData.stationAssets.assets) {
-      const pump = island.pumps.find(p => p.pumpId === pumpId);
-      if (pump) return pump.pumpName;
-    }
-    return `Pump ${pumpId?.substring(0, 8)}`;
+    return `Attendant ${attendantId?.substring(0, 8)}`;
   };
 
-  const getTankName = (tankId) => {
-    // Try to get from actual configuration data first
-    if (assetsData?.configuration?.tanks) {
-      const tank = assetsData.configuration.tanks.find(t => t.tankId === tankId);
-      if (tank) return tank.tankName;
-    }
-    
-    // Fallback to dummy data
-    const tank = dummyData.uniqueTanks.find(t => t.tankId === tankId);
-    return tank ? tank.tankName : `Tank ${tankId?.substring(0, 8)}`;
-  };
-
-  const getUserName = (userId) => {
-    const user = dummyDataHelpers.getUserById(userId);
-    return user ? `${user.firstName} ${user.lastName}` : `User ${userId?.substring(0, 8)}`;
-  };
-
+  // Get supervisor name
   const getSupervisorName = () => {
-    return getUserName(data.supervisorId);
+    if (data.supervisorId) {
+      return getAttendantName(data.supervisorId);
+    }
+    return "Shift Supervisor";
+  };
+
+  // Get island name from assets data
+  const getIslandName = (islandId) => {
+    const island = assetsData.islands.find(i => i.islandId === islandId);
+    return island ? island.islandName : `Island ${islandId?.substring(0, 8)}`;
+  };
+
+  // Get pump details including name and product
+  const getPumpDetails = (pumpId) => {
+    for (let island of assetsData.islands) {
+      const pump = island.pumps?.find(p => p.pumpId === pumpId);
+      if (pump) {
+        return {
+          name: pump.pumpName,
+          product: pump.productName || 'No Product',
+          tank: pump.tank?.tankName
+        };
+      }
+    }
+    return { name: `Pump ${pumpId?.substring(0, 8)}`, product: 'Unknown', tank: null };
+  };
+
+  // Get tank details including name and product
+  const getTankDetails = (tankId) => {
+    const tank = assetsData.tanks.find(t => t.tankId === tankId);
+    if (tank) {
+      return {
+        name: tank.tankName,
+        product: tank.productName,
+        capacity: tank.capacity,
+        currentVolume: tank.currentVolume
+      };
+    }
+    return { name: `Tank ${tankId?.substring(0, 8)}`, product: 'Unknown', capacity: 0, currentVolume: 0 };
   };
 
   // Handle final shift creation
@@ -107,9 +105,6 @@ const SummaryStep = ({ data, shiftId, onFinalCreate }) => {
     try {
       console.log('🎯 Finalizing shift creation with ID:', shiftId);
       
-      // You can add any final API calls here if needed
-      // For example, verify the shift is ready to start
-      
       if (onFinalCreate) {
         await onFinalCreate(shiftId, data);
       }
@@ -123,6 +118,7 @@ const SummaryStep = ({ data, shiftId, onFinalCreate }) => {
         localStorage.removeItem('currentShiftNumber');
         localStorage.removeItem('currentShiftStartTime');
         localStorage.removeItem('currentShiftStation');
+        localStorage.removeItem('currentStationAssets');
       }, 2000);
       
     } catch (err) {
@@ -259,7 +255,7 @@ const SummaryStep = ({ data, shiftId, onFinalCreate }) => {
                     <div key={index} className="flex items-center justify-between p-2 bg-green-50 rounded">
                       <div className="flex items-center gap-2">
                         <User className="w-4 h-4 text-green-600" />
-                        <span className="font-medium">{getUserName(assignment.attendantId)}</span>
+                        <span className="font-medium">{getAttendantName(assignment.attendantId)}</span>
                       </div>
                       <Badge variant="success" size="sm">
                         {assignment.assignmentType}
@@ -278,7 +274,7 @@ const SummaryStep = ({ data, shiftId, onFinalCreate }) => {
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-lg flex items-center gap-2">
             <Zap className="w-5 h-5 text-green-600" />
-            Pump Readings
+            Pump Meter Readings
           </h3>
           <Badge variant={completionStats.pumps > 0 ? "success" : "warning"}>
             {completionStats.pumps} Pumps Configured
@@ -293,33 +289,87 @@ const SummaryStep = ({ data, shiftId, onFinalCreate }) => {
             </div>
           </Alert>
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <thead>
-                <tr className="bg-gray-50">
-                  <th className="text-left p-3 font-semibold">Pump</th>
-                  <th className="text-left p-3 font-semibold">Electric Meter</th>
-                  <th className="text-left p-3 font-semibold">Manual Meter</th>
-                  <th className="text-left p-3 font-semibold">Cash Meter</th>
-                  <th className="text-left p-3 font-semibold">Unit Price</th>
-                  <th className="text-left p-3 font-semibold">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.pumpReadings.map((reading, index) => (
-                  <tr key={index} className="border-b hover:bg-gray-50">
-                    <td className="p-3 font-medium">{getPumpName(reading.pumpId)}</td>
-                    <td className="p-3">{reading.electricMeter.toLocaleString()}</td>
-                    <td className="p-3">{reading.manualMeter.toLocaleString()}</td>
-                    <td className="p-3">{reading.cashMeter.toLocaleString()}</td>
-                    <td className="p-3">KSh {reading.unitPrice?.toLocaleString()}</td>
-                    <td className="p-3">
-                      <Badge variant="success">Completed</Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
+          <div className="space-y-6">
+            {data.pumpReadings.map((reading, index) => {
+              const pumpDetails = getPumpDetails(reading.pumpId);
+              
+              return (
+                <div key={index} className="border rounded-lg p-6 bg-white">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h4 className="font-semibold text-lg text-gray-900">{pumpDetails.name}</h4>
+                      <p className="text-gray-600">{pumpDetails.product}</p>
+                      {pumpDetails.tank && (
+                        <p className="text-sm text-blue-600 mt-1">
+                          Connected to: {pumpDetails.tank}
+                        </p>
+                      )}
+                    </div>
+                    <Badge variant="success">Completed</Badge>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Electric Meter */}
+                    <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="flex items-center justify-center gap-2 mb-2">
+                        <Zap className="w-4 h-4 text-blue-600" />
+                        <span className="font-semibold text-blue-900">Electric Meter</span>
+                      </div>
+                      <div className="text-2xl font-bold text-blue-700">
+                        {reading.electricMeter.toLocaleString()}
+                      </div>
+                      <div className="text-sm text-blue-600 mt-1">Current Reading</div>
+                    </div>
+
+                    {/* Manual Meter */}
+                    <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
+                      <div className="flex items-center justify-center gap-2 mb-2">
+                        <Gauge className="w-4 h-4 text-green-600" />
+                        <span className="font-semibold text-green-900">Manual Meter</span>
+                      </div>
+                      <div className="text-2xl font-bold text-green-700">
+                        {reading.manualMeter.toLocaleString()}
+                      </div>
+                      <div className="text-sm text-green-600 mt-1">Current Reading</div>
+                    </div>
+
+                    {/* Cash Meter */}
+                    <div className="text-center p-4 bg-purple-50 rounded-lg border border-purple-200">
+                      <div className="flex items-center justify-center gap-2 mb-2">
+                        <DollarSign className="w-4 h-4 text-purple-600" />
+                        <span className="font-semibold text-purple-900">Cash Meter</span>
+                      </div>
+                      <div className="text-2xl font-bold text-purple-700">
+                        KSh {reading.cashMeter.toLocaleString()}
+                      </div>
+                      <div className="text-sm text-purple-600 mt-1">Sales Amount</div>
+                    </div>
+                  </div>
+
+                  {/* Additional Pump Information */}
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div className="flex justify-between items-center py-2 border-b">
+                      <span className="text-gray-600">Unit Price:</span>
+                      <span className="font-semibold">KSh {reading.unitPrice?.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-2 border-b">
+                      <span className="text-gray-600">Liters Dispensed:</span>
+                      <span className="font-semibold">{reading.litersDispensed?.toLocaleString()} L</span>
+                    </div>
+                    <div className="flex justify-between items-center py-2 border-b">
+                      <span className="text-gray-600">Sales Value:</span>
+                      <span className="font-semibold">KSh {reading.salesValue?.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-2 border-b">
+                      <span className="text-gray-600">Pump ID:</span>
+                      <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                        {reading.pumpId.substring(0, 8)}...
+                      </code>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>
@@ -329,7 +379,7 @@ const SummaryStep = ({ data, shiftId, onFinalCreate }) => {
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-lg flex items-center gap-2">
             <Fuel className="w-5 h-5 text-orange-600" />
-            Tank Readings
+            Tank Dip Readings
           </h3>
           <Badge variant={completionStats.tanks > 0 ? "success" : "warning"}>
             {completionStats.tanks} Tanks Configured
@@ -344,35 +394,123 @@ const SummaryStep = ({ data, shiftId, onFinalCreate }) => {
             </div>
           </Alert>
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <thead>
-                <tr className="bg-gray-50">
-                  <th className="text-left p-3 font-semibold">Tank</th>
-                  <th className="text-left p-3 font-semibold">Dip Value</th>
-                  <th className="text-left p-3 font-semibold">Volume</th>
-                  <th className="text-left p-3 font-semibold">Temperature</th>
-                  <th className="text-left p-3 font-semibold">Water Level</th>
-                  <th className="text-left p-3 font-semibold">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.tankReadings.map((reading, index) => (
-                  <tr key={index} className="border-b hover:bg-gray-50">
-                    <td className="p-3 font-medium">{getTankName(reading.tankId)}</td>
-                    <td className="p-3">{reading.dipValue}m</td>
-                    <td className="p-3">{reading.volume.toLocaleString()}L</td>
-                    <td className="p-3">{reading.temperature}°C</td>
-                    <td className="p-3">{reading.waterLevel}m</td>
-                    <td className="p-3">
-                      <Badge variant="success">Recorded</Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
+          <div className="space-y-6">
+            {data.tankReadings.map((reading, index) => {
+              const tankDetails = getTankDetails(reading.tankId);
+              
+              return (
+                <div key={index} className="border rounded-lg p-6 bg-white">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h4 className="font-semibold text-lg text-gray-900">{tankDetails.name}</h4>
+                      <p className="text-gray-600">{tankDetails.product}</p>
+                    </div>
+                    <Badge variant="success">Recorded</Badge>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Left Column - Readings */}
+                    <div className="space-y-4">
+                      <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <div className="flex items-center justify-center gap-2 mb-2">
+                          <Gauge className="w-4 h-4 text-blue-600" />
+                          <span className="font-semibold text-blue-900">Dip Value</span>
+                        </div>
+                        <div className="text-2xl font-bold text-blue-700">
+                          {reading.dipValue} m
+                        </div>
+                        <div className="text-sm text-blue-600 mt-1">Current Measurement</div>
+                      </div>
+
+                      <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
+                        <div className="flex items-center justify-center gap-2 mb-2">
+                          <Droplets className="w-4 h-4 text-green-600" />
+                          <span className="font-semibold text-green-900">Volume</span>
+                        </div>
+                        <div className="text-2xl font-bold text-green-700">
+                          {reading.volume.toLocaleString()} L
+                        </div>
+                        <div className="text-sm text-green-600 mt-1">Current Volume</div>
+                      </div>
+                    </div>
+
+                    {/* Right Column - Tank Information */}
+                    <div className="bg-gray-50 p-4 rounded-lg border">
+                      <h5 className="font-semibold text-sm mb-3">Tank Information</h5>
+                      <div className="space-y-3 text-sm">
+                        <div className="flex justify-between items-center py-2 border-b">
+                          <span className="text-gray-600">Product:</span>
+                          <span className="font-semibold">{tankDetails.product}</span>
+                        </div>
+                        <div className="flex justify-between items-center py-2 border-b">
+                          <span className="text-gray-600">Total Capacity:</span>
+                          <span className="font-semibold">{tankDetails.capacity.toLocaleString()} L</span>
+                        </div>
+                        <div className="flex justify-between items-center py-2 border-b">
+                          <span className="text-gray-600">Previous Volume:</span>
+                          <span className="font-semibold">{tankDetails.currentVolume.toLocaleString()} L</span>
+                        </div>
+                        <div className="flex justify-between items-center py-2 border-b">
+                          <span className="text-gray-600">Available Space:</span>
+                          <span className="font-semibold text-green-600">
+                            {(tankDetails.capacity - tankDetails.currentVolume).toLocaleString()} L
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center py-2 border-b">
+                          <span className="text-gray-600">Temperature:</span>
+                          <span className="font-semibold">{reading.temperature}°C</span>
+                        </div>
+                        <div className="flex justify-between items-center py-2 border-b">
+                          <span className="text-gray-600">Water Level:</span>
+                          <span className="font-semibold">{reading.waterLevel} m</span>
+                        </div>
+                        <div className="flex justify-between items-center py-2">
+                          <span className="text-gray-600">Density:</span>
+                          <span className="font-semibold">{reading.density}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
+      </Card>
+
+      {/* Progress Summary */}
+      <Card className="p-6 bg-gradient-to-r from-blue-50 to-purple-50 border">
+        <h3 className="font-semibold text-lg mb-4 text-center">Configuration Progress</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="text-center p-4 bg-white rounded-lg border">
+            <div className="text-2xl font-bold text-blue-600">{completionStats.islands}</div>
+            <div className="text-sm text-gray-600">Islands</div>
+            <Badge variant={completionStats.islands > 0 ? "success" : "warning"} size="sm" className="mt-1">
+              {completionStats.islands > 0 ? 'Configured' : 'Pending'}
+            </Badge>
+          </div>
+          <div className="text-center p-4 bg-white rounded-lg border">
+            <div className="text-2xl font-bold text-green-600">{completionStats.pumps}</div>
+            <div className="text-sm text-gray-600">Pumps</div>
+            <Badge variant={completionStats.pumps > 0 ? "success" : "warning"} size="sm" className="mt-1">
+              {completionStats.pumps > 0 ? 'Recorded' : 'Pending'}
+            </Badge>
+          </div>
+          <div className="text-center p-4 bg-white rounded-lg border">
+            <div className="text-2xl font-bold text-orange-600">{completionStats.tanks}</div>
+            <div className="text-sm text-gray-600">Tanks</div>
+            <Badge variant={completionStats.tanks > 0 ? "success" : "warning"} size="sm" className="mt-1">
+              {completionStats.tanks > 0 ? 'Recorded' : 'Pending'}
+            </Badge>
+          </div>
+          <div className="text-center p-4 bg-white rounded-lg border">
+            <div className="text-2xl font-bold text-purple-600">{completionStats.attendants}</div>
+            <div className="text-sm text-gray-600">Attendants</div>
+            <Badge variant={completionStats.attendants > 0 ? "success" : "warning"} size="sm" className="mt-1">
+              {completionStats.attendants > 0 ? 'Assigned' : 'Pending'}
+            </Badge>
+          </div>
+        </div>
       </Card>
 
       {/* Final Action */}
