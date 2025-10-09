@@ -1,243 +1,174 @@
-import React,{useState, useEffect} from 'react';
-import { Card, Alert, Badge, Table } from '../../../ui';
-import { CheckCircle, XCircle, Info, Zap, Fuel, Package } from 'lucide-react';
-import {connectedAssetService} from '../../../../services/connectedAssetsService/connectedAssetsService'
+// components/PreClosingValidationStep.js
+import React from 'react';
+import { Card, Alert, Badge } from '../../../ui';
+import { CheckCircle, AlertTriangle, Clock, FileText, Zap, Fuel } from 'lucide-react';
 
-const PreClosingValidationStep = ({ shiftData, closingData }) => {
-  const { shiftOpeningCheck, meterReadings, dipReadings, shiftIslandAttedant } = shiftData;
+const PreClosingValidationStep = ({ currentShift, enhancedShiftOpeningCheck, closingData }) => {
+    const getValidationStatus = () => {
+        const issues = [];
+        const warnings = [];
 
-//   fetch opening shift
-  const [assetsData, setAssetsData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  
-    useEffect(() => {
-      const fetchConnectedAssets = async () => {
-        const currentShiftId = 'f8df7044-ede7-4941-a311-27b4f03b2895';
-        
-        setLoading(true);
-        setError(null);
-  
-        try {
-          console.log('🔄 Fetching connected assets for shift:', currentShiftId);
-          
-          const result = await connectedAssetService.getShiftAssetsStructure(currentShiftId);
-          
-          console.log('✅ Connected assets for shift:', result);
-          
-          // Validate the response structure
-          if (!result) {
-            throw new Error('No data received from server');
-          }
-  
-          if (result.success === false) {
-            throw new Error(result.message || 'Failed to fetch assets');
-          }
-  
-          // Handle nested data structure (success: true, data: {...})
-          const data = result.data || result;
-          
-          if (!data) {
-            throw new Error('Invalid data structure received');
-          }
-  
-          setAssetsData(data);
-          
-          // Log specific parts for debugging
-          console.log('📊 Shift Summary:', data.summary);
-          console.log('🏝️ Islands:', data.islands?.length);
-          console.log('⛽ Pumps:', data.pumps?.length || data.islands?.flatMap(i => i.pumps).length);
-          console.log('🛢️ Tanks:', data.tanks?.length);
-          console.log('👥 Attendants:', data.attendants?.length);
-  
-        } catch (err) {
-          console.error('❌ Failed to get assets:', err);
-          setError(err.message || 'An unexpected error occurred');
-          
-          // You can also show a user-friendly message
-          // setError('Unable to load shift assets. Please try again.');
-        } finally {
-          setLoading(false);
+        // Check if shift has opening readings
+        if (!currentShift?.meterReadings?.length) {
+            issues.push('No opening pump meter readings found');
         }
-      };
-  
-      fetchConnectedAssets();
-    }, []); 
-    
-    // Empty dependency array means this runs once on mount
-  
 
-  const validationChecks = [
-    {
-      id: 'shiftStatus',
-      label: 'Shift Status',
-      status: shiftData.status === 'OPEN',
-      message: shiftData.status === 'OPEN' ? 'Shift is open' : 'Shift not open'
-    },
-    {
-      id: 'openingChecks',
-      label: 'Opening Checks',
-      status: shiftOpeningCheck?.checksPassed || false,
-      message: shiftOpeningCheck?.checksPassed ? 'All checks passed' : 'Checks incomplete'
-    },
-    {
-      id: 'pumpReadings',
-      label: 'Pump Readings',
-      status: meterReadings.length > 0,
-      message: `${meterReadings.length} START readings`
-    },
-    {
-      id: 'tankReadings', 
-      label: 'Tank Readings',
-      status: dipReadings.length > 0,
-      message: `${dipReadings.length} START readings`
-    },
-    {
-      id: 'islandAssignments',
-      label: 'Island Assignments',
-      status: shiftIslandAttedant.length > 0,
-      message: `${shiftIslandAttedant.length} islands assigned`
-    }
-  ];
+        if (!currentShift?.dipReadings?.length) {
+            issues.push('No opening tank dip readings found');
+        }
 
-  const allChecksPassed = validationChecks.every(check => check.status);
+        // Check shift timing
+        const shiftStart = new Date(currentShift?.startTime);
+        const now = new Date();
+        const shiftDuration = (now - shiftStart) / (1000 * 60 * 60); // hours
 
-  return (
-    <div className="space-y-4">
-      {/* Compact Alert */}
-      <Alert variant={allChecksPassed ? "success" : "warning"} className="text-sm" size="sm">
-        <div className="flex items-center gap-2">
-          {allChecksPassed ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-          <div>
-            <p className="font-medium">
-              {allChecksPassed ? 'Ready to Close Shift' : 'Shift Closing Requirements'}
-            </p>
-            <p>
-              {allChecksPassed 
-                ? 'All pre-closing checks passed. Proceed with closing.'
-                : 'Some requirements need attention before closing.'
-              }
-            </p>
-          </div>
+        if (shiftDuration < 1) {
+            warnings.push('Shift duration is less than 1 hour');
+        }
+
+        if (shiftDuration > 24) {
+            warnings.push('Shift duration exceeds 24 hours');
+        }
+
+        return { issues, warnings, isValid: issues.length === 0 };
+    };
+
+    const { issues, warnings, isValid } = getValidationStatus();
+
+    return (
+        <div className="space-y-4">
+            {/* Shift Information */}
+            <Card title="Shift Information" className="p-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                        <p className="text-sm text-gray-600">Shift Number</p>
+                        <p className="font-semibold">{currentShift?.shiftNumber}</p>
+                    </div>
+                    <div>
+                        <p className="text-sm text-gray-600">Status</p>
+                        <Badge variant="success" size="sm">OPEN</Badge>
+                    </div>
+                    <div>
+                        <p className="text-sm text-gray-600">Start Time</p>
+                        <p className="font-semibold">
+                            {currentShift?.startTime ? new Date(currentShift.startTime).toLocaleString() : 'N/A'}
+                        </p>
+                    </div>
+                    <div>
+                        <p className="text-sm text-gray-600">Duration</p>
+                        <p className="font-semibold">
+                            {currentShift?.startTime ? 
+                                `${Math.round((new Date() - new Date(currentShift.startTime)) / (1000 * 60 * 60))} hours` : 
+                                'N/A'
+                            }
+                        </p>
+                    </div>
+                </div>
+            </Card>
+
+            {/* Validation Results */}
+            {isValid ? (
+                <Alert variant="success">
+                    <CheckCircle className="w-4 h-4" />
+                    <div>
+                        <p className="font-medium">Pre-closing validation passed</p>
+                        <p>All required opening readings are available. You can proceed to close the shift.</p>
+                    </div>
+                </Alert>
+            ) : (
+                <Alert variant="error">
+                    <AlertTriangle className="w-4 h-4" />
+                    <div>
+                        <p className="font-medium">Pre-closing validation failed</p>
+                        <p>Please ensure all opening readings are completed before proceeding.</p>
+                    </div>
+                </Alert>
+            )}
+
+            {/* Opening Readings Summary */}
+            <Card title="Opening Readings Summary" className="p-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex items-center gap-3">
+                        <Zap className="w-8 h-8 text-blue-500" />
+                        <div>
+                            <p className="font-medium">Pump Readings</p>
+                            <p className="text-sm text-gray-600">
+                                {currentShift?.meterReadings?.length || 0} pumps with opening readings
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <Fuel className="w-8 h-8 text-green-500" />
+                        <div>
+                            <p className="font-medium">Tank Readings</p>
+                            <p className="text-sm text-gray-600">
+                                {currentShift?.dipReadings?.length || 0} tanks with opening dip readings
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </Card>
+
+            {/* Issues & Warnings */}
+            {(issues.length > 0 || warnings.length > 0) && (
+                <Card title="Validation Details" className="p-4">
+                    {issues.length > 0 && (
+                        <div className="mb-4">
+                            <h4 className="font-medium text-red-700 mb-2 flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4" />
+                                Critical Issues ({issues.length})
+                            </h4>
+                            <ul className="list-disc list-inside text-sm text-red-600">
+                                {issues.map((issue, index) => (
+                                    <li key={index}>{issue}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    
+                    {warnings.length > 0 && (
+                        <div>
+                            <h4 className="font-medium text-orange-700 mb-2 flex items-center gap-2">
+                                <Clock className="w-4 h-4" />
+                                Warnings ({warnings.length})
+                            </h4>
+                            <ul className="list-disc list-inside text-sm text-orange-600">
+                                {warnings.map((warning, index) => (
+                                    <li key={index}>{warning}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </Card>
+            )}
+
+            {/* Shift Opening Check */}
+            {enhancedShiftOpeningCheck && (
+                <Card title="Shift Opening Verification" className="p-4">
+                    <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Opening Cash Float</span>
+                            <span className="font-semibold">
+                                KES {enhancedShiftOpeningCheck.cashFloat?.toFixed(2) || '0.00'}
+                            </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Price List</span>
+                            <span className="font-semibold">
+                                {enhancedShiftOpeningCheck.priceList?.name || 'Not set'}
+                            </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Verified By</span>
+                            <span className="font-semibold">
+                                {enhancedShiftOpeningCheck.verifiedBy || 'Not recorded'}
+                            </span>
+                        </div>
+                    </div>
+                </Card>
+            )}
         </div>
-      </Alert>
-
-      {/* Compact Validation Checks */}
-      <Card className="p-4">
-        <h3 className="font-semibold text-sm mb-3">Pre-Closing Validation</h3>
-        <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-2">
-          {validationChecks.map(check => (
-            <div key={check.id} className={`flex items-center gap-2 p-2 border rounded text-xs ${
-              check.status ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
-            }`}>
-              {check.status ? (
-                <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />
-              ) : (
-                <XCircle className="w-3 h-3 text-red-500 flex-shrink-0" />
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="font-medium truncate">{check.label}</p>
-                <p className="text-gray-600 truncate">{check.message}</p>
-              </div>
-              <Badge variant={check.status ? "success" : "error"} size="sm" className="flex-shrink-0">
-                {check.status ? "PASS" : "FAIL"}
-              </Badge>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* Compact Summary Cards */}
-      <div className="grid grid-cols-3 gap-2">
-        <div className="bg-blue-50 p-3 rounded border border-blue-200 text-center">
-          <div className="flex items-center justify-center gap-1 mb-1">
-            <Zap className="w-3 h-3 text-blue-600" />
-            <span className="font-semibold text-xs">Pumps</span>
-          </div>
-          <p className="text-lg font-bold text-blue-600">{meterReadings.length}</p>
-          <p className="text-xs text-gray-600">START</p>
-        </div>
-
-        <div className="bg-orange-50 p-3 rounded border border-orange-200 text-center">
-          <div className="flex items-center justify-center gap-1 mb-1">
-            <Fuel className="w-3 h-3 text-orange-600" />
-            <span className="font-semibold text-xs">Tanks</span>
-          </div>
-          <p className="text-lg font-bold text-orange-600">{dipReadings.length}</p>
-          <p className="text-xs text-gray-600">START</p>
-        </div>
-
-        <div className="bg-green-50 p-3 rounded border border-green-200 text-center">
-          <div className="flex items-center justify-center gap-1 mb-1">
-            <Package className="w-3 h-3 text-green-600" />
-            <span className="font-semibold text-xs">Islands</span>
-          </div>
-          <p className="text-lg font-bold text-green-600">{shiftIslandAttedant.length}</p>
-          <p className="text-xs text-gray-600">Assigned</p>
-        </div>
-      </div>
-
-      {/* Compact Island Assignments Table */}
-      <Card className="p-4">
-        <h3 className="font-semibold text-sm mb-3">Island Assignments</h3>
-        <div className="overflow-x-auto">
-          <Table size="sm">
-            <thead>
-              <tr>
-                <th className="text-xs">Island</th>
-                <th className="text-xs">Attendant</th>
-                <th className="text-xs">Type</th>
-                <th className="text-xs">Pumps</th>
-              </tr>
-            </thead>
-            <tbody className="text-xs">
-              {shiftIslandAttedant.map(assignment => {
-                const islandPumps = meterReadings.filter(reading => 
-                  reading.pump?.islandId === assignment.islandId
-                );
-                
-                return (
-                  <tr key={assignment.islandId}>
-                    <td className="font-medium">
-                      <div className="truncate max-w-20">
-                        {assignment.island.name}
-                      </div>
-                      <div className="text-gray-500 text-xs">
-                        {assignment.island.code}
-                      </div>
-                    </td>
-                    <td>
-                      <div className="truncate max-w-20">
-                        {assignment.attendant.firstName} {assignment.attendant.lastName}
-                      </div>
-                    </td>
-                    <td>
-                      <Badge variant="success" size="sm" className="text-xs">
-                        {assignment.assignmentType}
-                      </Badge>
-                    </td>
-                    <td>{islandPumps.length}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </Table>
-        </div>
-      </Card>
-
-      {!allChecksPassed && (
-        <Alert variant="error" className="text-sm" size="sm">
-          <div className="flex items-start gap-2">
-            <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="font-medium">Cannot Proceed</p>
-              <p>Ensure all opening requirements are met before closing the shift.</p>
-            </div>
-          </div>
-        </Alert>
-      )}
-    </div>
-  );
+    );
 };
 
 export default PreClosingValidationStep;

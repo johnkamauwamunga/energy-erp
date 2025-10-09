@@ -173,64 +173,63 @@ class ShiftService {
 
   // ==================== SHIFT STATUS & DIAGNOSTICS ====================
 
-/**
- * GET CURRENT OPEN SHIFT FOR STATION
- * Fetches the currently open shift for a given station
- */
-async getCurrentOpenShift(stationId, forceRefresh = false) {
-  return this.#retryOperation(async () => {
-    const cacheKey = `current-open-shift-${stationId}`;
-    
-    if (!forceRefresh) {
-      const cached = this.#getCached(cacheKey);
-      if (cached) return cached;
-    }
+  /**
+   * GET CURRENT OPEN SHIFT FOR STATION
+   * Fetches the currently open shift for a given station
+   */
+  async getCurrentOpenShift(stationId, forceRefresh = false) {
+    return this.#retryOperation(async () => {
+      const cacheKey = `current-open-shift-${stationId}`;
+      
+      if (!forceRefresh) {
+        const cached = this.#getCached(cacheKey);
+        if (cached) return cached;
+      }
 
-    this.logger.info(`Fetching current open shift for station: ${stationId}`);
-    const response = await apiService.get(`${this.basePath}/station/${stationId}/current`);
-    
-    const data = this.#handleResponse(response, 'Current open shift fetch');
-    
-    // Only cache if we actually found an open shift
-    if (data) {
+      this.logger.info(`Fetching current open shift for station: ${stationId}`);
+      const response = await apiService.get(`${this.basePath}/station/${stationId}/current`);
+      
+      const data = this.#handleResponse(response, 'Current open shift fetch');
+      
+      // Only cache if we actually found an open shift
+      if (data) {
+        this.#setCached(cacheKey, data);
+      }
+      
+      return data;
+    }).catch(error => {
+      // Don't throw error for 404 - just return null
+      if (error.message.includes('No open shift found') || error.response?.status === 404) {
+        this.logger.info(`No open shift found for station ${stationId}`);
+        return null;
+      }
+      throw this.#handleError(error, 'Current open shift fetch', 'Failed to fetch current open shift');
+    });
+  }
+
+  /**
+   * CHECK SHIFT OPENING STATUS
+   * Verifies if all opening checks are completed for a shift
+   */
+  async checkShiftOpeningStatus(shiftId, forceRefresh = false) {
+    return this.#retryOperation(async () => {
+      const cacheKey = `opening-status-${shiftId}`;
+      
+      if (!forceRefresh) {
+        const cached = this.#getCached(cacheKey);
+        if (cached) return cached;
+      }
+
+      this.logger.info(`Checking opening status for shift: ${shiftId}`);
+      const response = await apiService.get(`${this.basePath}/${shiftId}/opening-status`);
+      
+      const data = this.#handleResponse(response, 'Shift opening status check');
       this.#setCached(cacheKey, data);
-    }
-    
-    return data;
-  }).catch(error => {
-    // Don't throw error for 404 - just return null
-    if (error.message.includes('No open shift found') || error.response?.status === 404) {
-      this.logger.info(`No open shift found for station ${stationId}`);
-      return null;
-    }
-    throw this.#handleError(error, 'Current open shift fetch', 'Failed to fetch current open shift');
-  });
-}
-
-/**
- * CHECK SHIFT OPENING STATUS
- * Verifies if all opening checks are completed for a shift
- */
-async checkShiftOpeningStatus(shiftId, forceRefresh = false) {
-  return this.#retryOperation(async () => {
-    const cacheKey = `opening-status-${shiftId}`;
-    
-    if (!forceRefresh) {
-      const cached = this.#getCached(cacheKey);
-      if (cached) return cached;
-    }
-
-    this.logger.info(`Checking opening status for shift: ${shiftId}`);
-    const response = await apiService.get(`${this.basePath}/${shiftId}/opening-status`);
-    
-    const data = this.#handleResponse(response, 'Shift opening status check');
-    this.#setCached(cacheKey, data);
-    return data;
-  }).catch(error => {
-    throw this.#handleError(error, 'Shift opening status check', 'Failed to check shift opening status');
-  });
-}
-
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Shift opening status check', 'Failed to check shift opening status');
+    });
+  }
 
   async closeShift(shiftId, closingData) {
     return this.#retryOperation(async () => {
@@ -283,6 +282,35 @@ async checkShiftOpeningStatus(shiftId, forceRefresh = false) {
       return data;
     }).catch(error => {
       throw this.#handleError(error, 'Shifts fetch', 'Failed to fetch shifts');
+    });
+  }
+
+  /**
+   * GET ALL SHIFTS (COMPREHENSIVE LIST)
+   * Fetches all shifts with detailed information for reporting/analytics
+   * Uses the /list/all endpoint for comprehensive shift data
+   */
+  async getAllShifts(filters = {}, forceRefresh = false) {
+    return this.#retryOperation(async () => {
+      const cacheKey = `all-shifts-${JSON.stringify(filters)}`;
+      
+      if (!forceRefresh) {
+        const cached = this.#getCached(cacheKey);
+        if (cached) return cached;
+      }
+
+      this.logger.info('Fetching comprehensive shift list with filters:', filters);
+      
+      const queryParams = this.#buildQueryParams(filters);
+      const response = await apiService.get(`${this.basePath}/list/all?${queryParams}`);
+      
+      const data = this.#handleResponse(response, 'Comprehensive shifts fetch');
+      this.#setCached(cacheKey, data);
+      
+      this.logger.info(`Retrieved ${data.shifts?.length || 0} shifts from comprehensive list`);
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Comprehensive shifts fetch', 'Failed to fetch comprehensive shift list');
     });
   }
 
@@ -395,6 +423,86 @@ async checkShiftOpeningStatus(shiftId, forceRefresh = false) {
       this.cache.clear();
     }
     this.logger.info('Cache cleared' + (pattern ? ` for pattern: ${pattern}` : ''));
+  }
+
+  /**
+   * BUILD SHIFT FILTERS
+   * Enhanced filter builder for comprehensive shift queries
+   * Provides a clean, consistent way to build filter objects
+   */
+  buildShiftFilters(options = {}) {
+    const {
+      stationId,
+      supervisorId,
+      status,
+      startDate,
+      endDate,
+      shiftType,
+      dateRange,
+      includeDetails = true,
+      pagination = { page: 1, limit: 50 },
+      sorting = { sortBy: 'startTime', sortOrder: 'desc' }
+    } = options;
+
+    const filters = {
+      stationId,
+      supervisorId,
+      status,
+      startDate,
+      endDate,
+      shiftType,
+      includeDetails,
+      ...pagination,
+      ...sorting
+    };
+
+    // Handle date range if provided
+    if (dateRange) {
+      filters.startDate = dateRange.start;
+      filters.endDate = dateRange.end;
+    }
+
+    // Clean up undefined values
+    return Object.fromEntries(
+      Object.entries(filters).filter(([_, value]) => value !== undefined && value !== null && value !== '')
+    );
+  }
+
+  /**
+   * Get shifts by date range with pagination
+   */
+  async getShiftsByDateRange(startDate, endDate, options = {}) {
+    const filters = this.buildShiftFilters({
+      startDate,
+      endDate,
+      ...options
+    });
+    
+    return this.getAllShifts(filters, options.forceRefresh);
+  }
+
+  /**
+   * Get shifts by status with comprehensive details
+   */
+  async getShiftsByStatus(status, options = {}) {
+    const filters = this.buildShiftFilters({
+      status,
+      ...options
+    });
+    
+    return this.getAllShifts(filters, options.forceRefresh);
+  }
+
+  /**
+   * Get shifts by station with comprehensive details
+   */
+  async getShiftsByStation(stationId, options = {}) {
+    const filters = this.buildShiftFilters({
+      stationId,
+      ...options
+    });
+    
+    return this.getAllShifts(filters, options.forceRefresh);
   }
 
   // Validation helpers

@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Card, Button } from '../../../ui';
 import { Plus, RefreshCw, BarChart3 } from 'lucide-react';
 import ShiftManagementTable from './ShiftManagementTable';
-import ShiftOpeningForm from './ShiftOpeningForm';
+import ShiftOpeningForm from './ShiftOpeningFormDemo';
 import ShiftDetailsView from './ShiftDetailsView';
 import ShiftClosingFlow from './ShiftClosingFlow';
 

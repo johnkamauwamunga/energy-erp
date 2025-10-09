@@ -23,6 +23,8 @@ import ShiftCreationWizard from '../common/shiftTest/ShiftCreationWizard';
 import ShiftClosingWizard from '../common/shiftCloseTest/ShiftClosingWizard';
 import FuelOffloadWizard from '../common/fuel-offload/FuelOffloadWizard';
 import ShiftData from '../common/shiftCloseTest/shiftData';
+import ShiftTableExample from '../common/multiTable/ShiftTableExample';
+import ShiftManagement from '../common/shift/ShiftManagement';
 
 const StationManagerDashboard = () => {
   const { state } = useApp();
@@ -81,7 +83,7 @@ console.log("station",station);
        case 'sales':
         return <SalesManagement/>;
       case 'reports':
-         return <PlaceholderComponent title="Station Dashboard" icon={BarChart3} />;
+         return <ShiftManagement />;
       default:
         return <PlaceholderComponent title="Station Dashboard" icon={BarChart3} />;
     }

@@ -27,6 +27,7 @@ export { default as Select1 } from './Select1';
 export { default as Textarea } from './Textarea'
 export { default as Dropdown } from './Dropdown'
 export { default as Avatar } from './Avatar'
+export { default as MultiTable } from './MultiTable';
 
 
-// Add other exports as neededj
+// Add other exports as needed

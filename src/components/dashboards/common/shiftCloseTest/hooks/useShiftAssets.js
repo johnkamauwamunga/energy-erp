@@ -1,5 +1,5 @@
 // hooks/useShiftAssets.js
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { connectedAssetService } from '../../../../../services/connectedAssetsService/connectedAssetsService';
 import { shiftService } from '../../../../../services/shiftService/shiftService';
 
@@ -329,9 +329,280 @@ export const useShiftAssets = (stationId) => {
         }
     };
 
+    // ========== SHIFT CLOSING FUNCTIONS ==========
+
+    // Build the complete shift closing payload
+    // const buildShiftClosingPayload = useCallback((closingFormData, currentUser) => {
+    //     const {
+    //         pumpReadings = [],
+    //         tankReadings = [],
+    //         islandCollections = {},
+    //         endTime
+    //     } = closingFormData;
+
+    //     // Transform pump readings for API
+    //     const transformedPumpReadings = pumpReadings
+    //         .filter(reading => reading.electricMeter > 0) // Only include pumps with readings
+    //         .map(reading => {
+    //             const pump = pumpsWithIslandInfo.find(p => p.pumpId === reading.pumpId);
+    //             const startReading = pump?.meterReadings?.find(r => r.readingType === 'START');
+                
+    //             // Calculate liters dispensed if not provided
+    //             const calculatedLiters = reading.litersDispensed || 
+    //                 (reading.electricMeter - (startReading?.electricMeter || 0));
+                
+    //             // Calculate sales value if not provided
+    //             const calculatedSales = reading.salesValue || 
+    //                 (calculatedLiters * (reading.unitPrice || 100.0));
+
+    //             return {
+    //                 pumpId: reading.pumpId,
+    //                 electricMeter: reading.electricMeter || 0,
+    //                 manualMeter: reading.manualMeter || 0,
+    //                 cashMeter: reading.cashMeter || 0,
+    //                 litersDispensed: calculatedLiters,
+    //                 salesValue: calculatedSales,
+    //                 unitPrice: reading.unitPrice || 100.0
+    //             };
+    //         });
+
+    //     // Transform tank readings for API
+    //     const transformedTankReadings = tankReadings
+    //         .filter(reading => reading.dipValue > 0) // Only include tanks with readings
+    //         .map(reading => ({
+    //             tankId: reading.tankId,
+    //             dipValue: reading.dipValue || 0,
+    //             volume: reading.volume || 0,
+    //             temperature: reading.temperature || 25.0,
+    //             waterLevel: reading.waterLevel || 0.0,
+    //             density: reading.density || 0.85
+    //         }));
+
+    //     // Transform island collections for API
+    //     const transformedIslandCollections = Object.values(islandCollections)
+    //         .filter(collection => 
+    //             collection.cashAmount > 0 || 
+    //             collection.mobileMoneyAmount > 0 || 
+    //             collection.visaAmount > 0 || 
+    //             collection.mastercardAmount > 0 ||
+    //             collection.debtAmount > 0 ||
+    //             collection.otherAmount > 0
+    //         )
+    //         .map(collection => ({
+    //             islandId: collection.islandId,
+    //             cashAmount: collection.cashAmount || 0,
+    //             mobileMoneyAmount: collection.mobileMoneyAmount || 0,
+    //             visaAmount: collection.visaAmount || 0,
+    //             mastercardAmount: collection.mastercardAmount || 0,
+    //             debtAmount: collection.debtAmount || 0,
+    //             otherAmount: collection.otherAmount || 0
+    //         }));
+
+    //     // Build the complete payload
+    //     const payload = {
+    //         shiftId: currentShift?.id,
+    //         recordedById: currentUser?.id,
+    //         endTime: new Date(endTime).toISOString(),
+    //         pumpReadings: transformedPumpReadings,
+    //         tankReadings: transformedTankReadings,
+    //         islandCollections: transformedIslandCollections
+    //     };
+
+    //     // Add metadata for debugging
+    //     payload.metadata = {
+    //         stationId: stationId,
+    //         totalPumps: transformedPumpReadings.length,
+    //         totalTanks: transformedTankReadings.length,
+    //         totalIslands: transformedIslandCollections.length,
+    //         generatedAt: new Date().toISOString()
+    //     };
+
+    //     return payload;
+    // }, [currentShift, pumpsWithIslandInfo, stationId]);
+
+    const buildShiftClosingPayload = useCallback((closingFormData, currentUser) => {
+    const {
+        pumpReadings = [],
+        tankReadings = [],
+        islandCollections = {},
+        endTime
+    } = closingFormData;
+
+    // Transform pump readings for API
+    const transformedPumpReadings = pumpReadings
+        .filter(reading => reading.electricMeter > 0) // Only include pumps with readings
+        .map(reading => {
+            const pump = pumpsWithIslandInfo.find(p => p.pumpId === reading.pumpId);
+            const startReading = pump?.meterReadings?.find(r => r.readingType === 'START');
+            
+            // Calculate liters dispensed if not provided
+            const calculatedLiters = reading.litersDispensed || 
+                (reading.electricMeter - (startReading?.electricMeter || 0));
+            
+            // Calculate sales value if not provided
+            const calculatedSales = reading.salesValue || 
+                (calculatedLiters * (reading.unitPrice || 100.0));
+
+            return {
+                pumpId: reading.pumpId,
+                electricMeter: reading.electricMeter || 0,
+                manualMeter: reading.manualMeter || 0,
+                cashMeter: reading.cashMeter || 0,
+                litersDispensed: calculatedLiters,
+                salesValue: calculatedSales,
+                unitPrice: reading.unitPrice || 100.0
+            };
+        });
+
+    // Transform tank readings for API
+    const transformedTankReadings = tankReadings
+        .filter(reading => reading.dipValue > 0) // Only include tanks with readings
+        .map(reading => ({
+            tankId: reading.tankId,
+            dipValue: reading.dipValue || 0,
+            volume: reading.volume || 0,
+            temperature: reading.temperature || 25.0,
+            waterLevel: reading.waterLevel || 0.0,
+            density: reading.density || 0.85
+        }));
+
+    // Transform island collections for API - UPDATED WITH expectedAmount
+    const transformedIslandCollections = Object.values(islandCollections)
+        .filter(collection => 
+            collection.cashAmount > 0 || 
+            collection.mobileMoneyAmount > 0 || 
+            collection.visaAmount > 0 || 
+            collection.mastercardAmount > 0 ||
+            collection.debtAmount > 0 ||
+            collection.otherAmount > 0
+        )
+        .map(collection => ({
+            islandId: collection.islandId,
+            cashAmount: collection.cashAmount || 0,
+            mobileMoneyAmount: collection.mobileMoneyAmount || 0,
+            visaAmount: collection.visaAmount || 0,
+            mastercardAmount: collection.mastercardAmount || 0,
+            debtAmount: collection.debtAmount || 0,
+            otherAmount: collection.otherAmount || 0,
+            expectedAmount: collection.totalExpected || 0  // ← ADDED expectedAmount
+        }));
+
+    // Build the complete payload
+    const payload = {
+        shiftId: currentShift?.id,
+        recordedById: currentUser?.id,
+        endTime: new Date(endTime).toISOString(),
+        pumpReadings: transformedPumpReadings,
+        tankReadings: transformedTankReadings,
+        islandCollections: transformedIslandCollections
+    };
+
+    // Add metadata for debugging
+    payload.metadata = {
+        stationId: stationId,
+        totalPumps: transformedPumpReadings.length,
+        totalTanks: transformedTankReadings.length,
+        totalIslands: transformedIslandCollections.length,
+        generatedAt: new Date().toISOString()
+    };
+
+    return payload;
+}, [currentShift, pumpsWithIslandInfo, stationId]);
+
+    // Validate the closing payload
+    const validateShiftClosingPayload = useCallback((payload) => {
+        const errors = [];
+
+        if (!payload.shiftId) {
+            errors.push('Shift ID is required');
+        }
+
+        if (!payload.recordedById) {
+            errors.push('Recorded By user ID is required');
+        }
+
+        if (!payload.endTime) {
+            errors.push('End time is required');
+        }
+
+        // Validate pump readings
+        payload.pumpReadings.forEach((reading, index) => {
+            if (!reading.pumpId) {
+                errors.push(`Pump reading ${index + 1}: Pump ID is required`);
+            }
+            if (reading.electricMeter < 0) {
+                errors.push(`Pump ${reading.pumpId}: Electric meter cannot be negative`);
+            }
+            if (reading.unitPrice <= 0) {
+                errors.push(`Pump ${reading.pumpId}: Unit price must be greater than 0`);
+            }
+        });
+
+        // Validate tank readings
+        payload.tankReadings.forEach((reading, index) => {
+            if (!reading.tankId) {
+                errors.push(`Tank reading ${index + 1}: Tank ID is required`);
+            }
+            if (reading.dipValue < 0) {
+                errors.push(`Tank ${reading.tankId}: Dip value cannot be negative`);
+            }
+        });
+
+        return {
+            isValid: errors.length === 0,
+            errors
+        };
+    }, []);
+
+    // Submit shift closing
+  const submitShiftClosing = useCallback(async (closingFormData, currentUser) => {
+  try {
+    const payload = buildShiftClosingPayload(closingFormData, currentUser);
+    const validation = validateShiftClosingPayload(payload);
+
+    if (!validation.isValid) {
+      throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
+    }
+
+    console.log('Submitting shift closing payload:', payload);
+    
+    // Keep shiftId in the payload AND pass it as separate parameter
+    const shiftId = payload.shiftId;
+    const result = await shiftService.closeShift(shiftId, payload);
+    return result;
+
+  } catch (error) {
+    console.error('Failed to close shift:', error);
+    throw error;
+  }
+}, [buildShiftClosingPayload, validateShiftClosingPayload]);
+
+// In hooks/useShiftAssets.js - Complete updated function
+
+    // Get payload summary for UI
+    const getClosingPayloadSummary = useCallback((closingFormData, currentUser) => {
+        const payload = buildShiftClosingPayload(closingFormData, currentUser);
+        
+        return {
+            pumps: payload.pumpReadings.length,
+            tanks: payload.tankReadings.length,
+            islands: payload.islandCollections.length,
+            totalSales: payload.pumpReadings.reduce((sum, reading) => sum + (reading.salesValue || 0), 0),
+            totalCollections: payload.islandCollections.reduce((sum, collection) => 
+                sum + (collection.cashAmount || 0) + 
+                (collection.mobileMoneyAmount || 0) + 
+                (collection.visaAmount || 0) + 
+                (collection.mastercardAmount || 0) + 
+                (collection.debtAmount || 0) + 
+                (collection.otherAmount || 0), 0),
+            
+            totalLiters: payload.pumpReadings.reduce((sum, reading) => sum + (reading.litersDispensed || 0), 0)
+        };
+    }, [buildShiftClosingPayload]);
+
     return {
-        // Core data
-        data: data,
+        // Core data (existing)
+        data,
         currentShift,
         pumpsWithIslandInfo,
         tanksWithReadings,
@@ -341,12 +612,18 @@ export const useShiftAssets = (stationId) => {
         enhancedShiftOpeningCheck,
         assetsRequiringAttention,
         
-        // State
+        // State (existing)
         loading,
         error,
         hasData,
         
-        // Actions
-        refetch
+        // Actions (existing)
+        refetch,
+
+        // NEW: Shift closing functions
+        buildShiftClosingPayload,
+        validateShiftClosingPayload,
+        submitShiftClosing,
+        getClosingPayloadSummary
     };
 };
