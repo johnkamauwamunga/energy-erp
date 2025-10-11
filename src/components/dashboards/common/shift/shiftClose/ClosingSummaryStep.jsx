@@ -1,6 +1,6 @@
 // components/ClosingSummaryStep.js
 import React from 'react';
-import { Card, Badge, Alert } from '../../../ui';
+import { Card, Badge, Alert } from '../../../../ui';
 import { CheckCircle, AlertTriangle, DollarSign, Fuel, Zap, Package } from 'lucide-react';
 
 const ClosingSummaryStep = ({ closingData, closingPayload, payloadSummary, validation }) => {

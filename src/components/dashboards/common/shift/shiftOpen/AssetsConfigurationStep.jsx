@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Card, Tabs, Tab, Input, Badge, Alert, Button, Table } from '../../../ui';
+import { Card, Tabs, Tab, Input, Badge, Alert, Button, Table } from '../../../../ui';
 import { Zap, Package, Fuel, User, CheckCircle, ArrowRight, ArrowLeft, Save, Play, CheckCircle2, AlertCircle } from 'lucide-react';
 import { dummyData, mockServices, dummyDataHelpers } from './dummyData';
-import { connectedAssetService } from '../../../../services/connectedAssetsService/connectedAssetsService';
-import { useApp } from '../../../../context/AppContext';
-import { shiftService } from '../../../../services/shiftService/shiftService';
+import { connectedAssetService } from '../../../../../services/connectedAssetsService/connectedAssetsService';
+import { useApp } from '../../../../../context/AppContext';
+import { shiftService } from '../../../../../services/shiftService/shiftService';
 
 const AssetsConfigurationStep = ({ data, onChange, stationId, shiftId, onSave, onFinalCreate }) => {
   const { state } = useApp();

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Select, Card, Badge, Avatar, Alert, Button } from '../../../ui';
+import { Select, Card, Badge, Avatar, Alert, Button } from '../../../../ui';
 import { User, UserCheck, Users, Info, Save } from 'lucide-react';
 import { dummyData, mockServices, dummyDataHelpers } from './dummyData';
-import { userService } from '../../../../services/userService/userService';
-import { shiftService } from '../../../../services/shiftService/shiftService';
-import { useApp } from '../../../../context/AppContext';
+import { userService } from '../../../../../services/userService/userService';
+import { shiftService } from '../../../../../services/shiftService/shiftService';
+import { useApp } from '../../../../../context/AppContext';
 
 const PersonnelStep = ({ data, onChange, stationId, shiftId }) => {
   const { state } = useApp();

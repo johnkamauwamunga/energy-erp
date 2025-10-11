@@ -18,6 +18,7 @@ import FuelPurchaseManagement from './purchases/PurchaseManagement';
 import FuelManagement from './products/FuelManagement';
 import ShiftCreationWizard from '../common/shiftWizard/ShiftCreationWizard';
 import CompanyDashboardOverview from '../common/CompanyDashboardOverview';
+import AnalyticsDemo from '../common/analytics/AnalyticsDemo';
 
 const CompanyAdminDashboard = () => {
   const { state } = useApp();
@@ -69,7 +70,7 @@ const CompanyAdminDashboard = () => {
       case 'sales':
         return <PlaceholderComponent title="Sales Analytics" icon={TrendingUp} />;
       case 'reports':
-        return <PlaceholderComponent title="Report Center" icon={FileText} />;
+        return <AnalyticsDemo />;
       default:
         return <CompanyOverview />;
     }

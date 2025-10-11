@@ -17,14 +17,11 @@ import StationDashboard from '../common/StationDashboard';
 // import AssetAssignmentManager from './assets/AssetAssignmentManager'
 import SalesManagement from '../common/sales/SalesManagement';
 import StationUserManagement from './staff/StationUserManagement';
-// import ShiftData from '../common/shiftCloseTest/shiftData';
-//import ShiftCreationWizard from '../common/shiftWizard/ShiftCreationWizard';
-import ShiftCreationWizard from '../common/shiftTest/ShiftCreationWizard';
-import ShiftClosingWizard from '../common/shiftCloseTest/ShiftClosingWizard';
 import FuelOffloadWizard from '../common/fuel-offload/FuelOffloadWizard';
-import ShiftData from '../common/shiftCloseTest/shiftData';
-import ShiftTableExample from '../common/multiTable/ShiftTableExample';
+//import ShiftData from '../common/shiftClose/shiftData';
+//import ShiftTableExample from '../common/multiTable/ShiftTableExample';
 import ShiftManagement from '../common/shift/ShiftManagement';
+import AnalyticsDemo from '../common/analytics/AnalyticsDemo';
 
 const StationManagerDashboard = () => {
   const { state } = useApp();
@@ -51,39 +48,33 @@ const station=state.currentUser.stationId;
 console.log("station",station);
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
-    { id: 'assets', label: 'Assets', icon: Building2 },
-     { id: 'assets-mant', label: 'Asset Management', icon: Building2 },
-     { id: 'fuel_tank', label: 'Fuel Tanks', icon: Truck },
-    { id: 'operations', label: 'Operations', icon: Activity },
-    { id: 'shifts', label: 'Shift Management', icon: Clock },
-     { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
     { id: 'staff', label: 'Staff', icon: Users },
+     { id: 'shifts', label: 'Shift Management', icon: Clock },
+    { id: 'assets', label: 'Assets', icon: Building2 },
+     { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
     { id: 'sales', label: 'Sales', icon: DollarSign },
-    { id: 'reports', label: 'Reports', icon: FileText }
+    { id: 'reports', label: 'Reports', icon: FileText },
+     { id: 'activity', label: 'Activity Logs', icon: Activity }
   ];
 
   const renderContent = () => {
     switch (activeSection) {
       case 'dashboard':
          return <StationDashboard />;
-      case 'assets':
+       case 'staff':
+           return <StationUserManagement />;
+        case 'assets':
         return <StationAssetManagement />;
-           case 'assets-mant':
-        return <ShiftClosingWizard />;
-        case 'fuel_tank':
-        return <PlaceholderComponent title="Fuel Tank Management" icon={Truck} />;
-      case 'operations':
-        return <PlaceholderComponent title="Station Operations" icon={Activity} />;
       case 'shifts':
-        return <ShiftCreationWizard />;
+        return <ShiftManagement />;
         case 'offloads':
         return <FuelOffloadWizard />;
-      case 'staff':
-           return <StationUserManagement />;
        case 'sales':
-        return <SalesManagement/>;
+        return <SalesManagement />;
       case 'reports':
-         return <ShiftManagement />;
+      return <AnalyticsDemo />;
+       case 'activity':
+          return <PlaceholderComponent title="Activity Logs" icon={Activity} />;
       default:
         return <PlaceholderComponent title="Station Dashboard" icon={BarChart3} />;
     }

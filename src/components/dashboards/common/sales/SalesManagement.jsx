@@ -1,187 +1,195 @@
-// src/components/sales/SalesManagement.jsx
-import React, { useState, useEffect, useMemo } from 'react';
-import { Card, Table, Button, Select, DatePicker } from '../../../ui';
-import { DollarSign, Download, Filter, Calendar } from 'lucide-react';
-import { formatDate, formatCurrency } from '../../../../utils/helpers';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
-import autoTable from 'jspdf-autotable';
+// components/SalesManagement/SalesManagement.jsx
+import React, { useState, useMemo } from 'react';
+import { MultiTable } from '../../../ui';
+import useShiftData from '../../../../hooks/useShiftData';
 import { useApp } from '../../../../context/AppContext';
-
-// Mock Sales Data Generator
-const generateSalesData = (stationId) => {
-  const serviceStations = [
-    {
-      id: 'JOSKA',
-      dailyTarget: 400000,
-      monthlyTarget: 12000000
-    },
-    {
-      id: 'KITENGELA',
-      dailyTarget: 350000,
-      monthlyTarget: 10500000
-    },
-    {
-      id: 'NAIROBI_WEST',
-      dailyTarget: 450000,
-      monthlyTarget: 13500000
-    },
-    {
-      id: 'THIKA',
-      dailyTarget: 380000,
-      monthlyTarget: 11400000
-    }
-  ];
-
-  const baseRatios = {
-    petrol: 0.48,
-    diesel: 0.415,
-    kerosene: 0.077,
-    nonFuel: 0.029
-  };
-  
-  const salesData = [];
-  let recordCount = 1;
-  
-  // Determine which stations to generate data for
-  const stationsToGenerate = stationId 
-    ? serviceStations.filter(s => s.id === stationId)
-    : serviceStations;
-  
-  stationsToGenerate.forEach(station => {
-    for (let day = 1; day <= 31; day++) {
-      const dateStr = day.toString().padStart(2, '0');
-      const date = `2025-08-${dateStr}`;
-      
-      // Daily variation (80-120% of daily target)
-      const dailyFactor = 0.8 + (Math.random() * 0.4);
-      const dailyTotal = station.dailyTarget * dailyFactor;
-      
-      // Generate two shifts per day
-      for (let shift = 1; shift <= 2; shift++) {
-        // Shift timing configuration
-        const shiftTimes = shift === 1 
-          ? { from: 'T08:00:00', to: 'T16:00:00' } 
-          : { from: 'T16:00:00', to: 'T23:59:59' };
-        
-        // Shift total (45-55% of daily total)
-        const shiftFactor = 0.45 + (Math.random() * 0.1);
-        let shiftTotal = dailyTotal * shiftFactor;
-        
-        // Apply weekday/weekend variation
-        const weekday = new Date(date).getDay();
-        if (weekday === 0 || weekday === 6) { // Weekend
-          shiftTotal *= 0.7 + (Math.random() * 0.3); // 70-100% of normal
-        } else { // Weekday
-          shiftTotal *= 0.9 + (Math.random() * 0.2); // 90-110% of normal
-        }
-        
-        // Calculate product sales with variations
-        const products = {};
-        let calculatedTotal = 0;
-        
-        Object.keys(baseRatios).forEach(product => {
-          // Apply random variation (85-115%)
-          const variation = 0.85 + (Math.random() * 0.3);
-          const productSales = shiftTotal * baseRatios[product] * variation;
-          products[product] = parseFloat(productSales.toFixed(2));
-          calculatedTotal += products[product];
-        });
-        
-        // Adjust for rounding discrepancies
-        const adjustment = shiftTotal - calculatedTotal;
-        products.petrol += adjustment;
-        products.petrol = parseFloat(products.petrol.toFixed(2));
-        products.total = parseFloat(shiftTotal.toFixed(2));
-        
-        // Create sales record
-        salesData.push({
-          id: `sale${recordCount++}`,
-          stationId: station.id,
-          shiftId: `shift${shift}`,
-          fromDate: new Date(`${date}${shiftTimes.from}`),
-          toDate: new Date(`${date}${shiftTimes.to}`),
-          petrol: products.petrol,
-          diesel: products.diesel,
-          kerosene: products.kerosene,
-          nonFuel: products.nonFuel,
-          total: products.total
-        });
-      }
-    }
-  });
-  
-  return salesData;
-};
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const SalesManagement = () => {
   const { state } = useApp();
-  const [filter, setFilter] = useState('daily');
-  const [startDate, setStartDate] = useState(new Date(2025, 7, 7)); // Aug 7, 2025
-  const [endDate, setEndDate] = useState(new Date(2025, 7, 31)); // Aug 31, 2025
-  const [filteredData, setFilteredData] = useState([]);
+  const currentUser = state.currentUser;
+  const stationId = currentUser?.stationId;
+  const userRole = currentUser?.role || 'ATTENDANT';
 
-  // Generate mock sales data for the current station
-  const salesData = useMemo(() => {
-    return generateSalesData(state.currentStation?.id);
-  }, [state.currentStation?.id]);
+  const [filters, setFilters] = useState({
+    period: 'daily', // daily, weekly, monthly, custom
+    startDate: new Date(),
+    endDate: new Date(),
+    view: 'shifts' // shifts, products, islands, overview
+  });
 
-  useEffect(() => {
-    applyFilters();
-  }, [filter, startDate, endDate, salesData]);
+  const { shifts, loading, error, refetch, productSales } = useShiftData(
+    stationId, 
+    filters, 
+    userRole
+  );
 
-  const applyFilters = () => {
-    let result = [...salesData];
-    
-    // Filter by date range
-    if (filter === 'custom') {
-      result = result.filter(sale => 
-        sale.fromDate >= startDate && sale.toDate <= endDate
-      );
-    } else if (filter === 'daily') {
-      const dayStart = new Date(startDate);
-      dayStart.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(startDate);
-      dayEnd.setHours(23, 59, 59, 999);
+  // Process sales data for different views
+  const processedData = useMemo(() => {
+    if (!shifts.length) return { shifts: [], products: [], islands: [], overview: [] };
+
+    // Process shift sales data
+    const shiftSales = shifts.map(shift => ({
+      id: shift.id,
+      shiftNumber: shift.shiftNumber,
+      date: new Date(shift.startTime).toLocaleDateString(),
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      status: shift.status,
+      supervisor: shift.supervisor,
+      station: shift.station,
       
-      result = result.filter(sale => 
-        sale.fromDate >= dayStart && sale.toDate <= dayEnd
-      );
-    } else if (filter === 'monthly') {
-      const monthStart = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-      const monthEnd = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
-      result = result.filter(sale => 
-        sale.fromDate >= monthStart && sale.toDate <= monthEnd
-      );
-    } else if (filter === 'yearly') {
-      const yearStart = new Date(startDate.getFullYear(), 0, 1);
-      const yearEnd = new Date(startDate.getFullYear(), 11, 31);
-      result = result.filter(sale => 
-        sale.fromDate >= yearStart && sale.toDate <= yearEnd
-      );
-    }
+      // Sales data
+      totalRevenue: shift.sales?.[0]?.totalRevenue || 0,
+      fuelRevenue: shift.sales?.[0]?.totalFuelRevenue || 0,
+      nonFuelRevenue: shift.sales?.[0]?.totalNonFuelRevenue || 0,
+      fuelVolume: shift.sales?.[0]?.totalFuelQuantity || 0,
+      
+      // Collections
+      collections: shift.shiftCollection?.totalCollected || 0,
+      cashCollections: shift.shiftCollection?.cashAmount || 0,
+      mobileCollections: shift.shiftCollection?.mobileMoneyAmount || 0,
+      
+      // Product sales (from meter readings)
+      productSales: shift.meterReadings?.reduce((acc, reading) => {
+        if (reading.readingType === 'END') {
+          const startReading = shift.meterReadings?.find(r => 
+            r.pumpId === reading.pumpId && r.readingType === 'START'
+          );
+          
+          if (startReading && reading.electricMeter && startReading.electricMeter) {
+            const volume = reading.electricMeter - startReading.electricMeter;
+            const product = reading.pump?.tank?.product;
+            
+            if (product) {
+              const existing = acc.find(p => p.productId === product.id);
+              if (existing) {
+                existing.volume += volume;
+                existing.revenue += volume * (reading.unitPrice || 0);
+              } else {
+                acc.push({
+                  productId: product.id,
+                  productName: product.name,
+                  productType: product.type,
+                  colorCode: product.colorCode,
+                  volume: volume,
+                  revenue: volume * (reading.unitPrice || 0)
+                });
+              }
+            }
+          }
+        }
+        return acc;
+      }, []) || []
+    }));
+
+    // Group by date for overview
+    const groupByDate = (data) => {
+      const grouped = {};
+      data.forEach(shift => {
+        const date = new Date(shift.startTime).toDateString();
+        if (!grouped[date]) {
+          grouped[date] = {
+            date,
+            totalRevenue: 0,
+            fuelRevenue: 0,
+            nonFuelRevenue: 0,
+            totalVolume: 0,
+            shiftCount: 0,
+            collections: 0,
+            shifts: []
+          };
+        }
+        grouped[date].totalRevenue += shift.totalRevenue || 0;
+        grouped[date].fuelRevenue += shift.fuelRevenue || 0;
+        grouped[date].nonFuelRevenue += shift.nonFuelRevenue || 0;
+        grouped[date].totalVolume += shift.fuelVolume || 0;
+        grouped[date].collections += shift.collections || 0;
+        grouped[date].shiftCount++;
+        grouped[date].shifts.push(shift);
+      });
+      return Object.values(grouped);
+    };
+
+    // Group by island
+    const groupByIsland = (data) => {
+      const islandMap = new Map();
+      
+      data.forEach(shift => {
+        shift.islandCollections?.forEach(collection => {
+          const islandId = collection.islandId;
+          if (!islandMap.has(islandId)) {
+            islandMap.set(islandId, {
+              islandId,
+              islandCode: collection.island?.code || `ISLAND_${islandId}`,
+              totalRevenue: 0,
+              collections: 0,
+              shiftCount: 0
+            });
+          }
+          
+          const islandData = islandMap.get(islandId);
+          islandData.collections += collection.cashAmount || 0;
+          islandData.shiftCount++;
+        });
+
+        // Get sales by island from payment breakdown
+        if (shift.report?.paymentBreakdown) {
+          Object.entries(shift.report.paymentBreakdown).forEach(([islandId, breakdown]) => {
+            if (!islandMap.has(islandId)) {
+              islandMap.set(islandId, {
+                islandId,
+                islandCode: `ISLAND_${islandId}`,
+                totalRevenue: 0,
+                collections: 0,
+                shiftCount: 0
+              });
+            }
+            
+            const islandData = islandMap.get(islandId);
+            islandData.totalRevenue += breakdown.expectedAmount || 0;
+            islandData.collections += breakdown.totalCollected || 0;
+          });
+        }
+      });
+
+      return Array.from(islandMap.values());
+    };
+
+    return {
+      shifts: shiftSales,
+      products: productSales || [],
+      islands: groupByIsland(shifts),
+      overview: groupByDate(shiftSales)
+    };
+  }, [shifts, productSales]);
+
+  // Calculate summary statistics
+  const summaryStats = useMemo(() => {
+    const currentData = processedData[filters.view] || [];
     
-    setFilteredData(result);
-  };
+    const totalRevenue = currentData.reduce((sum, item) => sum + (item.totalRevenue || 0), 0);
+    const totalVolume = currentData.reduce((sum, item) => sum + (item.totalVolume || item.fuelVolume || 0), 0);
+    const totalCollections = currentData.reduce((sum, item) => sum + (item.collections || 0), 0);
+    const totalShifts = currentData.reduce((sum, item) => sum + (item.shiftCount || 1), 0);
 
-  const calculateTotals = () => {
-    return filteredData.reduce((totals, sale) => {
-      return {
-        petrol: totals.petrol + sale.petrol,
-        diesel: totals.diesel + sale.diesel,
-        kerosene: totals.kerosene + sale.kerosene,
-        nonFuel: totals.nonFuel + sale.nonFuel,
-        total: totals.total + sale.total
-      };
-    }, { petrol: 0, diesel: 0, kerosene: 0, nonFuel: 0, total: 0 });
-  };
+    return {
+      totalRevenue,
+      totalVolume,
+      totalCollections,
+      totalShifts,
+      avgRevenuePerShift: totalShifts > 0 ? totalRevenue / totalShifts : 0,
+      collectionEfficiency: totalRevenue > 0 ? (totalCollections / totalRevenue) * 100 : 0
+    };
+  }, [processedData, filters.view]);
 
+  // PDF Generation Function
   const downloadPDF = () => {
     try {
       const doc = new jsPDF();
-      const companyName = state.currentCompany?.name || 'Company Name';
-      const stationName = state.currentStation?.name || 'Station Name';
-      const totals = calculateTotals();
+      const companyName = state.currentCompany?.name || 'Energy ERP';
+      const stationName = state.currentStation?.name || 'All Stations';
       
       // Purple theme - RGB: [128, 0, 128]
       const headerColor = [128, 0, 128];
@@ -198,52 +206,123 @@ const SalesManagement = () => {
       // Report Title
       doc.setFontSize(18);
       doc.setTextColor(...headerColor);
-      doc.text('Sales Report', 15, 32);
+      doc.text(`${filters.view.charAt(0).toUpperCase() + filters.view.slice(1)} Sales Report`, 15, 32);
       
       // Report Details
       doc.setFontSize(10);
       doc.setTextColor(80, 80, 80);
-      doc.text(`Report Period: ${formatDate(startDate)} to ${formatDate(endDate)}`, 15, 38);
-      doc.text(`Generated: ${formatDate(new Date())}`, 15, 43);
+      doc.text(`Report Period: ${filters.period}`, 15, 38);
+      doc.text(`Generated: ${new Date().toLocaleDateString()}`, 15, 43);
+      doc.text(`Total Records: ${processedData[filters.view]?.length || 0}`, 15, 48);
       
       // Horizontal line separator
       doc.setDrawColor(...headerColor);
       doc.setLineWidth(0.3);
-      doc.line(15, 46, doc.internal.pageSize.width - 15, 46);
+      doc.line(15, 52, doc.internal.pageSize.width - 15, 52);
       
-      // Prepare table data
-      const tableData = filteredData.map(sale => [
-        formatDate(sale.fromDate, 'MM/dd/yyyy HH:mm'),
-        formatDate(sale.toDate, 'MM/dd/yyyy HH:mm'),
-        formatCurrency(sale.petrol, false),
-        formatCurrency(sale.diesel, false),
-        formatCurrency(sale.kerosene, false),
-        formatCurrency(sale.nonFuel, false),
-        formatCurrency(sale.total, false)
-      ]);
-      
+      // Generate table based on view type
+      let tableData = [];
+      let headers = [];
+
+      switch (filters.view) {
+        case 'shifts':
+          headers = ['Shift #', 'Date', 'Status', 'Revenue', 'Volume', 'Collections'];
+          tableData = processedData.shifts.map(shift => [
+            `#${shift.shiftNumber}`,
+            shift.date,
+            shift.status,
+            `KES ${shift.totalRevenue?.toLocaleString() || '0'}`,
+            `${shift.fuelVolume?.toLocaleString() || '0'} L`,
+            `KES ${shift.collections?.toLocaleString() || '0'}`
+          ]);
+          break;
+          
+        case 'products':
+          headers = ['Product', 'Volume Sold', 'Revenue', 'Stations', 'Pumps'];
+          tableData = processedData.products.map(product => [
+            product.productName,
+            `${product.totalVolume?.toLocaleString() || '0'} L`,
+            `KES ${product.totalRevenue?.toLocaleString() || '0'}`,
+            product.stationCount?.toString() || '0',
+            product.pumpCount?.toString() || '0'
+          ]);
+          break;
+          
+        case 'islands':
+          headers = ['Island', 'Shifts', 'Revenue', 'Collections', 'Efficiency'];
+          tableData = processedData.islands.map(island => [
+            island.islandCode,
+            island.shiftCount?.toString() || '0',
+            `KES ${island.totalRevenue?.toLocaleString() || '0'}`,
+            `KES ${island.collections?.toLocaleString() || '0'}`,
+            `${island.totalRevenue > 0 ? ((island.collections / island.totalRevenue) * 100).toFixed(1) : '0'}%`
+          ]);
+          break;
+          
+        case 'overview':
+          headers = ['Date', 'Shifts', 'Revenue', 'Volume', 'Collections', 'Efficiency'];
+          tableData = processedData.overview.map(day => [
+            day.date,
+            day.shiftCount?.toString() || '0',
+            `KES ${day.totalRevenue?.toLocaleString() || '0'}`,
+            `${day.totalVolume?.toLocaleString() || '0'} L`,
+            `KES ${day.collections?.toLocaleString() || '0'}`,
+            `${day.totalRevenue > 0 ? ((day.collections / day.totalRevenue) * 100).toFixed(1) : '0'}%`
+          ]);
+          break;
+      }
+
       // Add totals row
-      tableData.push([
-        'TOTAL',
-        '',
-        formatCurrency(totals.petrol, false),
-        formatCurrency(totals.diesel, false),
-        formatCurrency(totals.kerosene, false),
-        formatCurrency(totals.nonFuel, false),
-        formatCurrency(totals.total, false)
-      ]);
-      
+      if (tableData.length > 0) {
+        let totalsRow = ['TOTAL', '', '', '', '', ''];
+        
+        switch (filters.view) {
+          case 'shifts':
+            totalsRow = [
+              '',
+              `${summaryStats.totalShifts} shifts`,
+              `KES ${summaryStats.totalRevenue.toLocaleString()}`,
+              `${summaryStats.totalVolume.toLocaleString()} L`,
+              `KES ${summaryStats.totalCollections.toLocaleString()}`,
+              `${summaryStats.collectionEfficiency.toFixed(1)}%`
+            ];
+            break;
+          case 'products':
+            totalsRow = [
+              '',
+              `${summaryStats.totalVolume.toLocaleString()} L`,
+              `KES ${summaryStats.totalRevenue.toLocaleString()}`,
+              '',
+              ''
+            ];
+            break;
+          case 'islands':
+          case 'overview':
+            totalsRow = [
+              '',
+              `${summaryStats.totalShifts} shifts`,
+              `KES ${summaryStats.totalRevenue.toLocaleString()}`,
+              `${summaryStats.totalVolume.toLocaleString()} L`,
+              `KES ${summaryStats.totalCollections.toLocaleString()}`,
+              `${summaryStats.collectionEfficiency.toFixed(1)}%`
+            ];
+            break;
+        }
+        
+        tableData.push(totalsRow);
+      }
+
       // Generate table
       autoTable(doc, {
-        head: [['Start Time', 'End Time', 'Petrol', 'Diesel', 'Kerosene', 'Non-Fuel', 'Total']],
+        head: [headers],
         body: tableData,
-        startY: 50,
+        startY: 55,
         theme: 'grid',
         styles: { 
-          fontSize: 10,
+          fontSize: 9,
           cellPadding: 3,
           valign: 'middle',
-          halign: 'right',
+          halign: 'left',
           textColor: [40, 40, 40]
         },
         headStyles: {
@@ -253,13 +332,29 @@ const SalesManagement = () => {
           halign: 'center'
         },
         columnStyles: {
-          0: { halign: 'left', cellWidth: 25 },
-          1: { halign: 'left', cellWidth: 25 },
-          2: { halign: 'right' },
-          3: { halign: 'right' },
-          4: { halign: 'right' },
-          5: { halign: 'right' },
-          6: { halign: 'right' }
+          // Right align numeric columns
+          ...(filters.view === 'shifts' && {
+            3: { halign: 'right' },
+            4: { halign: 'right' },
+            5: { halign: 'right' }
+          }),
+          ...(filters.view === 'products' && {
+            1: { halign: 'right' },
+            2: { halign: 'right' },
+            3: { halign: 'right' },
+            4: { halign: 'right' }
+          }),
+          ...(filters.view === 'islands' && {
+            2: { halign: 'right' },
+            3: { halign: 'right' },
+            4: { halign: 'right' }
+          }),
+          ...(filters.view === 'overview' && {
+            2: { halign: 'right' },
+            3: { halign: 'right' },
+            4: { halign: 'right' },
+            5: { halign: 'right' }
+          })
         },
         didDrawPage: function (data) {
           // Footer
@@ -271,192 +366,445 @@ const SalesManagement = () => {
         }
       });
       
-      // Add totals section below the table
+      // Add summary section
       const finalY = doc.lastAutoTable.finalY + 10;
       if (finalY < doc.internal.pageSize.height - 30) {
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(...headerColor);
-        doc.text('SUMMARY TOTALS', 15, finalY);
+        doc.text('SUMMARY', 15, finalY);
         
-        doc.setFontSize(10);
+        doc.setFontSize(9);
         doc.setTextColor(40, 40, 40);
-        doc.text(`Petrol: ${formatCurrency(totals.petrol)}`, 15, finalY + 7);
-        doc.text(`Diesel: ${formatCurrency(totals.diesel)}`, 15, finalY + 14);
-        doc.text(`Kerosene: ${formatCurrency(totals.kerosene)}`, 15, finalY + 21);
-        doc.text(`Non-Fuel: ${formatCurrency(totals.nonFuel)}`, 15, finalY + 28);
         
-        doc.setFontSize(14);
-        doc.setTextColor(...headerColor);
-        doc.text(`TOTAL SALES: ${formatCurrency(totals.total)}`, 
-                doc.internal.pageSize.width - 15, 
-                finalY + 28, 
-                { align: 'right' });
+        let yPos = finalY + 7;
+        doc.text(`Total Revenue: KES ${summaryStats.totalRevenue.toLocaleString()}`, 15, yPos);
+        yPos += 5;
+        doc.text(`Fuel Volume: ${summaryStats.totalVolume.toLocaleString()} L`, 15, yPos);
+        yPos += 5;
+        doc.text(`Collections: KES ${summaryStats.totalCollections.toLocaleString()}`, 15, yPos);
+        yPos += 5;
+        doc.text(`Collection Efficiency: ${summaryStats.collectionEfficiency.toFixed(1)}%`, 15, yPos);
+        
+        if (filters.view === 'shifts' || filters.view === 'overview') {
+          yPos += 5;
+          doc.text(`Average per Shift: KES ${summaryStats.avgRevenuePerShift.toLocaleString()}`, 15, yPos);
+        }
       }
       
       // Save the PDF
-      doc.save(`${companyName}_${stationName}_Sales_Report.pdf`.replace(/\s+/g, '_'));
+      const filename = `${companyName}_${filters.view}_Sales_Report.pdf`.replace(/\s+/g, '_');
+      doc.save(filename);
+      
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Failed to generate PDF. Please check the console for details.');
     }
   };
 
-  const columns = [
-    { 
-      header: 'Shift Start', 
-      accessor: 'fromDate',
-      render: (value) => formatDate(value, 'MM/dd/yyyy HH:mm')
-    },
-    { 
-      header: 'Shift End', 
-      accessor: 'toDate',
-      render: (value) => formatDate(value, 'MM/dd/yyyy HH:mm')
-    },
-    { 
-      header: 'Petrol', 
-      accessor: 'petrol',
-      render: (value) => formatCurrency(value),
-      cellClassName: 'text-right'
-    },
-    { 
-      header: 'Diesel', 
-      accessor: 'diesel',
-      render: (value) => formatCurrency(value),
-      cellClassName: 'text-right'
-    },
-    { 
-      header: 'Kerosene', 
-      accessor: 'kerosene',
-      render: (value) => formatCurrency(value),
-      cellClassName: 'text-right'
-    },
-    { 
-      header: 'Non-Fuel', 
-      accessor: 'nonFuel',
-      render: (value) => formatCurrency(value),
-      cellClassName: 'text-right'
-    },
-    { 
-      header: 'Total', 
-      accessor: 'total',
-      render: (value) => (
-        <span className="font-semibold text-blue-700">
-          {formatCurrency(value)}
-        </span>
-      ),
-      cellClassName: 'text-right'
-    }
-  ];
+  // Columns for different views
+  const getColumns = (viewType) => {
+    const baseColumns = {
+      shifts: [
+        {
+          key: 'shift-number',
+          header: 'Shift #',
+          accessor: 'shiftNumber',
+          className: 'font-medium text-gray-900'
+        },
+        {
+          key: 'date',
+          header: 'Date',
+          accessor: 'date'
+        },
+        {
+          key: 'status',
+          header: 'Status',
+          accessor: 'status',
+          render: (value) => (
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+              value === 'OPEN' ? 'bg-green-100 text-green-800' :
+              value === 'ACTIVE' ? 'bg-blue-100 text-blue-800' :
+              value === 'CLOSED' ? 'bg-gray-100 text-gray-800' :
+              'bg-yellow-100 text-yellow-800'
+            }`}>
+              {value}
+            </span>
+          )
+        },
+        {
+          key: 'total-revenue',
+          header: 'Revenue',
+          accessor: 'totalRevenue',
+          render: (value) => (
+            <div className="text-green-600 font-semibold">
+              KES {value?.toLocaleString() || '0'}
+            </div>
+          )
+        },
+        {
+          key: 'fuel-volume',
+          header: 'Volume',
+          accessor: 'fuelVolume',
+          render: (value) => `${value?.toLocaleString() || '0'} L`
+        },
+        {
+          key: 'collections',
+          header: 'Collections',
+          accessor: 'collections',
+          render: (value) => (
+            <div className="text-purple-600 font-medium">
+              KES {value?.toLocaleString() || '0'}
+            </div>
+          )
+        },
+        {
+          key: 'efficiency',
+          header: 'Efficiency',
+          accessor: 'collections',
+          render: (value, row) => {
+            const efficiency = row.totalRevenue > 0 ? (value / row.totalRevenue) * 100 : 0;
+            return (
+              <div className="flex items-center">
+                <div className="w-12 bg-gray-200 rounded-full h-2 mr-2">
+                  <div 
+                    className={`h-2 rounded-full ${
+                      efficiency > 95 ? 'bg-green-500' : 
+                      efficiency > 85 ? 'bg-yellow-500' : 'bg-red-500'
+                    }`}
+                    style={{ width: `${Math.min(efficiency, 100)}%` }}
+                  ></div>
+                </div>
+                <span className="text-sm">{efficiency.toFixed(1)}%</span>
+              </div>
+            );
+          }
+        }
+      ],
+      products: [
+        {
+          key: 'product-name',
+          header: 'Product',
+          accessor: 'productName',
+          className: 'font-medium text-gray-900',
+          render: (value, row) => (
+            <div className="flex items-center">
+              <div 
+                className="w-3 h-3 rounded-full mr-2"
+                style={{ backgroundColor: row.colorCode || '#6B7280' }}
+              ></div>
+              {value}
+            </div>
+          )
+        },
+        {
+          key: 'total-volume',
+          header: 'Volume Sold',
+          accessor: 'totalVolume',
+          render: (value) => (
+            <div className="text-blue-600 font-semibold">
+              {value?.toLocaleString() || '0'} L
+            </div>
+          )
+        },
+        {
+          key: 'total-revenue',
+          header: 'Revenue',
+          accessor: 'totalRevenue',
+          render: (value) => (
+            <div className="text-green-600 font-semibold">
+              KES {value?.toLocaleString() || '0'}
+            </div>
+          )
+        },
+        {
+          key: 'station-count',
+          header: 'Stations',
+          accessor: 'stationCount',
+          render: (value) => (
+            <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full text-xs font-medium">
+              {value} stations
+            </span>
+          )
+        },
+        {
+          key: 'pump-count',
+          header: 'Pumps',
+          accessor: 'pumpCount',
+          render: (value) => (
+            <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded-full text-xs font-medium">
+              {value} pumps
+            </span>
+          )
+        },
+        {
+          key: 'avg-price',
+          header: 'Avg Price/L',
+          accessor: 'totalRevenue',
+          render: (value, row) => {
+            const avgPrice = row.totalVolume > 0 ? value / row.totalVolume : 0;
+            return `KES ${avgPrice.toFixed(2)}`;
+          }
+        }
+      ],
+      islands: [
+        {
+          key: 'island-code',
+          header: 'Island',
+          accessor: 'islandCode',
+          className: 'font-medium text-gray-900'
+        },
+        {
+          key: 'shift-count',
+          header: 'Shifts',
+          accessor: 'shiftCount',
+          render: (value) => (
+            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+              {value} shifts
+            </span>
+          )
+        },
+        {
+          key: 'total-revenue',
+          header: 'Revenue',
+          accessor: 'totalRevenue',
+          render: (value) => (
+            <div className="text-green-600 font-semibold">
+              KES {value?.toLocaleString() || '0'}
+            </div>
+          )
+        },
+        {
+          key: 'collections',
+          header: 'Collections',
+          accessor: 'collections',
+          render: (value) => (
+            <div className="text-purple-600 font-medium">
+              KES {value?.toLocaleString() || '0'}
+            </div>
+          )
+        },
+        {
+          key: 'efficiency',
+          header: 'Efficiency',
+          accessor: 'collections',
+          render: (value, row) => {
+            const efficiency = row.totalRevenue > 0 ? (value / row.totalRevenue) * 100 : 0;
+            return (
+              <div className="flex items-center">
+                <div className="w-12 bg-gray-200 rounded-full h-2 mr-2">
+                  <div 
+                    className={`h-2 rounded-full ${
+                      efficiency > 95 ? 'bg-green-500' : 
+                      efficiency > 85 ? 'bg-yellow-500' : 'bg-red-500'
+                    }`}
+                    style={{ width: `${Math.min(efficiency, 100)}%` }}
+                  ></div>
+                </div>
+                <span className="text-sm">{efficiency.toFixed(1)}%</span>
+              </div>
+            );
+          }
+        }
+      ],
+      overview: [
+        {
+          key: 'date',
+          header: 'Date',
+          accessor: 'date',
+          className: 'font-medium text-gray-900'
+        },
+        {
+          key: 'shift-count',
+          header: 'Shifts',
+          accessor: 'shiftCount',
+          render: (value) => (
+            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+              {value} shifts
+            </span>
+          )
+        },
+        {
+          key: 'total-revenue',
+          header: 'Revenue',
+          accessor: 'totalRevenue',
+          render: (value) => (
+            <div className="text-green-600 font-semibold">
+              KES {value?.toLocaleString() || '0'}
+            </div>
+          )
+        },
+        {
+          key: 'total-volume',
+          header: 'Volume',
+          accessor: 'totalVolume',
+          render: (value) => (
+            <div className="text-blue-600">
+              {value?.toLocaleString() || '0'} L
+            </div>
+          )
+        },
+        {
+          key: 'collections',
+          header: 'Collections',
+          accessor: 'collections',
+          render: (value) => (
+            <div className="text-purple-600 font-medium">
+              KES {value?.toLocaleString() || '0'}
+            </div>
+          )
+        },
+        {
+          key: 'efficiency',
+          header: 'Efficiency',
+          accessor: 'collections',
+          render: (value, row) => {
+            const efficiency = row.totalRevenue > 0 ? (value / row.totalRevenue) * 100 : 0;
+            return `${efficiency.toFixed(1)}%`;
+          }
+        }
+      ]
+    };
 
-  const totals = calculateTotals();
+    return baseColumns[viewType] || baseColumns.shifts;
+  };
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="text-red-600 text-lg mr-3">⚠️</div>
+            <div>
+              <h3 className="text-red-800 font-medium">Error Loading Sales Data</h3>
+              <p className="text-red-600 text-sm mt-1">{error}</p>
+            </div>
+          </div>
+          <button
+            onClick={refetch}
+            className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <Card 
-      title="Sales Report" 
-      icon={DollarSign}
-      actions={
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-lg">
-            <Filter size={16} className="text-gray-500" />
-            <Select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              options={[
-                { value: 'daily', label: 'Daily' },
-                { value: 'monthly', label: 'Monthly' },
-                { value: 'yearly', label: 'Yearly' },
-                { value: 'custom', label: 'Custom Range' }
-              ]}
-              className="border-0 bg-transparent"
-            />
-          </div>
-          
-          {filter === 'custom' && (
-            <div className="flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-lg">
-              <Calendar size={16} className="text-gray-500" />
-              <DatePicker
-                selected={startDate}
-                onChange={date => setStartDate(date)}
-                selectsStart
-                startDate={startDate}
-                endDate={endDate}
-                className="border-0 bg-transparent"
-              />
-              <span className="text-gray-400">to</span>
-              <DatePicker
-                selected={endDate}
-                onChange={date => setEndDate(date)}
-                selectsEnd
-                startDate={startDate}
-                endDate={endDate}
-                minDate={startDate}
-                className="border-0 bg-transparent"
-              />
-            </div>
-          )}
-          
-          <Button 
-            variant="cosmic" 
-            onClick={downloadPDF}
-            icon={Download}
-          >
-            Export PDF
-          </Button>
-        </div>
-      }
-    >
-      <Table
-        columns={columns}
-        data={filteredData}
-        emptyMessage={
-          <div className="text-center py-10">
-            <div className="text-gray-500 mb-2">No sales data found</div>
-            <p className="text-sm text-gray-400">
-              Try adjusting your filters or check back later
+    <div className="p-6">
+      {/* Header */}
+      <div className="mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Sales Management</h1>
+            <p className="text-gray-600 mt-1">
+              Comprehensive sales analytics with PDF export capabilities
             </p>
           </div>
-        }
-      />
-      
-      {/* Totals Section */}
-      {filteredData.length > 0 && (
-        <div className="mt-6 bg-blue-50 rounded-xl p-4 border border-blue-100">
-          <div className="grid grid-cols-6 gap-4">
-            <div className="col-span-2">
-              <div className="text-sm text-gray-500">Reporting Period</div>
-              <div className="font-medium">
-                {formatDate(startDate)} - {formatDate(endDate)}
-              </div>
+          <div className="mt-4 sm:mt-0 flex items-center space-x-3">
+            <button
+              onClick={downloadPDF}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center"
+            >
+              <span className="mr-2">📊</span>
+              Export PDF
+            </button>
+            <button
+              onClick={refetch}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
+            >
+              <span className="mr-2">🔄</span>
+              Refresh
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* View Selector */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+        <div className="flex flex-wrap gap-2">
+          {['shifts', 'products', 'islands', 'overview'].map((viewType) => (
+            <button
+              key={viewType}
+              onClick={() => setFilters(prev => ({ ...prev, view: viewType }))}
+              className={`px-4 py-2 rounded-lg font-medium capitalize ${
+                filters.view === viewType
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {viewType}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Period</label>
+            <select 
+              value={filters.period}
+              onChange={(e) => setFilters(prev => ({ ...prev, period: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="custom">Custom Range</option>
+            </select>
+          </div>
+
+          {/* Add more filters as needed */}
+        </div>
+      </div>
+
+      {/* Summary Statistics */}
+      {!loading && processedData[filters.view]?.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-green-600">
+              KES {summaryStats.totalRevenue.toLocaleString()}
             </div>
-            <div className="text-center">
-              <div className="text-sm text-gray-500">Petrol</div>
-              <div className="font-semibold text-blue-700">
-                {formatCurrency(totals.petrol)}
-              </div>
+            <div className="text-sm text-gray-600">Total Revenue</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-blue-600">
+              {summaryStats.totalVolume.toLocaleString()} L
             </div>
-            <div className="text-center">
-              <div className="text-sm text-gray-500">Diesel</div>
-              <div className="font-semibold text-blue-700">
-                {formatCurrency(totals.diesel)}
-              </div>
+            <div className="text-sm text-gray-600">Fuel Volume</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-purple-600">
+              KES {summaryStats.totalCollections.toLocaleString()}
             </div>
-            <div className="text-center">
-              <div className="text-sm text-gray-500">Kerosene</div>
-              <div className="font-semibold text-blue-700">
-                {formatCurrency(totals.kerosene)}
-              </div>
+            <div className="text-sm text-gray-600">Collections</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-orange-600">
+              {summaryStats.collectionEfficiency.toFixed(1)}%
             </div>
-            <div className="text-center">
-              <div className="text-sm text-gray-500">Total</div>
-              <div className="font-bold text-lg text-blue-800">
-                {formatCurrency(totals.total)}
-              </div>
-            </div>
+            <div className="text-sm text-gray-600">Collection Rate</div>
           </div>
         </div>
       )}
-    </Card>
+
+      {/* Main Table */}
+      <MultiTable
+        columns={getColumns(filters.view)}
+        data={processedData[filters.view] || []}
+        paginate={true}
+        pageSize={10}
+        responsiveBreakpoint="md"
+        className="shadow-lg border-0"
+        headerClass="bg-gradient-to-r from-blue-50 to-indigo-50"
+        rowClass="hover:bg-blue-50 transition-colors duration-150 border-b border-gray-200"
+        loading={loading}
+        emptyMessage={`No ${filters.view} data found. Try adjusting your filters.`}
+      />
+    </div>
   );
 };
 

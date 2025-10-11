@@ -1,8 +1,8 @@
 // getShiftAssetsStructure.jsx
 import React, { useState, useEffect } from 'react';
-import { connectedAssetService } from '../../../../services/connectedAssetsService/connectedAssetsService';
-import { shiftService } from '../../../../services/shiftService/shiftService';
-import { useApp } from '../../../../context/AppContext';
+import { connectedAssetService } from '../../../../../services/connectedAssetsService/connectedAssetsService';
+import { shiftService } from '../../../../../services/shiftService/shiftService';
+import { useApp } from '../../../../../context/AppContext';
 
 function ShiftData() {
     const { state } = useApp();

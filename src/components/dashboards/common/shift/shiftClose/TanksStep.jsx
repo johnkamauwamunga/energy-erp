@@ -1,6 +1,6 @@
 // components/TanksStep.js
 import React, { useState } from 'react';
-import { Card, Tabs, Tab, Input, Badge, Alert, Button } from '../../../ui';
+import { Card, Tabs, Tab, Input, Badge, Alert, Button } from '../../../../ui';
 import { Fuel, Droplets, Thermometer, CheckCircle, ChevronRight, Gauge } from 'lucide-react';
 
 const TanksStep = ({ tanksWithReadings, closingData, onChange }) => {

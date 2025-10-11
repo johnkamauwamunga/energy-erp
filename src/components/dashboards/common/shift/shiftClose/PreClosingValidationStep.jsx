@@ -1,6 +1,6 @@
 // components/PreClosingValidationStep.js
 import React from 'react';
-import { Card, Alert, Badge } from '../../../ui';
+import { Card, Alert, Badge } from '../../../../ui';
 import { CheckCircle, AlertTriangle, Clock, FileText, Zap, Fuel } from 'lucide-react';
 
 const PreClosingValidationStep = ({ currentShift, enhancedShiftOpeningCheck, closingData }) => {

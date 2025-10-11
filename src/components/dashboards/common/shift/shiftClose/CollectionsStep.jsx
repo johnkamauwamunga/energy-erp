@@ -1,6 +1,6 @@
 // components/CollectionsStep.js
 import React, { useState, useEffect } from 'react';
-import { Card, Tabs, Tab, Input, Badge, Alert } from '../../../ui';
+import { Card, Tabs, Tab, Input, Badge, Alert } from '../../../../ui';
 import { DollarSign, Calculator, TrendingUp, TrendingDown, CheckCircle, AlertTriangle } from 'lucide-react';
 
 const CollectionsStep = ({ closingData, onChange }) => {

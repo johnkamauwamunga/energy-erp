@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Button, Stepper, Alert, LoadingSpinner } from '../../../ui';
+import { Card, Button, Stepper, Alert, LoadingSpinner } from '../../../../ui';
 import { Calendar, Users, Zap, CheckCircle, ArrowLeft, ArrowRight } from 'lucide-react';
 import { dummyData, mockServices, dummyDataHelpers } from './dummyData';
 import ShiftBasicsStep from './ShiftBasicsStep';

@@ -1,6 +1,6 @@
 // components/ShiftClosingWizard.js
 import React, { useState, useEffect } from 'react';
-import { Card, Button, Stepper, Alert, LoadingSpinner } from '../../../ui';
+import { Card, Button, Stepper, Alert, LoadingSpinner } from '../../../../ui';
 import { CheckCircle, FileText, Zap, Fuel, DollarSign, ArrowLeft, ArrowRight } from 'lucide-react';
 
 // Import steps
@@ -10,7 +10,7 @@ import TanksStep from './TanksStep';
 import CollectionsStep from './CollectionsStep';
 import ClosingSummaryStep from './ClosingSummaryStep';
 
-import { useApp } from '../../../../context/AppContext';
+import { useApp } from '../../../../../context/AppContext';
 import { useShiftAssets } from './hooks/useShiftAssets';
 
 const ShiftClosingWizard = ({ shiftId, onSuccess, onCancel }) => {

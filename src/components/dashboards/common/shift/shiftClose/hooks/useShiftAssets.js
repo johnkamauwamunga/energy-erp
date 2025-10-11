@@ -1,7 +1,7 @@
 // hooks/useShiftAssets.js
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { connectedAssetService } from '../../../../../services/connectedAssetsService/connectedAssetsService';
-import { shiftService } from '../../../../../services/shiftService/shiftService';
+import { connectedAssetService } from '../../../../../../services/connectedAssetsService/connectedAssetsService';
+import { shiftService } from '../../../../../../services/shiftService/shiftService';
 
 export const useShiftAssets = (stationId) => {
     const [data, setData] = useState(null);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Badge, Table, Alert, Button } from '../../../ui';
+import { Card, Badge, Table, Alert, Button } from '../../../../ui';
 import { CheckCircle, AlertCircle, Package, Zap, Fuel, User, Play, DollarSign, Gauge, Thermometer, Droplets } from 'lucide-react';
 
 const SummaryStep = ({ data, shiftId, onFinalCreate }) => {

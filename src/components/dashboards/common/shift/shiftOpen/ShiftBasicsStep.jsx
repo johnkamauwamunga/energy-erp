@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Input, Select, DatePicker, Alert, Button } from '../../../ui';
+import { Input, Select, DatePicker, Alert, Button } from '../../../../ui';
 import { Calendar, Clock, Hash, CheckCircle, XCircle, Save, ArrowRight } from 'lucide-react';
 import { dummyData, mockServices, dummyDataHelpers } from './dummyData';
-import { shiftService } from "../../../../services/shiftService/shiftService";
-import { connectedAssetService } from "../../../../services/connectedAssetsService/connectedAssetsService";
-import { userService } from '../../../../services/userService/userService';
-import { pricingService } from '../../../../services/priceService/priceService';
-import { useApp } from '../../../../context/AppContext';
+import { shiftService } from "../../../../../services/shiftService/shiftService";
+import { connectedAssetService } from "../../../../../services/connectedAssetsService/connectedAssetsService";
+import { userService } from '../../../../../services/userService/userService';
+import { pricingService } from '../../../../../services/priceService/priceService';
+import { useApp } from '../../../../../context/AppContext';
 
 const ShiftBasicsStep = ({ data, onChange, onShiftCreated, onNext }) => {
   const { state } = useApp();

@@ -1,6 +1,6 @@
 // components/IslandPumpsStep.js
 import React, { useState } from 'react';
-import { Card, Tabs, Tab, Input, Badge, Alert, Button } from '../../../ui';
+import { Card, Tabs, Tab, Input, Badge, Alert, Button } from '../../../../ui';
 import { Zap, Calculator, CheckCircle, ChevronRight, Fuel } from 'lucide-react';
 
 const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, closingData, onChange }) => {
