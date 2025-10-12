@@ -150,7 +150,7 @@ const LoginPage = () => {
 
           <div className="mt-6 text-center">
             <div className="text-blue-100 text-sm">
-              Secure access with role-based permissions
+              Secure access with role-based permissions <span className='text-red-200 text-md'><a href='/forgot-password'>Forgot password ?</a></span>
             </div>
           </div>
         </div>

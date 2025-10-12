@@ -29,5 +29,11 @@ export { default as Dropdown } from './Dropdown'
 export { default as Avatar } from './Avatar'
 export { default as MultiTable } from './MultiTable';
 
+// New Chart Components
+export { default as BarChart } from './Barchart';
+export { default as PieChart } from './PieChart';
+export { default as DonutChart } from './DonutChart';
+export { default as LiveDataChart } from './LiveDataChart';
+
 
 // Add other exports as needed

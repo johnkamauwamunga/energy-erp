@@ -15,6 +15,7 @@ import LoadingSpinner from './components/common/LoadingSpinner';
 const LandingPage = React.lazy(() => import('./components/auth/LandingPage'));
 const LoginPage = React.lazy(() => import('./components/auth/LoginPage'));
 const AboutPage = React.lazy(() => import('./components/auth/AboutPage'));
+const ForgotPassword = React.lazy(() => import('./components/auth/ForgotPassword'));
 
 // Protected Components - Role-specific dashboards
 const SuperAdminDashboard = React.lazy(() => import('./components/dashboards/SuperAdminDashboard'));
@@ -104,6 +105,7 @@ function App() {
             {/* Public Routes */}
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/unauthorized" element={<div>Unauthorized Access</div>} />
 
