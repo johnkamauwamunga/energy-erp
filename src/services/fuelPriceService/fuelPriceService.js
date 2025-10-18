@@ -545,6 +545,7 @@ class FuelPriceService {
           baseCostPrice: product.baseCostPrice * (1 + percentage / 100),
           minSellingPrice: product.minSellingPrice * (1 + percentage / 100),
           maxSellingPrice: product.maxSellingPrice * (1 + percentage / 100)
+          
         }));
       
       if (updates.length === 0) {
