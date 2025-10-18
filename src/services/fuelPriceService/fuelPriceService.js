@@ -1,387 +1,562 @@
-// src/services/fuelPriceService.js
-import { apiService } from './apiService';
+import { apiService } from '../apiService';
 
-const logger = {
-  debug: (...args) => console.log('🔍 [FuelPriceService]', ...args),
-  info: (...args) => console.log('ℹ️ [FuelPriceService]', ...args),
-  warn: (...args) => console.warn('⚠️ [FuelPriceService]', ...args),
-  error: (...args) => console.error('❌ [FuelPriceService]', ...args)
-};
-
-const handleResponse = (response, operation) => {
-  if (response.data) {
-    logger.debug(`${operation} successful`);
-    return response.data;
+class FuelPriceService {
+  constructor() {
+    this.baseUrl = '/fuel-prices';
+    this.logger = {
+      debug: (...args) => console.log('🔍 [FuelPriceService]', ...args),
+      info: (...args) => console.log('ℹ️ [FuelPriceService]', ...args),
+      warn: (...args) => console.warn('⚠️ [FuelPriceService]', ...args),
+      error: (...args) => console.error('❌ [FuelPriceService]', ...args)
+    };
+    
+    this.cache = new Map();
+    this.CACHE_TTL = 2 * 60 * 1000; // 2 minutes for pricing data
   }
-  
-  logger.warn(`Unexpected response structure for ${operation}:`, response);
-  throw new Error('Invalid response format from server');
-};
 
-const handleError = (error, operation, defaultMessage) => {
-  logger.error(`Error during ${operation}:`, error);
-  
-  if (error.response) {
-    const { status, data } = error.response;
+  // =====================
+  // CORE UTILITIES - FIXED
+  // =====================
+
+  debugRequest = (method, endpoint, data) => {
+    this.logger.debug(`➡️ ${method} ${this.baseUrl}${endpoint}`, data || '');
+  };
+
+  debugResponse = (method, endpoint, response) => {
+    this.logger.debug(`⬅️ ${method} ${this.baseUrl}${endpoint} Response:`, response);
+  };
+
+  // FIXED: Handle different response formats
+  handleResponse = (response, operation) => {
+    console.log(`📦 ${operation} raw response:`, response);
     
-    if (status === 401) {
-      localStorage.removeItem('accessToken');
-      window.location.href = '/login';
-      throw new Error('Authentication failed. Please login again.');
+    // Case 1: Direct array response (your current backend format)
+    if (Array.isArray(response)) {
+      this.logger.debug(`${operation} successful (direct array)`);
+      return response;
     }
     
-    if (status === 403) {
-      throw new Error('You do not have permission to perform this action');
+    // Case 2: Standard success response with data property
+    if (response && response.success && response.data) {
+      this.logger.debug(`${operation} successful (wrapped response)`);
+      return response.data;
     }
     
-    if (status === 404) {
-      throw new Error('Requested resource not found');
+    // Case 3: Response has data but no success wrapper
+    if (response && response.data !== undefined) {
+      this.logger.debug(`${operation} successful (direct data)`);
+      return response.data;
     }
     
-    if (status === 400 && data.errors) {
-      const errorMessages = data.errors.map(err => err.message).join(', ');
+    // Case 4: Response is the data directly
+    if (response !== undefined && response !== null) {
+      this.logger.debug(`${operation} successful (raw response)`);
+      return response;
+    }
+    
+    this.logger.warn(`Unexpected response structure for ${operation}`, response);
+    throw new Error('Invalid response format from server');
+  };
+
+  handleError = (error, operation, defaultMessage) => {
+    this.logger.error(`${operation} failed:`, error);
+
+    // Network errors
+    if (error.code === 'ECONNABORTED') {
+      throw new Error('Request timeout. Please try again.');
+    }
+    
+    if (!error.response && error.message) {
+      // This might be our custom error from handleResponse
+      throw error;
+    }
+    
+    if (error.request) {
+      throw new Error('Network error. Please check your connection.');
+    }
+
+    // HTTP errors
+    if (error.response) {
+      const { status, data } = error.response;
+      
+      switch (status) {
+        case 401:
+          localStorage.removeItem('accessToken');
+          window.location.href = '/login';
+          throw new Error('Authentication failed. Please login again.');
+        
+        case 403:
+          throw new Error('You do not have permission to perform this action.');
+        
+        case 404:
+          throw new Error('Requested resource not found.');
+        
+        case 400:
+          return this.handleValidationError(data);
+        
+        default:
+          if (data?.message) throw new Error(data.message);
+      }
+    }
+
+    throw new Error(defaultMessage || 'An unexpected error occurred');
+  };
+
+  handleValidationError = (data) => {
+    if (data.message) throw new Error(data.message);
+    if (data.errors) {
+      const errorMessages = Array.isArray(data.errors) 
+        ? data.errors.map(err => err.message || err).join(', ')
+        : JSON.stringify(data.errors);
       throw new Error(`Validation failed: ${errorMessages}`);
     }
-    
-    if (data && data.message) {
-      throw new Error(data.message);
-    }
-  } else if (error.request) {
-    throw new Error('Network error. Please check your connection and try again.');
-  }
-  
-  throw new Error(defaultMessage || 'An unexpected error occurred');
-};
+    throw new Error('Validation failed');
+  };
 
-export const fuelPriceService = {
-  // Price List CRUD Operations
-  createPriceList: async (priceListData) => {
-    logger.info('Creating price list:', priceListData);
+  buildQueryParams = (filters) => {
+    if (!filters || Object.keys(filters).length === 0) return '';
     
-    try {
-      const response = await apiService.post('/fuel-pricing/price-lists', priceListData);
-      return handleResponse(response, 'creating price list');
-    } catch (error) {
-      throw handleError(error, 'creating price list', 'Failed to create price list');
-    }
-  },
-
-  updatePriceList: async (priceListId, updateData) => {
-    logger.info(`Updating price list ${priceListId}:`, updateData);
-    
-    try {
-      const response = await apiService.put('/fuel-pricing/price-lists', {
-        id: priceListId,
-        ...updateData
-      });
-      return handleResponse(response, 'updating price list');
-    } catch (error) {
-      throw handleError(error, 'updating price list', 'Failed to update price list');
-    }
-  },
-
-  getPriceLists: async (filters = {}) => {
-    logger.info('Fetching price lists with filters:', filters);
-    
-    try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null) {
+    const params = new URLSearchParams();
+    Object.keys(filters).forEach(key => {
+      if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+        // Handle array values for bulk operations
+        if (Array.isArray(filters[key])) {
+          params.append(key, filters[key].join(','));
+        } else {
           params.append(key, filters[key]);
         }
+      }
+    });
+    return params.toString();
+  };
+
+  // =====================
+  // CACHE MANAGEMENT
+  // =====================
+
+  getCached = (key) => {
+    const cached = this.cache.get(key);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      this.logger.debug(`Cache hit: ${key}`);
+      return cached.data;
+    }
+    this.cache.delete(key);
+    return null;
+  };
+
+  setCached = (key, data) => {
+    this.cache.set(key, { data, timestamp: Date.now() });
+  };
+
+  clearCache = (pattern = null) => {
+    if (pattern) {
+      for (const key of this.cache.keys()) {
+        if (key.includes(pattern)) this.cache.delete(key);
+      }
+    } else {
+      this.cache.clear();
+    }
+  };
+
+  // =====================
+  // PRODUCT PRICING - CORE ENDPOINTS (FIXED)
+  // =====================
+
+  // GET Product Prices - FIXED
+  getProductPrices = async (filters = {}, forceRefresh = false) => {
+    this.logger.info('Fetching product prices:', filters);
+    
+    const cacheKey = `product-prices-${JSON.stringify(filters)}`;
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    try {
+      const query = this.buildQueryParams(filters);
+      const endpoint = query ? `/products/prices?${query}` : '/products/prices';
+      
+      this.debugRequest('GET', endpoint);
+      const response = await apiService.get(`${this.baseUrl}${endpoint}`);
+      this.debugResponse('GET', endpoint, response);
+      
+      const data = this.handleResponse(response, 'Product prices fetch');
+      
+      // Ensure we always return an array
+      const products = Array.isArray(data) ? data : [];
+      
+      // Enrich products with pricing calculations
+      const enrichedProducts = products.map(product => this.enrichProductPricing(product));
+      
+      this.setCached(cacheKey, enrichedProducts);
+      return enrichedProducts;
+    } catch (error) {
+      throw this.handleError(error, 'Product prices fetch', 'Failed to fetch product prices');
+    }
+  };
+
+  // PUT Single Product Price Update - FIXED
+  updateProductPrices = async (priceData) => {
+    this.logger.info('Updating product prices:', priceData);
+    
+    try {
+      this.debugRequest('PUT', '/products/prices', priceData);
+      const response = await apiService.put(`${this.baseUrl}/products/prices`, priceData);
+      this.debugResponse('PUT', '/products/prices', response);
+      
+      const data = this.handleResponse(response, 'Price update');
+      this.clearCache('product-prices');
+      
+      // Return enriched product data
+      return this.enrichProductPricing(data);
+    } catch (error) {
+      throw this.handleError(error, 'Price update', 'Failed to update product prices');
+    }
+  };
+
+  // PUT Bulk Product Price Update - FIXED
+  updateBulkProductPrices = async (bulkPriceData) => {
+    this.logger.info('Updating bulk product prices:', bulkPriceData);
+    
+    try {
+      this.debugRequest('PUT', '/products/prices/bulk', bulkPriceData);
+      const response = await apiService.put(`${this.baseUrl}/products/prices/bulk`, bulkPriceData);
+      this.debugResponse('PUT', '/products/prices/bulk', response);
+      
+      const data = this.handleResponse(response, 'Bulk price update');
+      this.clearCache('product-prices');
+      
+      // Ensure we return array of enriched products
+      const results = Array.isArray(data) ? data : [];
+      return results.map(product => this.enrichProductPricing(product));
+    } catch (error) {
+      throw this.handleError(error, 'Bulk price update', 'Failed to update bulk product prices');
+    }
+  };
+
+  // GET Bulk Product Prices - FIXED
+  getBulkProductPrices = async (filters = {}, forceRefresh = false) => {
+    this.logger.info('Fetching bulk product prices:', filters);
+    
+    const cacheKey = `bulk-product-prices-${JSON.stringify(filters)}`;
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    try {
+      const query = this.buildQueryParams(filters);
+      const endpoint = query ? `/products/prices/bulk?${query}` : '/products/prices/bulk';
+      
+      this.debugRequest('GET', endpoint);
+      const response = await apiService.get(`${this.baseUrl}${endpoint}`);
+      this.debugResponse('GET', endpoint, response);
+      
+      const data = this.handleResponse(response, 'Bulk product prices fetch');
+      
+      // Ensure we return an array
+      const products = Array.isArray(data) ? data : [];
+      this.setCached(cacheKey, products);
+      return products;
+    } catch (error) {
+      throw this.handleError(error, 'Bulk product prices fetch', 'Failed to fetch bulk product prices');
+    }
+  };
+
+  // GET Product Pricing History - FIXED
+  getProductPricingHistory = async (productId, days = 30, forceRefresh = false) => {
+    this.logger.info(`Fetching pricing history for product ${productId}, days: ${days}`);
+    
+    const cacheKey = `pricing-history-${productId}-${days}`;
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    try {
+      const query = this.buildQueryParams({ productId, days });
+      const endpoint = `/products/prices/history?${query}`;
+      
+      this.debugRequest('GET', endpoint);
+      const response = await apiService.get(`${this.baseUrl}${endpoint}`);
+      this.debugResponse('GET', endpoint, response);
+      
+      const data = this.handleResponse(response, 'Pricing history fetch');
+      this.setCached(cacheKey, data);
+      return data;
+    } catch (error) {
+      throw this.handleError(error, 'Pricing history fetch', 'Failed to fetch product pricing history');
+    }
+  };
+
+  // GET Pricing Analytics - FIXED
+  getPricingAnalytics = async (forceRefresh = false) => {
+    this.logger.info('Fetching pricing analytics');
+    
+    const cacheKey = 'pricing-analytics';
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    try {
+      const endpoint = '/products/prices/analytics';
+      this.debugRequest('GET', endpoint);
+      const response = await apiService.get(`${this.baseUrl}${endpoint}`);
+      this.debugResponse('GET', endpoint, response);
+      
+      const data = this.handleResponse(response, 'Pricing analytics fetch');
+      this.setCached(cacheKey, data);
+      return data;
+    } catch (error) {
+      throw this.handleError(error, 'Pricing analytics fetch', 'Failed to fetch pricing analytics');
+    }
+  };
+
+  // GET Export Pricing Data - FIXED
+  exportPricingData = async (format = 'json') => {
+    this.logger.info(`Exporting pricing data in ${format} format`);
+    
+    try {
+      const endpoint = `/products/prices/export?format=${format}`;
+      this.debugRequest('GET', endpoint);
+      
+      const response = await apiService.get(`${this.baseUrl}${endpoint}`, {
+        responseType: format === 'csv' ? 'blob' : 'json'
       });
       
-      const response = await apiService.get(`/fuel-pricing/price-lists?${params.toString()}`);
-      return handleResponse(response, 'fetching price lists');
-    } catch (error) {
-      throw handleError(error, 'fetching price lists', 'Failed to fetch price lists');
-    }
-  },
-
-  getPriceListById: async (priceListId) => {
-    logger.info(`Fetching price list: ${priceListId}`);
-    
-    try {
-      const response = await apiService.get(`/fuel-pricing/price-lists/${priceListId}`);
-      return handleResponse(response, 'fetching price list');
-    } catch (error) {
-      throw handleError(error, 'fetching price list', 'Failed to fetch price list');
-    }
-  },
-
-  approvePriceList: async (priceListId) => {
-    logger.info(`Approving price list: ${priceListId}`);
-    
-    try {
-      const response = await apiService.patch(`/fuel-pricing/price-lists/${priceListId}/approve`);
-      return handleResponse(response, 'approving price list');
-    } catch (error) {
-      throw handleError(error, 'approving price list', 'Failed to approve price list');
-    }
-  },
-
-  activatePriceList: async (priceListId) => {
-    logger.info(`Activating price list: ${priceListId}`);
-    
-    try {
-      const response = await apiService.patch(`/fuel-pricing/price-lists/${priceListId}/activate`);
-      return handleResponse(response, 'activating price list');
-    } catch (error) {
-      throw handleError(error, 'activating price list', 'Failed to activate price list');
-    }
-  },
-
-  deactivatePriceList: async (priceListId) => {
-    logger.info(`Deactivating price list: ${priceListId}`);
-    
-    try {
-      const response = await apiService.patch(`/fuel-pricing/price-lists/${priceListId}/deactivate`);
-      return handleResponse(response, 'deactivating price list');
-    } catch (error) {
-      throw handleError(error, 'deactivating price list', 'Failed to deactivate price list');
-    }
-  },
-
-  // Price List Items Operations
-  addPriceListItem: async (itemData) => {
-    logger.info('Adding price list item:', itemData);
-    
-    try {
-      const response = await apiService.post('/fuel-pricing/price-list-items', itemData);
-      return handleResponse(response, 'adding price list item');
-    } catch (error) {
-      throw handleError(error, 'adding price list item', 'Failed to add price list item');
-    }
-  },
-
-  updatePriceListItem: async (itemId, updateData) => {
-    logger.info(`Updating price list item ${itemId}:`, updateData);
-    
-    try {
-      const response = await apiService.put('/fuel-pricing/price-list-items', {
-        id: itemId,
-        ...updateData
-      });
-      return handleResponse(response, 'updating price list item');
-    } catch (error) {
-      throw handleError(error, 'updating price list item', 'Failed to update price list item');
-    }
-  },
-
-  getPriceListItems: async (filters = {}) => {
-    logger.info('Fetching price list items with filters:', filters);
-    
-    try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null) {
-          params.append(key, filters[key]);
-        }
-      });
+      this.debugResponse('GET', endpoint, response);
       
-      const response = await apiService.get(`/fuel-pricing/price-list-items?${params.toString()}`);
-      return handleResponse(response, 'fetching price list items');
-    } catch (error) {
-      throw handleError(error, 'fetching price list items', 'Failed to fetch price list items');
-    }
-  },
-
-  bulkUpdatePriceListItems: async (priceListId, items) => {
-    logger.info(`Bulk updating price list items for ${priceListId}:`, items);
-    
-    try {
-      const response = await apiService.post('/fuel-pricing/price-list-items/bulk', {
-        priceListId,
-        items
-      });
-      return handleResponse(response, 'bulk updating price list items');
-    } catch (error) {
-      throw handleError(error, 'bulk updating price list items', 'Failed to bulk update price list items');
-    }
-  },
-
-  // Price Rules Operations
-  createPriceRule: async (ruleData) => {
-    logger.info('Creating price rule:', ruleData);
-    
-    try {
-      const response = await apiService.post('/fuel-pricing/price-rules', ruleData);
-      return handleResponse(response, 'creating price rule');
-    } catch (error) {
-      throw handleError(error, 'creating price rule', 'Failed to create price rule');
-    }
-  },
-
-  updatePriceRule: async (ruleId, updateData) => {
-    logger.info(`Updating price rule ${ruleId}:`, updateData);
-    
-    try {
-      const response = await apiService.put('/fuel-pricing/price-rules', {
-        id: ruleId,
-        ...updateData
-      });
-      return handleResponse(response, 'updating price rule');
-    } catch (error) {
-      throw handleError(error, 'updating price rule', 'Failed to update price rule');
-    }
-  },
-
-  getPriceRules: async (filters = {}) => {
-    logger.info('Fetching price rules with filters:', filters);
-    
-    try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null) {
-          params.append(key, filters[key]);
-        }
-      });
+      if (format === 'csv') {
+        // Handle CSV download
+        const blob = new Blob([response.data], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `product-prices-${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+        return { success: true, message: 'CSV file downloaded' };
+      }
       
-      const response = await apiService.get(`/fuel-pricing/price-rules?${params.toString()}`);
-      return handleResponse(response, 'fetching price rules');
+      return this.handleResponse(response, 'Pricing data export');
     } catch (error) {
-      throw handleError(error, 'fetching price rules', 'Failed to fetch price rules');
+      throw this.handleError(error, 'Pricing data export', 'Failed to export pricing data');
     }
-  },
+  };
 
-  togglePriceRule: async (ruleId, isActive) => {
-    logger.info(`Toggling price rule ${ruleId} to ${isActive}`);
+  // =====================
+  // PRICING UTILITIES - ENHANCED
+  // =====================
+
+  // Validate single product price update
+  validateProductPrices = (priceData) => {
+    const errors = [];
     
+    if (!priceData.productId) errors.push('Product ID is required');
+    
+    // Handle null/undefined values by treating them as 0
+    const baseCostPrice = priceData.baseCostPrice || 0;
+    const minSellingPrice = priceData.minSellingPrice || 0;
+    const maxSellingPrice = priceData.maxSellingPrice || 0;
+    
+    if (typeof baseCostPrice !== 'number' || baseCostPrice < 0) {
+      errors.push('Base cost price must be a positive number');
+    }
+    
+    if (typeof minSellingPrice !== 'number' || minSellingPrice < 0) {
+      errors.push('Minimum selling price must be a positive number');
+    }
+    
+    if (typeof maxSellingPrice !== 'number' || maxSellingPrice < 0) {
+      errors.push('Maximum selling price must be a positive number');
+    }
+    
+    // Validate price relationships
+    if (minSellingPrice > maxSellingPrice) {
+      errors.push('Minimum selling price cannot exceed maximum selling price');
+    }
+    
+    if (baseCostPrice > maxSellingPrice) {
+      errors.push('Base cost price cannot exceed maximum selling price');
+    }
+    
+    // Check if at least one price is provided
+    if (baseCostPrice === 0 && minSellingPrice === 0 && maxSellingPrice === 0) {
+      errors.push('At least one pricing field must be provided');
+    }
+    
+    return errors;
+  };
+
+  // Validate bulk product price updates
+  validateBulkProductPrices = (bulkPriceData) => {
+    const errors = [];
+    
+    if (!bulkPriceData.updates || !Array.isArray(bulkPriceData.updates)) {
+      errors.push('Updates array is required');
+      return errors;
+    }
+    
+    if (bulkPriceData.updates.length === 0) {
+      errors.push('At least one product update is required');
+    }
+    
+    bulkPriceData.updates.forEach((update, index) => {
+      const updateErrors = this.validateProductPrices(update);
+      if (updateErrors.length > 0) {
+        errors.push(`Update ${index + 1}: ${updateErrors.join(', ')}`);
+      }
+    });
+    
+    return errors;
+  };
+
+  // FIXED: Enrich product with pricing analytics - handle null values
+  enrichProductPricing = (product) => {
+    if (!product) return null;
+    
+    // Handle null values by defaulting to 0
+    const baseCostPrice = product.baseCostPrice || 0;
+    const minSellingPrice = product.minSellingPrice || 0;
+    const maxSellingPrice = product.maxSellingPrice || 0;
+    
+    // Calculate margin (handle division by zero)
+    const margin = baseCostPrice > 0 && maxSellingPrice > 0 
+      ? ((maxSellingPrice - baseCostPrice) / baseCostPrice) * 100
+      : 0;
+
+    // Determine price status
+    let priceStatus = 'no-pricing';
+    if (baseCostPrice > 0 && minSellingPrice > 0 && maxSellingPrice > 0) {
+      if (margin > 20) priceStatus = 'profitable';
+      else if (margin > 10) priceStatus = 'good';
+      else if (margin > 0) priceStatus = 'low-margin';
+      else priceStatus = 'unprofitable';
+    }
+
+    return {
+      ...product,
+      baseCostPrice,
+      minSellingPrice,
+      maxSellingPrice,
+      margin: Number(margin.toFixed(1)),
+      priceStatus,
+      priceSpread: maxSellingPrice - minSellingPrice,
+      hasPricing: !!(baseCostPrice && minSellingPrice && maxSellingPrice),
+      marginDisplay: margin ? `${margin.toFixed(1)}%` : 'N/A',
+      priceRange: minSellingPrice && maxSellingPrice 
+        ? `${minSellingPrice.toFixed(2)} - ${maxSellingPrice.toFixed(2)}` 
+        : 'Not set'
+    };
+  };
+
+  // Calculate optimal pricing based on cost and desired margin
+  calculateOptimalPricing = (baseCost, desiredMargin = 0.15) => {
+    const base = baseCost || 0;
+    const minPrice = base * (1 + desiredMargin);
+    const maxPrice = base * (1 + desiredMargin * 1.5); // Allow 50% more margin for flexibility
+    
+    return {
+      baseCostPrice: base,
+      minSellingPrice: Math.round(minPrice * 100) / 100,
+      maxSellingPrice: Math.round(maxPrice * 100) / 100,
+      recommendedMargin: desiredMargin * 100
+    };
+  };
+
+  // Format product for display - handle null values
+  formatProductForDisplay = (product) => {
+    if (!product) return null;
+    
+    const enriched = this.enrichProductPricing(product);
+    
+    return {
+      ...enriched,
+      displayName: `${product.name} (${product.fuelCode})`,
+      typeDisplay: product.type?.toLowerCase() === 'fuel' ? 'Fuel' : 'Non-Fuel',
+      unitDisplay: product.unit?.toLowerCase() === 'liter' ? 'L' : product.unit
+    };
+  };
+
+  // Batch update helper
+  prepareBulkUpdate = (products, priceUpdates) => {
+    const updates = products.map(product => {
+      const update = priceUpdates[product.id] || {};
+      return {
+        productId: product.id,
+        baseCostPrice: update.baseCostPrice !== undefined ? update.baseCostPrice : (product.baseCostPrice || 0),
+        minSellingPrice: update.minSellingPrice !== undefined ? update.minSellingPrice : (product.minSellingPrice || 0),
+        maxSellingPrice: update.maxSellingPrice !== undefined ? update.maxSellingPrice : (product.maxSellingPrice || 0)
+      };
+    }).filter(update => 
+      update.baseCostPrice !== 0 || 
+      update.minSellingPrice !== 0 || 
+      update.maxSellingPrice !== 0
+    );
+
+    return { updates };
+  };
+
+  // Get products needing pricing attention
+  getProductsNeedingPricing = async (filters = {}) => {
     try {
-      const response = await apiService.patch(`/fuel-pricing/price-rules/${ruleId}/toggle`, {
-        isActive
-      });
-      return handleResponse(response, 'toggling price rule');
+      const products = await this.getProductPrices(filters);
+      return products.filter(product => 
+        !product.baseCostPrice || 
+        !product.minSellingPrice || 
+        !product.maxSellingPrice ||
+        (product.margin !== null && product.margin < 5)
+      );
     } catch (error) {
-      throw handleError(error, 'toggling price rule', 'Failed to toggle price rule');
+      throw this.handleError(error, 'Products needing pricing fetch', 'Failed to fetch products needing pricing attention');
     }
-  },
+  };
 
-  // Price Calculation and Queries
-  calculateFuelPrice: async (calculationData) => {
-    logger.info('Calculating fuel price:', calculationData);
+  // Quick price update for single product
+  quickUpdatePrice = async (productId, field, value) => {
+    const updateData = {
+      productId,
+      [field]: value || 0
+    };
     
-    try {
-      const response = await apiService.post('/fuel-pricing/calculate', calculationData);
-      return handleResponse(response, 'calculating fuel price');
-    } catch (error) {
-      throw handleError(error, 'calculating fuel price', 'Failed to calculate fuel price');
-    }
-  },
+    return await this.updateProductPrices(updateData);
+  };
 
-  getCurrentPrices: async (filters = {}) => {
-    logger.info('Fetching current prices with filters:', filters);
-    
+  // Apply percentage increase to all products
+  applyPercentageIncrease = async (percentage, products = null) => {
     try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null) {
-          params.append(key, filters[key]);
-        }
-      });
+      let targetProducts = products;
       
-      const response = await apiService.get(`/fuel-pricing/current-prices?${params.toString()}`);
-      return handleResponse(response, 'fetching current prices');
-    } catch (error) {
-      throw handleError(error, 'fetching current prices', 'Failed to fetch current prices');
-    }
-  },
-
-  getPriceHistory: async (filters = {}) => {
-    logger.info('Fetching price history with filters:', filters);
-    
-    try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null) {
-          params.append(key, filters[key]);
-        }
-      });
+      if (!targetProducts) {
+        targetProducts = await this.getProductPrices();
+      }
       
-      const response = await apiService.get(`/fuel-pricing/price-history?${params.toString()}`);
-      return handleResponse(response, 'fetching price history');
-    } catch (error) {
-      throw handleError(error, 'fetching price history', 'Failed to fetch price history');
-    }
-  },
-
-  // Price Management Operations
-  applyPriceUpdate: async (updateData) => {
-    logger.info('Applying price update:', updateData);
-    
-    try {
-      const response = await apiService.post('/fuel-pricing/price-updates', updateData);
-      return handleResponse(response, 'applying price update');
-    } catch (error) {
-      throw handleError(error, 'applying price update', 'Failed to apply price update');
-    }
-  },
-
-  setDiscount: async (discountData) => {
-    logger.info('Setting discount:', discountData);
-    
-    try {
-      const response = await apiService.post('/fuel-pricing/discounts', discountData);
-      return handleResponse(response, 'setting discount');
-    } catch (error) {
-      throw handleError(error, 'setting discount', 'Failed to set discount');
-    }
-  },
-
-  // Analytics
-  getPriceAnalytics: async (filters = {}) => {
-    logger.info('Fetching price analytics with filters:', filters);
-    
-    try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null) {
-          params.append(key, filters[key]);
-        }
-      });
+      const updates = targetProducts
+        .filter(product => product.baseCostPrice && product.minSellingPrice && product.maxSellingPrice)
+        .map(product => ({
+          productId: product.id,
+          baseCostPrice: product.baseCostPrice * (1 + percentage / 100),
+          minSellingPrice: product.minSellingPrice * (1 + percentage / 100),
+          maxSellingPrice: product.maxSellingPrice * (1 + percentage / 100)
+        }));
       
-      const response = await apiService.get(`/fuel-pricing/analytics?${params.toString()}`);
-      return handleResponse(response, 'fetching price analytics');
+      if (updates.length === 0) {
+        throw new Error('No products with complete pricing data found');
+      }
+      
+      return await this.updateBulkProductPrices({ updates });
     } catch (error) {
-      throw handleError(error, 'fetching price analytics', 'Failed to fetch price analytics');
+      throw this.handleError(error, 'Percentage increase application', 'Failed to apply percentage increase');
     }
-  }
-};
+  };
+}
 
-// Constants matching backend enums
-export const PRICE_LIST_TYPES = {
-  RETAIL: 'RETAIL',
-  WHOLESALE: 'WHOLESALE',
-  PROMOTIONAL: 'PROMOTIONAL',
-  CONTRACT: 'CONTRACT',
-  STAFF: 'STAFF',
-  GOVERNMENT: 'GOVERNMENT',
-  OTHER: 'OTHER'
-};
-
-export const PRICE_LIST_STATUS = {
-  DRAFT: 'DRAFT',
-  PENDING_APPROVAL: 'PENDING_APPROVAL',
-  APPROVED: 'APPROVED',
-  ACTIVE: 'ACTIVE',
-  EXPIRED: 'EXPIRED',
-  ARCHIVED: 'ARCHIVED'
-};
-
-export const PRICE_RULE_CONDITION_TYPES = {
-  TIME_BASED: 'TIME_BASED',
-  DAY_BASED: 'DAY_BASED',
-  QUANTITY_BASED: 'QUANTITY_BASED',
-  CUSTOMER_TYPE: 'CUSTOMER_TYPE',
-  PAYMENT_METHOD: 'PAYMENT_METHOD',
-  LOYALTY_TIER: 'LOYALTY_TIER',
-  SPECIAL_EVENT: 'SPECIAL_EVENT'
-};
-
-export const PRICE_ADJUSTMENT_TYPES = {
-  PERCENTAGE_DISCOUNT: 'PERCENTAGE_DISCOUNT',
-  PERCENTAGE_INCREASE: 'PERCENTAGE_INCREASE',
-  FIXED_DISCOUNT: 'FIXED_DISCOUNT',
-  FIXED_INCREASE: 'FIXED_INCREASE',
-  PRICE_OVERRIDE: 'PRICE_OVERRIDE'
-};
+export const fuelPriceService = new FuelPriceService();
+export default fuelPriceService;

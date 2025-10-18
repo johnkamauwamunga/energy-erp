@@ -114,7 +114,7 @@ const CompanyUserManagement = () => {
             Admins ({staffTypes.admins.length})
           </Tab>
           {/* managers */}
-            <Tab value="admins" icon={Shield}>
+            <Tab value="managers" icon={Shield}>
             Managers ({staffTypes.managers.length})
           </Tab>
           <Tab value="supervisors" icon={Settings}>

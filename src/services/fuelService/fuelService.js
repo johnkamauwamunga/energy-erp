@@ -296,6 +296,7 @@ class FuelService {
       const response = await apiService.post('/fuel/products', productData);
       this.debugResponse('POST', '/fuel/products', response);
       this.clearCache('products');
+      this.clearCache('pricing');
       return this.handleResponse(response, 'Product creation');
     } catch (error) {
       throw this.handleError(error, 'Product creation', 'Failed to create fuel product');
@@ -310,6 +311,7 @@ class FuelService {
       const response = await apiService.put('/fuel/products', productData);
       this.debugResponse('PUT', '/fuel/products', response);
       this.clearCache('products');
+      this.clearCache('pricing');
       return this.handleResponse(response, 'Product update');
     } catch (error) {
       throw this.handleError(error, 'Product update', 'Failed to update fuel product');
@@ -359,6 +361,118 @@ class FuelService {
       return data;
     } catch (error) {
       throw this.handleError(error, 'Product fetch', 'Failed to fetch fuel product');
+    }
+  };
+
+  // =====================
+  // PRODUCT PRICING MANAGEMENT
+  // =====================
+
+  updateProductPrices = async (priceData) => {
+    this.logger.info('Updating product prices:', priceData);
+    this.debugRequest('PUT', '/fuel/products/prices', priceData);
+    
+    try {
+      const response = await apiService.put('/fuel/products/prices', priceData);
+      this.debugResponse('PUT', '/fuel/products/prices', response);
+      this.clearCache('pricing');
+      this.clearCache('products');
+      return this.handleResponse(response, 'Price update');
+    } catch (error) {
+      throw this.handleError(error, 'Price update', 'Failed to update product prices');
+    }
+  };
+
+  getProductPrices = async (filters = {}, forceRefresh = false) => {
+    this.logger.info('Fetching product prices:', filters);
+    
+    const cacheKey = `product-prices-${JSON.stringify(filters)}`;
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    try {
+      const query = this.buildQueryParams(filters);
+      const url = query ? `/fuel/products/prices?${query}` : '/fuel/products/prices';
+      
+      this.debugRequest('GET', url);
+      const response = await apiService.get(url);
+      this.debugResponse('GET', url, response);
+      
+      const data = this.handleResponse(response, 'Product prices fetch');
+      this.setCached(cacheKey, data);
+      return data;
+    } catch (error) {
+      throw this.handleError(error, 'Product prices fetch', 'Failed to fetch product prices');
+    }
+  };
+
+  getBulkProductPrices = async (filters = {}, forceRefresh = false) => {
+    this.logger.info('Fetching bulk product prices:', filters);
+    
+    const cacheKey = `bulk-product-prices-${JSON.stringify(filters)}`;
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    try {
+      const query = this.buildQueryParams(filters);
+      const url = query ? `/fuel/products/prices/bulk?${query}` : '/fuel/products/prices/bulk';
+      
+      this.debugRequest('GET', url);
+      const response = await apiService.get(url);
+      this.debugResponse('GET', url, response);
+      
+      const data = this.handleResponse(response, 'Bulk product prices fetch');
+      this.setCached(cacheKey, data);
+      return data;
+    } catch (error) {
+      throw this.handleError(error, 'Bulk product prices fetch', 'Failed to fetch bulk product prices');
+    }
+  };
+
+  updateBulkProductPrices = async (bulkPriceData) => {
+    this.logger.info('Updating bulk product prices:', bulkPriceData);
+    this.debugRequest('PUT', '/fuel/products/prices/bulk', bulkPriceData);
+    
+    try {
+      const response = await apiService.put('/fuel/products/prices/bulk', bulkPriceData);
+      this.debugResponse('PUT', '/fuel/products/prices/bulk', response);
+      this.clearCache('pricing');
+      this.clearCache('products');
+      return this.handleResponse(response, 'Bulk price update');
+    } catch (error) {
+      throw this.handleError(error, 'Bulk price update', 'Failed to update bulk product prices');
+    }
+  };
+
+  getProductPricingHistory = async (productId, days = 30, forceRefresh = false) => {
+    this.logger.info(`Fetching pricing history for product ${productId}, days: ${days}`);
+    
+    const cacheKey = `pricing-history-${productId}-${days}`;
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    try {
+      const query = this.buildQueryParams({ productId, days });
+      const url = `/fuel/products/prices/history?${query}`;
+      
+      this.debugRequest('GET', url);
+      const response = await apiService.get(url);
+      this.debugResponse('GET', url, response);
+      
+      const data = this.handleResponse(response, 'Pricing history fetch');
+      this.setCached(cacheKey, data);
+      return data;
+    } catch (error) {
+      throw this.handleError(error, 'Pricing history fetch', 'Failed to fetch product pricing history');
     }
   };
 
@@ -445,6 +559,51 @@ class FuelService {
     return errors;
   };
 
+  validateProductPrices = (priceData) => {
+    const errors = [];
+    
+    if (!priceData.productId) errors.push('Product ID is required');
+    if (!priceData.baseCostPrice && priceData.baseCostPrice !== 0) errors.push('Base cost price is required');
+    if (!priceData.minSellingPrice && priceData.minSellingPrice !== 0) errors.push('Minimum selling price is required');
+    if (!priceData.maxSellingPrice && priceData.maxSellingPrice !== 0) errors.push('Maximum selling price is required');
+    
+    if (priceData.minSellingPrice > priceData.maxSellingPrice) {
+      errors.push('Minimum selling price cannot be greater than maximum selling price');
+    }
+    
+    if (priceData.baseCostPrice > priceData.maxSellingPrice) {
+      errors.push('Base cost price cannot be greater than maximum selling price');
+    }
+    
+    if (priceData.baseCostPrice < 0 || priceData.minSellingPrice < 0 || priceData.maxSellingPrice < 0) {
+      errors.push('Prices cannot be negative');
+    }
+    
+    return errors;
+  };
+
+  validateBulkProductPrices = (bulkPriceData) => {
+    const errors = [];
+    
+    if (!bulkPriceData.updates || !Array.isArray(bulkPriceData.updates)) {
+      errors.push('Updates array is required');
+      return errors;
+    }
+    
+    if (bulkPriceData.updates.length === 0) {
+      errors.push('At least one product update is required');
+    }
+    
+    bulkPriceData.updates.forEach((update, index) => {
+      const updateErrors = this.validateProductPrices(update);
+      if (updateErrors.length > 0) {
+        errors.push(`Update ${index + 1}: ${updateErrors.join(', ')}`);
+      }
+    });
+    
+    return errors;
+  };
+
   // =====================
   // UTILITY METHODS
   // =====================
@@ -486,7 +645,37 @@ class FuelService {
       octaneDisplay: product.octaneRating ? `RON ${product.octaneRating}` : 'N/A',
       priceRange: product.minSellingPrice && product.maxSellingPrice 
         ? `${product.minSellingPrice} - ${product.maxSellingPrice}`
-        : 'Not set'
+        : 'Not set',
+      margin: product.baseCostPrice && product.maxSellingPrice 
+        ? ((product.maxSellingPrice - product.baseCostPrice) / product.baseCostPrice * 100).toFixed(2)
+        : null
+    };
+  };
+
+  formatPriceData = (priceData) => {
+    if (!priceData) return null;
+    
+    return {
+      ...priceData,
+      marginPercentage: priceData.baseCostPrice && priceData.maxSellingPrice 
+        ? ((priceData.maxSellingPrice - priceData.baseCostPrice) / priceData.baseCostPrice * 100).toFixed(2)
+        : null,
+      priceSpread: priceData.maxSellingPrice - priceData.minSellingPrice,
+      isProfitable: priceData.baseCostPrice && priceData.minSellingPrice 
+        ? priceData.minSellingPrice > priceData.baseCostPrice
+        : null
+    };
+  };
+
+  calculateOptimalPricing = (baseCost, desiredMargin = 0.15, competitivePrice = null) => {
+    const minPrice = baseCost * (1 + desiredMargin);
+    const maxPrice = competitivePrice ? Math.min(competitivePrice * 1.1, baseCost * (1 + desiredMargin * 2)) : baseCost * (1 + desiredMargin * 2);
+    
+    return {
+      baseCostPrice: baseCost,
+      minSellingPrice: Math.round(minPrice * 100) / 100,
+      maxSellingPrice: Math.round(maxPrice * 100) / 100,
+      recommendedMargin: desiredMargin * 100
     };
   };
 
@@ -519,6 +708,24 @@ class FuelService {
     }
   };
 
+  batchUpdateProductPrices = async (productsWithPrices) => {
+    this.logger.info(`Batch updating prices for ${productsWithPrices.length} products`);
+    
+    try {
+      const updates = productsWithPrices.map(product => ({
+        productId: product.id,
+        baseCostPrice: product.baseCostPrice,
+        minSellingPrice: product.minSellingPrice,
+        maxSellingPrice: product.maxSellingPrice
+      }));
+
+      const result = await this.updateBulkProductPrices({ updates });
+      return result;
+    } catch (error) {
+      throw this.handleError(error, 'Batch price update', 'Failed to batch update product prices');
+    }
+  };
+
   // =====================
   // SEARCH OPERATIONS
   // =====================
@@ -542,6 +749,157 @@ class FuelService {
       };
     } catch (error) {
       throw this.handleError(error, 'Fuel entities search', 'Failed to search fuel entities');
+    }
+  };
+
+  searchProductsForPricing = async (searchTerm) => {
+    this.logger.info(`Searching products for pricing: "${searchTerm}"`);
+    
+    try {
+      const products = await this.getProductPrices({ search: searchTerm });
+      return {
+        products: products || [],
+        searchTerm,
+        totalResults: products?.length || 0
+      };
+    } catch (error) {
+      throw this.handleError(error, 'Product pricing search', 'Failed to search products for pricing');
+    }
+  };
+
+  // =====================
+  // PRICING ANALYTICS
+  // =====================
+
+  getPricingAnalytics = async (forceRefresh = false) => {
+    this.logger.info('Fetching pricing analytics');
+    
+    const cacheKey = 'pricing-analytics';
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    try {
+      // Get all products with pricing
+      const products = await this.getProductPrices({}, true);
+      
+      const analytics = {
+        totalProducts: products.length,
+        productsWithPricing: products.filter(p => p.baseCostPrice && p.minSellingPrice && p.maxSellingPrice).length,
+        averageMargin: 0,
+        lowestMargin: Infinity,
+        highestMargin: -Infinity,
+        pricingDistribution: {
+          lowMargin: 0,    // < 10%
+          mediumMargin: 0, // 10-25%
+          highMargin: 0,   // 25-50%
+          premiumMargin: 0 // > 50%
+        },
+        productsNeedingUpdate: []
+      };
+
+      let totalMargin = 0;
+      let marginCount = 0;
+
+      products.forEach(product => {
+        if (product.baseCostPrice && product.maxSellingPrice) {
+          const margin = ((product.maxSellingPrice - product.baseCostPrice) / product.baseCostPrice) * 100;
+          totalMargin += margin;
+          marginCount++;
+
+          // Update min/max margins
+          if (margin < analytics.lowestMargin) analytics.lowestMargin = margin;
+          if (margin > analytics.highestMargin) analytics.highestMargin = margin;
+
+          // Update margin distribution
+          if (margin < 10) analytics.pricingDistribution.lowMargin++;
+          else if (margin < 25) analytics.pricingDistribution.mediumMargin++;
+          else if (margin < 50) analytics.pricingDistribution.highMargin++;
+          else analytics.pricingDistribution.premiumMargin++;
+
+          // Check if product needs pricing update
+          if (!product.baseCostPrice || !product.minSellingPrice || !product.maxSellingPrice) {
+            analytics.productsNeedingUpdate.push({
+              id: product.id,
+              name: product.name,
+              fuelCode: product.fuelCode,
+              reason: 'Missing pricing data'
+            });
+          } else if (margin < 5) {
+            analytics.productsNeedingUpdate.push({
+              id: product.id,
+              name: product.name,
+              fuelCode: product.fuelCode,
+              reason: 'Low margin (< 5%)'
+            });
+          }
+        }
+      });
+
+      analytics.averageMargin = marginCount > 0 ? totalMargin / marginCount : 0;
+      analytics.lowestMargin = analytics.lowestMargin === Infinity ? 0 : analytics.lowestMargin;
+      analytics.highestMargin = analytics.highestMargin === -Infinity ? 0 : analytics.highestMargin;
+
+      this.setCached(cacheKey, analytics);
+      return analytics;
+    } catch (error) {
+      throw this.handleError(error, 'Pricing analytics fetch', 'Failed to fetch pricing analytics');
+    }
+  };
+
+  // =====================
+  // EXPORT/IMPORT
+  // =====================
+
+  exportPricingData = async (format = 'json') => {
+    this.logger.info(`Exporting pricing data in ${format} format`);
+    
+    try {
+      const products = await this.getProductPrices({}, true);
+      
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        totalProducts: products.length,
+        products: products.map(product => ({
+          id: product.id,
+          name: product.name,
+          fuelCode: product.fuelCode,
+          baseCostPrice: product.baseCostPrice,
+          minSellingPrice: product.minSellingPrice,
+          maxSellingPrice: product.maxSellingPrice,
+          unit: product.unit,
+          category: product.fuelSubType?.category?.name,
+          subType: product.fuelSubType?.name
+        }))
+      };
+
+      if (format === 'csv') {
+        // Convert to CSV format
+        const headers = ['Name', 'Fuel Code', 'Category', 'SubType', 'Base Cost', 'Min Price', 'Max Price', 'Unit'];
+        const csvRows = [headers.join(',')];
+        
+        exportData.products.forEach(product => {
+          const row = [
+            `"${product.name}"`,
+            `"${product.fuelCode}"`,
+            `"${product.category || ''}"`,
+            `"${product.subType || ''}"`,
+            product.baseCostPrice || '',
+            product.minSellingPrice || '',
+            product.maxSellingPrice || '',
+            `"${product.unit}"`
+          ];
+          csvRows.push(row.join(','));
+        });
+
+        return csvRows.join('\n');
+      }
+
+      return exportData;
+    } catch (error) {
+      throw this.handleError(error, 'Pricing data export', 'Failed to export pricing data');
     }
   };
 }

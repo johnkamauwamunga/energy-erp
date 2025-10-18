@@ -22,6 +22,8 @@ const StationAssetManagement = () => {
   });
   const [userInfo, setUserInfo] = useState(null);
 
+  //console.log("state asset state ",state)
+
   // Load assets and connections
   const loadAssetsAndConnections = useCallback(async (currentUser) => {
     try {
@@ -45,6 +47,7 @@ const StationAssetManagement = () => {
         currentUser?.user?.role === "SUPERVISOR"
       ) {
         assetsData = await assetService.getStationAssets(stationId);
+       // console.log("stations assets be ",assetsData)
       } else {
         assetsData = await assetService.getAssets();
       }
@@ -59,7 +62,7 @@ const StationAssetManagement = () => {
           const topologyData = await assetConnectionService.getStationTopology(stationId);
           const processedTopology = assetConnectionService.processTopologyData(topologyData);
 
-          // console.log("topography data ", topologyData);
+           console.log("topography data ", topologyData);
           // console.log("processed Topography ",processedTopology);
           setTopology(processedTopology);
           setConnections(processedTopology?.connections || []);

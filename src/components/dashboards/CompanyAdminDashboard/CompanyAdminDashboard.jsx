@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   BarChart3, Building2, MapPin, Clock, Users, FileCheck, Truck, 
-  TrendingUp, FileText, Warehouse, Flame, X, Menu,
+  TrendingUp, FileText, Warehouse, Flame, X, Menu,DollarSign,Coins,
   User, Settings, LogOut
 } from 'lucide-react';
 import { Button } from '../../ui';
@@ -20,6 +20,7 @@ import ShiftCreationWizard from '../common/shiftWizard/ShiftCreationWizard';
 import CompanyDashboardOverview from '../common/CompanyDashboardOverview';
 import AnalyticsDemo from '../common/analytics/AnalyticsDemo';
 import CustomDashboard from '../common/analytics/CustomDashboard';
+import FuelPriceManagement from './fuel-price/FuelPriceManagement';
 
 const CompanyAdminDashboard = () => {
   const { state } = useApp();
@@ -39,12 +40,11 @@ const CompanyAdminDashboard = () => {
   const menuItems = [
     { id: 'overview', label: 'Dashboard', icon: BarChart3 },
     { id: 'stations', label: 'Service Stations', icon: Building2 },
+    { id: 'staff', label: 'Staff Management', icon: Users },
     { id: 'assets', label: 'Assets', icon: Building2 },
     {id:  'products_mant', label: 'Product Management', icon: MapPin },
+    { id: 'fuel_price', label: 'Fuel Price', icon: Coins },
     { id: 'purchase', label: 'Purchase', icon: TrendingUp },
-    { id: 'shifts', label: 'Shift Management', icon: Clock },
-    { id: 'staff', label: 'Staff Management', icon: Users },
-    { id: 'matching', label: 'Document Matching', icon: FileCheck },
     { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
     { id: 'sales', label: 'Sales Analytics', icon: TrendingUp },
     { id: 'reports', label: 'Reports', icon: FileText }
@@ -56,16 +56,16 @@ const CompanyAdminDashboard = () => {
         return <CompanyDashboardOverview />;
       case 'stations':
         return <CompanyStationsManagement />;
+      case 'staff':
+        return <CompanyUserManagement />;
       case 'assets':
         return <CompanyAssetManagement />;
       case 'products_mant':
         return <FuelManagement />;
+      case 'fuel_price':
+        return <FuelPriceManagement />;
       case 'purchase':
         return <FuelPurchaseManagement />;
-      case 'shifts':
-        return <ShiftCreationWizard />;
-      case 'staff':
-        return <CompanyUserManagement />;
       case 'offloads':
         return <PlaceholderComponent title="Fuel Offloads" icon={Truck} />;
       case 'sales':

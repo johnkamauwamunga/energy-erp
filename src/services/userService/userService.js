@@ -1,32 +1,29 @@
 import { apiService } from '../apiService';
 
 export const userService = {
-  // Create a single user
+  // =====================
+  // USER MANAGEMENT METHODS
+  // =====================
+
+  // Create a single user (NO stationIds in payload anymore)
   createUser: async (userData) => {
     console.log('🟢 [USER API] Creating user:', { 
       email: userData.email, 
       role: userData.role,
-      hasPassword: !!userData.password,
-      stationCount: userData.stationIds ? userData.stationIds.length : 0
+      hasPassword: !!userData.password
+      // REMOVED: stationCount - station assignments are separate now
     });
     
     try {
       const response = await apiService.post('/users', userData);
-
-      console.log("the user created is ",response)
-      // console.log('✅ [USER API] User created successfully:', { 
-      //   userId: response.data.data.id,
-      //   email: response.data.data.email,
-      //   tempPassword: response.data.data.tempPassword ? 'Generated' : 'Not generated'
-      // });
+      console.log("✅ [USER API] User created successfully:", response.data);
       return response.data;
     } catch (error) {
-      console.log("error ",error);
-      // console.error('❌ [USER API] Failed to create user:', {
-      //   error: error.response?.data?.message || error.message,
-      //   status: error.response?.status,
-      //   email: userData.email
-      // });
+      console.error('❌ [USER API] Failed to create user:', {
+        error: error.response?.data?.message || error.message,
+        status: error.response?.status,
+        email: userData.email
+      });
       throw error;
     }
   },
@@ -41,8 +38,7 @@ export const userService = {
     try {
       const response = await apiService.post('/users/bulk', usersData);
       console.log('✅ [USER API] Bulk users created successfully:', { 
-        count: response.data.data.length,
-        successCount: response.data.data.filter(u => u.id).length
+        count: response.data.data.length
       });
       return response.data;
     } catch (error) {
@@ -74,9 +70,8 @@ export const userService = {
     try {
       const response = await apiService.get(url);
       console.log('✅ [USER API] Users fetched successfully:', { 
-        count: response.data.pagination?.totalCount,
-        totalPages: response.data.pagination?.totalPages,
-        currentPage: response.data.pagination?.page
+        count: response.data.data?.length,
+        totalCount: response.data.pagination?.totalCount
       });
       return response.data;
     } catch (error) {
@@ -97,8 +92,7 @@ export const userService = {
       const response = await apiService.get(`/users/${userId}`);
       console.log('✅ [USER API] User fetched successfully:', { 
         userId: response.data.data.id,
-        email: response.data.data.email,
-        role: response.data.data.role
+        email: response.data.data.email
       });
       return response.data;
     } catch (error) {
@@ -157,14 +151,14 @@ export const userService = {
   },
 
   // Update user status
-  updateUserStatus: async (userId, statusData) => {
+  updateUserStatus: async (userId, status) => {
     console.log('🟢 [USER API] Updating user status:', { 
       userId, 
-      newStatus: statusData.status 
+      newStatus: status 
     });
     
     try {
-      const response = await apiService.patch(`/users/${userId}/status`, statusData);
+      const response = await apiService.patch(`/users/${userId}/status`, { status });
       console.log('✅ [USER API] User status updated successfully:', { 
         userId: response.data.data.id,
         newStatus: response.data.data.status
@@ -181,11 +175,11 @@ export const userService = {
   },
 
   // Update user password (admin function)
-  updateUserPassword: async (userId, passwordData) => {
+  updateUserPassword: async (userId, password) => {
     console.log('🟢 [USER API] Updating user password:', { userId });
     
     try {
-      const response = await apiService.patch(`/users/${userId}/password`, passwordData);
+      const response = await apiService.patch(`/users/${userId}/password`, { password });
       console.log('✅ [USER API] User password updated successfully:', { userId });
       return response.data;
     } catch (error) {
@@ -197,113 +191,6 @@ export const userService = {
       throw error;
     }
   },
-
-  // Reset password by email (no token required)
-  
-  
- // Reset password by email (no token required)
-resetPasswordByEmail: async (resetData) => {
-  const { email, newPassword, confirmPassword } = resetData;
-  
-  console.log('🟢 [USER API] Resetting password by email:', { 
-    email: email,
-    hasNewPassword: !!newPassword,
-    hasConfirmPassword: !!confirmPassword,
-    passwordLength: newPassword?.length || 0
-  });
-  
-  // Client-side validation before making the API call
-  if (!email || !newPassword || !confirmPassword) {
-    const error = new Error('All fields are required');
-    error.code = 'VALIDATION_ERROR';
-    throw error;
-  }
-
-  if (newPassword !== confirmPassword) {
-    const error = new Error('Passwords do not match');
-    error.code = 'PASSWORD_MISMATCH';
-    throw error;
-  }
-
-  // Use the userService's own password strength validation
-  const passwordValidation = userService.validatePasswordStrength(newPassword);
-  if (!passwordValidation.isValid) {
-    const error = new Error(passwordValidation.errors[0]);
-    error.code = 'PASSWORD_STRENGTH_ERROR';
-    error.details = passwordValidation.errors;
-    throw error;
-  }
-
-  try {
-    // Ensure payload matches exactly what backend expects
-    const payload = {
-      email: email.trim().toLowerCase(),
-      newPassword: newPassword,
-      confirmPassword: confirmPassword
-    };
-
-    console.log('📤 [USER API] Sending reset payload:', { 
-      email: payload.email,
-      passwordLength: payload.newPassword.length
-    });
-
-    const response = await apiService.patch('/users/password/reset', payload);
-    
-    console.log('✅ [USER API] Password reset successfully:', { 
-      email: payload.email,
-      userId: response.data.data?.userId,
-      message: response.data.message
-    });
-
-    // Ensure consistent response structure
-    return {
-      success: true,
-      message: response.data.message || 'Password reset successfully',
-      data: response.data.data,
-      userId: response.data.data?.userId
-    };
-
-  } catch (error) {
-    console.error('❌ [USER API] Failed to reset password:', {
-      error: error.response?.data?.message || error.message,
-      status: error.response?.status,
-      code: error.response?.data?.code,
-      email: email,
-      validationErrors: error.response?.data?.errors
-    });
-
-    // Enhanced error handling with specific error types
-    let errorMessage = error.response?.data?.message || error.message;
-    let errorCode = error.response?.data?.code || error.code;
-
-    // Map HTTP status codes to user-friendly messages
-    if (error.response?.status === 404) {
-      errorMessage = 'No account found with this email address';
-      errorCode = 'USER_NOT_FOUND';
-    } else if (error.response?.status === 400) {
-      errorMessage = errorMessage || 'Invalid request data';
-      errorCode = 'BAD_REQUEST';
-    } else if (error.response?.status === 422) {
-      errorMessage = errorMessage || 'Password does not meet security requirements';
-      errorCode = 'VALIDATION_FAILED';
-    } else if (error.response?.status === 500) {
-      errorMessage = 'Server error. Please try again later.';
-      errorCode = 'SERVER_ERROR';
-    } else if (!error.response) {
-      errorMessage = 'Network error. Please check your connection.';
-      errorCode = 'NETWORK_ERROR';
-    }
-
-    // Create enhanced error with all relevant information
-    const enhancedError = new Error(errorMessage);
-    enhancedError.code = errorCode;
-    enhancedError.status = error.response?.status;
-    enhancedError.response = error.response;
-    enhancedError.details = error.response?.data?.errors;
-    
-    throw enhancedError;
-  }
-},
 
   // Delete a user
   deleteUser: async (userId) => {
@@ -324,7 +211,7 @@ resetPasswordByEmail: async (resetData) => {
   },
 
   // =====================
-  // ASSIGNMENT METHODS
+  // ASSIGNMENT MANAGEMENT METHODS
   // =====================
 
   // Assign user to station
@@ -336,27 +223,15 @@ resetPasswordByEmail: async (resetData) => {
       console.log('✅ [USER ASSIGNMENT] User assigned successfully:', {
         assignmentId: response.data.data.id,
         userId: assignmentData.userId,
-        stationId: assignmentData.stationId,
-        role: assignmentData.role
+        stationId: assignmentData.stationId
       });
       return response.data;
     } catch (error) {
       console.error('❌ [USER ASSIGNMENT] Failed to assign user:', {
         error: error.response?.data?.message || error.message,
         status: error.response?.status,
-        validationErrors: error.response?.data?.errors,
         assignmentData
       });
-      
-      // Enhance error message for validation errors
-      if (error.response?.data?.errors) {
-        const enhancedError = new Error(
-          `Assignment validation failed: ${error.response.data.errors.map(e => e.message).join(', ')}`
-        );
-        enhancedError.response = error.response;
-        throw enhancedError;
-      }
-      
       throw error;
     }
   },
@@ -365,44 +240,23 @@ resetPasswordByEmail: async (resetData) => {
   assignUsersBulk: async (bulkData) => {
     console.log('🟢 [USER ASSIGNMENT] Bulk assigning users to station:', { 
       stationId: bulkData.stationId,
-      assignmentCount: bulkData.assignments.length,
-      roles: [...new Set(bulkData.assignments.map(a => a.role))]
+      assignmentCount: bulkData.assignments.length
     });
     
     try {
       const response = await apiService.post('/user-assignments/bulk', bulkData);
-      
-      const result = {
-        ...response.data,
-        // Add helper properties for easier consumption
-        successCount: response.data.data?.length || 0,
-        errorCount: response.data.errors?.length || 0
-      };
-      
       console.log('✅ [USER ASSIGNMENT] Bulk assignment completed:', {
         stationId: bulkData.stationId,
-        successCount: result.successCount,
-        errorCount: result.errorCount
+        successCount: response.data.data?.length || 0,
+        errorCount: response.data.errors?.length || 0
       });
-      
-      return result;
+      return response.data;
     } catch (error) {
       console.error('❌ [USER ASSIGNMENT] Failed to bulk assign users:', {
         error: error.response?.data?.message || error.message,
         status: error.response?.status,
-        validationErrors: error.response?.data?.errors,
         stationId: bulkData.stationId
       });
-      
-      // Enhance error message for validation errors
-      if (error.response?.data?.errors) {
-        const enhancedError = new Error(
-          `Bulk assignment validation failed: ${JSON.stringify(error.response.data.errors)}`
-        );
-        enhancedError.response = error.response;
-        throw enhancedError;
-      }
-      
       throw error;
     }
   },
@@ -417,15 +271,13 @@ resetPasswordByEmail: async (resetData) => {
     try {
       const response = await apiService.put(`/user-assignments/${assignmentId}`, updateData);
       console.log('✅ [USER ASSIGNMENT] Assignment updated successfully:', {
-        assignmentId: response.data.data.id,
-        newRole: response.data.data.role
+        assignmentId: response.data.data.id
       });
       return response.data;
     } catch (error) {
       console.error('❌ [USER ASSIGNMENT] Failed to update assignment:', {
         error: error.response?.data?.message || error.message,
         status: error.response?.status,
-        validationErrors: error.response?.data?.errors,
         assignmentId
       });
       throw error;
@@ -439,8 +291,7 @@ resetPasswordByEmail: async (resetData) => {
     try {
       const response = await apiService.delete(`/user-assignments/${assignmentId}`);
       console.log('✅ [USER ASSIGNMENT] User unassigned successfully:', { 
-        assignmentId,
-        message: response.data.message
+        assignmentId
       });
       return response.data;
     } catch (error) {
@@ -460,9 +311,7 @@ resetPasswordByEmail: async (resetData) => {
     try {
       const response = await apiService.get(`/user-assignments/${assignmentId}`);
       console.log('✅ [USER ASSIGNMENT] Assignment fetched successfully:', {
-        assignmentId: response.data.data.id,
-        userId: response.data.data.userId,
-        stationId: response.data.data.stationId
+        assignmentId: response.data.data.id
       });
       return response.data;
     } catch (error) {
@@ -475,30 +324,15 @@ resetPasswordByEmail: async (resetData) => {
     }
   },
 
-  // Get user assignments
-  getUserAssignments: async (userId, filters = {}) => {
-    console.log('🟢 [USER ASSIGNMENT] Getting user assignments:', { userId, filters });
+  // Get all assignments for a user
+  getUserAssignments: async (userId) => {
+    console.log('🟢 [USER ASSIGNMENT] Getting user assignments:', { userId });
     
     try {
-      const params = new URLSearchParams();
-      
-      // Add filters to params if provided
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          params.append(key, filters[key]);
-        }
-      });
-      
-      const queryString = params.toString();
-      const url = queryString 
-        ? `/user-assignments/user/${userId}?${queryString}`
-        : `/user-assignments/user/${userId}`;
-      
-      const response = await apiService.get(url);
+      const response = await apiService.get(`/user-assignments/user/${userId}`);
       console.log('✅ [USER ASSIGNMENT] User assignments fetched successfully:', {
         userId,
-        count: response.data.data.length,
-        hasPagination: !!response.data.pagination
+        count: response.data.data.length
       });
       return response.data;
     } catch (error) {
@@ -511,14 +345,12 @@ resetPasswordByEmail: async (resetData) => {
     }
   },
 
-  // Get station assignments
+  // Get all assignments for a station
   getStationAssignments: async (stationId, filters = {}) => {
     console.log('🟢 [USER ASSIGNMENT] Getting station assignments:', { stationId, filters });
     
     try {
       const params = new URLSearchParams();
-      
-      // Add filters to params if provided
       Object.keys(filters).forEach(key => {
         if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
           params.append(key, filters[key]);
@@ -531,13 +363,10 @@ resetPasswordByEmail: async (resetData) => {
         : `/user-assignments/station/${stationId}`;
       
       const response = await apiService.get(url);
-
-      console.log("the response for station assignment is ",response)
-      // console.log('✅ [USER ASSIGNMENT] Station assignments fetched successfully:', {
-      //   stationId,
-      //   count: response.data.data.length,
-      //   pagination: response.data.pagination
-      // });
+      console.log('✅ [USER ASSIGNMENT] Station assignments fetched successfully:', {
+        stationId,
+        count: response.data.data.length
+      });
       return response.data;
     } catch (error) {
       console.error('❌ [USER ASSIGNMENT] Failed to get station assignments:', {
@@ -549,94 +378,48 @@ resetPasswordByEmail: async (resetData) => {
     }
   },
 
-  // Helper method to check if a user is already assigned to a station
-  checkUserAssignment: async (userId, stationId) => {
-    console.log('🟢 [USER ASSIGNMENT] Checking if user is assigned to station:', { 
-      userId, 
-      stationId 
-    });
-    
-    try {
-      // Get all user assignments and check if any match the station
-      const assignments = await this.getUserAssignments(userId);
-      const isAssigned = assignments.data.some(
-        assignment => assignment.stationId === stationId
-      );
-      
-      console.log('✅ [USER ASSIGNMENT] Assignment check completed:', {
-        userId,
-        stationId,
-        isAssigned
-      });
-      
-      return isAssigned;
-    } catch (error) {
-      console.error('❌ [USER ASSIGNMENT] Failed to check user assignment:', {
-        error: error.message,
-        userId,
-        stationId
-      });
-      throw error;
-    }
-  },
-
-  // =====================
-  // STATION-LEVEL USER MANAGEMENT
-  // =====================
-
-  // Get users by station
+  // Get users by station (from assignment service)
   getUsersByStation: async (stationId, filters = {}) => {
-    console.log('🟢 [STATION USERS] Fetching users for station:', { 
-      stationId, 
-      filters 
-    });
-    
-    const params = new URLSearchParams();
-    
-    // Add filters to params if provided
-    Object.keys(filters).forEach(key => {
-      if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-        params.append(key, filters[key]);
-      }
-    });
-    
-    const queryString = params.toString();
-    const url = queryString 
-      ? `/users/station/${stationId}/users?${queryString}`
-      : `/users/station/${stationId}/users`;
+    console.log('🟢 [STATION USERS] Fetching users for station:', { stationId, filters });
     
     try {
+      const params = new URLSearchParams();
+      Object.keys(filters).forEach(key => {
+        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+          params.append(key, filters[key]);
+        }
+      });
+      
+      const queryString = params.toString();
+      const url = queryString 
+        ? `/user-assignments/station/${stationId}/users?${queryString}`
+        : `/user-assignments/station/${stationId}/users`;
+      
       const response = await apiService.get(url);
       console.log('✅ [STATION USERS] Station users fetched successfully:', { 
         stationId,
-        count: response.data.data?.length,
-        totalCount: response.data.pagination?.totalCount
+        count: response.data.data?.length
       });
       return response.data;
     } catch (error) {
       console.error('❌ [STATION USERS] Failed to fetch station users:', {
         error: error.response?.data?.message || error.message,
         status: error.response?.status,
-        stationId,
-        filters
+        stationId
       });
       throw error;
     }
   },
 
-  // Get user's specific station assignments
+  // Get user's station assignments
   getUserStationAssignments: async (userId, stationId) => {
-    console.log('🟢 [USER ASSIGNMENTS] Fetching user station assignments:', { 
-      userId, 
-      stationId 
-    });
+    console.log('🟢 [USER ASSIGNMENTS] Fetching user station assignments:', { userId, stationId });
     
     try {
-      const response = await apiService.get(`/users/${userId}/station/${stationId}/assignments`);
+      const response = await apiService.get(`/user-assignments/user/${userId}/station/${stationId}`);
       console.log('✅ [USER ASSIGNMENTS] User station assignments fetched successfully:', { 
         userId,
-        stationId,
-        assignmentCount: response.data.data?.stationAssignments?.length
+        stationId
       });
       return response.data;
     } catch (error) {
@@ -655,10 +438,9 @@ resetPasswordByEmail: async (resetData) => {
     console.log('🟢 [STATION SUMMARY] Fetching station users summary:', { stationId });
     
     try {
-      const response = await apiService.get(`/users/station/${stationId}/summary`);
+      const response = await apiService.get(`/user-assignments/station/${stationId}/summary`);
       console.log('✅ [STATION SUMMARY] Station users summary fetched successfully:', { 
-        stationId,
-        totalUsers: response.data.data?.summary?.totalUsers
+        stationId
       });
       return response.data;
     } catch (error) {
@@ -666,6 +448,48 @@ resetPasswordByEmail: async (resetData) => {
         error: error.response?.data?.message || error.message,
         status: error.response?.status,
         stationId
+      });
+      throw error;
+    }
+  },
+
+  // Get user's current station
+  getUserCurrentStation: async (userId) => {
+    console.log('🟢 [USER STATION] Getting user current station:', { userId });
+    
+    try {
+      const response = await apiService.get(`/user-assignments/user/${userId}/current-station`);
+      console.log('✅ [USER STATION] User current station fetched successfully:', { 
+        userId,
+        station: response.data.data
+      });
+      return response.data;
+    } catch (error) {
+      console.error('❌ [USER STATION] Failed to get user current station:', {
+        error: error.response?.data?.message || error.message,
+        status: error.response?.status,
+        userId
+      });
+      throw error;
+    }
+  },
+
+  // Get all stations assigned to user
+  getUserAssignedStations: async (userId) => {
+    console.log('🟢 [USER STATIONS] Getting user assigned stations:', { userId });
+    
+    try {
+      const response = await apiService.get(`/user-assignments/user/${userId}/stations`);
+      console.log('✅ [USER STATIONS] User assigned stations fetched successfully:', { 
+        userId,
+        count: response.data.data?.length
+      });
+      return response.data;
+    } catch (error) {
+      console.error('❌ [USER STATIONS] Failed to get user assigned stations:', {
+        error: error.response?.data?.message || error.message,
+        status: error.response?.status,
+        userId
       });
       throw error;
     }
@@ -681,79 +505,84 @@ resetPasswordByEmail: async (resetData) => {
       ...filters,
       role: 'ATTENDANT'
     });
-
-    console.log("✅ [STATION ATTEDANTS] ", response);
+    console.log("✅ [STATION ATTENDANTS] Fetched:", response.data?.length || 0);
     return response;
   },
 
   // Get supervisors for a station
   getStationSupervisors: async (stationId, filters = {}) => {
-    const response = userService.getUsersByStation(stationId, {
+    const response = await userService.getUsersByStation(stationId, {
       ...filters,
       role: 'SUPERVISOR'
     });
-   console.log("✅ [STATION SUPERVISOR] ",response)
+    console.log("✅ [STATION SUPERVISORS] Fetched:", response.data?.length || 0);
     return response;
   },
 
   // Get station managers for a station
   getStationManagers: async (stationId, filters = {}) => {
-    return userService.getUsersByStation(stationId, {
+    const response = await userService.getUsersByStation(stationId, {
       ...filters,
       role: 'STATION_MANAGER'
     });
+    console.log("✅ [STATION MANAGERS] Fetched:", response.data?.length || 0);
+    return response;
   },
 
-  // Get users by status (ACTIVE, INACTIVE, etc.)
-  getStationUsersByStatus: async (stationId, status, filters = {}) => {
-    return userService.getUsersByStation(stationId, {
-      ...filters,
-      status: status
-    });
+  // =====================
+  // PASSWORD RESET (Public endpoint)
+  // =====================
+
+  resetPasswordByEmail: async (resetData) => {
+    const { email, newPassword, confirmPassword } = resetData;
+    
+    console.log('🟢 [USER API] Resetting password by email:', { email });
+    
+    // Client-side validation
+    if (!email || !newPassword || !confirmPassword) {
+      throw new Error('All fields are required');
+    }
+
+    if (newPassword !== confirmPassword) {
+      throw new Error('Passwords do not match');
+    }
+
+    const passwordValidation = userService.validatePasswordStrength(newPassword);
+    if (!passwordValidation.isValid) {
+      throw new Error(passwordValidation.errors[0]);
+    }
+
+    try {
+      const payload = {
+        email: email.trim().toLowerCase(),
+        newPassword: newPassword,
+        confirmPassword: confirmPassword
+      };
+
+      const response = await apiService.patch('/users/password/reset', payload);
+      console.log('✅ [USER API] Password reset successfully:', { email });
+      
+      return {
+        success: true,
+        message: response.data.message,
+        data: response.data.data
+      };
+
+    } catch (error) {
+      console.error('❌ [USER API] Failed to reset password:', {
+        error: error.response?.data?.message || error.message,
+        status: error.response?.status,
+        email
+      });
+      throw error;
+    }
   },
 
   // =====================
   // UTILITY METHODS
   // =====================
 
-  // Filter users by role from existing data (client-side filtering)
-  filterUsersByRole: (users, role) => {
-    return users.filter(user => user.role === role);
-  },
-
-  // Get user count by role
-  getUserCountByRole: (users) => {
-    return users.reduce((acc, user) => {
-      acc[user.role] = (acc[user.role] || 0) + 1;
-      return acc;
-    }, {});
-  },
-
-  // Format user for display
-  formatUserDisplay: (user) => {
-    return {
-      id: user.id,
-      name: `${user.firstName} ${user.lastName}`.trim(),
-      email: user.email,
-      role: user.role,
-      status: user.status,
-      stationAssignment: user.stationAssignments?.[0],
-      isActive: user.status === 'ACTIVE'
-    };
-  },
-
-  // Check if user is assigned to specific station
-  isUserAssignedToStation: (user, stationId) => {
-    return user.stationAssignments?.some(assignment => 
-      assignment.stationId === stationId
-    );
-  },
-
-  // =====================
-  // PASSWORD UTILITY METHODS
-  // =====================
-
-  // Validate password strength (client-side validation)
+  // Validate password strength
   validatePasswordStrength: (password) => {
     const errors = [];
     
@@ -779,37 +608,17 @@ resetPasswordByEmail: async (resetData) => {
     };
   },
 
-  // Check if passwords match
-  validatePasswordMatch: (password, confirmPassword) => {
+  // Format user for display
+  formatUserDisplay: (user) => {
     return {
-      isValid: password === confirmPassword,
-      error: password === confirmPassword ? null : 'Passwords do not match'
+      id: user.id,
+      name: `${user.firstName} ${user.lastName}`.trim(),
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      isActive: user.status === 'ACTIVE',
+      // Note: station assignments now come from separate assignment calls
     };
-  },
-
-  // Generate a random secure password (for admin use)
-  generateSecurePassword: () => {
-    const lowercase = 'abcdefghijklmnopqrstuvwxyz';
-    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const numbers = '0123456789';
-    const special = '!@#$%^&*()_+-=[]{}|;:,.<>?';
-    
-    const allChars = lowercase + uppercase + numbers + special;
-    let password = '';
-    
-    // Ensure at least one of each type
-    password += lowercase[Math.floor(Math.random() * lowercase.length)];
-    password += uppercase[Math.floor(Math.random() * uppercase.length)];
-    password += numbers[Math.floor(Math.random() * numbers.length)];
-    password += special[Math.floor(Math.random() * special.length)];
-    
-    // Fill the rest randomly
-    for (let i = password.length; i < 12; i++) {
-      password += allChars[Math.floor(Math.random() * allChars.length)];
-    }
-    
-    // Shuffle the password
-    return password.split('').sort(() => Math.random() - 0.5).join('');
   }
 };
 
