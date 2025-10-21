@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { connectedAssetService } from '../../../../../../services/connectedAssetsService/connectedAssetsService';
 import { shiftService } from '../../../../../../services/shiftService/shiftService';
+import { fuelPriceService } from '../../../../../../services/fuelPriceService/fuelPriceService'; // ← ADD THIS
 
 export const useShiftAssets = (stationId) => {
     const [data, setData] = useState(null);
@@ -9,8 +10,7 @@ export const useShiftAssets = (stationId) => {
     const [error, setError] = useState(null);
     const [openShiftId, setOpenShiftId] = useState(null);
     const [currentShift, setCurrentShift] = useState(null);
-
-    console.log("this is the useAsset hook");
+    const [productPricing, setProductPricing] = useState({}); // ← ADD PRODUCT PRICING STATE
 
     // Fetch current open shift
     useEffect(() => {
@@ -30,6 +30,29 @@ export const useShiftAssets = (stationId) => {
             fetchCurrentShift();
         }
     }, [stationId]);
+
+        // Fetch product pricing
+    useEffect(() => {
+        const fetchProductPricing = async () => {
+            try {
+                console.log("💰 Fetching product pricing...");
+                const response = await fuelPriceService.getProductPrices({}, true);
+                console.log("💰 Prices response:", response);
+                
+                // Convert array to object for easy lookup by product ID
+                const pricingMap = {};
+                response.forEach(product => {
+                    pricingMap[product.id] = product;
+                });
+                setProductPricing(pricingMap);
+                console.log("💰 Product pricing mapped:", pricingMap);
+            } catch (error) {
+                console.error('Failed to fetch product pricing:', error);
+            }
+        };
+        
+        fetchProductPricing();
+    }, []);
 
     // Fetch shift data when shift ID is available
     useEffect(() => {

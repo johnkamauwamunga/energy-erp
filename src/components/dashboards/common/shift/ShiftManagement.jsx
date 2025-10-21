@@ -1,16 +1,24 @@
 // components/ShiftManagement/ShiftManagement.jsx
-import React, { useState, useMemo } from 'react';
-import {MultiTable} from '../../../ui';
-import useShiftData from '../../../../hooks/useShiftData';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { MultiTable } from '../../../ui';
 import { useApp } from '../../../../context/AppContext';
+import { shiftService } from '../../../../services/shiftService/shiftService';
 import ShiftCreationWizard from './shiftOpen/ShiftCreationWizard';
 import ShiftClosingWizard from './shiftClose/ShiftClosingWizard';
 
 const ShiftManagement = () => {
   const { state } = useApp();
   const currentUser = state.currentUser;
-  const stationId = currentUser?.stationId;
   const userRole = currentUser?.role || 'ATTENDANT';
+  const userCompanyId = currentUser?.companyId || state.currentCompany?.id;
+  const userStationId = currentUser?.stationId || state.currentStation?.id;
+
+  // State management
+  const [shifts, setShifts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [hasOpenShift, setHasOpenShift] = useState(false);
+  const [openShiftData, setOpenShiftData] = useState(null);
 
   const [filters, setFilters] = useState({
     status: '',
@@ -18,10 +26,165 @@ const ShiftManagement = () => {
     endDate: ''
   });
 
-  const [wizardMode, setWizardMode] = useState(null); // null, 'open', 'close'
+  const [wizardMode, setWizardMode] = useState(null);
   const [selectedShift, setSelectedShift] = useState(null);
 
-  const { shifts, loading, error, refetch, hasOpenShift, openShiftData } = useShiftData(stationId, filters, userRole);
+  // Determine scope based on user role
+  const getScopeParams = useCallback(() => {
+    console.log('🔑 Determining scope for role:', userRole);
+    
+    switch (userRole) {
+      case 'SUPER_ADMIN':
+        return { scope: 'all' };
+      
+      case 'COMPANY_ADMIN':
+        return { 
+          scope: 'company', 
+          companyId: userCompanyId 
+        };
+      
+      case 'STATION_MANAGER':
+      case 'SUPERVISOR':
+      case 'LINES_MANAGER':
+        return { 
+          scope: 'station', 
+          stationId: userStationId 
+        };
+      
+      case 'ATTENDANT':
+        return { 
+          scope: 'attendant', 
+          attendantId: currentUser?.id 
+        };
+      
+      default:
+        return { scope: 'station', stationId: userStationId };
+    }
+  }, [userRole, currentUser, userCompanyId, userStationId]);
+
+  // Fetch shifts based on user role
+  const fetchShifts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      let response;
+      const queryParams = {
+        status: filters.status,
+        startDate: filters.startDate,
+        endDate: filters.endDate,
+        page: 1,
+        limit: 1000
+      };
+
+      const scopeParams = getScopeParams();
+      console.log('📡 Fetching shifts with scope:', scopeParams);
+
+      switch (scopeParams.scope) {
+        case 'all':
+          response = await shiftService.getAllShifts(queryParams);
+          break;
+
+        case 'company':
+          response = await shiftService.getShiftsByCompany(
+            scopeParams.companyId,
+            queryParams
+          );
+          break;
+
+        case 'station':
+          response = await shiftService.getShiftsByStation(
+            scopeParams.stationId,
+            queryParams
+          );
+          break;
+
+        case 'attendant':
+          response = await shiftService.getShiftsByAttendant(
+            scopeParams.attendantId,
+            queryParams
+          );
+          break;
+
+        default:
+          response = { data: { shifts: [] } };
+      }
+
+      // Handle different response structures
+      const shiftsData = response.shifts || response.data?.shifts || [];
+      console.log('📊 Fetched shifts:', shiftsData.length);
+      setShifts(shiftsData);
+
+      // Check for open shift (only for station-level roles)
+      if (['STATION_MANAGER', 'SUPERVISOR', 'LINES_MANAGER'].includes(userRole)) {
+        await checkOpenShift(shiftsData);
+      }
+
+    } catch (err) {
+      console.error('❌ Failed to fetch shifts:', err);
+      setError(err.message || 'Failed to load shift data');
+      setShifts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [getScopeParams, userRole, filters]);
+
+  // Check for open shift in current station
+  const checkOpenShift = useCallback(async (shiftsData = null) => {
+    if (!['STATION_MANAGER', 'SUPERVISOR', 'LINES_MANAGER'].includes(userRole)) {
+      return;
+    }
+
+    const stationId = userStationId;
+    if (!stationId) {
+      console.log('🚫 No station ID for open shift check');
+      return;
+    }
+
+    try {
+      console.log('🔍 Checking open shift for station:', stationId);
+      
+      // Method 1: Try API first
+      try {
+        const result = await shiftService.getCurrentOpenShift(stationId);
+        if (result && result.data) {
+          console.log('✅ Open shift found via API:', result.data.shiftNumber);
+          setHasOpenShift(true);
+          setOpenShiftData(result.data);
+          return;
+        }
+      } catch (apiError) {
+        console.log('⚠️ API check failed, falling back to local check');
+      }
+
+      // Method 2: Check local shifts data
+      const shiftsToCheck = shiftsData || shifts;
+      const openShift = shiftsToCheck.find(shift => 
+        shift.stationId === stationId && 
+        (shift.status === 'OPEN' || shift.status === 'ACTIVE')
+      );
+
+      if (openShift) {
+        console.log('✅ Open shift found in local data:', openShift.shiftNumber);
+        setHasOpenShift(true);
+        setOpenShiftData(openShift);
+      } else {
+        console.log('✅ No open shift found');
+        setHasOpenShift(false);
+        setOpenShiftData(null);
+      }
+
+    } catch (err) {
+      console.error('❌ Failed to check open shift:', err);
+      setHasOpenShift(false);
+      setOpenShiftData(null);
+    }
+  }, [userRole, userStationId, shifts]);
+
+  // Initial data fetch
+  useEffect(() => {
+    fetchShifts();
+  }, [currentUser]);
 
   // Handle open shift
   const handleOpenShift = () => {
@@ -39,14 +202,14 @@ const ShiftManagement = () => {
   // Handle shift creation success
   const handleShiftCreated = () => {
     setWizardMode(null);
-    refetch(); // Refresh the data to show the new open shift
+    fetchShifts(); // Refresh data
   };
 
   // Handle shift closing success
   const handleShiftClosed = () => {
     setWizardMode(null);
     setSelectedShift(null);
-    refetch(); // Refresh the data to show the closed shift
+    fetchShifts(); // Refresh data
   };
 
   // Handle cancel wizard
@@ -54,6 +217,7 @@ const ShiftManagement = () => {
     setWizardMode(null);
     setSelectedShift(null);
   };
+
 
   // Process shift data for the table
   const tableData = useMemo(() => {
@@ -129,7 +293,7 @@ const ShiftManagement = () => {
       sales: shift.sales?.[0] ? {
         totalRevenue: shift.sales[0].totalRevenue,
         fuelRevenue: shift.sales[0].totalFuelRevenue,
-        productSales: [] // This would be populated with actual product sales data
+        productSales: []
       } : null,
       
       // Reconciliation data
@@ -166,6 +330,13 @@ const ShiftManagement = () => {
       accessor: 'supervisor',
       render: (value) => value ? `${value.firstName} ${value.lastName}` : 'N/A'
     },
+    // Show station column for SUPER_ADMIN and COMPANY_ADMIN
+    ...(userRole === 'SUPER_ADMIN' || userRole === 'COMPANY_ADMIN' ? [{
+      key: 'station',
+      header: 'Station',
+      accessor: 'station',
+      render: (value) => value?.name || 'N/A'
+    }] : []),
     {
       key: 'date',
       header: 'Date',
@@ -250,10 +421,12 @@ const ShiftManagement = () => {
               {rowData.supervisor ? `${rowData.supervisor.firstName} ${rowData.supervisor.lastName}` : 'N/A'}
             </span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-600">Station:</span>
-            <span className="font-medium">{rowData.station?.name}</span>
-          </div>
+          {(userRole === 'SUPER_ADMIN' || userRole === 'COMPANY_ADMIN') && (
+            <div className="flex justify-between">
+              <span className="text-gray-600">Station:</span>
+              <span className="font-medium">{rowData.station?.name}</span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-gray-600">Start Time:</span>
             <span className="font-medium">{new Date(rowData.startTime).toLocaleString()}</span>
@@ -296,6 +469,8 @@ const ShiftManagement = () => {
       <div className="space-y-4">
         <h4 className="font-semibold text-gray-800 border-b pb-2">Quick Actions</h4>
         <div className="space-y-2">
+               
+
           <button 
             className="w-full text-left p-3 bg-blue-50 hover:bg-blue-100 rounded-lg text-sm text-blue-700 flex items-center"
             onClick={() => console.log('View full report', rowData)}
@@ -310,7 +485,10 @@ const ShiftManagement = () => {
             <span className="mr-2">📥</span>
             Export Shift Data
           </button>
-          {rowData.status === 'OPEN' && (
+          {/* Only show Close Shift button for station-level roles on open shifts in their station */}
+          {['STATION_MANAGER', 'SUPERVISOR', 'LINES_MANAGER'].includes(userRole) && 
+           rowData.status === 'OPEN' && 
+           rowData.station?.id === userStationId && (
             <button 
               className="w-full text-left p-3 bg-red-50 hover:bg-red-100 rounded-lg text-sm text-red-700 flex items-center"
               onClick={() => {
@@ -334,7 +512,7 @@ const ShiftManagement = () => {
         </div>
       </div>
 
-      {/* Products Summary */}
+      {/* Sales Summary */}
       {rowData.sales && (
         <div className="space-y-4 lg:col-span-2 xl:col-span-3">
           <h4 className="font-semibold text-gray-800 border-b pb-2">Sales Summary</h4>
@@ -365,26 +543,24 @@ const ShiftManagement = () => {
 
   // ========== WIZARD MODES ==========
   
-  // Open Shift Wizard Mode
   if (wizardMode === 'open') {
     return (
       <ShiftCreationWizard
         onClose={handleCancelWizard}
         onSuccess={handleShiftCreated}
-        stationId={stationId}
+        stationId={userStationId}
         currentUser={currentUser}
       />
     );
   }
 
-  // Close Shift Wizard Mode
   if (wizardMode === 'close') {
     return (
       <ShiftClosingWizard
         onClose={handleCancelWizard}
         onSuccess={handleShiftClosed}
         shift={selectedShift || openShiftData}
-        stationId={stationId}
+        stationId={userStationId}
         currentUser={currentUser}
       />
     );
@@ -404,7 +580,7 @@ const ShiftManagement = () => {
             </div>
           </div>
           <button
-            onClick={refetch}
+            onClick={fetchShifts}
             className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
           >
             Retry
@@ -422,10 +598,14 @@ const ShiftManagement = () => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Shift Management</h1>
             <p className="text-gray-600 mt-1">
-              Comprehensive overview of all shifts with detailed operations data
+              {userRole === 'SUPER_ADMIN' && 'All shifts across all companies and stations'}
+              {userRole === 'COMPANY_ADMIN' && `All shifts in your company (${state.currentCompany?.name})`}
+              {['STATION_MANAGER', 'SUPERVISOR', 'LINES_MANAGER'].includes(userRole) && `Shifts for ${state.currentStation?.name}`}
+              {userRole === 'ATTENDANT' && 'Your assigned shifts'}
             </p>
           </div>
           <div className="mt-4 sm:mt-0 flex items-center space-x-3">
+            {/* Status Filter */}
             <select 
               value={filters.status}
               onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
@@ -437,28 +617,31 @@ const ShiftManagement = () => {
               <option value="CLOSED">Closed</option>
             </select>
 
-            {/* Conditionally render Open/Close Shift buttons */}
-            {!hasOpenShift ? (
-              <button
-                onClick={handleOpenShift}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
-              >
-                <span className="mr-2">➕</span>
-                Open Shift
-              </button>
-            ) : (
-              <button
-                onClick={handleCloseShift}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center"
-              >
-                <span className="mr-2">🔒</span>
-                Close Shift
-              </button>
+            {/* Open/Close Shift buttons - Only for station-level roles */}
+            {['STATION_MANAGER', 'SUPERVISOR', 'LINES_MANAGER'].includes(userRole) && (
+              !hasOpenShift ? (
+                <button
+                  onClick={handleOpenShift}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center transition-colors"
+                >
+                  <span className="mr-2">➕</span>
+                  Open Shift
+                </button>
+              ) : (
+                <button
+                  onClick={handleCloseShift}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center transition-colors"
+                >
+                  <span className="mr-2">🔒</span>
+                  Close Shift
+                </button>
+              )
             )}
             
             <button
-              onClick={refetch}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
+              onClick={fetchShifts}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center transition-colors disabled:opacity-50"
             >
               <span className="mr-2">🔄</span>
               Refresh
@@ -467,8 +650,9 @@ const ShiftManagement = () => {
         </div>
       </div>
 
-      {/* Open Shift Alert */}
-      {hasOpenShift && openShiftData && (
+      {/* Open Shift Alert - Only for station-level roles */}
+      {['STATION_MANAGER', 'SUPERVISOR', 'LINES_MANAGER'].includes(userRole) && 
+       hasOpenShift && openShiftData && (
         <div className="mb-6">
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
             <div className="flex items-center">
@@ -476,12 +660,14 @@ const ShiftManagement = () => {
               <div className="flex-1">
                 <h3 className="text-yellow-800 font-medium">Open Shift Active</h3>
                 <p className="text-yellow-700 text-sm">
-                  Shift #{openShiftData.shiftNumber} is currently open. Started at {new Date(openShiftData.startTime).toLocaleString()}
+                  Shift #{openShiftData.shiftNumber} is currently open. 
+                  Started at {new Date(openShiftData.startTime).toLocaleString()}
+                  {openShiftData.supervisor && ` by ${openShiftData.supervisor.firstName} ${openShiftData.supervisor.lastName}`}
                 </p>
               </div>
               <button
                 onClick={handleCloseShift}
-                className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors"
               >
                 Close Shift
               </button>
@@ -517,6 +703,17 @@ const ShiftManagement = () => {
           </div>
         </div>
       )}
+
+      {/* Role-based debug info */}
+      <div className="mb-4 p-3 bg-gray-50 rounded-lg text-sm">
+        <div className="flex flex-wrap gap-4">
+          <span><strong>Role:</strong> {userRole}</span>
+          <span><strong>Scope:</strong> {getScopeParams().scope}</span>
+          {userStationId && <span><strong>Station ID:</strong> {userStationId}</span>}
+          {userCompanyId && <span><strong>Company ID:</strong> {userCompanyId}</span>}
+          <span><strong>Shifts Loaded:</strong> {shifts.length}</span>
+        </div>
+      </div>
 
       {/* Main Table */}
       <MultiTable

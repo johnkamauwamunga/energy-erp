@@ -385,7 +385,7 @@ const handleSaveConfiguration = async () => {
     setSaveError(null);
 
     try {
-      console.log('🎯 Finalizing shift creation with ID:', shiftId);
+      console.log('🎯 by john Finalizing shift creation with ID:', shiftId);
       
       if (onFinalCreate) {
         await onFinalCreate(shiftId, data);

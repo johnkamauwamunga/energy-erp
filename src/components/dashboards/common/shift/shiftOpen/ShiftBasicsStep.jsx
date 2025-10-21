@@ -11,43 +11,27 @@ import { useApp } from '../../../../../context/AppContext';
 const ShiftBasicsStep = ({ data, onChange, onShiftCreated, onNext }) => {
   const { state } = useApp();
 
-  const { shiftNumber, startTime, priceListId, supervisorId } = data;
-  const [shiftNumberValid, setShiftNumberValid] = useState(null);
-  const [checkingShiftNumber, setCheckingShiftNumber] = useState(false);
+  const { supervisorId } = data; // Only supervisorId remains
   const [supervisors, setSupervisors] = useState([]);
-  const [priceList, setPriceLists] = useState([]);
   const [creatingShift, setCreatingShift] = useState(false);
   const [createError, setCreateError] = useState(null);
   const [createSuccess, setCreateSuccess] = useState(false);
   const [createdShiftId, setCreatedShiftId] = useState(null);
   const [hasExistingShift, setHasExistingShift] = useState(false);
   
-  const [pagination, setPagination] = useState({
-    limit: 10,
-    page: 1,
-    pages: 1,
-    total: 0
-  });
-
   const currentStation = state.currentStation?.id;
+
+  console.log("current station id ", currentStation);
 
   // Check for existing shift on component mount
   useEffect(() => {
     const checkExistingShift = () => {
       const storedShiftId = localStorage.getItem('currentShiftId');
-      const storedShiftNumber = localStorage.getItem('currentShiftNumber');
-      const storedStartTime = localStorage.getItem('currentShiftStartTime');
       
-      if (storedShiftId && storedShiftNumber && storedStartTime) {
+      if (storedShiftId) {
         console.log('🔄 Found existing shift:', storedShiftId);
         setCreatedShiftId(storedShiftId);
         setHasExistingShift(true);
-        
-        // Update form with stored data
-        onChange({ 
-          shiftNumber: storedShiftNumber,
-          startTime: storedStartTime
-        });
         
         // Notify parent about existing shift
         if (onShiftCreated) {
@@ -87,57 +71,19 @@ const ShiftBasicsStep = ({ data, onChange, onShiftCreated, onNext }) => {
     const fetchSupervisor = async () => {
       try {
         const response = await userService.getStationSupervisors(currentStation);
+        console.log('station supervisor ', response);
         setSupervisors(response);
       } catch (e) {
         console.log("error on getting supervisor ", e);
       }
     };
-
-    const loadMorePriceLists = async () => {
-      try {
-        const response = await pricingService.getPriceLists();
-        console.log("pricelist response ", response);
-        
-        setPriceLists(response?.priceLists || []);
-        setPagination(response?.pagination || {
-          limit: 10,
-          page: 1,
-          pages: 1,
-          total: 0
-        });
-      } catch (e) {
-        console.log("load more error ", e);
-      }
-    };
     
     fetchSupervisor();
-    loadMorePriceLists();
   }, [currentStation]);
-
-  // Auto-check shift number when it changes
-  useEffect(() => {
-    const checkShiftNumber = async () => {
-      if (shiftNumber && shiftNumber !== dummyDataHelpers.getNextShiftNumber().toString()) {
-        setCheckingShiftNumber(true);
-        try {
-          const result = await mockServices.shiftService.checkShiftNumber(shiftNumber);
-          setShiftNumberValid(!result.exists);
-        } catch (error) {
-          setShiftNumberValid(false);
-        } finally {
-          setCheckingShiftNumber(false);
-        }
-      } else {
-        setShiftNumberValid(null);
-      }
-    };
-    const timeoutId = setTimeout(checkShiftNumber, 500);
-    return () => clearTimeout(timeoutId);
-  }, [shiftNumber]);
 
   useEffect(() => {
     const fetchAssets = async () => {
-      let theStation = 'bcbd0ff7-0d74-4b26-a419-c11ead677561';
+      let theStation = currentStation;
       try {
         const result = await connectedAssetService.getStationAssetsSimplified(theStation);
         console.log('connected assets ', result);
@@ -148,20 +94,18 @@ const ShiftBasicsStep = ({ data, onChange, onShiftCreated, onNext }) => {
     fetchAssets();
   }, []);
 
-  const handleDateChange = (date) => {
-    if (date) {
-      // Format the date to match backend expectations
-      const formattedDate = new Date(date);
-      const isoString = formattedDate.toISOString();
-      
-      // Remove milliseconds and ensure Z timezone
-      const cleanISOString = isoString.split('.')[0] + 'Z';
-      
-      console.log('📅 Formatted startTime:', cleanISOString);
-      onChange({ startTime: cleanISOString });
-    } else {
-      onChange({ startTime: null });
-    }
+  const clearCache = () => {
+    // Clear localStorage after successful creation
+    setTimeout(() => {
+      localStorage.removeItem('currentShiftId');
+      localStorage.removeItem('currentShiftAttendants');
+      localStorage.removeItem('currentShiftNumber');
+      localStorage.removeItem('currentShiftStartTime');
+      localStorage.removeItem('currentShiftStation');
+      localStorage.removeItem('shiftConfigurationData');
+    }, 2000);
+
+    console.log(`storage cleaned`);
   };
 
   const handleSupervisorSelect = (event) => {
@@ -170,19 +114,10 @@ const ShiftBasicsStep = ({ data, onChange, onShiftCreated, onNext }) => {
     onChange({ supervisorId });
   };
 
-  const handlePriceListSelect = (priceListId) => {
-    onChange({ priceListId });
-  };
-
   const handleCreateShift = async () => {
-    // Validate required fields
-    if (!shiftNumber || !startTime || !supervisorId || !priceListId || !currentStation) {
-      setCreateError('Please fill all required fields');
-      return;
-    }
-
-    if (shiftNumberValid === false) {
-      setCreateError('Shift number is not valid');
+    // Validate required fields - now only supervisor and station
+    if (!supervisorId || !currentStation) {
+      setCreateError('Please select a supervisor');
       return;
     }
 
@@ -193,16 +128,14 @@ const ShiftBasicsStep = ({ data, onChange, onShiftCreated, onNext }) => {
     setHasExistingShift(false);
 
     try {
-      // Create a clean, serializable payload
+      // Create a clean, simplified payload
       const shiftData = {
         stationId: currentStation,
-        supervisorId: supervisorId,
-        shiftNumber: parseInt(shiftNumber, 10),
-        startTime: startTime,
-        priceListId: priceListId
+        supervisorId: supervisorId
+        // shiftNumber, startTime, and priceListId are now auto-generated/auto-set
       };
 
-      console.log('🔄 Creating shift with endpoint: POST /shifts');
+      console.log('🔄 Creating shift with simplified payload');
       console.log('📦 Shift payload:', shiftData);
       
       const result = await shiftService.createShift(shiftData);
@@ -210,7 +143,12 @@ const ShiftBasicsStep = ({ data, onChange, onShiftCreated, onNext }) => {
       
       // Extract shift ID from response
       const shiftId = result.shift?.id || result.data?.shift?.id;
+      const shiftNumber = result.shift?.shiftNumber || result.data?.shift?.shiftNumber;
+      const startTime = result.shift?.startTime || result.data?.shift?.startTime;
+      
       console.log('🎯 Created shift ID:', shiftId);
+      console.log('🎯 Auto-generated shift number:', shiftNumber);
+      console.log('🎯 Auto-set start time:', startTime);
       
       if (shiftId) {
         setCreatedShiftId(shiftId);
@@ -250,20 +188,11 @@ const ShiftBasicsStep = ({ data, onChange, onShiftCreated, onNext }) => {
     
     // Reset form
     onChange({ 
-      shiftNumber: dummyDataHelpers.getNextShiftNumber().toString(),
-      startTime: new Date().toISOString().slice(0, 16),
-      supervisorId: '',
-      priceListId: ''
+      supervisorId: ''
     });
   };
 
-  const isFormValid = 
-    shiftNumber && 
-    startTime && 
-    supervisorId && 
-    priceListId && 
-    currentStation && 
-    shiftNumberValid !== false;
+  const isFormValid = supervisorId && currentStation;
 
   const canProceed = createdShiftId || hasExistingShift;
 
@@ -297,65 +226,9 @@ const ShiftBasicsStep = ({ data, onChange, onShiftCreated, onNext }) => {
         </Alert>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Shift Number */}
-        <div>
-          <Input
-            label="Shift Number"
-            value={shiftNumber}
-            onChange={(e) => onChange({ shiftNumber: e.target.value })}
-            icon={Hash}
-            required
-            type="number"
-            placeholder="Enter shift number..."
-            size="sm"
-            disabled={hasExistingShift}
-          />
-          {shiftNumberValid !== null && (
-            <div className={`flex items-center gap-1 mt-1 text-xs ${
-              shiftNumberValid ? 'text-green-600' : 'text-red-600'
-            }`}>
-              {checkingShiftNumber ? (
-                <>Checking...</>
-              ) : shiftNumberValid ? (
-                <>
-                  <CheckCircle className="w-3 h-3" />
-                  Available
-                </>
-              ) : (
-                <>
-                  <XCircle className="w-3 h-3" />
-                  Already exists
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Start Time */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Start Time <span className="text-red-500">*</span>
-          </label>
-          <div className="flex items-center">
-            <Clock className="w-4 h-4 text-gray-400 mr-2" />
-            <DatePicker
-              value={startTime}
-              onChange={handleDateChange}
-              placeholderText="Select date & time..."
-              required
-              className="w-full text-sm"
-              disabled={hasExistingShift}
-            />
-          </div>
-          {startTime && (
-            <p className="text-xs text-gray-500 mt-1">
-              {new Date(startTime).toLocaleString()}
-            </p>
-          )}
-        </div>
-
-        {/* Supervisor */}
+      {/* Simplified Form - Only Supervisor Selection */}
+      <div className="grid grid-cols-1 gap-4">
+        {/* Supervisor - Only Required Field */}
         <div>
           <Select
             value={supervisorId}
@@ -365,22 +238,6 @@ const ShiftBasicsStep = ({ data, onChange, onShiftCreated, onNext }) => {
               label: `${sup.firstName} ${sup.lastName}`
             }))}
             placeholder="Select supervisor..."
-            required
-            size="sm"
-            disabled={hasExistingShift}
-          />
-        </div>
-
-        {/* Price List */}
-        <div>
-          <Select
-            value={priceListId}
-            onChange={handlePriceListSelect}
-            options={priceList.map(list => ({
-              value: list.id,
-              label: `${list.name}`
-            }))}
-            placeholder="Select Pricelist..."
             required
             size="sm"
             disabled={hasExistingShift}
@@ -432,6 +289,15 @@ const ShiftBasicsStep = ({ data, onChange, onShiftCreated, onNext }) => {
               Create New Shift
             </Button>
           )}
+
+          <Button
+            onClick={clearCache}
+            loading={creatingShift}
+            icon={Save}
+            size="md"
+          >
+            Clear Cache
+          </Button>
           
           {!hasExistingShift && (
             <Button
@@ -453,25 +319,14 @@ const ShiftBasicsStep = ({ data, onChange, onShiftCreated, onNext }) => {
           <div className="flex-1">
             <p className="font-medium">Shift Information</p>
             <p className="mt-1">
-              Create a new shift by selecting shift number, start time, and price list.
-              Shift will be pending until setup is complete.
+              Create a new shift by selecting a supervisor. Shift number and start time will be automatically generated.
             </p>
           </div>
         </div>
       </Alert>
 
-      {/* Compact Quick Actions */}
-      <div className="grid grid-cols-1 xs:grid-cols-3 gap-3">
-        <div className="bg-blue-50 p-3 rounded border border-blue-200">
-          <div className="flex items-center gap-1 mb-1">
-            <Hash className="w-3 h-3 text-blue-600" />
-            <span className="font-semibold text-blue-900 text-xs">Next Shift</span>
-          </div>
-          <p className="text-lg font-bold text-blue-700">
-            {dummyDataHelpers.getNextShiftNumber()}
-          </p>
-        </div>
-        
+      {/* Compact Quick Actions - Updated */}
+      <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
         <div className="bg-green-50 p-3 rounded border border-green-200">
           <div className="flex items-center gap-1 mb-1">
             <Calendar className="w-3 h-3 text-green-600" />
@@ -486,13 +341,13 @@ const ShiftBasicsStep = ({ data, onChange, onShiftCreated, onNext }) => {
           </p>
         </div>
         
-        <div className="bg-purple-50 p-3 rounded border border-purple-200">
+        <div className="bg-blue-50 p-3 rounded border border-blue-200">
           <div className="flex items-center gap-1 mb-1">
-            <CheckCircle className="w-3 h-3 text-purple-600" />
-            <span className="font-semibold text-purple-900 text-xs">Price List</span>
+            <Clock className="w-3 h-3 text-blue-600" />
+            <span className="font-semibold text-blue-900 text-xs">Auto-Generated</span>
           </div>
-          <p className="text-sm text-purple-700 truncate">
-            {dummyData.station.activePriceList?.name || 'None'}
+          <p className="text-sm text-blue-700">
+            Shift # & Time
           </p>
         </div>
       </div>

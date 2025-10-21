@@ -3,7 +3,7 @@ import { apiService } from '../apiService';
 
 class ShiftService {
   constructor() {
-    this.basePath = '/shift';
+    this.basePath = '/shifts';
     this.cache = new Map();
     this.CACHE_TTL = 5 * 60 * 1000;
     
@@ -25,13 +25,11 @@ class ShiftService {
   // ==================== CORE UTILITIES ====================
 
   #handleResponse(response, operation) {
-    // Handle the nested success/data structure from your API
     if (response.data?.success) {
       this.logger.debug(`${operation} successful`);
-      return response.data; // Return entire response data including success, message, data
+      return response.data;
     }
     
-    // If no success flag but data exists, return it directly
     if (response.data) {
       this.logger.debug(`${operation} successful (direct data)`);
       return response.data;
@@ -99,24 +97,19 @@ class ShiftService {
   #buildQueryParams(filters = {}) {
     const params = new URLSearchParams();
     
-    // Enhanced parameter building for complex filters
     Object.keys(filters).forEach(key => {
       const value = filters[key];
       
       if (value !== undefined && value !== null && value !== '') {
-        // Handle arrays (e.g., statuses, stationIds)
         if (Array.isArray(value)) {
           value.forEach(item => params.append(`${key}[]`, item));
         } 
-        // Handle dates
         else if (value instanceof Date) {
           params.append(key, value.toISOString());
         }
-        // Handle objects (stringify if needed)
         else if (typeof value === 'object') {
           params.append(key, JSON.stringify(value));
         }
-        // Handle primitives
         else {
           params.append(key, value);
         }
@@ -159,11 +152,120 @@ class ShiftService {
     }
   }
 
-  // ==================== COMPREHENSIVE SHIFT DATA FETCHING ====================
+  // ==================== SHIFT VISIBILITY ENDPOINTS ====================
 
   /**
-   * GET ALL SHIFTS WITH COMPLETE RELATIONSHIPS
-   * Enhanced version that properly handles the nested API response structure
+   * GET SHIFT BY ID
+   * Enhanced with access control and complete relationships
+   */
+  async getShiftById(shiftId, forceRefresh = false) {
+    return this.#retryOperation(async () => {
+      const cacheKey = `shift-${shiftId}`;
+      
+      if (!forceRefresh) {
+        const cached = this.#getCached(cacheKey);
+        if (cached) return cached;
+      }
+
+      this.logger.info(`Fetching shift ${shiftId}`);
+      
+      const response = await apiService.get(`${this.basePath}/${shiftId}`);
+      const data = this.#handleResponse(response, 'Shift fetch');
+      
+      this.#setCached(cacheKey, data);
+      this.logger.info(`Retrieved shift ${shiftId} with complete details`);
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Shift fetch', 'Failed to fetch shift');
+    });
+  }
+
+  /**
+   * GET SHIFTS BY STATION
+   * All shifts for a specific station with access control
+   */
+  // async getShiftsByStation(stationId, filters = {}, forceRefresh = false) {
+  //   return this.#retryOperation(async () => {
+  //     const cacheKey = `shifts-station-${stationId}-${JSON.stringify(filters)}`;
+      
+  //     if (!forceRefresh) {
+  //       const cached = this.#getCached(cacheKey);
+  //       if (cached) return cached;
+  //     }
+
+  //     this.logger.info(`Fetching shifts for station ${stationId}`, filters);
+      
+  //     const queryParams = this.#buildQueryParams(filters);
+  //     const url = `${this.basePath}/station/${stationId}${queryParams ? `?${queryParams}` : ''}`;
+      
+  //     console.log("url ",url);
+  //     const response = await apiService.get(url);
+  //     const data = this.#handleResponse(response, 'Station shifts fetch');
+      
+  //     this.#setCached(cacheKey, data);
+  //     this.logger.info(`Retrieved ${data.data?.shifts?.length || 0} shifts for station ${stationId}`);
+  //     return data;
+  //   }).catch(error => {
+  //     throw this.#handleError(error, 'Station shifts fetch', 'Failed to fetch station shifts');
+  //   });
+  // }
+
+    async getShiftsByStation(stationId, filters = {}) {
+    return this.#retryOperation(async () => {
+      const cacheKey = `shifts-station-${stationId}-${JSON.stringify(filters)}`;
+      
+      this.logger.info(`Fetching shifts for station ${stationId}`, filters);
+      
+      const queryParams = this.#buildQueryParams(filters);
+      // const url = `${this.basePath}/station/${stationId}${queryParams ? `?${queryParams}` : ''}`;
+      
+      const url =`${this.basePath}/station/${stationId}`;
+    
+      const response = await apiService.get(url);
+
+        console.log("url ",url,' and response ',response);
+      const data = this.#handleResponse(response, 'Station shifts fetch');
+      
+      this.#setCached(cacheKey, data);
+      this.logger.info(`Retrieved ${data.data?.shifts?.length || 0} shifts for station ${stationId}`);
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Station shifts fetch', 'Failed to fetch station shifts');
+    });
+  }
+
+  /**
+   * GET SHIFTS BY COMPANY
+   * All shifts across company stations with access control
+   */
+  async getShiftsByCompany(companyId, filters = {}, forceRefresh = false) {
+    return this.#retryOperation(async () => {
+      const cacheKey = `shifts-company-${companyId}-${JSON.stringify(filters)}`;
+      
+      if (!forceRefresh) {
+        const cached = this.#getCached(cacheKey);
+        if (cached) return cached;
+      }
+
+      this.logger.info(`Fetching shifts for company ${companyId}`, filters);
+      
+      const queryParams = this.#buildQueryParams(filters);
+      const url = `${this.basePath}/company/${companyId}${queryParams ? `?${queryParams}` : ''}`;
+      
+      const response = await apiService.get(url);
+      const data = this.#handleResponse(response, 'Company shifts fetch');
+      
+      this.#setCached(cacheKey, data);
+      this.logger.info(`Retrieved ${data.data?.shifts?.length || 0} shifts for company ${companyId}`);
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Company shifts fetch', 'Failed to fetch company shifts');
+    });
+  }
+
+  /**
+   * GET ALL SHIFTS (Super Admin only)
+   * Global view across all companies
    */
   async getAllShifts(filters = {}, forceRefresh = false) {
     return this.#retryOperation(async () => {
@@ -174,89 +276,307 @@ class ShiftService {
         if (cached) return cached;
       }
 
-      this.logger.info('Fetching comprehensive shift list with filters:', filters);
+      this.logger.info('Fetching all shifts across companies', filters);
+      
+      const queryParams = this.#buildQueryParams(filters);
+      const url = `${this.basePath}${queryParams ? `?${queryParams}` : ''}`;
+      
+      const response = await apiService.get(url);
+      const data = this.#handleResponse(response, 'All shifts fetch');
+      
+      this.#setCached(cacheKey, data);
+      this.logger.info(`Retrieved ${data.data?.shifts?.length || 0} shifts across all companies`);
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'All shifts fetch', 'Failed to fetch all shifts');
+    });
+  }
+
+  /**
+   * GET COMPREHENSIVE SHIFTS WITH ALL RELATIONSHIPS
+   * Uses the comprehensive list endpoint for detailed data
+   */
+  async getComprehensiveShifts(filters = {}, forceRefresh = false) {
+    return this.#retryOperation(async () => {
+      const cacheKey = `comprehensive-shifts-${JSON.stringify(filters)}`;
+      
+      if (!forceRefresh) {
+        const cached = this.#getCached(cacheKey);
+        if (cached) return cached;
+      }
+
+      this.logger.info('Fetching comprehensive shift list', filters);
       
       const queryParams = this.#buildQueryParams(filters);
       const url = `${this.basePath}/list/all${queryParams ? `?${queryParams}` : ''}`;
       
-      this.logger.debug(`API URL: ${url}`);
-      
       const response = await apiService.get(url);
       const data = this.#handleResponse(response, 'Comprehensive shifts fetch');
       
-      // Cache the complete response including success, message, data, pagination, summary
       this.#setCached(cacheKey, data);
-      
       this.logger.info(`Retrieved ${data.data?.shifts?.length || 0} shifts with complete relationships`);
-      return data; // Return the full API response structure
+      return data;
     }).catch(error => {
       throw this.#handleError(error, 'Comprehensive shifts fetch', 'Failed to fetch comprehensive shift list');
     });
   }
 
-  /**
-   * GET SHIFTS WITH PAGINATION AND FILTERS
-   * For list views where you need pagination
-   */
-  async getShifts(filters = {}, forceRefresh = false) {
-    return this.#retryOperation(async () => {
-      const cacheKey = `shifts-${JSON.stringify(filters)}`;
-      
-      if (!forceRefresh) {
-        const cached = this.#getCached(cacheKey);
-        if (cached) return cached;
-      }
+  // ==================== SHIFT OPERATIONS ====================
 
-      this.logger.info('Fetching shifts with filters:', filters);
+  /**
+   * CREATE NEW SHIFT
+   */
+  async createShift(shiftData) {
+    return this.#retryOperation(async () => {
+      this.logger.info('Creating new shift', shiftData);
+      
+      const response = await apiService.post(this.basePath, shiftData);
+      const data = this.#handleResponse(response, 'Shift creation');
+      
+      // Clear relevant cache
+      this.clearShiftsCache();
+      
+      this.logger.info(`Shift created successfully: ${data.data?.shift?.id}`);
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Shift creation', 'Failed to create shift');
+    });
+  }
+
+  /**
+   * OPEN SHIFT WITH READINGS AND ASSIGNMENTS
+   */
+  async openShift(openData) {
+    return this.#retryOperation(async () => {
+      this.logger.info('Opening shift with readings', openData);
+      
+      const response = await apiService.post(`${this.basePath}/${openData.shiftId}/open`, openData);
+      const data = this.#handleResponse(response, 'Shift opening');
+      
+      // Clear shift cache
+      this.clearShiftCache(openData.shiftId);
+      this.clearShiftsCache();
+      
+      this.logger.info(`Shift opened successfully: ${openData.shiftId}`);
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Shift opening', 'Failed to open shift');
+    });
+  }
+
+  /**
+   * CLOSE SHIFT WITH ALL READINGS AND COLLECTIONS
+   */
+  async closeShift(shiftId, closeData) {
+    return this.#retryOperation(async () => {
+      this.logger.info(`shiftId ${shiftId} payload ${closeData}`);
+      
+      const response = await apiService.post(`${this.basePath}/${shiftId}/close`, closeData);
+      const data = this.#handleResponse(response, 'Shift closing');
+      
+      // Clear relevant cache
+      this.clearShiftCache(closeData.shiftId);
+      this.clearShiftsCache();
+      
+      this.logger.info(`Shift closed successfully: ${closeData.shiftId}`);
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Shift closing', 'Failed to close shift');
+    });
+  }
+
+  // ==================== SPECIALIZED QUERIES ====================
+
+/**
+ * GET CURRENT OPEN SHIFT FOR STATION
+ * Returns null if no open shift found (not an error)
+ */
+async getCurrentOpenShift(stationId) {
+  try {
+    return await this.#retryOperation(async () => {
+      this.logger.info(`Fetching current open shift for station ${stationId}`);
+      
+      const response = await apiService.get(`${this.basePath}/station/${stationId}/current`);
+      const data = this.#handleResponse(response, 'Current open shift fetch');
+      
+      // ✅ Backend now returns 200 with data: null for no open shift
+      if (data.success && data.data === null) {
+        this.logger.info(`No open shift found for station ${stationId}`);
+        return { 
+          success: true, 
+          data: null, 
+          message: 'No open shift found' 
+        };
+      }
+      
+      this.logger.info(`Found open shift for station ${stationId}:`, data.data?.shiftNumber);
+      return data;
+    });
+  } catch (error) {
+    // ✅ Only handle actual errors (network issues, server errors, station not found)
+    throw this.#handleError(error, 'Current open shift fetch', 'Failed to fetch current open shift');
+  }
+}
+  /**
+   * GET LATEST SHIFT FOR STATION
+   */
+  async getLatestShift(stationId) {
+    return this.#retryOperation(async () => {
+      this.logger.info(`Fetching latest shift for station ${stationId}`);
+      
+      const response = await apiService.get(`${this.basePath}/stations/${stationId}/shifts/latest`);
+      const data = this.#handleResponse(response, 'Latest shift fetch');
+      
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Latest shift fetch', 'Failed to fetch latest shift');
+    });
+  }
+
+  /**
+   * CHECK SHIFT OPENING STATUS
+   */
+  async checkShiftOpeningStatus(shiftId) {
+    return this.#retryOperation(async () => {
+      this.logger.info(`Checking opening status for shift ${shiftId}`);
+      
+      const response = await apiService.get(`${this.basePath}/${shiftId}/opening-status`);
+      const data = this.#handleResponse(response, 'Opening status check');
+      
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Opening status check', 'Failed to check opening status');
+    });
+  }
+
+  /**
+   * DIAGNOSE SHIFT OPENING ISSUES
+   */
+  async diagnoseShiftOpening(shiftId) {
+    return this.#retryOperation(async () => {
+      this.logger.info(`Diagnosing opening issues for shift ${shiftId}`);
+      
+      const response = await apiService.get(`${this.basePath}/${shiftId}/diagnose-opening`);
+      const data = this.#handleResponse(response, 'Shift opening diagnosis');
+      
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Shift opening diagnosis', 'Failed to diagnose opening issues');
+    });
+  }
+
+  /**
+   * GET SHIFT SALES SUMMARY
+   */
+  async getShiftSales(shiftId) {
+    return this.#retryOperation(async () => {
+      this.logger.info(`Fetching sales for shift ${shiftId}`);
+      
+      const response = await apiService.get(`${this.basePath}/${shiftId}/sales`);
+      const data = this.#handleResponse(response, 'Shift sales fetch');
+      
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Shift sales fetch', 'Failed to fetch shift sales');
+    });
+  }
+
+  /**
+   * GET ISLAND SALES AND COLLECTIONS
+   */
+  async getIslandSalesAndCollections(shiftId) {
+    return this.#retryOperation(async () => {
+      this.logger.info(`Fetching island sales and collections for shift ${shiftId}`);
+      
+      const response = await apiService.get(`${this.basePath}/${shiftId}/island-sales`);
+      const data = this.#handleResponse(response, 'Island sales fetch');
+      
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Island sales fetch', 'Failed to fetch island sales and collections');
+    });
+  }
+
+  /**
+   * GET SHIFT WITH PERSONNEL
+   */
+  async getShiftWithPersonnel(shiftId) {
+    return this.#retryOperation(async () => {
+      this.logger.info(`Fetching shift personnel for shift ${shiftId}`);
+      
+      const response = await apiService.get(`${this.basePath}/${shiftId}/personnel`);
+      const data = this.#handleResponse(response, 'Shift personnel fetch');
+      
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Shift personnel fetch', 'Failed to fetch shift personnel');
+    });
+  }
+
+  /**
+   * GET SHIFTS BY SUPERVISOR
+   */
+  async getShiftsBySupervisor(supervisorId, filters = {}) {
+    return this.#retryOperation(async () => {
+      this.logger.info(`Fetching shifts for supervisor ${supervisorId}`, filters);
+      
       const queryParams = this.#buildQueryParams(filters);
-      const response = await apiService.get(`${this.basePath}?${queryParams}`);
+      const url = `${this.basePath}/supervisor/${supervisorId}${queryParams ? `?${queryParams}` : ''}`;
       
-      const data = this.#handleResponse(response, 'Shifts fetch');
-      this.#setCached(cacheKey, data);
+      const response = await apiService.get(url);
+      const data = this.#handleResponse(response, 'Supervisor shifts fetch');
+      
       return data;
     }).catch(error => {
-      throw this.#handleError(error, 'Shifts fetch', 'Failed to fetch shifts');
+      throw this.#handleError(error, 'Supervisor shifts fetch', 'Failed to fetch supervisor shifts');
     });
   }
 
   /**
-   * GET SHIFT BY ID WITH ALL RELATIONSHIPS
-   * Enhanced to handle the complete nested data structure
+   * GET SHIFTS BY ATTENDANT
    */
-  async getShiftById(shiftId, options = {}, forceRefresh = false) {
+  async getShiftsByAttendant(attendantId, filters = {}) {
     return this.#retryOperation(async () => {
-      const { includeRelations = true } = options;
-      const cacheKey = `shift-${shiftId}-${includeRelations}`;
+      this.logger.info(`Fetching shifts for attendant ${attendantId}`, filters);
       
-      if (!forceRefresh) {
-        const cached = this.#getCached(cacheKey);
-        if (cached) return cached;
-      }
-
-      this.logger.info(`Fetching shift ${shiftId} with relations: ${includeRelations}`);
+      const queryParams = this.#buildQueryParams(filters);
+      const url = `${this.basePath}/attendant/${attendantId}${queryParams ? `?${queryParams}` : ''}`;
       
-      const queryParams = includeRelations ? '?includeRelations=true' : '';
-      const response = await apiService.get(`${this.basePath}/${shiftId}${queryParams}`);
+      const response = await apiService.get(url);
+      const data = this.#handleResponse(response, 'Attendant shifts fetch');
       
-      const data = this.#handleResponse(response, 'Shift fetch');
-      this.#setCached(cacheKey, data);
       return data;
     }).catch(error => {
-      throw this.#handleError(error, 'Shift fetch', 'Failed to fetch shift');
+      throw this.#handleError(error, 'Attendant shifts fetch', 'Failed to fetch attendant shifts');
     });
   }
 
-  // ==================== ENHANCED FILTER BUILDERS ====================
+  /**
+   * GET SHIFT ANALYTICS
+   */
+  async getShiftAnalytics(shiftId) {
+    return this.#retryOperation(async () => {
+      this.logger.info(`Fetching analytics for shift ${shiftId}`);
+      
+      const response = await apiService.get(`${this.basePath}/${shiftId}/analytics`);
+      const data = this.#handleResponse(response, 'Shift analytics fetch');
+      
+      return data;
+    }).catch(error => {
+      throw this.#handleError(error, 'Shift analytics fetch', 'Failed to fetch shift analytics');
+    });
+  }
+
+  // ==================== FILTER BUILDERS ====================
 
   /**
-   * BUILD COMPREHENSIVE SHIFT FILTERS
-   * Enhanced for the list/all endpoint requirements
+   * BUILD SHIFT FILTERS FOR DIFFERENT VISIBILITY LEVELS
    */
   buildShiftFilters(options = {}) {
     const {
       // Basic filters
       stationId,
-      supervisorId,
+      companyId,
       status,
       startDate,
       endDate,
@@ -273,22 +593,22 @@ class ShiftService {
       sortBy = 'startTime',
       sortOrder = 'desc',
       
-      // Include options
-      includeDetails = true,
-      includeRelations = true,
+      // Date presets
+      datePreset,
       
       // Advanced filters
-      statuses, // Array of statuses
-      stationIds, // Array of station IDs
-      shiftNumbers, // Array of shift numbers
+      statuses,
+      stationIds,
+      shiftNumbers,
       
-      // Date presets
-      datePreset // 'today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'
+      // Include options
+      includeDetails = true,
+      includeRelations = true
     } = options;
 
     const filters = {
       stationId,
-      supervisorId,
+      companyId,
       status,
       startDate,
       endDate,
@@ -317,7 +637,7 @@ class ShiftService {
       filters.endDate = dateRange.end;
     }
 
-    // Clean up undefined values and empty arrays
+    // Clean up undefined values
     return Object.fromEntries(
       Object.entries(filters).filter(([_, value]) => {
         if (value === undefined || value === null || value === '') return false;
@@ -377,73 +697,81 @@ class ShiftService {
     };
   }
 
-  // ==================== SPECIALIZED QUERIES ====================
-
-  /**
-   * Get shifts by date range with comprehensive data
-   */
-  async getShiftsByDateRange(startDate, endDate, options = {}) {
-    const filters = this.buildShiftFilters({
-      startDate,
-      endDate,
-      ...options
-    });
-    
-    return this.getAllShifts(filters, options.forceRefresh);
-  }
-
-  /**
-   * Get shifts by status with comprehensive data
-   */
-  async getShiftsByStatus(status, options = {}) {
-    const filters = this.buildShiftFilters({
-      status,
-      ...options
-    });
-    
-    return this.getAllShifts(filters, options.forceRefresh);
-  }
-
-  /**
-   * Get shifts by station with comprehensive data
-   */
-  async getShiftsByStation(stationId, options = {}) {
-    const filters = this.buildShiftFilters({
-      stationId,
-      ...options
-    });
-    
-    return this.getAllShifts(filters, options.forceRefresh);
-  }
-
-  /**
-   * Get shifts with financial summaries
-   */
-  async getShiftsWithFinancials(options = {}) {
-    const filters = this.buildShiftFilters({
-      includeDetails: true,
-      includeRelations: true,
-      ...options
-    });
-    
-    return this.getAllShifts(filters, options.forceRefresh);
-  }
-
   // ==================== DATA TRANSFORMERS ====================
 
   /**
-   * Transform shift data for frontend consumption
+   * TRANSFORM SHIFT DATA FOR FRONTEND CONSUMPTION
+   * Handles the new backend response structure
    */
   transformShiftData(apiResponse) {
     if (!apiResponse) return null;
 
-    // Handle the nested data structure
     const responseData = apiResponse.data || apiResponse;
     
-    if (!responseData.shifts) return apiResponse;
+    if (!responseData.shifts && !responseData.shift) return apiResponse;
 
+    // Handle single shift
+    if (responseData.shift) {
+      return this.#transformSingleShift(responseData);
+    }
+
+    // Handle multiple shifts
+    if (responseData.shifts) {
+      return this.#transformMultipleShifts(responseData);
+    }
+
+    return apiResponse;
+  }
+
+  #transformSingleShift(responseData) {
+    const shift = responseData.shift;
+    
+    return {
+      ...responseData,
+      data: {
+        ...responseData,
+        shift: {
+          ...shift,
+          
+          // Flatten frequently accessed relationships
+          stationName: shift.station?.name,
+          supervisorName: shift.supervisor ? `${shift.supervisor.firstName} ${shift.supervisor.lastName}` : null,
+          companyName: shift.station?.company?.name,
+          
+          // Financial summary
+          totalRevenue: shift.sales?.totalRevenue || shift.sales?.[0]?.totalRevenue || 0,
+          totalCollections: shift.shiftCollection?.totalCollected || 0,
+          
+          // Status indicators
+          hasDiscrepancies: shift.reconciliation?.status === 'DISCREPANCY',
+          isFullyReconciled: shift.reconciliation?.status === 'COMPLETED',
+          
+          // Quick access to key metrics
+          metrics: {
+            fuelSales: shift.sales?.totalFuelRevenue || shift.sales?.[0]?.totalFuelRevenue || 0,
+            nonFuelSales: shift.sales?.totalNonFuelRevenue || shift.sales?.[0]?.totalNonFuelRevenue || 0,
+            cashCollected: shift.shiftCollection?.cashAmount || 0,
+            mobileMoneyCollected: shift.shiftCollection?.mobileMoneyAmount || 0,
+            totalAttendants: shift.shiftIslandAttedant?.length || 0,
+            totalPumps: this.#getUniquePumpsCount(shift.meterReadings || [])
+          },
+          
+          // Opening check status
+          openingStatus: shift.shiftOpeningCheck || null,
+          
+          // Reconciliation status
+          reconciliationStatus: shift.reconciliation?.status || 'PENDING',
+          
+          // Collections variance
+          cashVariance: shift.shiftCollection?.variance || 0,
+          fuelVariance: shift.reconciliation?.variance || 0
+        }
+      }
+    };
+  }
+
+  #transformMultipleShifts(responseData) {
     const transformedShifts = responseData.shifts.map(shift => ({
-      // Basic shift info
       ...shift,
       
       // Flatten frequently accessed relationships
@@ -452,17 +780,17 @@ class ShiftService {
       companyName: shift.station?.company?.name,
       
       // Financial summary
-      totalRevenue: shift.sales?.[0]?.totalRevenue || 0,
+      totalRevenue: shift.sales?.totalRevenue || shift.sales?.[0]?.totalRevenue || 0,
       totalCollections: shift.shiftCollection?.totalCollected || 0,
       
       // Status indicators
       hasDiscrepancies: shift.reconciliation?.status === 'DISCREPANCY',
-      isFullyReconciled: shift.reconciliation?.status === 'RECONCILED',
+      isFullyReconciled: shift.reconciliation?.status === 'COMPLETED',
       
       // Quick access to key metrics
       metrics: {
-        fuelSales: shift.sales?.[0]?.totalFuelRevenue || 0,
-        nonFuelSales: shift.sales?.[0]?.totalNonFuelRevenue || 0,
+        fuelSales: shift.sales?.totalFuelRevenue || shift.sales?.[0]?.totalFuelRevenue || 0,
+        nonFuelSales: shift.sales?.totalNonFuelRevenue || shift.sales?.[0]?.totalNonFuelRevenue || 0,
         cashCollected: shift.shiftCollection?.cashAmount || 0,
         mobileMoneyCollected: shift.shiftCollection?.mobileMoneyAmount || 0,
         totalAttendants: shift.shiftIslandAttedant?.length || 0,
@@ -470,18 +798,15 @@ class ShiftService {
       },
       
       // Opening check status
-      openingStatus: shift.shiftOpeningCheck?.[0] || null,
+      openingStatus: shift.shiftOpeningCheck || null,
       
       // Reconciliation status
       reconciliationStatus: shift.reconciliation?.status || 'PENDING'
     }));
 
     return {
-      ...apiResponse,
-      data: {
-        ...responseData,
-        shifts: transformedShifts
-      }
+      ...responseData,
+      shifts: transformedShifts
     };
   }
 
@@ -494,7 +819,7 @@ class ShiftService {
   }
 
   /**
-   * Extract summary data for dashboards
+   * EXTRACT SUMMARY DATA FOR DASHBOARDS
    */
   extractShiftSummary(apiResponse) {
     if (!apiResponse?.data) return null;
@@ -504,13 +829,17 @@ class ShiftService {
     return {
       totalShifts: pagination?.totalCount || shifts?.length || 0,
       financialSummary: summary?.financials || {
-        totalRevenue: shifts.reduce((sum, shift) => sum + (shift.sales?.[0]?.totalRevenue || 0), 0),
-        totalCollections: shifts.reduce((sum, shift) => sum + (shift.shiftCollection?.totalCollected || 0), 0)
+        totalRevenue: shifts?.reduce((sum, shift) => sum + (shift.sales?.totalRevenue || shift.sales?.[0]?.totalRevenue || 0), 0) || 0,
+        totalCollections: shifts?.reduce((sum, shift) => sum + (shift.shiftCollection?.totalCollected || 0), 0) || 0
       },
       statusBreakdown: summary?.byStatus || this.#calculateStatusBreakdown(shifts),
       qualityMetrics: summary?.quality || {
-        shiftsWithVariances: shifts.filter(shift => shift.reconciliation?.status === 'DISCREPANCY').length,
+        shiftsWithVariances: shifts?.filter(shift => shift.reconciliation?.status === 'DISCREPANCY').length || 0,
         variancePercentage: 0
+      },
+      timeRange: summary?.timeRange || {
+        oldest: shifts?.[shifts?.length - 1]?.startTime || null,
+        newest: shifts?.[0]?.startTime || null
       }
     };
   }
@@ -523,7 +852,7 @@ class ShiftService {
       APPROVED: 0
     };
     
-    shifts.forEach(shift => {
+    shifts?.forEach(shift => {
       if (breakdown.hasOwnProperty(shift.status)) {
         breakdown[shift.status]++;
       }
@@ -546,7 +875,6 @@ class ShiftService {
     }
   }
 
-  // Clear specific cache types
   clearShiftsCache() {
     this.clearCache('shifts');
   }
@@ -559,14 +887,7 @@ class ShiftService {
     }
   }
 
-  // ==================== CONFIGURATION ====================
-
-  updateConfig(newConfig) {
-    this.config = { ...this.config, ...newConfig };
-    this.logger.info('Configuration updated:', this.config);
-  }
-
-  // ==================== VALIDATION HELPERS ====================
+  // ==================== VALIDATION & UTILITIES ====================
 
   validateShiftCreation(shiftData) {
     const errors = [];
@@ -575,6 +896,37 @@ class ShiftService {
     if (!shiftData.supervisorId) errors.push('Supervisor ID is required');
     if (!shiftData.shiftNumber || shiftData.shiftNumber <= 0) errors.push('Valid shift number is required');
     if (!shiftData.startTime) errors.push('Start time is required');
+    
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+
+  validateShiftOpening(openData) {
+    const errors = [];
+    
+    if (!openData.shiftId) errors.push('Shift ID is required');
+    if (!openData.recordedById) errors.push('Recorder ID is required');
+    if (!openData.islandAssignments?.length) errors.push('At least one island assignment is required');
+    if (!openData.pumpReadings?.length) errors.push('At least one pump reading is required');
+    if (!openData.tankReadings?.length) errors.push('At least one tank reading is required');
+    
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+
+  validateShiftClosing(closeData) {
+    const errors = [];
+    
+    if (!closeData.shiftId) errors.push('Shift ID is required');
+    if (!closeData.recordedById) errors.push('Recorder ID is required');
+    if (!closeData.endTime) errors.push('End time is required');
+    if (!closeData.pumpReadings?.length) errors.push('At least one pump reading is required');
+    if (!closeData.tankReadings?.length) errors.push('At least one tank reading is required');
+    if (!closeData.islandCollections?.length) errors.push('At least one island collection is required');
     
     return {
       isValid: errors.length === 0,
@@ -596,6 +948,24 @@ class ShiftService {
     
     return statusMap[status] || { label: status, color: 'default', variant: 'default' };
   }
+
+  formatCurrency(amount, currency = 'USD') {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency
+    }).format(amount);
+  }
+
+  formatVolume(liters, unit = 'L') {
+    return `${new Intl.NumberFormat('en-US').format(liters)} ${unit}`;
+  }
+
+  // ==================== CONFIGURATION ====================
+
+  updateConfig(newConfig) {
+    this.config = { ...this.config, ...newConfig };
+    this.logger.info('Configuration updated:', this.config);
+  }
 }
 
 // Create singleton instance
@@ -603,18 +973,17 @@ export const shiftService = new ShiftService();
 
 // Export constants
 export const SHIFT_STATUS = {
-  DRAFT: 'DRAFT',
   OPEN: 'OPEN',
   CLOSED: 'CLOSED',
   UNDER_REVIEW: 'UNDER_REVIEW',
   APPROVED: 'APPROVED'
 };
 
-export const SHIFT_TYPES = {
-  REGULAR: 'REGULAR',
-  OVERTIME: 'OVERTIME',
-  HOLIDAY: 'HOLIDAY',
-  SPECIAL: 'SPECIAL'
+export const SHIFT_VISIBILITY = {
+  BY_ID: 'BY_ID',
+  BY_STATION: 'BY_STATION',
+  BY_COMPANY: 'BY_COMPANY',
+  ALL: 'ALL'
 };
 
 export const OPENING_CHECKS = {
@@ -626,11 +995,19 @@ export const OPENING_CHECKS = {
   HAS_ASSETS_CONNECTED: 'hasAssetsConnected'
 };
 
-export const SHIFT_READINESS = {
-  READY: 'READY',
-  NOT_READY: 'NOT_READY',
-  PARTIALLY_READY: 'PARTIALLY_READY',
-  UNAVAILABLE: 'UNAVAILABLE'
+export const RECONCILIATION_STATUS = {
+  PENDING: 'PENDING',
+  IN_PROGRESS: 'IN_PROGRESS',
+  COMPLETED: 'COMPLETED',
+  DISCREPANCY: 'DISCREPANCY'
+};
+
+export const COLLECTION_STATUS = {
+  PENDING: 'PENDING',
+  COUNTED: 'COUNTED',
+  VERIFIED: 'VERIFIED',
+  DISCREPANCY: 'DISCREPANCY',
+  RESOLVED: 'RESOLVED'
 };
 
 export default shiftService;

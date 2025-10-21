@@ -3,7 +3,143 @@ import { Button, Card, Table, Badge, Alert, Tab } from '../../../ui';
 import { useApp } from '../../../../context/AppContext';
 import { assetService } from '../../../../services/assetService/assetService';
 import { assetConnectionService } from '../../../../services/assetConnection/assetConnectionService';
-import { Fuel, Zap, Package, Link, Unlink, Warehouse } from 'lucide-react';
+import { Fuel, Zap, Package, Link, Unlink, Warehouse, Edit } from 'lucide-react';
+
+// Edit Asset Modal Component
+const EditAssetModal = ({ asset, onSave, onClose, userRole }) => {
+  const [formData, setFormData] = useState({
+    name: asset.name || '',
+    stationLabel: asset.stationLabel || '',
+    status: asset.status || 'REGISTERED'
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // Determine which fields the user can edit based on role
+  const canEditName = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'LINES_MANAGER'].includes(userRole);
+  const canEditStatus = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'LINES_MANAGER'].includes(userRole);
+  const canEditStationLabel = asset.stationId && ['SUPER_ADMIN', 'COMPANY_ADMIN', 'LINES_MANAGER', 'STATION_MANAGER', 'SUPERVISOR'].includes(userRole);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      // Prepare update data based on permissions
+      const updateData = {};
+      
+      if (canEditName) updateData.name = formData.name;
+      if (canEditStatus) updateData.status = formData.status;
+      if (canEditStationLabel) updateData.stationLabel = formData.stationLabel;
+
+      await onSave(asset.id, updateData);
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg w-full max-w-md">
+        <div className="p-6">
+          <h2 className="text-xl font-bold mb-4">Edit Asset</h2>
+          {error && (
+            <Alert variant="error" className="mb-4">
+              {error}
+            </Alert>
+          )}
+          
+          <form onSubmit={handleSubmit}>
+            {canEditName && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Asset Name
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+            )}
+
+            {canEditStationLabel && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Station Label
+                  <span className="text-xs text-gray-500 ml-2">
+                    (Local name for this station)
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.stationLabel}
+                  onChange={(e) => setFormData(prev => ({ ...prev, stationLabel: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder={`e.g., ${asset.name}#shell@${asset.station?.name?.toLowerCase()}`}
+                  maxLength={100}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  This label will be used within this station only
+                </p>
+              </div>
+            )}
+
+            {!canEditStationLabel && asset.stationId && (
+              <div className="mb-4 p-3 bg-yellow-50 rounded-md">
+                <p className="text-sm text-yellow-800">
+                  Station label can only be edited when asset is assigned to a station
+                </p>
+              </div>
+            )}
+
+            {canEditStatus && (
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="REGISTERED">Registered</option>
+                  <option value="ASSIGNED">Assigned</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="INACTIVE">Inactive</option>
+                  <option value="MAINTENANCE">Maintenance</option>
+                </select>
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                disabled={loading}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={loading}
+              >
+                {loading ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const StationAssetManagement = () => {
   const { state, dispatch } = useApp();
@@ -21,8 +157,8 @@ const StationAssetManagement = () => {
     pumps: []
   });
   const [userInfo, setUserInfo] = useState(null);
-
-  //console.log("state asset state ",state)
+  const [editingAsset, setEditingAsset] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   // Load assets and connections
   const loadAssetsAndConnections = useCallback(async (currentUser) => {
@@ -47,7 +183,6 @@ const StationAssetManagement = () => {
         currentUser?.user?.role === "SUPERVISOR"
       ) {
         assetsData = await assetService.getStationAssets(stationId);
-       // console.log("stations assets be ",assetsData)
       } else {
         assetsData = await assetService.getAssets();
       }
@@ -61,16 +196,10 @@ const StationAssetManagement = () => {
         try {
           const topologyData = await assetConnectionService.getStationTopology(stationId);
           const processedTopology = assetConnectionService.processTopologyData(topologyData);
-
-           console.log("topography data ", topologyData);
-          // console.log("processed Topography ",processedTopology);
           setTopology(processedTopology);
           setConnections(processedTopology?.connections || []);
-          
-        
         } catch (topologyError) {
           console.warn("Could not load topology data:", topologyError.message);
-          // Continue without topology data
         }
       }
 
@@ -110,6 +239,126 @@ const StationAssetManagement = () => {
     }
   }, [userInfo, loadAssetsAndConnections]);
 
+  // Handle updating asset
+  const handleUpdateAsset = async (assetId, updateData) => {
+    try {
+      await assetService.updateAsset(assetId, updateData);
+      await refreshData();
+      console.log('✅ Asset updated successfully');
+    } catch (error) {
+      console.error('❌ Failed to update asset:', error);
+      throw new Error(error.message || 'Failed to update asset');
+    }
+  };
+
+  // Handle attaching assets to station
+  const handleAttachAsset = async (assetId, assetType) => {
+    try {
+      await assetService.assignToStation(assetId, userInfo.station?.id);
+      await refreshData();
+      console.log(`✅ Asset ${assetId} attached to station successfully`);
+    } catch (error) {
+      console.error("❌ Failed to attach asset to station:", error);
+      setError(error.message || "Failed to attach asset to station");
+    }
+  };
+  
+  // Handle detaching assets from station
+  const handleDetachAsset = async (assetId, assetType) => {
+    try {
+      await assetService.removeFromStation(assetId);
+      await refreshData();
+      console.log(`✅ Asset ${assetId} detached from station successfully`);
+    } catch (error) {
+      console.error("❌ Failed to detach asset from station:", error);
+      setError(error.message || "Failed to detach asset from station");
+    }
+  };
+
+  // Handle creating TANK_TO_PUMP connection
+  const handleCreateTankToPumpConnection = async () => {
+    if (!selectedTank || selectedPumps.length === 0) return;
+
+    try {
+      setError('');
+      
+      const connectionPromises = selectedPumps.map(pumpId => 
+        assetConnectionService.createConnection({
+          type: 'TANK_TO_PUMP',
+          assetAId: selectedTank,
+          assetBId: pumpId,
+          stationId: userInfo.station?.id
+        })
+      );
+
+      await Promise.all(connectionPromises);
+      await refreshData();
+      
+      setSelectedTank(null);
+      setSelectedPumps([]);
+      
+      console.log('✅ Tank to pump connections created successfully');
+    } catch (error) {
+      console.error('❌ Failed to create tank-pump connections:', error);
+      setError(error.message || 'Failed to create connections');
+    }
+  };
+
+  // Handle creating ISLAND connections
+  const handleCreateIslandConnections = async () => {
+    if (!selectedIsland || (assetsForIsland.tanks.length === 0 && assetsForIsland.pumps.length === 0)) return;
+
+    try {
+      setError('');
+      const connectionPromises = [];
+
+      assetsForIsland.tanks.forEach(tankId => {
+        connectionPromises.push(
+          assetConnectionService.createConnection({
+            type: 'TANK_TO_ISLAND',
+            assetAId: tankId,
+            assetBId: selectedIsland,
+            stationId: userInfo.station?.id
+          })
+        );
+      });
+
+      assetsForIsland.pumps.forEach(pumpId => {
+        connectionPromises.push(
+          assetConnectionService.createConnection({
+            type: 'PUMP_TO_ISLAND',
+            assetAId: pumpId,
+            assetBId: selectedIsland,
+            stationId: userInfo.station?.id
+          })
+        );
+      });
+
+      await Promise.all(connectionPromises);
+      await refreshData();
+      
+      setSelectedIsland(null);
+      setAssetsForIsland({ tanks: [], pumps: [] });
+      
+      console.log('✅ Island connections created successfully');
+    } catch (error) {
+      console.error('❌ Failed to create island connections:', error);
+      setError(error.message || 'Failed to create connections');
+    }
+  };
+
+  // Handle deleting a connection
+  const handleDeleteConnection = async (connectionId) => {
+    try {
+      await assetConnectionService.deleteConnection(connectionId);
+      await refreshData();
+      console.log('✅ Connection deleted successfully');
+    } catch (error) {
+      console.error('❌ Failed to delete connection:', error);
+      setError(error.message || 'Failed to delete connection');
+    }
+  };
+
   if (!userInfo) {
     return (
       <div className="p-6">
@@ -141,8 +390,6 @@ const StationAssetManagement = () => {
   const stationIslands = assets.filter(asset => 
     asset.type === 'ISLAND' && asset.stationId === userStationId
   );
-
-  console.log("station islands ", stationIslands);
   
   const stationWarehouses = assets.filter(asset => 
     asset.type === 'WAREHOUSE' && asset.stationId === userStationId
@@ -172,15 +419,12 @@ const StationAssetManagement = () => {
     const connectedAssetIds = new Set();
     connections.forEach(connection => {
       if (connection.type === connectionType) {
-        // For TANK_TO_PUMP: assetA is tank, assetB is pump
-        // For TANK_TO_ISLAND: assetA is tank, assetB is island  
-        // For PUMP_TO_ISLAND: assetA is pump, assetB is island
         if (connectionType === 'TANK_TO_PUMP') {
-          connectedAssetIds.add(connection.assetB.id); // Pump ID
+          connectedAssetIds.add(connection.assetB.id);
         } else if (connectionType === 'TANK_TO_ISLAND') {
-          connectedAssetIds.add(connection.assetA.id); // Tank ID
+          connectedAssetIds.add(connection.assetA.id);
         } else if (connectionType === 'PUMP_TO_ISLAND') {
-          connectedAssetIds.add(connection.assetA.id); // Pump ID
+          connectedAssetIds.add(connection.assetA.id);
         }
       }
     });
@@ -207,120 +451,21 @@ const StationAssetManagement = () => {
     !tanksConnectedToIslands.has(tank.id)
   );
 
-  // Handle attaching assets to station
-  const handleAttachAsset = async (assetId, assetType) => {
-    try {
-      const response = await assetService.assignToStation(assetId, userStationId);
-      await refreshData();
-      console.log(`✅ Asset ${assetId} attached to station successfully`);
-    } catch (error) {
-      console.error("❌ Failed to attach asset to station:", error);
-      setError(error.message || "Failed to attach asset to station");
-    }
-  };
-  
-  // Handle detaching assets from station
-  const handleDetachAsset = async (assetId, assetType) => {
-    try {
-      const response = await assetService.removeFromStation(assetId);
-      await refreshData();
-      console.log(`✅ Asset ${assetId} detached from station successfully`);
-    } catch (error) {
-      console.error("❌ Failed to detach asset from station:", error);
-      setError(error.message || "Failed to detach asset from station");
-    }
-  };
-
-  // Handle creating TANK_TO_PUMP connection
-  const handleCreateTankToPumpConnection = async () => {
-    if (!selectedTank || selectedPumps.length === 0) return;
-
-    try {
-      setError('');
-      
-      // Create connections for each selected pump
-      const connectionPromises = selectedPumps.map(pumpId => 
-        assetConnectionService.createConnection({
-          type: 'TANK_TO_PUMP',
-          assetAId: selectedTank,
-          assetBId: pumpId,
-          stationId: userStationId
-        })
-      );
-
-      await Promise.all(connectionPromises);
-      await refreshData();
-      
-      setSelectedTank(null);
-      setSelectedPumps([]);
-      
-      console.log('✅ Tank to pump connections created successfully');
-    } catch (error) {
-      console.error('❌ Failed to create tank-pump connections:', error);
-      setError(error.message || 'Failed to create connections');
-    }
-  };
-
-  // Handle creating ISLAND connections
-  const handleCreateIslandConnections = async () => {
-    if (!selectedIsland || (assetsForIsland.tanks.length === 0 && assetsForIsland.pumps.length === 0)) return;
-
-    try {
-      setError('');
-      const connectionPromises = [];
-
-      // Create TANK_TO_ISLAND connections
-      assetsForIsland.tanks.forEach(tankId => {
-        connectionPromises.push(
-          assetConnectionService.createConnection({
-            type: 'TANK_TO_ISLAND',
-            assetAId: tankId,
-            assetBId: selectedIsland,
-            stationId: userStationId
-          })
-        );
-      });
-
-      // Create PUMP_TO_ISLAND connections
-      assetsForIsland.pumps.forEach(pumpId => {
-        connectionPromises.push(
-          assetConnectionService.createConnection({
-            type: 'PUMP_TO_ISLAND',
-            assetAId: pumpId,
-            assetBId: selectedIsland,
-            stationId: userStationId
-          })
-        );
-      });
-
-      await Promise.all(connectionPromises);
-      await refreshData();
-      
-      setSelectedIsland(null);
-      setAssetsForIsland({ tanks: [], pumps: [] });
-      
-      console.log('✅ Island connections created successfully');
-    } catch (error) {
-      console.error('❌ Failed to create island connections:', error);
-      setError(error.message || 'Failed to create connections');
-    }
-  };
-
-  // Handle deleting a connection
-  const handleDeleteConnection = async (connectionId) => {
-    try {
-      await assetConnectionService.deleteConnection(connectionId);
-      await refreshData();
-      console.log('✅ Connection deleted successfully');
-    } catch (error) {
-      console.error('❌ Failed to delete connection:', error);
-      setError(error.message || 'Failed to delete connection');
-    }
-  };
-
   // Enhanced pump columns
   const pumpColumns = [
     { header: 'Name', accessor: 'name' },
+    { 
+      header: 'Station Label', 
+      render: (_, pump) => (
+        <div className="flex items-center">
+          {pump.stationLabel ? (
+            <span className="font-medium text-blue-600">{pump.stationLabel}</span>
+          ) : (
+            <span className="text-gray-500 italic">Not set</span>
+          )}
+        </div>
+      )
+    },
     { header: 'Tank Attachment', 
       render: (_, pump) => {
         const tankConnection = connections ? 
@@ -373,15 +518,28 @@ const StationAssetManagement = () => {
         }
       }
     },
-    { header: 'Actions', 
+    { 
+      header: 'Actions', 
       render: (_, pump) => (
-        <Button 
-          variant="destructive" 
-          size="sm"
-          onClick={() => handleDetachAsset(pump.id, 'pumps')}
-        >
-          <Unlink size={16} className="mr-1" /> Detach
-        </Button>
+        <div className="flex space-x-2">
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => {
+              setEditingAsset(pump);
+              setShowEditModal(true);
+            }}
+          >
+            <Edit size={14} className="mr-1" /> Edit
+          </Button>
+          <Button 
+            variant="destructive" 
+            size="sm"
+            onClick={() => handleDetachAsset(pump.id, 'pumps')}
+          >
+            <Unlink size={14} className="mr-1" /> Detach
+          </Button>
+        </div>
       )
     }
   ];
@@ -389,6 +547,18 @@ const StationAssetManagement = () => {
   // Enhanced tank columns
   const tankColumns = [
     { header: 'Name', accessor: 'name' },
+    { 
+      header: 'Station Label', 
+      render: (_, tank) => (
+        <div className="flex items-center">
+          {tank.stationLabel ? (
+            <span className="font-medium text-blue-600">{tank.stationLabel}</span>
+          ) : (
+            <span className="text-gray-500 italic">Not set</span>
+          )}
+        </div>
+      )
+    },
     { header: 'Pumps Attached', 
       render: (_, tank) => {
         const pumpConnections = connections ? 
@@ -434,15 +604,28 @@ const StationAssetManagement = () => {
     { header: 'Capacity', 
       render: (_, tank) => tank.tank?.capacity ? `${tank.tank.capacity}L` : 'N/A'
     },
-    { header: 'Actions', 
+    { 
+      header: 'Actions', 
       render: (_, tank) => (
-        <Button 
-          variant="destructive" 
-          size="sm"
-          onClick={() => handleDetachAsset(tank.id, 'tanks')}
-        >
-          <Unlink size={16} className="mr-1" /> Detach
-        </Button>
+        <div className="flex space-x-2">
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => {
+              setEditingAsset(tank);
+              setShowEditModal(true);
+            }}
+          >
+            <Edit size={14} className="mr-1" /> Edit
+          </Button>
+          <Button 
+            variant="destructive" 
+            size="sm"
+            onClick={() => handleDetachAsset(tank.id, 'tanks')}
+          >
+            <Unlink size={14} className="mr-1" /> Detach
+          </Button>
+        </div>
       )
     }
   ];
@@ -450,6 +633,18 @@ const StationAssetManagement = () => {
   // Enhanced island columns
   const islandColumns = [
     { header: 'Name', accessor: 'name' },
+    { 
+      header: 'Station Label', 
+      render: (_, island) => (
+        <div className="flex items-center">
+          {island.stationLabel ? (
+            <span className="font-medium text-blue-600">{island.stationLabel}</span>
+          ) : (
+            <span className="text-gray-500 italic">Not set</span>
+          )}
+        </div>
+      )
+    },
     { header: 'Tanks Attached', 
       render: (_, island) => {
         const tankConnections = connections ? 
@@ -494,15 +689,28 @@ const StationAssetManagement = () => {
         );
       }
     },
-    { header: 'Actions', 
+    { 
+      header: 'Actions', 
       render: (_, island) => (
-        <Button 
-          variant="destructive" 
-          size="sm"
-          onClick={() => handleDetachAsset(island.id, 'islands')}
-        >
-          <Unlink size={16} className="mr-1" /> Detach
-        </Button>
+        <div className="flex space-x-2">
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => {
+              setEditingAsset(island);
+              setShowEditModal(true);
+            }}
+          >
+            <Edit size={14} className="mr-1" /> Edit
+          </Button>
+          <Button 
+            variant="destructive" 
+            size="sm"
+            onClick={() => handleDetachAsset(island.id, 'islands')}
+          >
+            <Unlink size={14} className="mr-1" /> Detach
+          </Button>
+        </div>
       )
     }
   ];
@@ -510,15 +718,40 @@ const StationAssetManagement = () => {
   // Warehouse columns
   const warehouseColumns = [
     { header: 'Name', accessor: 'name' },
-    { header: 'Actions', 
+    { 
+      header: 'Station Label', 
       render: (_, warehouse) => (
-        <Button 
-          variant="destructive" 
-          size="sm"
-          onClick={() => handleDetachAsset(warehouse.id, 'warehouses')}
-        >
-          <Unlink size={16} className="mr-1" /> Detach
-        </Button>
+        <div className="flex items-center">
+          {warehouse.stationLabel ? (
+            <span className="font-medium text-blue-600">{warehouse.stationLabel}</span>
+          ) : (
+            <span className="text-gray-500 italic">Not set</span>
+          )}
+        </div>
+      )
+    },
+    { 
+      header: 'Actions', 
+      render: (_, warehouse) => (
+        <div className="flex space-x-2">
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => {
+              setEditingAsset(warehouse);
+              setShowEditModal(true);
+            }}
+          >
+            <Edit size={14} className="mr-1" /> Edit
+          </Button>
+          <Button 
+            variant="destructive" 
+            size="sm"
+            onClick={() => handleDetachAsset(warehouse.id, 'warehouses')}
+          >
+            <Unlink size={14} className="mr-1" /> Detach
+          </Button>
+        </div>
       )
     }
   ];
@@ -739,7 +972,7 @@ const StationAssetManagement = () => {
               <div>
                 <h3 className="font-medium mb-3">Select Tank</h3>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {stationTanks.map(tank => ( // Show ALL station tanks for pump connection
+                  {stationTanks.map(tank => (
                     <div
                       key={tank.id}
                       className={`p-3 rounded-lg cursor-pointer ${
@@ -950,6 +1183,19 @@ const StationAssetManagement = () => {
           </Card>
         </div>
       </TabPanel>
+
+      {/* Edit Asset Modal */}
+      {showEditModal && editingAsset && (
+        <EditAssetModal
+          asset={editingAsset}
+          onSave={handleUpdateAsset}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditingAsset(null);
+          }}
+          userRole={userInfo?.user?.role}
+        />
+      )}
     </div>
   );
 };

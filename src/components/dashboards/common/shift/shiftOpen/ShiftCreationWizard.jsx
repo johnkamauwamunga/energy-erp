@@ -6,6 +6,7 @@ import ShiftBasicsStep from './ShiftBasicsStep';
 import PersonnelStep from './PersonnelStep';
 import AssetsConfigurationStep from './AssetsConfigurationStep';
 import SummaryStep from './SummaryStep';
+import {shiftService} from '../../../../../services/shiftService/shiftService'
 
 const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -100,6 +101,8 @@ const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
     
     try {
       // Step 1: Create basic shift using mock service
+      const currentShift=localStorage.getItem("currentShiftId");
+
       const createPayload = {
         stationId: shiftData.stationId,
         supervisorId: shiftData.supervisorId,
@@ -113,22 +116,40 @@ const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
 
       // Step 2: Open shift with readings and assignments
       const openPayload = {
-        shiftId: newShiftId,
+        shiftId: currentShift,
         recordedById: shiftData.supervisorId,
         islandAssignments: shiftData.islandAssignments,
         pumpReadings: shiftData.pumpReadings,
         tankReadings: shiftData.tankReadings
       };
 
-      await mockServices.shiftService.openShift(openPayload);
+      // await mockServices.shiftService.openShift(openPayload);
       
+      await shiftService.openShift(openPayload);
+
       onSuccess?.(newShiftId);
-      
+     
+      clearCache();
+    
     } catch (error) {
       setError(error.message || 'Failed to create shift');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const clearCache = () => {
+    // Clear localStorage after successful creation
+    setTimeout(() => {
+      localStorage.removeItem('currentShiftId');
+      localStorage.removeItem('currentShiftAttendants');
+      localStorage.removeItem('currentShiftNumber');
+      localStorage.removeItem('currentShiftStartTime');
+      localStorage.removeItem('currentShiftStation');
+      localStorage.removeItem('shiftConfigurationData');
+    }, 2000);
+
+    console.log(`storage cleaned`);
   };
 
   const renderStepContent = () => {

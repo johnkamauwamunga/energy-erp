@@ -396,7 +396,7 @@ export const userService = {
         : `/user-assignments/station/${stationId}/users`;
       
       const response = await apiService.get(url);
-      console.log('✅ [STATION USERS] Station users fetched successfully:', { 
+      console.log('✅ [Current STATION USERS] Station users fetched successfully:', { 
         stationId,
         count: response.data.data?.length
       });
