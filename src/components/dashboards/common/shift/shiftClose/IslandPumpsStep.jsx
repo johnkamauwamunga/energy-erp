@@ -1,7 +1,7 @@
 // components/IslandPumpsStep.js
 import React, { useState } from 'react';
 import { Card, Tabs, Tab, Input, Badge, Alert, Button } from '../../../../ui';
-import { Zap, Calculator, CheckCircle, ChevronRight, Fuel } from 'lucide-react';
+import { Zap, Calculator, CheckCircle, ChevronRight, Fuel, Lock, Droplets, AlertTriangle } from 'lucide-react';
 
 const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, closingData, onChange }) => {
     const [activeIslandTab, setActiveIslandTab] = useState('');
@@ -14,7 +14,14 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
     console.log("pumpsWithIslandInfo:", pumpsWithIslandInfo);
     console.log("expectedCollectionsByIsland:", expectedCollectionsByIsland);
 
-    // Group pumps by island
+    // Helper function to check if product has valid pricing
+    const hasValidPricing = (pump) => {
+        return pump.productPriceInfo?.unitPrice && 
+               pump.productPriceInfo.unitPrice !== 100.00 && 
+               pump.productPriceInfo.priceStatus !== 'unknown';
+    };
+
+    // Group pumps by island - ENHANCED WITH DYNAMIC PRICING
     const pumpsByIsland = React.useMemo(() => {
         const grouped = {};
         
@@ -37,7 +44,10 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
                 ...pump,
                 closingReading: pumpReadings?.find(pr => pr.pumpId === pump.pumpId) || {},
                 isCompleted: pumpReadings?.some(pr => pr.pumpId === pump.pumpId && pr.electricMeter > 0),
-                expectedData: pumpExpectedData
+                expectedData: pumpExpectedData,
+                // DYNAMIC PRICING: Use the productPriceInfo from the enhanced hook
+                dynamicUnitPrice: pump.productPriceInfo?.unitPrice || 100.00,
+                hasValidPricing: hasValidPricing(pump)
             });
         });
         
@@ -58,7 +68,7 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
         }
     }, [pumpsByIsland, activeIslandTab, selectedPumpId]);
 
-    // Calculate expected collections for each island based on actual closing readings
+    // Calculate expected collections for each island based on actual closing readings - ENHANCED WITH DYNAMIC PRICING
     const calculateIslandCollections = React.useMemo(() => {
         const collections = {};
         
@@ -79,7 +89,9 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
                     const electricSales = closingElectric - openingElectric;
                     const manualSales = closingManual - openingManual;
                     const averageSales = (electricSales + manualSales) / 2;
-                    const unitPrice = closingReading.unitPrice || 100.00;
+                    
+                    // USE DYNAMIC PRICING or user input
+                    const unitPrice = closingReading.unitPrice || pump.dynamicUnitPrice || 100.00;
                     const expectedCollection = averageSales * unitPrice;
                     
                     islandTotal += expectedCollection;
@@ -87,7 +99,8 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
                     pumpCollections.push({
                         pumpId: pump.pumpId,
                         pumpName: pump.pumpName,
-                        expectedCollection: Math.round(expectedCollection * 100) / 100
+                        expectedCollection: Math.round(expectedCollection * 100) / 100,
+                        unitPrice: unitPrice // Include dynamic unit price
                     });
                 }
             });
@@ -112,6 +125,7 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
         }
     }, [calculateIslandCollections, onChange]);
 
+    // UPDATED: Handle pump reading update with dynamic pricing and user input for missing prices
     const handlePumpReadingUpdate = (pumpId, field, value) => {
         const numericValue = parseFloat(value) || 0;
         
@@ -129,6 +143,9 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
             const pump = pumpsWithIslandInfo.find(p => p.pumpId === pumpId);
             const startReading = pump?.meterReadings?.find(r => r.readingType === 'START');
             
+            // USE DYNAMIC PRICING or fallback to 100.00
+            const unitPrice = pump?.productPriceInfo?.unitPrice || 100.00;
+            
             updatedReadings = [
                 ...pumpReadings,
                 {
@@ -138,9 +155,10 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
                     electricMeter: field === 'electricMeter' ? numericValue : 0,
                     manualMeter: field === 'manualMeter' ? numericValue : 0,
                     cashMeter: field === 'cashMeter' ? numericValue : 0,
-                    unitPrice: 100.00,
+                    unitPrice: unitPrice, // DYNAMIC PRICING or fallback
                     litersDispensed: 0,
-                    salesValue: 0
+                    salesValue: 0,
+                    hasValidPricing: pump?.hasValidPricing || false
                 }
             ];
         }
@@ -155,7 +173,7 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
                 
                 if (startReading && reading.electricMeter > 0) {
                     const litersDispensed = Math.max(0, reading.electricMeter - startReading.electricMeter);
-                    const salesValue = litersDispensed * (reading.unitPrice || 100.00);
+                    const salesValue = litersDispensed * reading.unitPrice;
                     
                     updatedReadings[readingIndex] = {
                         ...reading,
@@ -246,6 +264,7 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
     const selectedPump = getSelectedPump();
     const startReading = selectedPump?.meterReadings?.find(r => r.readingType === 'START');
     const closingReading = selectedPump?.closingReading || {};
+    const hasPricing = selectedPump?.hasValidPricing;
 
     return (
         <div className="space-y-4">
@@ -350,6 +369,12 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
                                                         Expected: KES {pump.expectedData.expectedCollection?.toFixed(0) || '0'}
                                                     </p>
                                                 )}
+                                                {!pump.hasValidPricing && (
+                                                    <div className="flex items-center gap-1 mt-1">
+                                                        <AlertTriangle className="w-3 h-3 text-yellow-500" />
+                                                        <span className="text-xs text-yellow-600">Price required</span>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2">
@@ -377,6 +402,12 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
                                     <p className="text-gray-600 text-sm">
                                         {selectedPump.islandName} • {selectedPump.product?.name || 'Diesel'}
                                     </p>
+                                    {selectedPump.connectedTank && (
+                                        <p className="text-gray-500 text-xs flex items-center gap-1 mt-1">
+                                            <Droplets className="w-3 h-3" />
+                                            Connected to: {selectedPump.connectedTank.tankName}
+                                        </p>
+                                    )}
                                 </div>
                                 <Badge 
                                     variant={selectedPump.isCompleted ? "success" : "warning"} 
@@ -384,6 +415,47 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
                                 >
                                     {selectedPump.isCompleted ? "Completed" : "Pending"}
                                 </Badge>
+                            </div>
+
+                            {/* Product Pricing Information */}
+                            <div className={`p-4 rounded-lg border mb-4 ${
+                                hasPricing ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
+                            }`}>
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h4 className={`font-semibold text-sm mb-2 ${
+                                            hasPricing ? 'text-green-800' : 'text-yellow-800'
+                                        }`}>
+                                            PRODUCT PRICING
+                                        </h4>
+                                        <p className={`text-sm ${
+                                            hasPricing ? 'text-green-700' : 'text-yellow-700'
+                                        }`}>
+                                            {selectedPump.product?.name || 'Unknown Product'} 
+                                            {selectedPump.productPriceInfo?.fuelCode && ` (${selectedPump.productPriceInfo.fuelCode})`}
+                                        </p>
+                                        {hasPricing ? (
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <Lock className="w-4 h-4 text-green-600" />
+                                                <p className="text-green-700 text-sm">
+                                                    System Price: KES {selectedPump.productPriceInfo?.unitPrice}
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <AlertTriangle className="w-4 h-4 text-yellow-600" />
+                                                <p className="text-yellow-700 text-sm">
+                                                    No system price set. Please enter unit price below.
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {hasPricing && (
+                                        <Badge variant="success" size="sm">
+                                            Auto-priced
+                                        </Badge>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Opening Readings Reference */}
@@ -414,20 +486,20 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
 
                             {/* Expected Collection Display */}
                             {selectedPump.expectedData && (
-                                <div className="bg-yellow-50 p-4 rounded-lg mb-4 border border-yellow-200">
-                                    <h4 className="font-semibold text-sm mb-2 text-yellow-800">EXPECTED COLLECTION</h4>
+                                <div className="bg-blue-50 p-4 rounded-lg mb-4 border border-blue-200">
+                                    <h4 className="font-semibold text-sm mb-2 text-blue-800">EXPECTED COLLECTION</h4>
                                     <div className="flex items-center justify-between">
                                         <div>
-                                            <p className="text-yellow-700 text-sm">
+                                            <p className="text-blue-700 text-sm">
                                                 Based on formula: (Electric + Manual Sales) ÷ 2 × Unit Price
                                             </p>
-                                            <p className="text-yellow-700 text-sm">
+                                            <p className="text-blue-700 text-sm">
                                                 Unit Price: KES {selectedPump.expectedData.unitPrice || 100.00}
                                             </p>
                                         </div>
                                         <div className="text-right">
-                                            <p className="text-xs text-yellow-600">Expected</p>
-                                            <p className="text-xl font-bold text-yellow-800">
+                                            <p className="text-xs text-blue-600">Expected</p>
+                                            <p className="text-xl font-bold text-blue-800">
                                                 KES {selectedPump.expectedData.expectedCollection?.toFixed(0) || '0'}
                                             </p>
                                         </div>
@@ -478,20 +550,55 @@ const IslandPumpsStep = ({ pumpsWithIslandInfo, expectedCollectionsByIsland, clo
                                     />
                                 </div>
 
-                                {/* Unit Price */}
-                                <div className="max-w-xs">
-                                    <Input
-                                        label="Unit Price (KES)"
-                                        type="number"
-                                        step="0.01"
-                                        value={closingReading.unitPrice || 100.00}
-                                        onChange={(e) => 
-                                            handlePumpReadingUpdate(selectedPump.pumpId, 'unitPrice', e.target.value)
-                                        }
-                                        placeholder="100.00"
-                                        min="0"
-                                    />
-                                </div>
+                                {/* Conditional Unit Price Input */}
+                                {hasPricing ? (
+                                    // Display-only for products with valid pricing
+                                    <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-green-700 font-medium text-sm">Unit Price</p>
+                                                <p className="text-green-600 text-sm">
+                                                    System price applied automatically
+                                                </p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-green-700 text-sm">KES</p>
+                                                <p className="text-xl font-bold text-green-900">
+                                                    {selectedPump.productPriceInfo?.unitPrice}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-2">
+                                            <Lock className="w-4 h-4 text-green-600" />
+                                            <p className="text-green-700 text-xs">
+                                                Price is set by system and cannot be changed
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    // Editable input for products without pricing
+                                    <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <AlertTriangle className="w-4 h-4 text-yellow-600" />
+                                            <p className="text-yellow-700 font-medium text-sm">
+                                                Manual Unit Price Required
+                                            </p>
+                                        </div>
+                                        <Input
+                                            label="Unit Price (KES)"
+                                            type="number"
+                                            step="0.01"
+                                            value={closingReading.unitPrice || ''}
+                                            onChange={(e) => 
+                                                handlePumpReadingUpdate(selectedPump.pumpId, 'unitPrice', e.target.value)
+                                            }
+                                            placeholder="Enter unit price"
+                                            required
+                                            min="0"
+                                            helperText="This product has no system price. Please enter the current selling price."
+                                        />
+                                    </div>
+                                )}
 
                                 {/* Calculated Values */}
                                 {(closingReading.litersDispensed > 0 || closingReading.salesValue > 0) && (

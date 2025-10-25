@@ -1,3 +1,4 @@
+// src/services/purchaseService/purchaseService.js
 import { apiService } from '../apiService';
 
 // Enhanced logging utility
@@ -44,6 +45,7 @@ const handleError = (error, operation, defaultMessage) => {
     
     if (status === 401) {
       localStorage.removeItem('accessToken');
+      localStorage.removeItem('user');
       window.location.href = '/login';
       throw new Error('Authentication failed. Please login again.');
     }
@@ -103,9 +105,16 @@ export const purchaseService = {
     
     try {
       const params = new URLSearchParams();
+      
+      // Handle array filters (like multiple statuses)
       Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          params.append(key, filters[key]);
+        const value = filters[key];
+        if (value !== undefined && value !== null && value !== '') {
+          if (Array.isArray(value)) {
+            value.forEach(item => params.append(key, item));
+          } else {
+            params.append(key, value);
+          }
         }
       });
       
@@ -132,6 +141,32 @@ export const purchaseService = {
     }
   },
 
+  getPurchaseByNumber: async (purchaseNumber) => {
+    logger.info(`Fetching purchase by number: ${purchaseNumber}`);
+    
+    try {
+      debugRequest('GET', `/purchases/number/${purchaseNumber}`);
+      const response = await apiService.get(`/purchases/number/${purchaseNumber}`);
+      debugResponse('GET', `/purchases/number/${purchaseNumber}`, response);
+      return handleResponse(response, 'fetching purchase by number');
+    } catch (error) {
+      throw handleError(error, 'fetching purchase by number', 'Failed to fetch purchase');
+    }
+  },
+
+  updatePurchase: async (purchaseId, updateData) => {
+    logger.info(`Updating purchase: ${purchaseId}`, updateData);
+    
+    try {
+      debugRequest('PATCH', `/purchases/${purchaseId}`, updateData);
+      const response = await apiService.patch(`/purchases/${purchaseId}`, updateData);
+      debugResponse('PATCH', `/purchases/${purchaseId}`, response);
+      return handleResponse(response, 'updating purchase');
+    } catch (error) {
+      throw handleError(error, 'updating purchase', 'Failed to update purchase');
+    }
+  },
+
   updatePurchaseStatus: async (purchaseId, status) => {
     logger.info(`Updating purchase status: ${purchaseId} to ${status}`);
     
@@ -142,6 +177,19 @@ export const purchaseService = {
       return handleResponse(response, 'updating purchase status');
     } catch (error) {
       throw handleError(error, 'updating purchase status', 'Failed to update purchase status');
+    }
+  },
+
+  bulkUpdatePurchaseStatus: async (purchaseIds, status) => {
+    logger.info(`Bulk updating purchase status for ${purchaseIds.length} purchases to ${status}`);
+    
+    try {
+      debugRequest('PATCH', '/purchases/bulk/status', { purchaseIds, status });
+      const response = await apiService.patch('/purchases/bulk/status', { purchaseIds, status });
+      debugResponse('PATCH', '/purchases/bulk/status', response);
+      return handleResponse(response, 'bulk updating purchase status');
+    } catch (error) {
+      throw handleError(error, 'bulk updating purchase status', 'Failed to bulk update purchase status');
     }
   },
 
@@ -172,6 +220,24 @@ export const purchaseService = {
   },
 
   // =====================
+  // SUPPLIER METHODS
+  // =====================
+
+  getSuppliers: async (activeOnly = true) => {
+    logger.info(`Fetching suppliers, activeOnly: ${activeOnly}`);
+    
+    try {
+      const url = `/purchases/suppliers?activeOnly=${activeOnly}`;
+      debugRequest('GET', url);
+      const response = await apiService.get(url);
+      debugResponse('GET', url, response);
+      return handleResponse(response, 'fetching suppliers');
+    } catch (error) {
+      throw handleError(error, 'fetching suppliers', 'Failed to fetch suppliers');
+    }
+  },
+
+  // =====================
   // PURCHASE ANALYTICS & REPORTING
   // =====================
 
@@ -186,7 +252,7 @@ export const purchaseService = {
         }
       });
       
-      const url = params.toString() ? `/purchases/analytics/summary?${params.toString()}` : '/purchases/analytics/summary';
+      const url = params.toString() ? `/purchases/analytics?${params.toString()}` : '/purchases/analytics';
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
@@ -196,16 +262,36 @@ export const purchaseService = {
     }
   },
 
-  getPurchaseStats: async (period = 'monthly') => {
-    logger.info(`Fetching purchase stats for period: ${period}`);
+  exportPurchases: async (filters = {}, format = 'csv') => {
+    logger.info(`Exporting purchases in ${format} format with filters:`, filters);
     
     try {
-      debugRequest('GET', `/purchases/stats?period=${period}`);
-      const response = await apiService.get(`/purchases/stats?period=${period}`);
-      debugResponse('GET', `/purchases/stats?period=${period}`, response);
-      return handleResponse(response, 'fetching purchase stats');
+      const params = new URLSearchParams();
+      Object.keys(filters).forEach(key => {
+        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+          params.append(key, filters[key]);
+        }
+      });
+      
+      const url = `/purchases/export?${params.toString()}&format=${format}`;
+      debugRequest('GET', url);
+      const response = await apiService.get(url, { responseType: 'blob' });
+      
+      // Handle file download
+      const blob = new Blob([response.data], { type: response.headers['content-type'] });
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.setAttribute('download', `purchases-${new Date().toISOString().split('T')[0]}.${format}`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      logger.debug('Export successful');
+      return { success: true, message: 'Export completed successfully' };
     } catch (error) {
-      throw handleError(error, 'fetching purchase stats', 'Failed to fetch purchase statistics');
+      throw handleError(error, 'exporting purchases', 'Failed to export purchases');
     }
   },
 
@@ -246,20 +332,35 @@ export const purchaseService = {
           errors.push(`Item ${index + 1}: Valid unit cost is required`);
         }
         
-        // Fuel-specific validations
-        if (purchaseData.type === 'FUEL') {
-          if (!item.tankId) {
-            errors.push(`Item ${index + 1}: Tank is required for fuel purchases`);
-          }
-        }
-        
         // Non-fuel specific validations
         if (purchaseData.type === 'NON_FUEL') {
           if (!purchaseData.warehouseId) {
             errors.push('Warehouse is required for non-fuel purchases');
           }
         }
+
+        // Tax rate validation
+        if (item.taxRate && (item.taxRate < 0 || item.taxRate > 1)) {
+          errors.push(`Item ${index + 1}: Tax rate must be between 0 and 1 (0% to 100%)`);
+        }
       });
+    }
+
+    // Date validations
+    if (purchaseData.expectedDate && purchaseData.purchaseDate) {
+      const purchaseDate = new Date(purchaseData.purchaseDate);
+      const expectedDate = new Date(purchaseData.expectedDate);
+      if (expectedDate < purchaseDate) {
+        errors.push('Expected date must be on or after purchase date');
+      }
+    }
+
+    if (purchaseData.expectedDeliveryDate && purchaseData.purchaseDate) {
+      const purchaseDate = new Date(purchaseData.purchaseDate);
+      const expectedDeliveryDate = new Date(purchaseData.expectedDeliveryDate);
+      if (expectedDeliveryDate < purchaseDate) {
+        errors.push('Expected delivery date must be on or after purchase date');
+      }
     }
 
     return errors;
@@ -268,7 +369,7 @@ export const purchaseService = {
   validatePurchaseStatusUpdate: (currentStatus, newStatus) => {
     const allowedTransitions = {
       'DRAFT': ['PENDING_APPROVAL', 'CANCELLED'],
-      'PENDING_APPROVAL': ['APPROVED', 'REJECTED'],
+      'PENDING_APPROVAL': ['APPROVED', 'REJECTED', 'ON_HOLD'],
       'APPROVED': ['ORDER_CONFIRMED', 'CANCELLED'],
       'ORDER_CONFIRMED': ['IN_TRANSIT', 'CANCELLED'],
       'IN_TRANSIT': ['ARRIVED_AT_SITE', 'CANCELLED'],
@@ -299,55 +400,138 @@ export const purchaseService = {
   formatPurchase: (purchase) => {
     if (!purchase) return null;
     
+    const grossAmount = purchase.grossAmount || 0;
+    const totalTaxAmount = purchase.totalTaxAmount || 0;
+    const discountAmount = purchase.discountAmount || 0;
+    const netPayable = purchase.netPayable || 0;
+    
     return {
       ...purchase,
       displayNumber: purchase.purchaseNumber,
       supplierName: purchase.supplier?.name,
       stationName: purchase.station?.name,
-      totalAmountDisplay: `$${purchase.totalAmount?.toLocaleString()}`,
-      statusBadge: purchase.status?.toLowerCase().replace('_', '-'),
-      deliveryStatusBadge: purchase.deliveryStatus?.toLowerCase().replace('_', '-'),
+      warehouseName: purchase.warehouse?.name,
+      
+      // Financial displays
+      grossAmountDisplay: `$${grossAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      totalTaxAmountDisplay: `$${totalTaxAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      discountAmountDisplay: `$${discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      netPayableDisplay: `$${netPayable.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      
+      statusBadge: purchase.status?.toLowerCase().replace(/_/g, '-'),
+      deliveryStatusBadge: purchase.deliveryStatus?.toLowerCase().replace(/_/g, '-'),
       itemCount: purchase.items?.length || 0,
       createdByName: purchase.createdBy ? `${purchase.createdBy.firstName} ${purchase.createdBy.lastName}` : 'N/A',
       isFuelPurchase: purchase.type === 'FUEL',
       isEditable: ['DRAFT', 'PENDING_APPROVAL'].includes(purchase.status),
-      isDeletable: purchase.status === 'DRAFT'
+      isDeletable: purchase.status === 'DRAFT',
+      
+      // Progress indicators
+      receivedPercentage: purchaseService.calculatePurchaseReceivedPercentage(purchase),
+      isFullyReceived: purchaseService.isPurchaseFullyReceived(purchase),
+      
+      // Quick status checks
+      isDraft: purchase.status === 'DRAFT',
+      isPendingApproval: purchase.status === 'PENDING_APPROVAL',
+      isApproved: purchase.status === 'APPROVED',
+      isCompleted: purchase.status === 'COMPLETED',
+      isCancelled: purchase.status === 'CANCELLED'
     };
   },
 
   formatPurchaseItem: (item) => {
     if (!item) return null;
     
+    const grossAmount = item.grossAmount || 0;
+    const taxAmount = item.taxAmount || 0;
+    const netAmount = item.netAmount || 0;
+    const unitCost = item.unitCost || 0;
+    
     return {
       ...item,
       productName: item.product?.name,
       productCode: item.product?.fuelCode || item.product?.sku,
-      totalCostDisplay: `$${item.totalCost?.toLocaleString()}`,
-      unitCostDisplay: `$${item.unitCost?.toLocaleString()}`,
+      productType: item.product?.type,
+      
+      // Financial displays
+      grossAmountDisplay: `$${grossAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      taxAmountDisplay: item.taxRate && item.taxRate > 0 ? `$${taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Tax Free',
+      netAmountDisplay: `$${netAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      unitCostDisplay: `$${unitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      taxRateDisplay: item.taxRate ? `${(item.taxRate * 100).toFixed(2)}%` : '0%',
+      
       receivedPercentage: item.orderedQty > 0 ? (item.receivedQty / item.orderedQty) * 100 : 0,
       isFullyReceived: item.receivedQty >= item.orderedQty,
-      tankName: item.tank?.asset?.name || 'N/A'
+      variance: item.orderedQty - item.receivedQty,
+      varianceDisplay: (item.orderedQty - item.receivedQty)?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      
+      // Quick status
+      isReceived: item.receivedQty > 0,
+      isPartiallyReceived: item.receivedQty > 0 && item.receivedQty < item.orderedQty
     };
+  },
+
+  calculatePurchaseReceivedPercentage: (purchase) => {
+    if (!purchase.items || purchase.items.length === 0) return 0;
+    
+    const totalOrdered = purchase.items.reduce((sum, item) => sum + (item.orderedQty || 0), 0);
+    const totalReceived = purchase.items.reduce((sum, item) => sum + (item.receivedQty || 0), 0);
+    
+    return totalOrdered > 0 ? (totalReceived / totalOrdered) * 100 : 0;
+  },
+
+  isPurchaseFullyReceived: (purchase) => {
+    if (!purchase.items || purchase.items.length === 0) return false;
+    return purchase.items.every(item => (item.receivedQty || 0) >= (item.orderedQty || 0));
   },
 
   calculatePurchaseTotals: (items) => {
     const totals = {
-      subtotal: 0,
-      tax: 0,
-      discount: 0,
-      total: 0
+      grossAmount: 0,
+      totalTaxAmount: 0,
+      discountAmount: 0,
+      netPayable: 0,
+      taxableAmount: 0,
+      taxFreeAmount: 0,
+      itemCount: items.length
     };
 
     items.forEach(item => {
-      const itemTotal = item.orderedQty * item.unitCost;
-      totals.subtotal += itemTotal;
+      const orderedQty = parseFloat(item.orderedQty) || 0;
+      const unitCost = parseFloat(item.unitCost) || 0;
+      const taxRate = parseFloat(item.taxRate) || 0;
+      
+      const itemGrossAmount = orderedQty * unitCost;
+      const itemTaxAmount = itemGrossAmount * taxRate;
+      
+      totals.grossAmount += itemGrossAmount;
+      totals.totalTaxAmount += itemTaxAmount;
+      
+      if (taxRate > 0) {
+        totals.taxableAmount += itemGrossAmount;
+      } else {
+        totals.taxFreeAmount += itemGrossAmount;
+      }
     });
 
-    totals.total = totals.subtotal - totals.discount + totals.tax;
-    return totals;
+    totals.netPayable = totals.grossAmount + totals.totalTaxAmount - totals.discountAmount;
+    
+    // Format for display
+    return {
+      ...totals,
+      grossAmountDisplay: `$${totals.grossAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      totalTaxAmountDisplay: `$${totals.totalTaxAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      discountAmountDisplay: `$${totals.discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      netPayableDisplay: `$${totals.netPayable.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      taxableAmountDisplay: `$${totals.taxableAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      taxFreeAmountDisplay: `$${totals.taxFreeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    };
   },
 
-  // Search purchases with advanced filtering
+  // =====================
+  // SEARCH & FILTER METHODS
+  // =====================
+
   searchPurchases: async (searchTerm, additionalFilters = {}) => {
     logger.info(`Searching purchases for: "${searchTerm}"`, additionalFilters);
     
@@ -357,7 +541,7 @@ export const purchaseService = {
         ...additionalFilters
       };
       
-      return await this.getPurchases(filters);
+      return await purchaseService.getPurchases(filters);
     } catch (error) {
       throw handleError(error, 'searching purchases', 'Failed to search purchases');
     }
@@ -368,7 +552,7 @@ export const purchaseService = {
     logger.info(`Fetching purchases for supplier: ${supplierId}`, filters);
     
     try {
-      return await this.getPurchases({ supplierId, ...filters });
+      return await purchaseService.getPurchases({ supplierId, ...filters });
     } catch (error) {
       throw handleError(error, 'fetching supplier purchases', 'Failed to fetch supplier purchases');
     }
@@ -379,7 +563,7 @@ export const purchaseService = {
     logger.info(`Fetching purchases for station: ${stationId}`, filters);
     
     try {
-      return await this.getPurchases({ stationId, ...filters });
+      return await purchaseService.getPurchases({ stationId, ...filters });
     } catch (error) {
       throw handleError(error, 'fetching station purchases', 'Failed to fetch station purchases');
     }
@@ -390,7 +574,7 @@ export const purchaseService = {
     logger.info('Fetching pending approvals', filters);
     
     try {
-      return await this.getPurchases({ status: 'PENDING_APPROVAL', ...filters });
+      return await purchaseService.getPurchases({ status: 'PENDING_APPROVAL', ...filters });
     } catch (error) {
       throw handleError(error, 'fetching pending approvals', 'Failed to fetch pending approvals');
     }
@@ -401,110 +585,146 @@ export const purchaseService = {
     logger.info(`Fetching recent purchases: ${limit}`);
     
     try {
-      const purchases = await this.getPurchases({ page: 1, limit });
-      return purchases.slice(0, limit);
+      const result = await purchaseService.getPurchases({ page: 1, limit });
+      return result.purchases ? result.purchases.slice(0, limit) : result.slice(0, limit);
     } catch (error) {
       throw handleError(error, 'fetching recent purchases', 'Failed to fetch recent purchases');
     }
+  },
+
+  // Get purchases by status
+  getPurchasesByStatus: async (status, filters = {}) => {
+    logger.info(`Fetching purchases with status: ${status}`, filters);
+    
+    try {
+      return await purchaseService.getPurchases({ status, ...filters });
+    } catch (error) {
+      throw handleError(error, `fetching ${status} purchases`, `Failed to fetch ${status} purchases`);
+    }
+  },
+
+  // =====================
+  // CONSTANTS & OPTIONS
+  // =====================
+
+  getPurchaseStatusOptions: () => {
+    return [
+      { value: 'DRAFT', label: 'Draft', color: 'gray', badge: 'default' },
+      { value: 'PENDING_APPROVAL', label: 'Pending Approval', color: 'orange', badge: 'processing' },
+      { value: 'APPROVED', label: 'Approved', color: 'blue', badge: 'processing' },
+      { value: 'ORDER_CONFIRMED', label: 'Order Confirmed', color: 'purple', badge: 'processing' },
+      { value: 'IN_TRANSIT', label: 'In Transit', color: 'orange', badge: 'processing' },
+      { value: 'ARRIVED_AT_SITE', label: 'Arrived at Site', color: 'cyan', badge: 'processing' },
+      { value: 'QUALITY_CHECK', label: 'Quality Check', color: 'gold', badge: 'processing' },
+      { value: 'PARTIALLY_RECEIVED', label: 'Partially Received', color: 'geekblue', badge: 'processing' },
+      { value: 'COMPLETED', label: 'Completed', color: 'green', badge: 'success' },
+      { value: 'CANCELLED', label: 'Cancelled', color: 'red', badge: 'error' },
+      { value: 'REJECTED', label: 'Rejected', color: 'red', badge: 'error' },
+      { value: 'ON_HOLD', label: 'On Hold', color: 'gray', badge: 'default' }
+    ];
+  },
+
+  getDeliveryStatusOptions: () => {
+    return [
+      { value: 'PENDING', label: 'Pending', color: 'gray', badge: 'default' },
+      { value: 'DISPATCHED', label: 'Dispatched', color: 'blue', badge: 'processing' },
+      { value: 'IN_TRANSIT', label: 'In Transit', color: 'orange', badge: 'processing' },
+      { value: 'ARRIVED', label: 'Arrived', color: 'cyan', badge: 'processing' },
+      { value: 'UNLOADING', label: 'Unloading', color: 'purple', badge: 'processing' },
+      { value: 'QUALITY_VERIFICATION', label: 'Quality Verification', color: 'gold', badge: 'processing' },
+      { value: 'PARTIALLY_ACCEPTED', label: 'Partially Accepted', color: 'geekblue', badge: 'processing' },
+      { value: 'FULLY_ACCEPTED', label: 'Fully Accepted', color: 'green', badge: 'success' },
+      { value: 'REJECTED', label: 'Rejected', color: 'red', badge: 'error' },
+      { value: 'RETURNED', label: 'Returned', color: 'red', badge: 'error' }
+    ];
+  },
+
+  getPurchaseTypeOptions: () => {
+    return [
+      { value: 'FUEL', label: 'Fuel', color: 'blue' },
+      { value: 'NON_FUEL', label: 'Non-Fuel', color: 'green' },
+      { value: 'MIXED', label: 'Mixed', color: 'purple' }
+    ];
+  },
+
+  // =====================
+  // HELPER METHODS
+  // =====================
+
+  getStatusColor: (status) => {
+    const statusConfig = {
+      'DRAFT': 'gray',
+      'PENDING_APPROVAL': 'orange',
+      'APPROVED': 'blue',
+      'ORDER_CONFIRMED': 'purple',
+      'IN_TRANSIT': 'orange',
+      'ARRIVED_AT_SITE': 'cyan',
+      'QUALITY_CHECK': 'gold',
+      'PARTIALLY_RECEIVED': 'geekblue',
+      'COMPLETED': 'green',
+      'CANCELLED': 'red',
+      'REJECTED': 'red',
+      'ON_HOLD': 'gray'
+    };
+    return statusConfig[status] || 'gray';
+  },
+
+  getStatusLabel: (status) => {
+    const statusConfig = {
+      'DRAFT': 'Draft',
+      'PENDING_APPROVAL': 'Pending Approval',
+      'APPROVED': 'Approved',
+      'ORDER_CONFIRMED': 'Order Confirmed',
+      'IN_TRANSIT': 'In Transit',
+      'ARRIVED_AT_SITE': 'Arrived at Site',
+      'QUALITY_CHECK': 'Quality Check',
+      'PARTIALLY_RECEIVED': 'Partially Received',
+      'COMPLETED': 'Completed',
+      'CANCELLED': 'Cancelled',
+      'REJECTED': 'Rejected',
+      'ON_HOLD': 'On Hold'
+    };
+    return statusConfig[status] || status;
+  },
+
+  canEditPurchase: (purchase) => {
+    return purchase && ['DRAFT', 'PENDING_APPROVAL'].includes(purchase.status);
+  },
+
+  canDeletePurchase: (purchase) => {
+    return purchase && purchase.status === 'DRAFT';
+  },
+
+  canApprovePurchase: (purchase) => {
+    return purchase && purchase.status === 'PENDING_APPROVAL';
+  },
+
+  // =====================
+  // CACHE & PERFORMANCE
+  // =====================
+
+  // Simple in-memory cache (optional)
+  _cache: new Map(),
+  _cacheTimeout: 5 * 60 * 1000, // 5 minutes
+
+  getCached: (key) => {
+    const item = purchaseService._cache.get(key);
+    if (item && Date.now() - item.timestamp < purchaseService._cacheTimeout) {
+      return item.data;
+    }
+    return null;
+  },
+
+  setCached: (key, data) => {
+    purchaseService._cache.set(key, {
+      data,
+      timestamp: Date.now()
+    });
+  },
+
+  clearCache: () => {
+    purchaseService._cache.clear();
   }
 };
-
-// =====================================================================
-// PAYLOAD EXAMPLES FOR PURCHASE MANAGEMENT
-// =====================================================================
-
-/*
-// CREATE FUEL PURCHASE PAYLOAD (Diesel from Vivo Energy Example):
-const fuelPurchasePayload = {
-  supplierId: "d1f9d996-fe58-4264-ab67-750392797157",
-  stationId: "d2aecaeb-a1a2-441c-b323-b3f24146c169", 
-  warehouseId: null,
-  purchaseDate: "2024-01-15T10:00:00.000Z",
-  expectedDate: "2024-01-17T10:00:00.000Z",
-  type: "FUEL",
-  expectedDeliveryDate: "2024-01-17T10:00:00.000Z",
-  supplierRef: "VE-PO-2024-001",
-  internalRef: "INT-PO-DSL-2024-001",
-  termsAndConditions: "Standard payment terms: Net 30 days",
-  deliveryAddress: "Main Station, Westlands, Nairobi",
-  notes: "Monthly diesel supply from Vivo Energy - Regular Automotive Diesel",
-  reference: "MONTHLY-DIESEL-JAN",
-  items: [
-    {
-      productId: "f3f55173-0f6d-4d00-ae03-d00683f0c636",
-      orderedQty: 10000,
-      unitCost: 125,
-      tankId: "26874315-f9a9-4250-8328-590dd6080753"
-    }
-  ]
-};
-
-// CREATE NON-FUEL PURCHASE PAYLOAD (Lubricants Example):
-const nonFuelPurchasePayload = {
-  supplierId: "d1f9d996-fe58-4264-ab67-750392797157",
-  stationId: "d2aecaeb-a1a2-441c-b323-b3f24146c169",
-  warehouseId: "123e4567-e89b-12d3-a456-426614174004",
-  purchaseDate: "2024-01-15T10:00:00.000Z",
-  expectedDate: "2024-01-17T10:00:00.000Z",
-  type: "NON_FUEL",
-  expectedDeliveryDate: "2024-01-17T10:00:00.000Z",
-  supplierRef: "SUP-NF-2024-001",
-  internalRef: "INT-PO-NF-2024-001",
-  termsAndConditions: "Immediate payment upon delivery",
-  deliveryAddress: "Main Station, Westlands, Nairobi",
-  notes: "Engine oil and lubricants purchase",
-  reference: "LUBRICANTS-JAN",
-  items: [
-    {
-      productId: "123e4567-e89b-12d3-a456-426614174005",
-      orderedQty: 50,
-      unitCost: 15.50,
-      batchNumber: "BATCH-ENG-OIL-001",
-      expiryDate: "2025-12-31T00:00:00.000Z"
-    },
-    {
-      productId: "123e4567-e89b-12d3-a456-426614174006",
-      orderedQty: 100,
-      unitCost: 8.75,
-      batchNumber: "BATCH-GREASE-001",
-      expiryDate: "2026-06-30T00:00:00.000Z"
-    }
-  ]
-};
-
-// UPDATE PURCHASE STATUS PAYLOAD:
-const updateStatusPayload = {
-  status: "APPROVED" // or "PENDING_APPROVAL", "ORDER_CONFIRMED", "CANCELLED", etc.
-};
-
-// RECEIVE NON-FUEL ITEMS PAYLOAD:
-const receiveNonFuelPayload = {
-  items: [
-    {
-      purchaseItemId: "123e4567-e89b-12d3-a456-42661417400a",
-      receivedQty: 50,
-      batchNumber: "BATCH-ENG-OIL-001",
-      expiryDate: "2025-12-31T00:00:00.000Z"
-    },
-    {
-      purchaseItemId: "123e4567-e89b-12d3-a456-42661417400b",
-      receivedQty: 100,
-      batchNumber: "BATCH-GREASE-001",
-      expiryDate: "2026-06-30T00:00:00.000Z"
-    }
-  ]
-};
-
-// FILTER EXAMPLES:
-const purchaseFilters = {
-  status: "PENDING_APPROVAL",
-  type: "FUEL",
-  stationId: "d2aecaeb-a1a2-441c-b323-b3f24146c169",
-  supplierId: "d1f9d996-fe58-4264-ab67-750392797157",
-  deliveryStatus: "PENDING",
-  page: 1,
-  limit: 10
-};
-*/
 
 export default purchaseService;

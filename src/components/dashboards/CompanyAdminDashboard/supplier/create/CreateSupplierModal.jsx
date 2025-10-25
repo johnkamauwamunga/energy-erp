@@ -10,7 +10,7 @@ import {
   Col,
   message
 } from 'antd';
-import { supplierService } from '../../../services/supplierService';
+import { supplierService } from '../../../../../services/supplierService/supplierService';
 
 const { Option } = Select;
 const { TextArea } = Input;

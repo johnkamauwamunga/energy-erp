@@ -6,22 +6,16 @@ import {
   Flame, X, Menu, MapPin, DollarSign, Truck,Building2
 } from 'lucide-react';
 import { Button } from '../../ui';
-// import DashboardOverview from '../components/dashboard/common/DashboardOverview';
 import DashboardOverview from '../../../components/dashboards/common/CompanyOverview';
 import PlaceholderComponent from './PlaceholderComponent';
-// import OffloadManagement from '../common/offloads/OffloadManagement';
-// import StationAssetManagement from '../common/assets/station/StationAssetManagement';
 import StationAssetManagement from './assets/StationAssetManagement';
-import StationAssetsOverview from './assets/StationAssetsOverview';
 import StationDashboard from '../common/StationDashboard';
-// import AssetAssignmentManager from './assets/AssetAssignmentManager'
 import SalesManagement from '../common/sales/SalesManagement';
 import StationUserManagement from './staff/StationUserManagement';
 import FuelOffloadWizard from '../common/fuel-offload/FuelOffloadWizard';
-//import ShiftData from '../common/shiftClose/shiftData';
-//import ShiftTableExample from '../common/multiTable/ShiftTableExample';
 import ShiftManagement from '../common/shift/ShiftManagement';
 import AnalyticsDemo from '../common/analytics/AnalyticsDemo';
+import OffloadMagement from '../common/offload-test/OffloadManagement';
 
 const StationManagerDashboard = () => {
   const { state } = useApp();
@@ -44,7 +38,8 @@ const StationManagerDashboard = () => {
   };
 
   //const station = state.serviceStations.find(s => s.id === user.stationId);
-const station=state.currentUser.stationId;
+//const station=state.currentUser.stationId;
+const station=state.currentStation?.id;
 console.log("station",station);
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -68,7 +63,7 @@ console.log("station",station);
       case 'shifts':
         return <ShiftManagement />;
         case 'offloads':
-        return <FuelOffloadWizard />;
+        return <OffloadMagement />;
        case 'sales':
         return <SalesManagement />;
       case 'reports':

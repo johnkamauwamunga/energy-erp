@@ -112,7 +112,7 @@ const ShiftManagement = () => {
 
       // Handle different response structures
       const shiftsData = response.shifts || response.data?.shifts || [];
-      console.log('📊 Fetched shifts:', shiftsData.length);
+      console.log('📊 Fetched shifts:', shiftsData);
       setShifts(shiftsData);
 
       // Check for open shift (only for station-level roles)

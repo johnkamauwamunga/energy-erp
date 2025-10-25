@@ -27,10 +27,10 @@ import {
   ShoppingOutlined,
   TeamOutlined
 } from '@ant-design/icons';
-import { supplierService } from '../../services/supplierService';
-import { fuelService } from '../../services/fuelService';
-import CreateSupplierModal from './components/CreateSupplierModal';
-import SupplierProducts from './components/SupplierProducts';
+import { supplierService } from '../../../../services/supplierService/supplierService';
+import { fuelService } from '../../../../services/fuelService/fuelService';
+import CreateSupplierModal from './create/CreateSupplierModal';
+import CreateSupplierProductModal from './create/CreateSupplierProductModal';
 import './SupplierManagement.css';
 
 const { Search } = Input;
@@ -207,7 +207,7 @@ const SupplierManagement = () => {
     },
     {
       title: 'Products',
-      dataIndex: 'supplierProducts',
+      dataIndex: 'CreateSupplierProductModal',
       key: 'products',
       align: 'center',
       render: (products) => (
@@ -457,7 +457,7 @@ const SupplierManagement = () => {
         }}
       />
 
-      <SupplierProducts
+      <CreateSupplierProductModal
         visible={productsModalVisible}
         supplier={selectedSupplier}
         onCancel={() => {

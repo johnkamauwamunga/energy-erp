@@ -21,6 +21,7 @@ import CompanyDashboardOverview from '../common/CompanyDashboardOverview';
 import AnalyticsDemo from '../common/analytics/AnalyticsDemo';
 import CustomDashboard from '../common/analytics/CustomDashboard';
 import FuelPriceManagement from './fuel-price/FuelPriceManagement';
+import SupplierManagement from './supplier/SupplierManagement';
 
 const CompanyAdminDashboard = () => {
   const { state } = useApp();
@@ -42,6 +43,7 @@ const CompanyAdminDashboard = () => {
     { id: 'stations', label: 'Service Stations', icon: Building2 },
     { id: 'staff', label: 'Staff Management', icon: Users },
     { id: 'assets', label: 'Assets', icon: Building2 },
+    { id: 'suppliers', label: 'Supplier', icon: Warehouse },
     {id:  'products_mant', label: 'Product Management', icon: MapPin },
     { id: 'fuel_price', label: 'Fuel Price', icon: Coins },
     { id: 'purchase', label: 'Purchase', icon: TrendingUp },
@@ -64,6 +66,8 @@ const CompanyAdminDashboard = () => {
         return <FuelManagement />;
       case 'fuel_price':
         return <FuelPriceManagement />;
+      case 'suppliers':
+        return <SupplierManagement />;
       case 'purchase':
         return <FuelPurchaseManagement />;
       case 'offloads':

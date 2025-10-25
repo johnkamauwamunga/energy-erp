@@ -3,78 +3,132 @@ import {
   Modal,
   Form,
   Select,
-  InputNumber,
   Input,
-  Button,
+  InputNumber,
+  Switch,
+  Card,
+  message,
+  Spin,
+  Tag,
   Row,
   Col,
-  Switch,
-  message,
   Divider
 } from 'antd';
-import { supplierService } from '../../../services/supplierService';
-import { fuelService } from '../../../services/fuelService';
+import {
+  SearchOutlined,
+  InfoCircleOutlined,
+  DollarOutlined,
+  InboxOutlined
+} from '@ant-design/icons';
+import { fuelService } from '../../../../../services/fuelService/fuelService';
+import { supplierService } from '../../../../../services/supplierService/supplierService';
 
 const { Option } = Select;
-const { TextArea } = Input;
 
 const CreateSupplierProductModal = ({ visible, supplier, onCancel, onSuccess }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState([]);
-  const [existingProductIds, setExistingProductIds] = useState(new Set());
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
 
-  // Fetch available products and existing supplier products
-  const fetchData = async () => {
-    if (!supplier) return;
+  // Fetch available fuel products when modal opens
+  useEffect(() => {
+    if (visible) {
+      fetchAvailableProducts();
+      form.resetFields();
+      setSelectedProduct(null);
+    }
+  }, [visible]);
 
+  const fetchAvailableProducts = async (search = '') => {
+    setProductsLoading(true);
     try {
-      const [fuelProducts, supplierProducts] = await Promise.all([
-        fuelService.getFuels(),
-        supplierService.getSupplierProducts({ supplierId: supplier.id })
-      ]);
-
-      setProducts(fuelProducts);
+      const productsData = await fuelService.getFuelProducts();
+      const productsList = productsData?.products || productsData || [];
       
-      // Track existing product IDs to prevent duplicates
-      const existingIds = new Set(supplierProducts.map(sp => sp.productId));
-      setExistingProductIds(existingIds);
+      if (search) {
+        const filtered = productsList.filter(product => 
+          product.name?.toLowerCase().includes(search.toLowerCase()) ||
+          product.fuelCode?.toLowerCase().includes(search.toLowerCase())
+        );
+        setProducts(filtered);
+      } else {
+        setProducts(productsList);
+      }
     } catch (error) {
-      message.error('Failed to load products');
+      message.error('Failed to fetch products');
+      console.error('Error fetching products:', error);
+    } finally {
+      setProductsLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (visible) {
-      fetchData();
-      form.resetFields();
+  const handleProductSelect = (productId) => {
+    const product = products.find(p => p.id === productId);
+    setSelectedProduct(product);
+    
+    if (product) {
       form.setFieldsValue({
-        supplierId: supplier?.id,
-        currency: 'KES',
-        isAvailable: true,
-        isPrimary: false,
-        priority: 0
+        supplierProductName: product.name,
+        supplierSku: `${supplier.code}-${product.fuelCode}`
       });
     }
-  }, [visible, supplier]);
+  };
+
+  const handleSearch = (value) => {
+    fetchAvailableProducts(value);
+  };
 
   const handleSubmit = async (values) => {
+    if (!selectedProduct) {
+      message.error('Please select a product');
+      return;
+    }
+
     setLoading(true);
     try {
-      // Check if product already exists for this supplier
-      if (existingProductIds.has(values.productId)) {
-        message.error('This product is already associated with the supplier');
-        return;
-      }
+      const supplierProductData = {
+        // Core Relationships
+        supplierId: supplier.id,
+        productId: selectedProduct.id,
+        
+        // Supplier-Specific Product Info
+        supplierSku: values.supplierSku,
+        supplierProductName: values.supplierProductName || selectedProduct.name,
+        
+        // Pricing & Terms - Default to 0 instead of null
+        costPrice: values.costPrice || 0,
+        currency: values.currency || 'KES',
+        minOrderQty: values.minOrderQty || 100,
+        maxOrderQty: values.maxOrderQty || 1000,
+        
+        // Delivery & Availability - Default to 0 instead of null
+        leadTime: values.leadTime || 0,
+        isAvailable: values.isAvailable ?? true,
+        stockStatus: values.stockStatus || 'IN_STOCK',
+        
+        // Supplier Priority - Default to 0 instead of null
+        isPrimary: values.isPrimary ?? false,
+        priority: values.priority || 0,
+        
+        // Quality Specifications
+        qualitySpecifications: selectedProduct.qualitySpecifications || {
+          octane: selectedProduct.octaneRating || 0.7,
+          sulfurContent: selectedProduct.sulfurContent || 0.56,
+          density: selectedProduct.density || 0.85
+        },
+        
+        // Contract Terms
+        contractStartDate: values.contractStartDate,
+        contractEndDate: values.contractEndDate,
+        
+        // Status
+        isActive: true
+      };
 
-      const validation = supplierService.validateSupplierProduct(values);
-      if (!validation.isValid) {
-        message.error('Please fix the validation errors');
-        return;
-      }
-
-      await supplierService.addSupplierProduct(values);
-      form.resetFields();
+      await supplierService.addSupplierProduct(supplierProductData);
+      message.success('Product added to supplier successfully!');
       onSuccess();
     } catch (error) {
       message.error(error.message);
@@ -83,95 +137,152 @@ const CreateSupplierProductModal = ({ visible, supplier, onCancel, onSuccess }) 
     }
   };
 
-  const handleProductChange = (productId) => {
-    const selectedProduct = products.find(p => p.id === productId);
-    if (selectedProduct) {
-      form.setFieldsValue({
-        supplierProductName: selectedProduct.name
-      });
-    }
+  // Product info display when a product is selected
+  const renderProductInfo = () => {
+    if (!selectedProduct) return null;
+
+    return (
+      <Card 
+        size="small" 
+        title="Product Details" 
+        className="mb-4"
+        extra={<Tag color="blue">Selected</Tag>}
+      >
+        <Row gutter={[16, 8]}>
+          <Col span={12}>
+            <strong>Name:</strong> {selectedProduct.name}
+          </Col>
+          <Col span={12}>
+            <strong>Code:</strong> <Tag>{selectedProduct.fuelCode}</Tag>
+          </Col>
+          <Col span={12}>
+            <strong>Category:</strong> {selectedProduct.fuelSubType?.category?.name || 'N/A'}
+          </Col>
+          <Col span={12}>
+            <strong>Sub Type:</strong> {selectedProduct.fuelSubType?.name || 'N/A'}
+          </Col>
+          {selectedProduct.density && (
+            <Col span={12}>
+              <strong>Density:</strong> {selectedProduct.density} kg/L
+            </Col>
+          )}
+          {selectedProduct.octaneRating && (
+            <Col span={12}>
+              <strong>Octane:</strong> RON {selectedProduct.octaneRating}
+            </Col>
+          )}
+        </Row>
+      </Card>
+    );
   };
 
   return (
     <Modal
-      title={`Add Product to ${supplier?.name}`}
+      title={
+        <div>
+          <InboxOutlined style={{ marginRight: 8 }} />
+          Add Product to {supplier?.name}
+        </div>
+      }
       open={visible}
       onCancel={onCancel}
-      footer={null}
-      width={700}
+      onOk={form.submit}
+      confirmLoading={loading}
+      width={800}
+      destroyOnClose
+      okText="Add Product"
+      cancelText="Cancel"
     >
       <Form
         form={form}
         layout="vertical"
         onFinish={handleSubmit}
+        initialValues={{
+          currency: 'KES',
+          isAvailable: true,
+          isPrimary: false,
+          stockStatus: 'IN_STOCK',
+          // Set all numeric defaults to 0 instead of null
+          costPrice: 0,
+          minOrderQty: 0,
+          maxOrderQty: 0,
+          leadTime: 0,
+          priority: 0
+        }}
       >
-        <Form.Item name="supplierId" hidden>
-          <Input />
+        {/* Product Selection */}
+        <Form.Item
+          label="Select Product"
+          name="productId"
+          rules={[{ required: true, message: 'Please select a product' }]}
+        >
+          <Select
+            showSearch
+            placeholder="Search and select a product..."
+            onSearch={handleSearch}
+            onChange={handleProductSelect}
+            filterOption={false}
+            notFoundContent={productsLoading ? <Spin size="small" /> : null}
+            loading={productsLoading}
+          >
+            {products.map(product => (
+              <Option key={product.id} value={product.id}>
+                <div className="flex justify-between items-center">
+                  <span>{product.name}</span>
+                  <Tag size="small">{product.fuelCode}</Tag>
+                </div>
+              </Option>
+            ))}
+          </Select>
         </Form.Item>
 
+        {/* Display selected product info */}
+        {renderProductInfo()}
+
+        <Divider>Supplier-Specific Details</Divider>
+
         <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item
-              label="Product"
-              name="productId"
-              rules={[{ required: true, message: 'Please select a product' }]}
-            >
-              <Select
-                placeholder="Select product"
-                onChange={handleProductChange}
-                showSearch
-                filterOption={(input, option) =>
-                  option.children.toLowerCase().includes(input.toLowerCase())
-                }
-              >
-                {products.map(product => (
-                  <Option 
-                    key={product.id} 
-                    value={product.id}
-                    disabled={existingProductIds.has(product.id)}
-                  >
-                    {product.name} ({product.fuelCode})
-                    {existingProductIds.has(product.id) && ' - Already added'}
-                  </Option>
-                ))}
-              </Select>
-            </Form.Item>
-          </Col>
           <Col span={12}>
             <Form.Item
               label="Supplier SKU"
               name="supplierSku"
+              rules={[{ required: true, message: 'Please enter supplier SKU' }]}
             >
-              <Input placeholder="Supplier product code" />
+              <Input 
+                placeholder="e.g., VIVO-PDL-001" 
+                prefix={<InboxOutlined />}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              label="Supplier Product Name"
+              name="supplierProductName"
+              tooltip="Leave empty to use product's original name"
+            >
+              <Input placeholder="Optional custom name" />
             </Form.Item>
           </Col>
         </Row>
 
-        <Form.Item
-          label="Supplier Product Name"
-          name="supplierProductName"
-        >
-          <Input placeholder="Product name as known by supplier" />
-        </Form.Item>
-
         <Row gutter={16}>
-          <Col span={8}>
+          <Col span={12}>
             <Form.Item
               label="Cost Price"
               name="costPrice"
               rules={[{ required: true, message: 'Please enter cost price' }]}
             >
               <InputNumber
+                style={{ width: '100%' }}
+                placeholder="0.00"
                 min={0}
                 step={0.01}
-                style={{ width: '100%' }}
-                formatter={value => `KES ${value}`}
-                parser={value => value.replace('KES ', '')}
-                placeholder="0.00"
+                precision={2}
+                prefix={<DollarOutlined />}
               />
             </Form.Item>
           </Col>
-          <Col span={8}>
+          <Col span={12}>
             <Form.Item
               label="Currency"
               name="currency"
@@ -183,54 +294,62 @@ const CreateSupplierProductModal = ({ visible, supplier, onCancel, onSuccess }) 
               </Select>
             </Form.Item>
           </Col>
-          <Col span={8}>
+        </Row>
+
+        <Row gutter={16}>
+          <Col span={12}>
             <Form.Item
-              label="Lead Time (Days)"
-              name="leadTime"
+              label="Min Order Qty (L)"
+              name="minOrderQty"
             >
               <InputNumber
-                min={0}
                 style={{ width: '100%' }}
                 placeholder="0"
+                min={0}
+                step={100}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              label="Max Order Qty (L)"
+              name="maxOrderQty"
+            >
+              <InputNumber
+                style={{ width: '100%' }}
+                placeholder="0"
+                min={0}
+                step={100}
               />
             </Form.Item>
           </Col>
         </Row>
 
         <Row gutter={16}>
-          <Col span={8}>
+          <Col span={12}>
             <Form.Item
-              label="Min Order Qty"
-              name="minOrderQty"
+              label="Lead Time (days)"
+              name="leadTime"
             >
               <InputNumber
-                min={0}
                 style={{ width: '100%' }}
                 placeholder="0"
+                min={0}
+                max={30}
               />
             </Form.Item>
           </Col>
-          <Col span={8}>
-            <Form.Item
-              label="Max Order Qty"
-              name="maxOrderQty"
-            >
-              <InputNumber
-                min={0}
-                style={{ width: '100%' }}
-                placeholder="0"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
+          <Col span={12}>
             <Form.Item
               label="Priority"
               name="priority"
+              tooltip="0 = highest priority"
             >
               <InputNumber
-                min={0}
                 style={{ width: '100%' }}
-                placeholder="0"
+                min={0}
+                max={10}
+                placeholder="0 (highest)"
               />
             </Form.Item>
           </Col>
@@ -255,51 +374,27 @@ const CreateSupplierProductModal = ({ visible, supplier, onCancel, onSuccess }) 
               <Switch />
             </Form.Item>
           </Col>
-        </Row>
-
-        <Form.Item
-          label="Certification"
-          name="certification"
-        >
-          <Input placeholder="e.g., KEBS Certified, ISO Certified" />
-        </Form.Item>
-
-        <Form.Item
-          label="Quality Specifications"
-          name="qualitySpecifications"
-        >
-          <TextArea
-            rows={3}
-            placeholder="Enter quality specifications JSON or notes"
-          />
-        </Form.Item>
-
-        <Row gutter={16}>
-          <Col span={12}>
+          <Col span={8}>
             <Form.Item
-              label="Contract Start Date"
-              name="contractStartDate"
+              label="Active"
+              name="isActive"
+              valuePropName="checked"
+              initialValue={true}
             >
-              <Input type="datetime-local" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              label="Contract End Date"
-              name="contractEndDate"
-            >
-              <Input type="datetime-local" />
+              <Switch />
             </Form.Item>
           </Col>
         </Row>
 
-        <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
-          <Button style={{ marginRight: 8 }} onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button type="primary" htmlType="submit" loading={loading}>
-            Add Product
-          </Button>
+        <Form.Item
+          label="Stock Status"
+          name="stockStatus"
+        >
+          <Select>
+            <Option value="IN_STOCK">In Stock</Option>
+            <Option value="LOW_STOCK">Low Stock</Option>
+            <Option value="OUT_OF_STOCK">Out of Stock</Option>
+          </Select>
         </Form.Item>
       </Form>
     </Modal>

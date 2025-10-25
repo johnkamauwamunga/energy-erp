@@ -1,689 +1,1270 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Card, Button, Alert, Badge, StatsCard, LoadingSpinner,
-  Tabs, Tab, Progress, Modal
-} from '../../ui';
-import { 
-  Building2, MapPin, Zap, Fuel, Package, Users, 
-  DollarSign, Clock, AlertTriangle, CheckCircle, 
-  Truck, Plus, FileText, BarChart3, TrendingUp, 
-  TrendingDown, Eye, PlayCircle, StopCircle, 
-  ShoppingCart, Warehouse, Activity, RefreshCw
-} from 'lucide-react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import {
+  Card,
+  Row,
+  Col,
+  Statistic,
+  Button,
+  Tabs,
+  Badge,
+  Progress,
+  Alert,
+  List,
+  Tag,
+  Modal,
+  Timeline,
+  Table,
+  Spin,
+  message,
+  notification,
+  Popover
+} from 'antd';
+import {
+  UserOutlined,
+  ToolOutlined,
+  TruckOutlined,
+  DollarOutlined,
+  RiseOutlined,
+  FallOutlined,
+  AlertOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  EnvironmentOutlined,
+  PlusOutlined,
+  EyeOutlined,
+  ReloadOutlined,
+  BarChartOutlined,
+  ShopOutlined,
+  SafetyCertificateOutlined,
+  StockOutlined,
+  BellOutlined,
+  ExclamationCircleOutlined,
+  WarningOutlined,
+  InfoCircleOutlined
+} from '@ant-design/icons';
+// import { dashboardService } from '../../../../services/dashboardService/dashboardService';
+import { shiftService } from '../../../services/shiftService/shiftService';
+import {dashboardService} from '../../../services/dashboardService/dashboardService'
+import {useApp} from '../../../context/AppContext'
 
-const StationDashboard = () => {
+const { TabPane } = Tabs;
+
+const StationDashboardOverview = () => {
+  const {state} = useApp();
   const [activeTab, setActiveTab] = useState('overview');
-  const [loading, setLoading] = useState(false);
-  const [showShiftModal, setShowShiftModal] = useState(false);
-  const [currentShift, setCurrentShift] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedDelivery, setSelectedDelivery] = useState(null);
+  const [dashboardData, setDashboardData] = useState(null);
+  const [alerts, setAlerts] = useState([]);
+  const [unreadAlerts, setUnreadAlerts] = useState(0);
+  const [alertPolling, setAlertPolling] = useState(null);
 
-  // Mock station data
-  const stationData = {
-    id: 'station-1',
-    name: 'Main Station Nairobi',
-    location: 'Nairobi CBD',
-    status: 'active',
-    currentShift: {
-      id: 'shift-123',
-      number: 1,
-      status: 'open', // 'open', 'closed', 'none'
-      startTime: '2024-01-25T06:00:00Z',
-      supervisor: 'John Doe',
-      attendants: 4,
-      islands: 3
+  // station state
+  const [currentStation, setCurrentStation] = useState(state?.currentStation?.id || null);
+  const stationId = currentStation;
+
+
+  // Alert types and configurations
+  const ALERT_TYPES = {
+    SHIFT_OVERDUE: {
+      icon: <ClockCircleOutlined />,
+      color: '#ff4d4f',
+      badge: 'error'
     },
-    pendingOffloads: [
-      {
-        id: 'purchase-123',
-        purchaseNumber: 'PO-2024-001',
-        supplier: 'XYZ Fuel Suppliers',
-        product: 'Diesel',
-        quantity: 10000,
-        expectedDelivery: '2024-01-25T14:00:00Z',
-        status: 'in-transit'
-      }
-    ],
-    recentActivities: [
-      {
-        id: 1,
-        type: 'shift_opened',
-        title: 'Morning Shift Started',
-        description: 'Shift #1 started by John Doe',
-        timestamp: '2024-01-25T06:00:00Z',
-        icon: PlayCircle,
-        color: 'green'
-      },
-      {
-        id: 2,
-        type: 'fuel_low',
-        title: 'Low Fuel Alert',
-        description: 'Diesel tank at 15% capacity',
-        timestamp: '2024-01-25T08:30:00Z',
-        icon: AlertTriangle,
-        color: 'orange'
-      },
-      {
-        id: 3,
-        type: 'pump_maintenance',
-        title: 'Pump Maintenance',
-        description: 'Pump A2 scheduled for maintenance',
-        timestamp: '2024-01-25T09:15:00Z',
-        icon: Zap,
-        color: 'blue'
-      },
-      {
-        id: 4,
-        type: 'sales_peak',
-        title: 'Sales Peak',
-        description: 'Recorded highest hourly sales',
-        timestamp: '2024-01-25T10:00:00Z',
-        icon: TrendingUp,
-        color: 'green'
-      }
-    ],
-    assets: {
-      islands: 4,
-      activeIslands: 3,
-      pumps: 12,
-      activePumps: 10,
-      tanks: 6,
-      warehouses: 2,
-      activeWarehouses: 2
+    SHIFT_NOT_OPENED: {
+      icon: <ExclamationCircleOutlined />,
+      color: '#faad14',
+      badge: 'warning'
     },
-    sales: {
-      today: 433250,
-      yesterday: 389500,
-      trend: 11.2,
-      hourly: [12500, 18700, 23400, 19800, 26700, 31200, 28900, 32500, 29800, 26700, 22300, 18900],
-      products: [
-        { name: 'Diesel', sales: 245000, trend: 8.5 },
-        { name: 'Super Petrol', sales: 156000, trend: 15.2 },
-        { name: 'Kerosene', sales: 32250, trend: -2.1 }
-      ]
+    DELIVERY_DELAYED: {
+      icon: <TruckOutlined />,
+      color: '#fa541c',
+      badge: 'warning'
     },
-    variances: {
-      fuel: -45,
-      cash: 1250,
-      inventory: -320,
-      status: 'pending' // 'pending', 'resolved', 'none'
+    ASSET_DOWN: {
+      icon: <ToolOutlined />,
+      color: '#ff4d4f',
+      badge: 'error'
+    },
+    LOW_STOCK: {
+      icon: <AlertOutlined />,
+      color: '#faad14',
+      badge: 'warning'
+    },
+    VARIANCE_DETECTED: {
+      icon: <WarningOutlined />,
+      color: '#fa541c',
+      badge: 'warning'
+    },
+    SYSTEM_ISSUE: {
+      icon: <InfoCircleOutlined />,
+      color: '#1890ff',
+      badge: 'processing'
     }
   };
 
-  // Check if shift needs to be opened
-  useEffect(() => {
-    // Simulate API call to check current shift
-    setLoading(true);
-    setTimeout(() => {
-      setCurrentShift(stationData.currentShift);
+  // Fetch dashboard data
+  const fetchDashboardData = async (isRefresh = false) => {
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      const data = await dashboardService.getStationDashboardData(stationId);
+      setDashboardData(data);
+      
+      // Generate alerts based on the data
+      const newAlerts = generateAlerts(data);
+      setAlerts(prevAlerts => {
+        const updatedAlerts = [...newAlerts, ...prevAlerts.slice(0, 10)]; // Keep last 10 alerts
+        const unreadCount = updatedAlerts.filter(alert => !alert.read).length;
+        setUnreadAlerts(unreadCount);
+        return updatedAlerts;
+      });
+
+      if (isRefresh) {
+        message.success('Dashboard data refreshed');
+      }
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error);
+      message.error('Failed to load dashboard data');
+    } finally {
       setLoading(false);
-    }, 1000);
-  }, []);
-
-  const handleOpenShift = () => {
-    setShowShiftModal(true);
+      setRefreshing(false);
+    }
   };
 
-  const handleCloseShift = () => {
-    setLoading(true);
-    // Simulate API call to close shift
-    setTimeout(() => {
-      setCurrentShift({ ...currentShift, status: 'closed' });
-      setLoading(false);
-    }, 1500);
-  };
-
-  const handleStartOffload = (purchaseId) => {
-    // This would open the offload wizard
-    console.log('Start offload for:', purchaseId);
-  };
-
-  const getTimeAgo = (timestamp) => {
+  // Generate alerts based on dashboard data
+  const generateAlerts = (data) => {
+    const newAlerts = [];
     const now = new Date();
-    const time = new Date(timestamp);
-    const diff = now - time;
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    
-    if (hours > 0) return `${hours}h ago`;
-    return `${minutes}m ago`;
-  };
 
-  const renderAlertSection = () => {
-    const alerts = [];
-
-    // Shift status alert
-    if (!currentShift || currentShift.status === 'none') {
-      alerts.push({
-        type: 'warning',
-        icon: Clock,
-        title: 'No Active Shift',
-        message: 'Start a new shift to begin operations',
-        action: {
-          label: 'Open Shift',
-          onClick: handleOpenShift,
-          variant: 'cosmic'
-        }
-      });
-    } else if (currentShift.status === 'open') {
-      alerts.push({
-        type: 'info',
-        icon: Activity,
-        title: `Shift #${currentShift.number} Active`,
-        message: `Started at ${new Date(currentShift.startTime).toLocaleTimeString()} by ${currentShift.supervisor}`,
-        action: {
-          label: 'Close Shift',
-          onClick: handleCloseShift,
-          variant: 'outline'
-        }
-      });
-    }
-
-    // Pending offloads alert
-    if (stationData.pendingOffloads.length > 0) {
-      stationData.pendingOffloads.forEach(offload => {
-        alerts.push({
-          type: 'success',
-          icon: Truck,
-          title: 'Fuel Delivery Expected',
-          message: `${offload.quantity}L of ${offload.product} from ${offload.supplier}`,
+    // Check for shift-related alerts
+    if (data._raw?.currentShift?.data === null) {
+      // No open shift - check if we should have one based on time
+      const currentHour = now.getHours();
+      if (currentHour >= 6 && currentHour < 22) { // During operational hours
+        newAlerts.push({
+          id: `shift-not-opened-${now.getTime()}`,
+          type: 'SHIFT_NOT_OPENED',
+          title: 'No Open Shift',
+          message: 'Station is operational but no shift has been opened',
+          priority: 'high',
+          timestamp: now.toISOString(),
+          read: false,
           action: {
-            label: 'Start Offload',
-            onClick: () => handleStartOffload(offload.id),
-            variant: 'cosmic'
+            label: 'Open Shift',
+            onClick: () => window.open('/shifts', '_blank')
           }
         });
+      }
+    }
+
+    // Check for overdue shifts
+    if (data._raw?.currentShift?.data?.shift) {
+      const shift = data._raw.currentShift.data.shift;
+      const shiftStart = new Date(shift.startTime);
+      const shiftDuration = (now - shiftStart) / (1000 * 60 * 60); // hours
+      
+      if (shiftDuration > 8) { // Shift open for more than 8 hours
+        newAlerts.push({
+          id: `shift-overdue-${shift.id}`,
+          type: 'SHIFT_OVERDUE',
+          title: 'Shift Overdue for Closure',
+          message: `Shift ${shift.shiftNumber} has been open for ${Math.round(shiftDuration)} hours`,
+          priority: 'high',
+          timestamp: now.toISOString(),
+          read: false,
+          action: {
+            label: 'Close Shift',
+            onClick: () => window.open(`/shifts/${shift.id}`, '_blank')
+          }
+        });
+      }
+    }
+
+    // Check for delayed deliveries
+    data.expectedDeliveries.forEach(delivery => {
+      const deliveryDate = new Date(delivery.expectedDate);
+      if (deliveryDate < now && delivery.status !== 'delivered') {
+        newAlerts.push({
+          id: `delivery-delayed-${delivery.id}`,
+          type: 'DELIVERY_DELAYED',
+          title: 'Delivery Delayed',
+          message: `${delivery.product} from ${delivery.supplier} is overdue`,
+          priority: delivery.priority === 'high' ? 'high' : 'medium',
+          timestamp: now.toISOString(),
+          read: false,
+          action: {
+            label: 'Track Delivery',
+            onClick: () => setSelectedDelivery(delivery)
+          }
+        });
+      }
+    });
+
+    // Check for asset issues
+    data.assetStatus.forEach(asset => {
+      if (asset.status === 'maintenance') {
+        newAlerts.push({
+          id: `asset-down-${asset.id}`,
+          type: 'ASSET_DOWN',
+          title: 'Asset Under Maintenance',
+          message: `${asset.name} is currently out of service`,
+          priority: asset.type === 'pump' ? 'high' : 'medium',
+          timestamp: now.toISOString(),
+          read: false,
+          action: {
+            label: 'View Assets',
+            onClick: () => setActiveTab('assets')
+          }
+        });
+      }
+    });
+
+    // Check for low stock (simplified example)
+    if (data.metrics.todaySales > data.metrics.yesterdaySales * 1.5) {
+      newAlerts.push({
+        id: `high-sales-${now.getTime()}`,
+        type: 'LOW_STOCK',
+        title: 'High Sales Activity',
+        message: 'Sales are 50% higher than yesterday. Monitor stock levels.',
+        priority: 'medium',
+        timestamp: now.toISOString(),
+        read: false
       });
     }
 
-    // Variance alert (if shift closed)
-    if (currentShift?.status === 'closed' && stationData.variances.status !== 'none') {
-      const { fuel, cash, inventory } = stationData.variances;
-      alerts.push({
-        type: 'error',
-        icon: AlertTriangle,
-        title: 'Shift Variances Detected',
-        message: `Fuel: ${fuel}L | Cash: KSH ${cash} | Inventory: ${inventory} units`,
-        action: {
-          label: 'Review Details',
-          onClick: () => setActiveTab('variances'),
-          variant: 'outline'
-        }
-      });
-    }
-
-    // Low stock alerts
-    if (stationData.recentActivities.find(a => a.type === 'fuel_low')) {
-      alerts.push({
-        type: 'warning',
-        icon: Fuel,
-        title: 'Low Fuel Stock',
-        message: 'Some tanks are below 20% capacity',
-        action: {
-          label: 'View Tanks',
-          onClick: () => setActiveTab('inventory'),
-          variant: 'outline'
-        }
-      });
-    }
-
-    return alerts.map((alert, index) => (
-      <Alert key={index} variant={alert.type} className="mb-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-3 flex-1">
-            <alert.icon className={`w-5 h-5 mt-0.5 ${
-              alert.type === 'success' ? 'text-green-600' :
-              alert.type === 'warning' ? 'text-orange-600' :
-              alert.type === 'error' ? 'text-red-600' : 'text-blue-600'
-            }`} />
-            <div className="flex-1">
-              <h4 className="font-semibold mb-1">{alert.title}</h4>
-              <p className="text-sm">{alert.message}</p>
-            </div>
-          </div>
-          {alert.action && (
-            <Button
-              variant={alert.action.variant}
-              size="sm"
-              onClick={alert.action.onClick}
-              className="ml-4"
-            >
-              {alert.action.label}
-            </Button>
-          )}
-        </div>
-      </Alert>
-    ));
+    return newAlerts;
   };
 
-  const renderStatsCards = () => (
-    <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-6">
-      <StatsCard
-        title="Active Islands"
-        value={stationData.assets.activeIslands}
-        total={stationData.assets.islands}
-        icon={MapPin}
-        color="blue"
-        trend={0}
+  // Real-time alert polling
+  const startAlertPolling = useCallback(() => {
+    if (alertPolling) {
+      clearInterval(alertPolling);
+    }
+
+    const poll = setInterval(async () => {
+      try {
+        // Check for current shift status
+        if (stationId) {
+          const currentShift = await shiftService.getCurrentOpenShift(stationId);
+          
+          // If we have dashboard data, update alerts
+          if (dashboardData) {
+            const updatedData = {
+              ...dashboardData,
+              _raw: {
+                ...dashboardData._raw,
+                currentShift
+              }
+            };
+            
+            const newAlerts = generateAlerts(updatedData);
+            if (newAlerts.length > 0) {
+              setAlerts(prevAlerts => {
+                const updatedAlerts = [...newAlerts, ...prevAlerts];
+                const unreadCount = updatedAlerts.filter(alert => !alert.read).length;
+                setUnreadAlerts(unreadCount);
+                
+                // Show notification for new high-priority alerts
+                newAlerts.forEach(alert => {
+                  if (alert.priority === 'high' && !alert.read) {
+                    notification[ALERT_TYPES[alert.type].badge]({
+                      message: alert.title,
+                      description: alert.message,
+                      placement: 'topRight',
+                      duration: 5,
+                      onClick: () => markAlertAsRead(alert.id)
+                    });
+                  }
+                });
+                
+                return updatedAlerts;
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error in alert polling:', error);
+      }
+    }, 30000); // Poll every 30 seconds
+
+    setAlertPolling(poll);
+    return poll;
+  }, [stationId, dashboardData]);
+
+  // Mark alert as read
+  const markAlertAsRead = (alertId) => {
+    setAlerts(prevAlerts => {
+      const updatedAlerts = prevAlerts.map(alert =>
+        alert.id === alertId ? { ...alert, read: true } : alert
+      );
+      const unreadCount = updatedAlerts.filter(alert => !alert.read).length;
+      setUnreadAlerts(unreadCount);
+      return updatedAlerts;
+    });
+  };
+
+  // Mark all alerts as read
+  const markAllAlertsAsRead = () => {
+    setAlerts(prevAlerts => {
+      const updatedAlerts = prevAlerts.map(alert => ({ ...alert, read: true }));
+      setUnreadAlerts(0);
+      return updatedAlerts;
+    });
+  };
+
+  // Handle alert action
+  const handleAlertAction = (alert) => {
+    markAlertAsRead(alert.id);
+    if (alert.action && alert.action.onClick) {
+      alert.action.onClick();
+    }
+  };
+
+  // Force refresh data
+  const handleRefresh = async () => {
+    await dashboardService.refreshStationData(stationId);
+    fetchDashboardData(true);
+  };
+
+  // Initial data fetch and setup
+  useEffect(() => {
+    if (stationId) {
+      fetchDashboardData();
+    }
+  }, [stationId]);
+
+  // Start alert polling when component mounts and clean up on unmount
+  useEffect(() => {
+    const poll = startAlertPolling();
+    return () => {
+      if (poll) {
+        clearInterval(poll);
+      }
+    };
+  }, [startAlertPolling]);
+
+  // Calculate derived metrics
+  const metrics = useMemo(() => {
+    if (!dashboardData?.metrics) return {};
+    
+    const { staffCount, activeStaff, totalAssets, operationalAssets, todaySales, monthlyTarget } = dashboardData.metrics;
+    
+    return {
+      staffEfficiency: staffCount > 0 ? (activeStaff / staffCount) * 100 : 0,
+      assetEfficiency: totalAssets > 0 ? (operationalAssets / totalAssets) * 100 : 0,
+      salesProgress: monthlyTarget > 0 ? (todaySales / monthlyTarget) * 100 : 0
+    };
+  }, [dashboardData]);
+
+  // Render alert badge
+  const renderAlertBadge = () => {
+    if (unreadAlerts === 0) return null;
+
+    return (
+      <Badge 
+        count={unreadAlerts} 
+        size="small" 
+        style={{ 
+          backgroundColor: alerts.find(a => !a.read && a.priority === 'high') ? '#ff4d4f' : '#faad14'
+        }}
       />
-      <StatsCard
-        title="Active Pumps"
-        value={stationData.assets.activePumps}
-        total={stationData.assets.pumps}
-        icon={Zap}
-        color="green"
-        trend={2.1}
-      />
-      <StatsCard
-        title="Fuel Tanks"
-        value={stationData.assets.tanks}
-        icon={Fuel}
-        color="orange"
-      />
-      <StatsCard
-        title="Warehouses"
-        value={stationData.assets.activeWarehouses}
-        total={stationData.assets.warehouses}
-        icon={Warehouse}
-        color="purple"
-      />
-      <StatsCard
-        title="Today's Sales"
-        value={`KSH ${(stationData.sales.today / 1000).toFixed(0)}K`}
-        icon={DollarSign}
-        color="green"
-        trend={stationData.sales.trend}
-      />
-      <StatsCard
-        title="Staff On Duty"
-        value={currentShift?.attendants || 0}
-        icon={Users}
-        color="indigo"
-      />
+    );
+  };
+
+  // Render alerts popover content
+  const renderAlertsContent = () => (
+    <div style={{ width: 350 }}>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: 12,
+        paddingBottom: 8,
+        borderBottom: '1px solid #f0f0f0'
+      }}>
+        <strong>System Alerts</strong>
+        {unreadAlerts > 0 && (
+          <Button type="link" size="small" onClick={markAllAlertsAsRead}>
+            Mark all read
+          </Button>
+        )}
+      </div>
+      
+      {alerts.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+          No alerts
+        </div>
+      ) : (
+        <List
+          size="small"
+          dataSource={alerts.slice(0, 5)} // Show only 5 most recent
+          renderItem={alert => (
+            <List.Item
+              style={{ 
+                padding: '8px 0',
+                border: 'none',
+                opacity: alert.read ? 0.6 : 1
+              }}
+            >
+              <List.Item.Meta
+                avatar={
+                  <div style={{ color: ALERT_TYPES[alert.type]?.color || '#999' }}>
+                    {ALERT_TYPES[alert.type]?.icon || <InfoCircleOutlined />}
+                  </div>
+                }
+                title={
+                  <div style={{ fontSize: '13px', fontWeight: alert.read ? 'normal' : 'bold' }}>
+                    {alert.title}
+                  </div>
+                }
+                description={
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#666' }}>
+                      {alert.message}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#999', marginTop: 4 }}>
+                      {new Date(alert.timestamp).toLocaleTimeString()}
+                    </div>
+                    {alert.action && !alert.read && (
+                      <Button 
+                        type="link" 
+                        size="small" 
+                        style={{ padding: 0, height: 'auto', fontSize: '12px' }}
+                        onClick={() => handleAlertAction(alert)}
+                      >
+                        {alert.action.label}
+                      </Button>
+                    )}
+                  </div>
+                }
+              />
+            </List.Item>
+          )}
+        />
+      )}
+      
+      {alerts.length > 5 && (
+        <div style={{ textAlign: 'center', marginTop: 8, paddingTop: 8, borderTop: '1px solid #f0f0f0' }}>
+          <Button type="link" size="small">
+            View all alerts ({alerts.length})
+          </Button>
+        </div>
+      )}
     </div>
   );
 
-  const renderSalesGraph = () => (
-    <Card className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900">Sales Performance</h3>
-          <p className="text-gray-600">Today's hourly sales trend</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="success" className="flex items-center gap-1">
-            <TrendingUp className="w-3 h-3" />
-            {stationData.sales.trend}%
-          </Badge>
-          <Button variant="outline" size="sm" icon={RefreshCw}>
-            Refresh
-          </Button>
-        </div>
-      </div>
-      
-      {/* Simple bar chart representation */}
-      <div className="h-48 flex items-end justify-between gap-2">
-        {stationData.sales.hourly.map((amount, hour) => {
-          const percentage = (amount / Math.max(...stationData.sales.hourly)) * 100;
-          const isPeak = amount === Math.max(...stationData.sales.hourly);
-          
-          return (
-            <div key={hour} className="flex flex-col items-center flex-1">
-              <div
-                className={`w-full rounded-t-lg transition-all duration-300 ${
-                  isPeak ? 'bg-gradient-to-t from-green-500 to-green-400' : 'bg-gradient-to-t from-blue-500 to-blue-400'
-                }`}
-                style={{ height: `${percentage}%` }}
-              />
-              <span className="text-xs text-gray-600 mt-2">{hour + 6}:00</span>
-              <span className="text-xs font-medium text-gray-900 mt-1">
-                KSH {(amount / 1000).toFixed(0)}K
-              </span>
-            </div>
-          );
-        })}
-      </div>
+  // Render critical alerts banner
+  const renderCriticalAlerts = () => {
+    const criticalAlerts = alerts.filter(alert => 
+      !alert.read && alert.priority === 'high'
+    ).slice(0, 3); // Show max 3 critical alerts
 
-      {/* Product breakdown */}
-      <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-        {stationData.sales.products.map((product, index) => (
-          <div key={product.name} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-            <div className="flex items-center gap-3">
-              <div className={`w-3 h-3 rounded-full ${
-                index === 0 ? 'bg-blue-500' : index === 1 ? 'bg-green-500' : 'bg-orange-500'
-              }`} />
-              <div>
-                <p className="font-medium text-gray-900">{product.name}</p>
-                <p className="text-sm text-gray-600">KSH {(product.sales / 1000).toFixed(0)}K</p>
+    if (criticalAlerts.length === 0) return null;
+
+    return (
+      <div style={{ marginBottom: 16 }}>
+        {criticalAlerts.map(alert => (
+          <Alert
+            key={alert.id}
+            message={
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>
+                  <ExclamationCircleOutlined style={{ color: ALERT_TYPES[alert.type]?.color, marginRight: 8 }} />
+                  <strong>{alert.title}:</strong> {alert.message}
+                </span>
+                <div>
+                  {alert.action && (
+                    <Button 
+                      type="link" 
+                      size="small" 
+                      onClick={() => handleAlertAction(alert)}
+                      style={{ color: ALERT_TYPES[alert.type]?.color }}
+                    >
+                      {alert.action.label}
+                    </Button>
+                  )}
+                  <Button 
+                    type="text" 
+                    size="small" 
+                    onClick={() => markAlertAsRead(alert.id)}
+                    style={{ marginLeft: 8 }}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
               </div>
-            </div>
-            <Badge variant={product.trend >= 0 ? "success" : "error"} className="flex items-center gap-1">
-              {product.trend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {Math.abs(product.trend)}%
-            </Badge>
-          </div>
+            }
+            type="error"
+            showIcon={false}
+            closable
+            onClose={() => markAlertAsRead(alert.id)}
+            style={{ marginBottom: 8 }}
+          />
         ))}
       </div>
-    </Card>
-  );
+    );
+  };
 
-  const renderRecentActivities = () => (
-    <Card className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900">Recent Activities</h3>
-          <p className="text-gray-600">Station operations and alerts</p>
-        </div>
-        <Button variant="outline" size="sm" icon={Eye}>
-          View All
-        </Button>
-      </div>
-
-      <div className="space-y-4">
-        {stationData.recentActivities.map((activity) => {
-          const IconComponent = activity.icon;
-          return (
-            <div key={activity.id} className="flex items-start gap-4 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-              <div className={`p-2 rounded-lg ${
-                activity.color === 'green' ? 'bg-green-100 text-green-600' :
-                activity.color === 'orange' ? 'bg-orange-100 text-orange-600' :
-                activity.color === 'blue' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
-              }`}>
-                <IconComponent className="w-4 h-4" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <p className="font-medium text-gray-900">{activity.title}</p>
-                  <span className="text-xs text-gray-500">{getTimeAgo(activity.timestamp)}</span>
-                </div>
-                <p className="text-sm text-gray-600 mt-1">{activity.description}</p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </Card>
-  );
-
-  const renderQuickActions = () => (
-    <Card className="p-6">
-      <div className="mb-6">
-        <h3 className="text-lg font-semibold text-gray-900">Quick Actions</h3>
-        <p className="text-gray-600">Frequently used station operations</p>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Button 
-          variant="secondary" 
-          icon={Plus}
-          className="h-16 flex-col justify-center"
-          onClick={handleOpenShift}
-        >
-          <span>New Shift</span>
-          <span className="text-xs text-gray-500 font-normal mt-1">Start operations</span>
-        </Button>
-
-        <Button 
-          variant="secondary" 
-          icon={ShoppingCart}
-          className="h-16 flex-col justify-center"
-        >
-          <span>Record Sale</span>
-          <span className="text-xs text-gray-500 font-normal mt-1">Manual entry</span>
-        </Button>
-
-        <Button 
-          variant="secondary" 
-          icon={FileText}
-          className="h-16 flex-col justify-center"
-        >
-          <span>Daily Report</span>
-          <span className="text-xs text-gray-500 font-normal mt-1">Generate</span>
-        </Button>
-
-        <Button 
-          variant="secondary" 
-          icon={BarChart3}
-          className="h-16 flex-col justify-center"
-        >
-          <span>Analytics</span>
-          <span className="text-xs text-gray-500 font-normal mt-1">View insights</span>
-        </Button>
-      </div>
-    </Card>
-  );
-
-  const renderVarianceDetails = () => (
-    <Card className="p-6">
-      <div className="mb-6">
-        <h3 className="text-lg font-semibold text-gray-900">Shift Variances</h3>
-        <p className="text-gray-600">Last closed shift discrepancies</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="text-center p-4 border border-gray-200 rounded-lg">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Fuel className="w-5 h-5 text-orange-600" />
-            <span className="font-semibold text-gray-900">Fuel Variance</span>
-          </div>
-          <p className={`text-2xl font-bold ${
-            stationData.variances.fuel === 0 ? 'text-gray-600' :
-            stationData.variances.fuel > 0 ? 'text-green-600' : 'text-red-600'
-          }`}>
-            {stationData.variances.fuel}L
-          </p>
-          <Progress 
-            value={Math.abs(stationData.variances.fuel)} 
-            max={100}
-            className="mt-2"
-            color={stationData.variances.fuel >= 0 ? 'green' : 'red'}
-          />
-        </div>
-
-        <div className="text-center p-4 border border-gray-200 rounded-lg">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <DollarSign className="w-5 h-5 text-green-600" />
-            <span className="font-semibold text-gray-900">Cash Variance</span>
-          </div>
-          <p className={`text-2xl font-bold ${
-            stationData.variances.cash === 0 ? 'text-gray-600' :
-            stationData.variances.cash > 0 ? 'text-green-600' : 'text-red-600'
-          }`}>
-            KSH {stationData.variances.cash}
-          </p>
-          <Progress 
-            value={Math.abs(stationData.variances.cash)} 
-            max={5000}
-            className="mt-2"
-            color={stationData.variances.cash >= 0 ? 'green' : 'red'}
-          />
-        </div>
-
-        <div className="text-center p-4 border border-gray-200 rounded-lg">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Package className="w-5 h-5 text-purple-600" />
-            <span className="font-semibold text-gray-900">Inventory Variance</span>
-          </div>
-          <p className={`text-2xl font-bold ${
-            stationData.variances.inventory === 0 ? 'text-gray-600' :
-            stationData.variances.inventory > 0 ? 'text-green-600' : 'text-red-600'
-          }`}>
-            {stationData.variances.inventory} units
-          </p>
-          <Progress 
-            value={Math.abs(stationData.variances.inventory)} 
-            max={500}
-            className="mt-2"
-            color={stationData.variances.inventory >= 0 ? 'green' : 'red'}
-          />
-        </div>
-      </div>
-
-      <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
-          <div>
-            <h4 className="font-semibold text-yellow-900 mb-1">Action Required</h4>
-            <p className="text-yellow-800 text-sm">
-              Please review and resolve these variances before starting the next shift.
-              Unexplained variances may require management approval.
-            </p>
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-
-  if (loading) {
+  // Render loading state
+  if (loading && !dashboardData) {
     return (
-      <div className="max-w-7xl mx-auto p-6">
-        <LoadingSpinner />
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
+        <Spin size="large" tip="Loading dashboard data..." />
       </div>
     );
   }
 
+  // Use dashboardData if available, otherwise use empty state
+  const data = dashboardData || {
+    name: 'Loading Station...',
+    address: 'Loading address...',
+    metrics: { 
+      staffCount: 0, 
+      activeStaff: 0, 
+      totalAssets: 0, 
+      operationalAssets: 0, 
+      todaySales: 0,
+      yesterdaySales: 0,
+      salesTrend: 0,
+      monthlyTarget: 0,
+      monthlyProgress: 0,
+      pendingDeliveries: 0,
+      completedDeliveries: 0
+    },
+    assets: { pumps: 0, tanks: 0, posSystems: 0, vehicles: 0, other: 0 },
+    expectedDeliveries: [],
+    recentActivities: [],
+    staffShifts: [],
+    assetStatus: [],
+    salesByProduct: []
+  };
+
+  // ==================== RENDER FUNCTIONS ====================
+
+  const renderStatsCards = () => (
+    <Row gutter={[16, 16]}>
+      <Col xs={24} sm={12} lg={6}>
+        <Card>
+          <Statistic
+            title="Active Staff"
+            value={data.metrics.activeStaff}
+            suffix={`/ ${data.metrics.staffCount}`}
+            prefix={<UserOutlined />}
+            valueStyle={{ color: '#1890ff' }}
+          />
+          <Progress 
+            percent={Math.round(metrics.staffEfficiency || 0)} 
+            size="small" 
+            status="active"
+            strokeColor="#1890ff"
+          />
+        </Card>
+      </Col>
+      
+      <Col xs={24} sm={12} lg={6}>
+        <Card>
+          <Statistic
+            title="Operational Assets"
+            value={data.metrics.operationalAssets}
+            suffix={`/ ${data.metrics.totalAssets}`}
+            prefix={<ToolOutlined />}
+            valueStyle={{ color: '#52c41a' }}
+          />
+          <Progress 
+            percent={Math.round(metrics.assetEfficiency || 0)} 
+            size="small" 
+            status="active"
+            strokeColor="#52c41a"
+          />
+        </Card>
+      </Col>
+      
+      <Col xs={24} sm={12} lg={6}>
+        <Card>
+          <Statistic
+            title="Today's Sales"
+            value={data.metrics.todaySales}
+            prefix={<DollarOutlined />}
+            valueStyle={{ color: '#faad14' }}
+            formatter={value => `KSH ${Number(value).toLocaleString()}`}
+          />
+          <div style={{ marginTop: 8 }}>
+            {data.metrics.salesTrend > 0 ? (
+              <span style={{ color: '#52c41a' }}>
+                <RiseOutlined /> {data.metrics.salesTrend}%
+              </span>
+            ) : (
+              <span style={{ color: '#ff4d4f' }}>
+                <FallOutlined /> {Math.abs(data.metrics.salesTrend)}%
+              </span>
+            )}
+            <span style={{ marginLeft: 8, color: '#999', fontSize: 12 }}>
+              vs yesterday
+            </span>
+          </div>
+        </Card>
+      </Col>
+      
+      <Col xs={24} sm={12} lg={6}>
+        <Card>
+          <Statistic
+            title="Pending Deliveries"
+            value={data.metrics.pendingDeliveries}
+            prefix={<TruckOutlined />}
+            valueStyle={{ color: '#fa541c' }}
+          />
+          <div style={{ marginTop: 8, color: '#999', fontSize: 12 }}>
+            {data.metrics.completedDeliveries} completed this week
+          </div>
+        </Card>
+      </Col>
+    </Row>
+  );
+
+  const renderMonthlyProgress = () => (
+    <Card style={{ marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <span style={{ fontWeight: 'bold' }}>Monthly Sales Progress</span>
+        <span>{data.metrics.monthlyProgress}%</span>
+      </div>
+      <Progress 
+        percent={data.metrics.monthlyProgress} 
+        status="active" 
+        strokeColor={{
+          from: '#108ee9',
+          to: '#87d068',
+        }}
+      />
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+        <span style={{ color: '#666', fontSize: 12 }}>
+          Target: KSH {data.metrics.monthlyTarget.toLocaleString()}
+        </span>
+        <span style={{ color: '#666', fontSize: 12 }}>
+          Achieved: KSH {Math.round(data.metrics.monthlyTarget * data.metrics.monthlyProgress / 100).toLocaleString()}
+        </span>
+      </div>
+    </Card>
+  );
+
+  const renderAssetBreakdown = () => (
+    <Card 
+      title={
+        <span>
+          <ToolOutlined /> Asset Breakdown
+        </span>
+      }
+      extra={<Button type="link" icon={<EyeOutlined />}>View All</Button>}
+      loading={refreshing}
+    >
+      <Row gutter={[16, 16]}>
+        <Col xs={12} sm={8} md={4}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 24, fontWeight: 'bold', color: '#1890ff' }}>
+              {data.assets.pumps}
+            </div>
+            <div style={{ color: '#666', fontSize: 12 }}>Pumps</div>
+          </div>
+        </Col>
+        <Col xs={12} sm={8} md={4}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 24, fontWeight: 'bold', color: '#52c41a' }}>
+              {data.assets.tanks}
+            </div>
+            <div style={{ color: '#666', fontSize: 12 }}>Tanks</div>
+          </div>
+        </Col>
+        <Col xs={12} sm={8} md={4}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 24, fontWeight: 'bold', color: '#faad14' }}>
+              {data.assets.posSystems}
+            </div>
+            <div style={{ color: '#666', fontSize: 12 }}>POS Systems</div>
+          </div>
+        </Col>
+        <Col xs={12} sm={8} md={4}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 24, fontWeight: 'bold', color: '#722ed1' }}>
+              {data.assets.vehicles}
+            </div>
+            <div style={{ color: '#666', fontSize: 12 }}>Vehicles</div>
+          </div>
+        </Col>
+        <Col xs={12} sm={8} md={4}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 24, fontWeight: 'bold', color: '#fa541c' }}>
+              {data.assets.other}
+            </div>
+            <div style={{ color: '#666', fontSize: 12 }}>Other</div>
+          </div>
+        </Col>
+        <Col xs={12} sm={8} md={4}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 24, fontWeight: 'bold', color: '#13c2c2' }}>
+              {data.metrics.totalAssets}
+            </div>
+            <div style={{ color: '#666', fontSize: 12 }}>Total</div>
+          </div>
+        </Col>
+      </Row>
+    </Card>
+  );
+
+  const renderExpectedDeliveries = () => (
+    <Card 
+      title={
+        <span>
+          <TruckOutlined /> Expected Deliveries
+        </span>
+      }
+      extra={
+        <Button type="primary" icon={<PlusOutlined />} size="small">
+          Track Delivery
+        </Button>
+      }
+      loading={refreshing}
+    >
+      {data.expectedDeliveries.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+          No pending deliveries
+        </div>
+      ) : (
+        <List
+          dataSource={data.expectedDeliveries}
+          renderItem={delivery => (
+            <List.Item
+              key={delivery.id}
+              actions={[
+                <Button 
+                  type="link" 
+                  size="small" 
+                  onClick={() => setSelectedDelivery(delivery)}
+                >
+                  Details
+                </Button>
+              ]}
+            >
+              <List.Item.Meta
+                avatar={
+                  <div style={{
+                    padding: 8,
+                    borderRadius: 6,
+                    backgroundColor: 
+                      delivery.priority === 'high' ? '#fff2e8' :
+                      delivery.priority === 'medium' ? '#f6ffed' : '#f0f5ff'
+                  }}>
+                    <TruckOutlined style={{
+                      color: 
+                        delivery.priority === 'high' ? '#fa541c' :
+                        delivery.priority === 'medium' ? '#52c41a' : '#1890ff'
+                    }} />
+                  </div>
+                }
+                title={
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span>{delivery.product}</span>
+                    <Tag color={
+                      delivery.status === 'scheduled' ? 'blue' :
+                      delivery.status === 'confirmed' ? 'green' : 'orange'
+                    }>
+                      {delivery.status}
+                    </Tag>
+                  </div>
+                }
+                description={
+                  <div>
+                    <div>Supplier: {delivery.supplier}</div>
+                    <div>Quantity: {delivery.quantity}</div>
+                    <div>
+                      Expected: {new Date(delivery.expectedDate).toLocaleDateString()} at{' '}
+                      {new Date(delivery.expectedDate).toLocaleTimeString()}
+                    </div>
+                  </div>
+                }
+              />
+            </List.Item>
+          )}
+        />
+      )}
+    </Card>
+  );
+
+  const renderRecentActivities = () => {
+    // Map icon strings to actual components
+    const iconMap = {
+      'ClockCircleOutlined': ClockCircleOutlined,
+      'TruckOutlined': TruckOutlined,
+      'AlertOutlined': AlertOutlined,
+      'CheckCircleOutlined': CheckCircleOutlined
+    };
+
+    return (
+      <Card 
+        title={
+          <span>
+            <AlertOutlined /> Recent Activities
+          </span>
+        }
+        extra={
+          <Button 
+            type="link" 
+            icon={<ReloadOutlined />} 
+            onClick={handleRefresh}
+            loading={refreshing}
+          >
+            Refresh
+          </Button>
+        }
+        loading={refreshing}
+      >
+        {data.recentActivities.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+            No recent activities
+          </div>
+        ) : (
+          <Timeline>
+            {data.recentActivities.map(activity => {
+              const IconComponent = iconMap[activity.icon] || ClockCircleOutlined;
+              return (
+                <Timeline.Item
+                  key={activity.id}
+                  color={activity.color}
+                  dot={<IconComponent style={{ fontSize: '16px' }} />}
+                >
+                  <div>
+                    <div style={{ fontWeight: 'bold', marginBottom: 4 }}>
+                      {activity.title}
+                    </div>
+                    <div style={{ color: '#666', marginBottom: 4 }}>
+                      {activity.description}
+                    </div>
+                    <div style={{ color: '#999', fontSize: 12 }}>
+                      {new Date(activity.timestamp).toLocaleString()}
+                    </div>
+                  </div>
+                </Timeline.Item>
+              );
+            })}
+          </Timeline>
+        )}
+      </Card>
+    );
+  };
+
+  const renderStaffShifts = () => (
+    <Card 
+      title="Staff Shifts"
+      loading={refreshing}
+    >
+      {data.staffShifts.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+          No shift data available
+        </div>
+      ) : (
+        <List
+          dataSource={data.staffShifts}
+          renderItem={shift => (
+            <List.Item
+              key={shift.id}
+              actions={[
+                <Tag color={
+                  shift.status === 'active' ? 'green' :
+                  shift.status === 'upcoming' ? 'blue' : 'default'
+                }>
+                  {shift.status}
+                </Tag>
+              ]}
+            >
+              <List.Item.Meta
+                avatar={<UserOutlined />}
+                title={shift.name}
+                description={
+                  <div>
+                    <div>Time: {shift.startTime} - {shift.endTime}</div>
+                    <div>Staff: {shift.staffCount} attendants</div>
+                  </div>
+                }
+              />
+            </List.Item>
+          )}
+        />
+      )}
+    </Card>
+  );
+
+  const renderSalesByProduct = () => (
+    <Card 
+      title="Sales by Product"
+      loading={refreshing}
+    >
+      <Table
+        dataSource={data.salesByProduct}
+        pagination={false}
+        size="small"
+        rowKey="product"
+        columns={[
+          {
+            title: 'Product',
+            dataIndex: 'product',
+            key: 'product',
+          },
+          {
+            title: 'Sales (KSH)',
+            dataIndex: 'sales',
+            key: 'sales',
+            render: (value) => value.toLocaleString(),
+          },
+          {
+            title: 'Volume (L)',
+            dataIndex: 'volume',
+            key: 'volume',
+            render: (value) => value?.toLocaleString() || '0',
+          },
+          {
+            title: 'Trend',
+            dataIndex: 'trend',
+            key: 'trend',
+            render: (value) => (
+              <span style={{ color: value >= 0 ? '#52c41a' : '#ff4d4f' }}>
+                {value >= 0 ? <RiseOutlined /> : <FallOutlined />} {Math.abs(value)}%
+              </span>
+            ),
+          },
+        ]}
+      />
+    </Card>
+  );
+
+  const renderAssetStatus = () => (
+    <Card 
+      title="Asset Status"
+      loading={refreshing}
+    >
+      {data.assetStatus.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+          No asset data available
+        </div>
+      ) : (
+        <List
+          dataSource={data.assetStatus}
+          renderItem={asset => (
+            <List.Item
+              key={asset.id}
+              actions={[
+                <Progress 
+                  percent={asset.utilization} 
+                  size="small" 
+                  width={80}
+                  status={asset.status === 'maintenance' ? 'exception' : 'active'}
+                />
+              ]}
+            >
+              <List.Item.Meta
+                avatar={
+                  <Tag color={asset.status === 'operational' ? 'green' : 'orange'}>
+                    {asset.status}
+                  </Tag>
+                }
+                title={asset.name}
+                description={`Last maintenance: ${asset.lastMaintenance}`}
+              />
+            </List.Item>
+          )}
+        />
+      )}
+    </Card>
+  );
+
   return (
-    <div className="max-w-7xl mx-auto p-6">
+    <div style={{ padding: 24 }}>
       {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
           <div>
-            <div className="flex items-center gap-3 mb-2">
-              <Building2 className="w-8 h-8 text-blue-600" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              <ShopOutlined style={{ fontSize: 24, color: '#1890ff' }} />
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">{stationData.name}</h1>
-                <p className="text-gray-600 flex items-center gap-2">
-                  <MapPin className="w-4 h-4" />
-                  {stationData.location}
-                  <Badge variant="success" className="ml-2">
-                    Operational
-                  </Badge>
+                <h1 style={{ margin: 0, fontSize: 28, fontWeight: 'bold' }}>
+                  {data.name}
+                </h1>
+                <p style={{ margin: 0, color: '#666' }}>
+                  <EnvironmentOutlined /> {data.address}
                 </p>
               </div>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-lg font-semibold text-gray-900">
-              {new Date().toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-              })}
-            </p>
-            <p className="text-gray-600">{new Date().toLocaleTimeString()}</p>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, justifyContent: 'flex-end' }}>
+              <Popover
+                content={renderAlertsContent}
+                title={null}
+                trigger="click"
+                placement="bottomRight"
+                overlayStyle={{ width: 350 }}
+              >
+                <Button 
+                  type="text" 
+                  icon={<BellOutlined />}
+                  style={{ position: 'relative' }}
+                >
+                  Alerts {renderAlertBadge()}
+                </Button>
+              </Popover>
+              
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 'bold' }}>
+                  {new Date().toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}
+                </div>
+                <div style={{ color: '#666' }}>
+                  {new Date().toLocaleTimeString()}
+                </div>
+                <Button 
+                  type="link" 
+                  icon={<ReloadOutlined />} 
+                  onClick={handleRefresh}
+                  loading={refreshing}
+                  style={{ marginTop: 8 }}
+                >
+                  Refresh Data
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Alert Section */}
-        {renderAlertSection()}
+        {/* Critical Alerts Banner */}
+        {renderCriticalAlerts()}
+
+        {/* Monthly Progress */}
+        {renderMonthlyProgress()}
       </div>
 
-      {/* Tabs */}
-      <Card className="mb-6">
-        <Tabs value={activeTab} onChange={setActiveTab}>
-          <Tab value="overview">
-            Overview
-          </Tab>
-          <Tab value="sales">
-            Sales Analytics
-          </Tab>
-          <Tab value="inventory">
-            Inventory
-          </Tab>
-          <Tab value="variances">
-            Variances
-          </Tab>
-          <Tab value="activities">
-            Activities
-          </Tab>
+      {/* Stats Cards */}
+      {renderStatsCards()}
+
+      <div style={{ marginTop: 24 }}>
+        <Tabs 
+          activeKey={activeTab} 
+          onChange={setActiveTab}
+          tabBarExtraContent={
+            <Button 
+              icon={<ReloadOutlined />} 
+              onClick={handleRefresh}
+              loading={refreshing}
+              size="small"
+            >
+              Refresh
+            </Button>
+          }
+        >
+          <TabPane 
+            tab={
+              <span>
+                <BarChartOutlined />
+                Overview
+              </span>
+            } 
+            key="overview"
+          >
+            <Row gutter={[16, 16]}>
+              <Col xs={24} lg={12}>
+                {renderAssetBreakdown()}
+              </Col>
+              <Col xs={24} lg={12}>
+                {renderExpectedDeliveries()}
+              </Col>
+              <Col xs={24} lg={12}>
+                {renderRecentActivities()}
+              </Col>
+              <Col xs={24} lg={12}>
+                {renderStaffShifts()}
+              </Col>
+            </Row>
+          </TabPane>
+
+          <TabPane 
+            tab={
+              <span>
+                <StockOutlined />
+                Sales Analytics
+              </span>
+            } 
+            key="analytics"
+          >
+            <Row gutter={[16, 16]}>
+              <Col xs={24}>
+                {renderSalesByProduct()}
+              </Col>
+              <Col xs={24} lg={12}>
+                <Card title="Sales Performance">
+                  <div style={{ textAlign: 'center', padding: '20px' }}>
+                    <Progress 
+                      type="circle" 
+                      percent={data.metrics.monthlyProgress} 
+                      format={percent => `${percent}%`}
+                      strokeColor={{
+                        '0%': '#108ee9',
+                        '100%': '#87d068',
+                      }}
+                    />
+                    <div style={{ marginTop: 16 }}>
+                      <Statistic
+                        title="Monthly Target"
+                        value={data.metrics.monthlyTarget}
+                        prefix="KSH"
+                        valueStyle={{ color: '#1890ff' }}
+                      />
+                    </div>
+                  </div>
+                </Card>
+              </Col>
+              <Col xs={24} lg={12}>
+                <Card title="Sales Trend">
+                  <div style={{ padding: '20px', textAlign: 'center' }}>
+                    {data.metrics.salesTrend > 0 ? (
+                      <div>
+                        <RiseOutlined style={{ fontSize: 48, color: '#52c41a' }} />
+                        <div style={{ marginTop: 16, fontSize: 18, color: '#52c41a' }}>
+                          +{data.metrics.salesTrend}% Growth
+                        </div>
+                        <div style={{ color: '#666', marginTop: 8 }}>
+                          Compared to yesterday
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <FallOutlined style={{ fontSize: 48, color: '#ff4d4f' }} />
+                        <div style={{ marginTop: 16, fontSize: 18, color: '#ff4d4f' }}>
+                          {data.metrics.salesTrend}% Decline
+                        </div>
+                        <div style={{ color: '#666', marginTop: 8 }}>
+                          Compared to yesterday
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              </Col>
+            </Row>
+          </TabPane>
+
+          <TabPane 
+            tab={
+              <span>
+                <SafetyCertificateOutlined />
+                Assets & Maintenance
+              </span>
+            } 
+            key="assets"
+          >
+            <Row gutter={[16, 16]}>
+              <Col xs={24}>
+                {renderAssetStatus()}
+              </Col>
+              <Col xs={24} lg={12}>
+                <Card title="Asset Efficiency">
+                  <div style={{ textAlign: 'center', padding: '20px' }}>
+                    <Progress 
+                      type="circle" 
+                      percent={Math.round(metrics.assetEfficiency)} 
+                      format={percent => `${percent}%`}
+                      strokeColor={{
+                        '0%': '#ff4d4f',
+                        '50%': '#faad14',
+                        '100%': '#52c41a',
+                      }}
+                    />
+                    <div style={{ marginTop: 16 }}>
+                      <Statistic
+                        title="Operational Assets"
+                        value={data.metrics.operationalAssets}
+                        suffix={`/ ${data.metrics.totalAssets}`}
+                        valueStyle={{ color: '#52c41a' }}
+                      />
+                    </div>
+                  </div>
+                </Card>
+              </Col>
+              <Col xs={24} lg={12}>
+                <Card title="Staff Efficiency">
+                  <div style={{ textAlign: 'center', padding: '20px' }}>
+                    <Progress 
+                      type="circle" 
+                      percent={Math.round(metrics.staffEfficiency)} 
+                      format={percent => `${percent}%`}
+                      strokeColor={{
+                        '0%': '#ff4d4f',
+                        '50%': '#faad14',
+                        '100%': '#52c41a',
+                      }}
+                    />
+                    <div style={{ marginTop: 16 }}>
+                      <Statistic
+                        title="Active Staff"
+                        value={data.metrics.activeStaff}
+                        suffix={`/ ${data.metrics.staffCount}`}
+                        valueStyle={{ color: '#1890ff' }}
+                      />
+                    </div>
+                  </div>
+                </Card>
+              </Col>
+            </Row>
+          </TabPane>
         </Tabs>
-      </Card>
+      </div>
 
-      {/* Main Content */}
-      {activeTab === 'overview' && (
-        <div className="space-y-6">
-          {renderStatsCards()}
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            <div className="xl:col-span-2">
-              {renderSalesGraph()}
-            </div>
-            <div>
-              {renderRecentActivities()}
-            </div>
-          </div>
-          {renderQuickActions()}
-        </div>
-      )}
-
-      {activeTab === 'sales' && (
-        <div className="space-y-6">
-          {renderStatsCards()}
-          {renderSalesGraph()}
-        </div>
-      )}
-
-      {activeTab === 'variances' && (
-        <div className="space-y-6">
-          {renderVarianceDetails()}
-        </div>
-      )}
-
-      {activeTab === 'activities' && (
-        <div className="space-y-6">
-          {renderRecentActivities()}
-          {renderQuickActions()}
-        </div>
-      )}
-
-      {/* Shift Management Modal */}
+      {/* Delivery Detail Modal */}
       <Modal
-        isOpen={showShiftModal}
-        onClose={() => setShowShiftModal(false)}
-        title={currentShift ? "Close Current Shift" : "Open New Shift"}
-        size="md"
+        title="Delivery Details"
+        open={!!selectedDelivery}
+        onCancel={() => setSelectedDelivery(null)}
+        footer={[
+          <Button key="close" onClick={() => setSelectedDelivery(null)}>
+            Close
+          </Button>,
+          <Button key="track" type="primary">
+            Track Delivery
+          </Button>
+        ]}
       >
-        <div className="space-y-6">
-          {currentShift ? (
-            <div className="text-center">
-              <StopCircle className="w-16 h-16 text-orange-500 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                Close Shift #{currentShift.number}
-              </h3>
-              <p className="text-gray-600 mb-6">
-                Are you sure you want to close the current shift? This will trigger variance calculations and generate shift reports.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <Button variant="outline" onClick={() => setShowShiftModal(false)}>
-                  Cancel
-                </Button>
-                <Button variant="cosmic" onClick={handleCloseShift} loading={loading}>
-                  Close Shift
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center">
-              <PlayCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                Start New Shift
-              </h3>
-              <p className="text-gray-600 mb-6">
-                Begin a new operational shift. This will initialize all meters and prepare the station for daily operations.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <Button variant="outline" onClick={() => setShowShiftModal(false)}>
-                  Cancel
-                </Button>
-                <Button variant="cosmic" onClick={handleOpenShift} loading={loading}>
-                  Start Shift
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
+        {selectedDelivery && (
+          <div>
+            <p><strong>Product:</strong> {selectedDelivery.product}</p>
+            <p><strong>Supplier:</strong> {selectedDelivery.supplier}</p>
+            <p><strong>Quantity:</strong> {selectedDelivery.quantity}</p>
+            <p><strong>Expected Date:</strong> {new Date(selectedDelivery.expectedDate).toLocaleString()}</p>
+            <p><strong>Status:</strong> 
+              <Tag color={
+                selectedDelivery.status === 'scheduled' ? 'blue' :
+                selectedDelivery.status === 'confirmed' ? 'green' : 'orange'
+              } style={{ marginLeft: 8 }}>
+                {selectedDelivery.status}
+              </Tag>
+            </p>
+            <p><strong>Priority:</strong> 
+              <Tag color={
+                selectedDelivery.priority === 'high' ? 'red' :
+                selectedDelivery.priority === 'medium' ? 'orange' : 'blue'
+              } style={{ marginLeft: 8 }}>
+                {selectedDelivery.priority}
+              </Tag>
+            </p>
+          </div>
+        )}
       </Modal>
     </div>
   );
 };
 
-export default StationDashboard;
+export default StationDashboardOverview;

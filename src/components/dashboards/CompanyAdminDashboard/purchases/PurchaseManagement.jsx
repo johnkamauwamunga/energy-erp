@@ -1,30 +1,45 @@
 // src/components/purchases/PurchaseManagement.js
 import React, { useState, useEffect } from 'react';
-import { 
-  Plus, Eye, Edit, Trash2, Search, Filter, RefreshCw, 
-  CheckCircle, XCircle, Play, Pause, BarChart3, Download,
-  Truck, Package, DollarSign, Calendar, Users, AlertCircle,
-  FileText, ShoppingCart, Clock, ArrowUpDown, TrendingUp
-} from 'lucide-react';
-import { Button, Input, Select, Badge, LoadingSpinner } from '../../../ui';
-import { useApp } from '../../../../context/AppContext';
-import CreateEditPurchaseModal from './create/CreateEditPurchaseModal';
-// import PurchaseDetailsModal from './PurchaseDetailsModal';
-// import PurchaseReceivingModal from './PurchaseReceivingModal';
+import {
+  PlusOutlined,
+  EyeOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  SearchOutlined,
+  FilterOutlined,
+  ReloadOutlined,
+  CheckCircleOutlined,
+  BarChartOutlined,
+  DownloadOutlined,
+  ShoppingOutlined
+} from '@ant-design/icons';
+import {
+  Button,
+  Input,
+  Select,
+  Table,
+  Card,
+  Row,
+  Col,
+  Statistic,
+  Tag,
+  Space,
+  Modal,
+  message,
+  Tooltip
+} from 'antd';
 import { purchaseService } from '../../../../services/purchaseService/purchaseService';
 import { supplierService } from '../../../../services/supplierService/supplierService';
-import { fuelService } from '../../../../services/fuelService/fuelService';
+import CreateEditPurchaseModal from './create/CreateEditPurchaseModal';
+
+const { Option } = Select;
+const { Search } = Input;
 
 const PurchaseManagement = () => {
-  const { state } = useApp();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
-  const [isReceivingModalOpen, setIsReceivingModalOpen] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState(null);
   const [loading, setLoading] = useState(true);
   const [purchases, setPurchases] = useState([]);
-  const [error, setError] = useState('');
-  const [retryCount, setRetryCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -36,14 +51,14 @@ const PurchaseManagement = () => {
     pending: 0,
     approved: 0,
     completed: 0,
-    totalSpent: 0
+    totalSpent: 0,
+    totalTax: 0,
+    totalDiscount: 0
   });
 
-  // Load purchases and suppliers
   const loadPurchases = async () => {
     try {
       setLoading(true);
-      setError('');
       
       const filters = {};
       if (statusFilter !== 'all') filters.status = statusFilter;
@@ -51,14 +66,16 @@ const PurchaseManagement = () => {
       if (supplierFilter !== 'all') filters.supplierId = supplierFilter;
       if (searchQuery) filters.search = searchQuery;
 
-      const response = await purchaseService.getPurchases(filters);
-      setPurchases(response.purchases || response.data || []);
-      calculateStats(response.purchases || response.data || []);
+      const purchasesData = await purchaseService.getPurchases(filters);
+      const purchasesArray = purchasesData.purchases || purchasesData.data || purchasesData || [];
+      
+      setPurchases(purchasesArray);
+      calculateStats(purchasesArray);
     } catch (error) {
       console.error('Failed to load purchases:', error);
-      setError(error.message || 'Failed to load purchases');
+      message.error(error.message || 'Failed to load purchases');
       setPurchases([]);
-      setStats({ total: 0, draft: 0, pending: 0, approved: 0, completed: 0, totalSpent: 0 });
+      setStats({ total: 0, draft: 0, pending: 0, approved: 0, completed: 0, totalSpent: 0, totalTax: 0, totalDiscount: 0 });
     } finally {
       setLoading(false);
     }
@@ -66,10 +83,13 @@ const PurchaseManagement = () => {
 
   const loadSuppliers = async () => {
     try {
-      const suppliersData = await supplierService.getSuppliers({ status: 'ACTIVE' });
-      setSuppliers(suppliersData.data || suppliersData || []);
+      const suppliersData = await supplierService.getSuppliers(true);
+      const suppliersArray = suppliersData.suppliers || suppliersData.data || suppliersData || [];
+      setSuppliers(suppliersArray);
     } catch (error) {
       console.error('Failed to load suppliers:', error);
+      message.error(error.message || 'Failed to load suppliers');
+      setSuppliers([]);
     }
   };
 
@@ -79,519 +99,462 @@ const PurchaseManagement = () => {
     const pending = purchaseData.filter(p => p.status === 'PENDING_APPROVAL').length;
     const approved = purchaseData.filter(p => p.status === 'APPROVED').length;
     const completed = purchaseData.filter(p => p.status === 'COMPLETED').length;
-    const totalSpent = purchaseData
-      .filter(p => p.status === 'COMPLETED')
-      .reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+    const totalSpent = purchaseData.reduce((sum, p) => sum + (p.netPayable || 0), 0);
+    const totalTax = purchaseData.reduce((sum, p) => sum + (p.totalTaxAmount || 0), 0);
+    const totalDiscount = purchaseData.reduce((sum, p) => sum + (p.discountAmount || 0), 0);
 
-    setStats({ total, draft, pending, approved, completed, totalSpent });
+    setStats({ total, draft, pending, approved, completed, totalSpent, totalTax, totalDiscount });
   };
 
   useEffect(() => {
     loadPurchases();
     loadSuppliers();
-  }, [retryCount, statusFilter, typeFilter, supplierFilter]);
+  }, [statusFilter, typeFilter, supplierFilter]);
+
+  const handleUpdateStatus = async (purchaseId, status) => {
+    try {
+      await purchaseService.updatePurchaseStatus(purchaseId, status);
+      message.success('Purchase status updated successfully');
+      loadPurchases();
+    } catch (error) {
+      message.error(error.message || 'Failed to update purchase status');
+    }
+  };
+
+  const handleDeletePurchase = async (purchaseId) => {
+    Modal.confirm({
+      title: 'Are you sure you want to delete this purchase?',
+      content: 'This action cannot be undone.',
+      okText: 'Yes, Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          await purchaseService.deletePurchase(purchaseId);
+          message.success('Purchase deleted successfully');
+          loadPurchases();
+        } catch (error) {
+          message.error(error.message || 'Failed to delete purchase');
+        }
+      }
+    });
+  };
 
   const handlePurchaseCreated = () => {
     loadPurchases();
     setIsCreateModalOpen(false);
+    message.success('Purchase created successfully');
   };
 
   const handlePurchaseUpdated = () => {
     loadPurchases();
     setSelectedPurchase(null);
+    message.success('Purchase updated successfully');
   };
 
-  const handleItemsReceived = () => {
-    loadPurchases();
-    setIsReceivingModalOpen(false);
-  };
-
-  const handleRetry = () => {
-    setRetryCount(prev => prev + 1);
-  };
-
-  // Status badge styling
-  const getStatusBadge = (status) => {
+  const getStatusTag = (status) => {
     const statusConfig = {
-      DRAFT: { color: 'gray', label: 'Draft', icon: FileText },
-      PENDING_APPROVAL: { color: 'yellow', label: 'Pending Approval', icon: Clock },
-      APPROVED: { color: 'blue', label: 'Approved', icon: CheckCircle },
-      ORDER_CONFIRMED: { color: 'purple', label: 'Order Confirmed', icon: ShoppingCart },
-      IN_TRANSIT: { color: 'orange', label: 'In Transit', icon: Truck },
-      ARRIVED_AT_SITE: { color: 'teal', label: 'Arrived at Site', icon: Package },
-      QUALITY_CHECK: { color: 'yellow', label: 'Quality Check', icon: AlertCircle },
-      PARTIALLY_RECEIVED: { color: 'indigo', label: 'Partially Received', icon: ArrowUpDown },
-      COMPLETED: { color: 'green', label: 'Completed', icon: CheckCircle },
-      CANCELLED: { color: 'red', label: 'Cancelled', icon: XCircle },
-      REJECTED: { color: 'red', label: 'Rejected', icon: XCircle },
-      ON_HOLD: { color: 'gray', label: 'On Hold', icon: Pause }
+      DRAFT: { color: 'default', label: 'Draft' },
+      PENDING_APPROVAL: { color: 'orange', label: 'Pending Approval' },
+      APPROVED: { color: 'blue', label: 'Approved' },
+      ORDER_CONFIRMED: { color: 'purple', label: 'Order Confirmed' },
+      IN_TRANSIT: { color: 'orange', label: 'In Transit' },
+      ARRIVED_AT_SITE: { color: 'cyan', label: 'Arrived at Site' },
+      QUALITY_CHECK: { color: 'gold', label: 'Quality Check' },
+      PARTIALLY_RECEIVED: { color: 'geekblue', label: 'Partially Received' },
+      COMPLETED: { color: 'green', label: 'Completed' },
+      CANCELLED: { color: 'red', label: 'Cancelled' },
+      REJECTED: { color: 'red', label: 'Rejected' },
+      ON_HOLD: { color: 'default', label: 'On Hold' }
     };
 
     const config = statusConfig[status] || statusConfig.DRAFT;
-    const IconComponent = config.icon;
-
-    return (
-      <Badge variant={config.color} className="flex items-center gap-1">
-        <IconComponent className="w-3 h-3" />
-        {config.label}
-      </Badge>
-    );
+    return <Tag color={config.color}>{config.label}</Tag>;
   };
 
-  // Type badge styling
-  const getTypeBadge = (type) => {
+  const getTypeTag = (type) => {
     const typeConfig = {
-      FUEL: { color: 'blue', label: 'Fuel', icon: Truck },
-      NON_FUEL: { color: 'green', label: 'Non-Fuel', icon: Package },
-      MIXED: { color: 'purple', label: 'Mixed', icon: ShoppingCart }
+      FUEL: { color: 'blue', label: 'Fuel' },
+      NON_FUEL: { color: 'green', label: 'Non-Fuel' },
+      MIXED: { color: 'purple', label: 'Mixed' }
     };
 
     const config = typeConfig[type] || typeConfig.FUEL;
-    return <Badge variant={config.color}>{config.label}</Badge>;
+    return <Tag color={config.color}>{config.label}</Tag>;
   };
 
-  // Delivery status badge
-  const getDeliveryBadge = (status) => {
+  const getDeliveryTag = (status) => {
     const statusConfig = {
-      PENDING: { color: 'gray', label: 'Pending' },
+      PENDING: { color: 'default', label: 'Pending' },
       DISPATCHED: { color: 'blue', label: 'Dispatched' },
       IN_TRANSIT: { color: 'orange', label: 'In Transit' },
-      ARRIVED: { color: 'teal', label: 'Arrived' },
+      ARRIVED: { color: 'cyan', label: 'Arrived' },
       UNLOADING: { color: 'purple', label: 'Unloading' },
-      QUALITY_VERIFICATION: { color: 'yellow', label: 'Quality Check' },
-      PARTIALLY_ACCEPTED: { color: 'indigo', label: 'Partially Accepted' },
+      QUALITY_VERIFICATION: { color: 'gold', label: 'Quality Check' },
+      PARTIALLY_ACCEPTED: { color: 'geekblue', label: 'Partially Accepted' },
       FULLY_ACCEPTED: { color: 'green', label: 'Fully Accepted' },
       REJECTED: { color: 'red', label: 'Rejected' },
       RETURNED: { color: 'red', label: 'Returned' }
     };
 
     const config = statusConfig[status] || statusConfig.PENDING;
-    return <Badge variant={config.color}>{config.label}</Badge>;
+    return <Tag color={config.color}>{config.label}</Tag>;
   };
 
-  // Action handlers
+  const formatCurrency = (amount) => {
+    return `$${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
   const handleViewDetails = async (purchase) => {
     try {
-      const detailedPurchase = await purchaseService.getPurchaseById(purchase.id);
-      setSelectedPurchase(detailedPurchase);
-      setIsDetailsModalOpen(true);
+      const purchaseDetails = await purchaseService.getPurchaseById(purchase.id);
+      setSelectedPurchase(purchaseDetails);
+      message.info('View details for ' + purchase.purchaseNumber);
     } catch (error) {
-      setError(error.message);
+      message.error(error.message || 'Failed to load purchase details');
     }
   };
 
   const handleEditPurchase = (purchase) => {
     if (purchase.status !== 'DRAFT') {
-      setError('Only draft purchases can be edited');
+      message.error('Only draft purchases can be edited');
       return;
     }
     setSelectedPurchase(purchase);
     setIsCreateModalOpen(true);
   };
 
-  const handleReceiveItems = (purchase) => {
-    if (purchase.type !== 'NON_FUEL') {
-      setError('Only non-fuel purchases can be received through this interface');
-      return;
-    }
-    setSelectedPurchase(purchase);
-    setIsReceivingModalOpen(true);
-  };
+  const canManagePurchases = () => true;
+  const canApprovePurchases = () => true;
 
-  const handleUpdateStatus = async (purchaseId, status) => {
-    try {
-      await purchaseService.updatePurchaseStatus(purchaseId, status);
-      loadPurchases();
-    } catch (error) {
-      setError(error.message);
-    }
-  };
-
-  const handleDeletePurchase = async (purchaseId) => {
-    if (!window.confirm('Are you sure you want to delete this purchase? This action cannot be undone.')) return;
-    
-    try {
-      await purchaseService.deletePurchase(purchaseId);
-      loadPurchases();
-    } catch (error) {
-      setError(error.message);
-    }
-  };
-
-  // Check user permissions
-  const canManagePurchases = () => {
-    return ['SUPER_ADMIN', 'COMPANY_ADMIN', 'COMPANY_MANAGER', 'PURCHASE_MANAGER'].includes(state.currentUser.role);
-  };
-
-  const canApprovePurchases = () => {
-    return ['SUPER_ADMIN', 'COMPANY_ADMIN', 'COMPANY_MANAGER'].includes(state.currentUser.role);
-  };
-
-  // Filter purchases based on search
-  const filteredPurchases = purchases.filter(purchase => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      return (
-        purchase.purchaseNumber?.toLowerCase().includes(query) ||
-        purchase.supplier?.name?.toLowerCase().includes(query) ||
-        purchase.reference?.toLowerCase().includes(query)
-      );
-    }
-    return true;
-  });
-
-  // Export functionality
-  const handleExportCSV = async () => {
-    try {
-      const csvData = await purchaseService.exportPurchasesToCSV({
-        status: statusFilter !== 'all' ? statusFilter : undefined,
-        type: typeFilter !== 'all' ? typeFilter : undefined,
-        supplierId: supplierFilter !== 'all' ? supplierFilter : undefined
-      });
-      
-      // Create and download CSV file
-      const csvContent = csvData.map(row => row.join(',')).join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `purchases-${new Date().toISOString().split('T')[0]}.csv`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      setError('Failed to export purchases: ' + error.message);
-    }
-  };
-
-  if (loading && purchases.length === 0) {
-    return (
-      <div className="p-6 flex justify-center items-center h-64">
-        <div className="text-center">
-          <LoadingSpinner size="lg" />
-          <p className="mt-4 text-gray-600">Loading purchases...</p>
+  const columns = [
+    {
+      title: 'Purchase #',
+      dataIndex: 'purchaseNumber',
+      key: 'purchaseNumber',
+      width: 120,
+      render: (text, record) => (
+        <div>
+          <div style={{ fontWeight: 600 }}>{text}</div>
+          <div style={{ fontSize: '12px', color: '#666' }}>{record.reference}</div>
         </div>
-      </div>
-    );
-  }
+      )
+    },
+    {
+      title: 'Supplier',
+      dataIndex: 'supplier',
+      key: 'supplier',
+      width: 150,
+      render: (supplier) => (
+        <div>
+          <div style={{ fontWeight: 500 }}>{supplier?.name}</div>
+          <div style={{ fontSize: '12px', color: '#666' }}>{supplier?.contactPerson}</div>
+        </div>
+      )
+    },
+    {
+      title: 'Type',
+      dataIndex: 'type',
+      key: 'type',
+      width: 100,
+      render: (type) => getTypeTag(type)
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      width: 150,
+      render: (status) => getStatusTag(status)
+    },
+    {
+      title: 'Delivery',
+      dataIndex: 'deliveryStatus',
+      key: 'deliveryStatus',
+      width: 130,
+      render: (status) => getDeliveryTag(status)
+    },
+    {
+      title: 'Gross Amount',
+      dataIndex: 'grossAmount',
+      key: 'grossAmount',
+      width: 120,
+      render: (amount) => <div style={{ fontWeight: 500 }}>{formatCurrency(amount)}</div>
+    },
+    {
+      title: 'Tax Amount',
+      dataIndex: 'totalTaxAmount',
+      key: 'totalTaxAmount',
+      width: 120,
+      render: (amount) => <div style={{ color: '#666' }}>{formatCurrency(amount)}</div>
+    },
+    {
+      title: 'Net Payable',
+      dataIndex: 'netPayable',
+      key: 'netPayable',
+      width: 120,
+      render: (amount) => <div style={{ fontWeight: 600, color: '#52c41a' }}>{formatCurrency(amount)}</div>
+    },
+    {
+      title: 'Date',
+      dataIndex: 'purchaseDate',
+      key: 'purchaseDate',
+      width: 150,
+      render: (date) => <div>{new Date(date).toLocaleDateString()}</div>
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 200,
+      render: (_, record) => (
+        <Space size="small">
+          <Tooltip title="View Details">
+            <Button 
+              icon={<EyeOutlined />} 
+              size="small"
+              onClick={() => handleViewDetails(record)}
+            />
+          </Tooltip>
+          
+          {record.status === 'DRAFT' && canManagePurchases() && (
+            <Tooltip title="Edit">
+              <Button 
+                icon={<EditOutlined />} 
+                size="small"
+                onClick={() => handleEditPurchase(record)}
+              />
+            </Tooltip>
+          )}
+          
+          {record.status === 'PENDING_APPROVAL' && canApprovePurchases() && (
+            <Tooltip title="Approve">
+              <Button 
+                icon={<CheckCircleOutlined />} 
+                size="small"
+                type="primary"
+                onClick={() => handleUpdateStatus(record.id, 'APPROVED')}
+              />
+            </Tooltip>
+          )}
+          
+          {record.status === 'DRAFT' && (
+            <Tooltip title="Delete">
+              <Button 
+                icon={<DeleteOutlined />} 
+                size="small"
+                danger
+                onClick={() => handleDeletePurchase(record.id)}
+              />
+            </Tooltip>
+          )}
+        </Space>
+      )
+    }
+  ];
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h3 className="text-2xl font-bold text-gray-900 mb-2">Purchase Management</h3>
-          <p className="text-gray-600">
+    <div style={{ padding: '24px' }}>
+      <div style={{ marginBottom: '24px' }}>
+        <div style={{ marginBottom: '8px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0 }}>Purchase Management</h2>
+          <p style={{ color: '#666', margin: 0 }}>
             Manage purchase orders, track deliveries, and monitor supplier performance
           </p>
         </div>
         
         {canManagePurchases() && (
-          <div className="flex space-x-3">
+          <Space style={{ marginTop: '16px' }}>
             <Button 
-              onClick={() => setIsCreateModalOpen(true)} 
-              icon={Plus}
-              variant="cosmic"
+              type="primary" 
+              icon={<PlusOutlined />}
+              onClick={() => setIsCreateModalOpen(true)}
             >
               New Purchase
             </Button>
-            <Button 
-              onClick={handleExportCSV} 
-              icon={Download} 
-              variant="outline" 
-              size="sm"
-            >
+            <Button icon={<DownloadOutlined />}>
               Export CSV
             </Button>
-            <Button icon={BarChart3} variant="outline" size="sm">
-              Reports
+            <Button icon={<BarChartOutlined />}>
+              Analytics
             </Button>
-          </div>
+          </Space>
         )}
       </div>
 
-      {/* Error Display */}
-      {error && (
-        <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-lg flex items-center">
-          <AlertCircle className="w-5 h-5 mr-2" />
-          {error}
-          <Button onClick={handleRetry} size="sm" variant="secondary" className="ml-auto">
-            <RefreshCw className="w-4 h-4 mr-1" />
-            Retry
-          </Button>
-        </div>
-      )}
+      <Row gutter={16} style={{ marginBottom: '24px' }}>
+        <Col span={6}>
+          <Card>
+            <Statistic
+              title="Total Purchases"
+              value={stats.total}
+              prefix={<ShoppingOutlined />}
+              valueStyle={{ color: '#1890ff' }}
+            />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card>
+            <Statistic
+              title="Total Spent"
+              value={stats.totalSpent}
+              precision={2}
+              prefix="$"
+              valueStyle={{ color: '#52c41a' }}
+            />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card>
+            <Statistic
+              title="Total Tax"
+              value={stats.totalTax}
+              precision={2}
+              prefix="$"
+              valueStyle={{ color: '#722ed1' }}
+            />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card>
+            <Statistic
+              title="Total Discount"
+              value={stats.totalDiscount}
+              precision={2}
+              prefix="$"
+              valueStyle={{ color: '#fa8c16' }}
+            />
+          </Card>
+        </Col>
+      </Row>
 
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
-        <div className="bg-white p-4 rounded-lg shadow-sm border">
-          <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <ShoppingCart className="w-6 h-6 text-blue-600" />
+      <Row gutter={16} style={{ marginBottom: '24px' }}>
+        <Col span={6}>
+          <Card size="small">
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: '#666', fontSize: '14px' }}>Draft</div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#666' }}>{stats.draft}</div>
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Purchases</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card size="small">
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: '#666', fontSize: '14px' }}>Pending</div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#faad14' }}>{stats.pending}</div>
             </div>
-          </div>
-        </div>
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card size="small">
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: '#666', fontSize: '14px' }}>Approved</div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1890ff' }}>{stats.approved}</div>
+            </div>
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card size="small">
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: '#666', fontSize: '14px' }}>Completed</div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#52c41a' }}>{stats.completed}</div>
+            </div>
+          </Card>
+        </Col>
+      </Row>
 
-        <div className="bg-white p-4 rounded-lg shadow-sm border">
-          <div className="flex items-center">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Completed</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.completed}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-lg shadow-sm border">
-          <div className="flex items-center">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <Clock className="w-6 h-6 text-yellow-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Pending</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.pending}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-lg shadow-sm border">
-          <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <DollarSign className="w-6 h-6 text-blue-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Spent</p>
-              <p className="text-2xl font-bold text-gray-900">
-                ${stats.totalSpent.toLocaleString()}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-lg shadow-sm border">
-          <div className="flex items-center">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <FileText className="w-6 h-6 text-gray-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Draft</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.draft}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-lg shadow-sm border">
-          <div className="flex items-center">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <TrendingUp className="w-6 h-6 text-purple-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Approved</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.approved}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Search and Filter Bar */}
-      <div className="bg-white rounded-lg p-4 mb-6 shadow-sm border">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          {/* Search */}
-          <div className="relative">
-            <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-            <Input
-              type="text"
+      <Card style={{ marginBottom: '24px' }}>
+        <Row gutter={16} align="middle">
+          <Col span={6}>
+            <Search
               placeholder="Search purchases..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              onSearch={loadPurchases}
+              enterButton
             />
-          </div>
+          </Col>
+          <Col span={4}>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="Status"
+              value={statusFilter}
+              onChange={setStatusFilter}
+            >
+              <Option value="all">All Statuses</Option>
+              <Option value="DRAFT">Draft</Option>
+              <Option value="PENDING_APPROVAL">Pending Approval</Option>
+              <Option value="APPROVED">Approved</Option>
+              <Option value="COMPLETED">Completed</Option>
+              <Option value="CANCELLED">Cancelled</Option>
+            </Select>
+          </Col>
+          <Col span={4}>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="Type"
+              value={typeFilter}
+              onChange={setTypeFilter}
+            >
+              <Option value="all">All Types</Option>
+              <Option value="FUEL">Fuel</Option>
+              <Option value="NON_FUEL">Non-Fuel</Option>
+              <Option value="MIXED">Mixed</Option>
+            </Select>
+          </Col>
+          <Col span={4}>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="Supplier"
+              value={supplierFilter}
+              onChange={setSupplierFilter}
+              loading={loading}
+            >
+              <Option value="all">All Suppliers</Option>
+              {suppliers.map(supplier => (
+                <Option key={supplier.id} value={supplier.id}>
+                  {supplier.name} {supplier.code ? `(${supplier.code})` : ''}
+                </Option>
+              ))}
+            </Select>
+          </Col>
+          <Col span={6}>
+            <Space>
+              <Button 
+                icon={<ReloadOutlined />} 
+                onClick={loadPurchases}
+                loading={loading}
+              >
+                Refresh
+              </Button>
+              <Button icon={<FilterOutlined />}>
+                More Filters
+              </Button>
+            </Space>
+          </Col>
+        </Row>
+      </Card>
 
-          {/* Status Filter */}
-          <Select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="all">All Statuses</option>
-            <option value="DRAFT">Draft</option>
-            <option value="PENDING_APPROVAL">Pending Approval</option>
-            <option value="APPROVED">Approved</option>
-            <option value="ORDER_CONFIRMED">Order Confirmed</option>
-            <option value="IN_TRANSIT">In Transit</option>
-            <option value="COMPLETED">Completed</option>
-            <option value="CANCELLED">Cancelled</option>
-          </Select>
+      <Card>
+        <Table
+          columns={columns}
+          dataSource={purchases}
+          loading={loading}
+          rowKey="id"
+          scroll={{ x: 1300 }}
+          pagination={{
+            pageSize: 10,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (total, range) => 
+              `Showing ${range[0]}-${range[1]} of ${total} purchases`
+          }}
+          locale={{
+            emptyText: searchQuery || statusFilter !== 'all' || typeFilter !== 'all' || supplierFilter !== 'all'
+              ? 'No purchases match your search criteria.' 
+              : 'No purchases found. Create your first purchase order to get started.'
+          }}
+        />
+      </Card>
 
-          {/* Type Filter */}
-          <Select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-          >
-            <option value="all">All Types</option>
-            <option value="FUEL">Fuel</option>
-            <option value="NON_FUEL">Non-Fuel</option>
-            <option value="MIXED">Mixed</option>
-          </Select>
-
-          {/* Supplier Filter */}
-          <Select
-            value={supplierFilter}
-            onChange={(e) => setSupplierFilter(e.target.value)}
-          >
-            <option value="all">All Suppliers</option>
-            {suppliers.map(supplier => (
-              <option key={supplier.id} value={supplier.id}>
-                {supplier.name}
-              </option>
-            ))}
-          </Select>
-
-          {/* Actions */}
-          <div className="flex space-x-2">
-            <Button onClick={loadPurchases} icon={RefreshCw} variant="outline" className="flex-1">
-              Refresh
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Purchases Table */}
-      <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="text-left py-4 px-6 font-semibold text-gray-900">Purchase #</th>
-                <th className="text-left py-4 px-6 font-semibold text-gray-900">Supplier</th>
-                <th className="text-left py-4 px-6 font-semibold text-gray-900">Type</th>
-                <th className="text-left py-4 px-6 font-semibold text-gray-900">Status</th>
-                <th className="text-left py-4 px-6 font-semibold text-gray-900">Delivery</th>
-                <th className="text-left py-4 px-6 font-semibold text-gray-900">Amount</th>
-                <th className="text-left py-4 px-6 font-semibold text-gray-900">Date</th>
-                <th className="text-left py-4 px-6 font-semibold text-gray-900">Items</th>
-                <th className="text-left py-4 px-6 font-semibold text-gray-900">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {filteredPurchases.length > 0 ? (
-                filteredPurchases.map(purchase => (
-                  <tr key={purchase.id} className="hover:bg-gray-50">
-                    <td className="py-4 px-6">
-                      <div className="font-medium text-gray-900">{purchase.purchaseNumber}</div>
-                      <div className="text-sm text-gray-500">{purchase.reference}</div>
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="font-medium text-gray-900">{purchase.supplier?.name}</div>
-                      <div className="text-sm text-gray-500">{purchase.supplier?.contactPerson}</div>
-                    </td>
-                    <td className="py-4 px-6">
-                      {getTypeBadge(purchase.type)}
-                    </td>
-                    <td className="py-4 px-6">
-                      {getStatusBadge(purchase.status)}
-                    </td>
-                    <td className="py-4 px-6">
-                      {getDeliveryBadge(purchase.deliveryStatus)}
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="font-medium text-gray-900">
-                        ${purchase.totalAmount?.toLocaleString() || '0'}
-                      </div>
-                    </td>
-                    <td className="py-4 px-6 text-sm text-gray-500">
-                      <div>{new Date(purchase.purchaseDate).toLocaleDateString()}</div>
-                      {purchase.expectedDate && (
-                        <div className="text-xs">Expected: {new Date(purchase.expectedDate).toLocaleDateString()}</div>
-                      )}
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="text-sm text-gray-900">
-                        {purchase.items?.length || 0} items
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {purchase.items?.reduce((sum, item) => sum + (item.orderedQty || 0), 0)} total qty
-                      </div>
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="flex space-x-2">
-                        <Button 
-                          size="sm" 
-                          variant="secondary" 
-                          icon={Eye}
-                          onClick={() => handleViewDetails(purchase)}
-                        >
-                          View
-                        </Button>
-                        
-                        {purchase.status === 'DRAFT' && canManagePurchases() && (
-                          <Button 
-                            size="sm" 
-                            variant="secondary" 
-                            icon={Edit}
-                            onClick={() => handleEditPurchase(purchase)}
-                          >
-                            Edit
-                          </Button>
-                        )}
-                        
-                        {purchase.status === 'PENDING_APPROVAL' && canApprovePurchases() && (
-                          <Button 
-                            size="sm" 
-                            variant="success" 
-                            icon={CheckCircle}
-                            onClick={() => handleUpdateStatus(purchase.id, 'APPROVED')}
-                          >
-                            Approve
-                          </Button>
-                        )}
-                        
-                        {purchase.status === 'APPROVED' && purchase.type === 'NON_FUEL' && (
-                          <Button 
-                            size="sm" 
-                            variant="primary" 
-                            icon={Package}
-                            onClick={() => handleReceiveItems(purchase)}
-                          >
-                            Receive
-                          </Button>
-                        )}
-                        
-                        {purchase.status === 'DRAFT' && (
-                          <Button 
-                            size="sm" 
-                            variant="danger" 
-                            icon={Trash2}
-                            onClick={() => handleDeletePurchase(purchase.id)}
-                          >
-                            Delete
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={9} className="py-8 px-6 text-center text-gray-500">
-                    {searchQuery || statusFilter !== 'all' || typeFilter !== 'all' || supplierFilter !== 'all'
-                      ? 'No purchases match your search criteria.' 
-                      : 'No purchases found. Create your first purchase order to get started.'
-                    }
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Modals */}
       <CreateEditPurchaseModal 
         isOpen={isCreateModalOpen}
         onClose={() => {
@@ -602,22 +565,6 @@ const PurchaseManagement = () => {
         onPurchaseCreated={handlePurchaseCreated}
         onPurchaseUpdated={handlePurchaseUpdated}
       />
-
-      {/* <PurchaseDetailsModal 
-        isOpen={isDetailsModalOpen}
-        onClose={() => setIsDetailsModalOpen(false)}
-        purchase={selectedPurchase}
-      /> */}
-
-      {/* <PurchaseReceivingModal 
-        isOpen={isReceivingModalOpen}
-        onClose={() => {
-          setIsReceivingModalOpen(false);
-          setSelectedPurchase(null);
-        }}
-        purchase={selectedPurchase}
-        onItemsReceived={handleItemsReceived}
-      /> */}
     </div>
   );
 };

@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { connectedAssetService } from '../../../../../../services/connectedAssetsService/connectedAssetsService';
 import { shiftService } from '../../../../../../services/shiftService/shiftService';
-import { fuelPriceService } from '../../../../../../services/fuelPriceService/fuelPriceService'; // ← ADD THIS
+import { fuelPriceService } from '../../../../../../services/fuelPriceService/fuelPriceService';
 
 export const useShiftAssets = (stationId) => {
     const [data, setData] = useState(null);
@@ -10,7 +10,45 @@ export const useShiftAssets = (stationId) => {
     const [error, setError] = useState(null);
     const [openShiftId, setOpenShiftId] = useState(null);
     const [currentShift, setCurrentShift] = useState(null);
-    const [productPricing, setProductPricing] = useState({}); // ← ADD PRODUCT PRICING STATE
+    const [productPricing, setProductPricing] = useState({});
+    const [pricingLoading, setPricingLoading] = useState(false);
+
+    console.log("this is the useAsset hook");
+
+    // Fetch product pricing
+    useEffect(() => {
+        const fetchProductPricing = async () => {
+            setPricingLoading(true);
+            try {
+                console.log("💰 Fetching product pricing...");
+                const response = await fuelPriceService.getProductPrices({}, true);
+                console.log("💰 Prices response:", response);
+                
+                // Convert array to object for easy lookup by product ID
+                const pricingMap = {};
+                response.forEach(product => {
+                    pricingMap[product.id] = {
+                        ...product,
+                        unitPrice: product.minSellingPrice, // Use min selling price as default
+                        displayPrice: `KES ${product.minSellingPrice}`,
+                        priceStatus: product.priceStatus || 'active',
+                        marginDisplay: product.marginDisplay || `${product.margin}%`
+                    };
+                });
+                setProductPricing(pricingMap);
+                console.log("💰 Product pricing mapped with", Object.keys(pricingMap).length, "products");
+            } catch (error) {
+                console.error('Failed to fetch product pricing:', error);
+                // Don't set error state - we can fallback to default pricing
+            } finally {
+                setPricingLoading(false);
+            }
+        };
+        
+        if (stationId) {
+            fetchProductPricing();
+        }
+    }, [stationId]);
 
     // Fetch current open shift
     useEffect(() => {
@@ -30,29 +68,6 @@ export const useShiftAssets = (stationId) => {
             fetchCurrentShift();
         }
     }, [stationId]);
-
-        // Fetch product pricing
-    useEffect(() => {
-        const fetchProductPricing = async () => {
-            try {
-                console.log("💰 Fetching product pricing...");
-                const response = await fuelPriceService.getProductPrices({}, true);
-                console.log("💰 Prices response:", response);
-                
-                // Convert array to object for easy lookup by product ID
-                const pricingMap = {};
-                response.forEach(product => {
-                    pricingMap[product.id] = product;
-                });
-                setProductPricing(pricingMap);
-                console.log("💰 Product pricing mapped:", pricingMap);
-            } catch (error) {
-                console.error('Failed to fetch product pricing:', error);
-            }
-        };
-        
-        fetchProductPricing();
-    }, []);
 
     // Fetch shift data when shift ID is available
     useEffect(() => {
@@ -75,6 +90,48 @@ export const useShiftAssets = (stationId) => {
         } finally {
             setLoading(false);
         }
+    };
+
+    // Helper function to get product price info
+    const getProductPriceInfo = (productId) => {
+        if (!productId) {
+            return {
+                unitPrice: 100.00,
+                priceRange: "100.00 - 150.00",
+                priceStatus: "unknown",
+                margin: 0,
+                fuelCode: "UNKNOWN",
+                name: "Unknown Product",
+                displayPrice: "KES 100.00"
+            };
+        }
+
+        const product = productPricing[productId];
+        if (!product) {
+            console.warn(`No pricing found for product ${productId}, using fallback`);
+            return {
+                unitPrice: 100.00,
+                priceRange: "100.00 - 150.00",
+                priceStatus: "unknown",
+                margin: 0,
+                fuelCode: "UNKNOWN",
+                name: "Unknown Product",
+                displayPrice: "KES 100.00"
+            };
+        }
+
+        return {
+            unitPrice: product.unitPrice,
+            priceRange: product.priceRange,
+            priceStatus: product.priceStatus,
+            margin: product.margin,
+            fuelCode: product.fuelCode,
+            name: product.name,
+            displayPrice: product.displayPrice,
+            baseCostPrice: product.baseCostPrice,
+            maxSellingPrice: product.maxSellingPrice,
+            minSellingPrice: product.minSellingPrice
+        };
     };
 
     // Enhanced shift opening check with shift number and price list
@@ -105,7 +162,7 @@ export const useShiftAssets = (stationId) => {
         };
     }, [currentShift]);
 
-    // Transform pumps data with island information
+    // Transform pumps data with island information, tank relationships, and product pricing
     const pumpsWithIslandInfo = useMemo(() => {
         if (!data?.islands) {
             console.log("No islands data found in:", data);
@@ -116,36 +173,75 @@ export const useShiftAssets = (stationId) => {
         data.islands.forEach(island => {
             if (island.pumps && island.pumps.length > 0) {
                 island.pumps.forEach(pump => {
+                    // Find the connected tank for this pump
+                    let connectedTank = null;
+                    if (data.tanks) {
+                        connectedTank = data.tanks.find(tank => 
+                            tank.connectedPumps?.some(connectedPump => 
+                                connectedPump.pumpId === pump.pumpId
+                            )
+                        );
+                    }
+
+                    // Use pump product or tank product (tank product takes precedence)
+                    const productId = connectedTank?.product?.id || pump.product?.id;
+                    const productPriceInfo = getProductPriceInfo(productId);
+
                     pumps.push({
                         ...pump,
                         islandId: island.islandId,
                         islandName: island.islandName,
                         islandCode: island.islandCode,
-                        attendants: island.attendants || []
+                        attendants: island.attendants || [],
+                        
+                        // Enhanced with tank relationships
+                        connectedTank: connectedTank ? {
+                            tankId: connectedTank.tankId,
+                            tankName: connectedTank.tankName,
+                            product: connectedTank.product,
+                            capacity: connectedTank.capacity,
+                            currentVolume: connectedTank.currentVolume
+                        } : null,
+                        
+                        // Enhanced with dynamic pricing
+                        productPriceInfo,
+                        
+                        // Original product info (for backward compatibility)
+                        product: {
+                            ...pump.product,
+                            // Override with tank product if available
+                            ...(connectedTank?.product || {})
+                        }
                     });
                 });
             }
         });
-        console.log("Processed pumps with island info:", pumps);
+        
+        console.log("Processed pumps with island info, tank relationships, and pricing:", pumps);
         return pumps;
-    }, [data?.islands]);
+    }, [data?.islands, data?.tanks, productPricing]);
 
-    // Transform tanks data with readings
+    // Transform tanks data with readings and connected pumps info
     const tanksWithReadings = useMemo(() => {
         if (!data?.tanks) return [];
 
-        return data.tanks.map(tank => ({
-            tankId: tank.tankId,
-            tankName: tank.tankName,
-            product: tank.product,
-            capacity: tank.capacity,
-            currentVolume: tank.currentVolume,
-            dipReadings: tank.dipReadings || [],
-            connectedPumps: tank.connectedPumps || [],
-            hasReadings: tank.dipReadings && tank.dipReadings.length > 0,
-            latestReading: tank.dipReadings?.[tank.dipReadings.length - 1] || null
-        }));
-    }, [data?.tanks]);
+        return data.tanks.map(tank => {
+            const productPriceInfo = getProductPriceInfo(tank.product?.id);
+            
+            return {
+                tankId: tank.tankId,
+                tankName: tank.tankName,
+                product: tank.product,
+                capacity: tank.capacity,
+                currentVolume: tank.currentVolume,
+                dipReadings: tank.dipReadings || [],
+                connectedPumps: tank.connectedPumps || [],
+                hasReadings: tank.dipReadings && tank.dipReadings.length > 0,
+                latestReading: tank.dipReadings?.[tank.dipReadings.length - 1] || null,
+                productPriceInfo
+            };
+        });
+    }, [data?.tanks, productPricing]);
 
     // Transform attendants with detailed information
     const attendantsWithDetails = useMemo(() => {
@@ -176,9 +272,9 @@ export const useShiftAssets = (stationId) => {
         return currentShift.meterReadings.find(reading => reading.pumpId === pumpId);
     };
 
-    // Expected collections calculation by island - FIXED VERSION
+    // Expected collections calculation by island with DYNAMIC PRICING
     const expectedCollectionsByIsland = useMemo(() => {
-        console.log("Calculating expected collections...");
+        console.log("Calculating expected collections with dynamic pricing...");
         console.log("Pumps with island info:", pumpsWithIslandInfo);
         console.log("Current shift meter readings:", currentShift?.meterReadings);
 
@@ -187,7 +283,6 @@ export const useShiftAssets = (stationId) => {
             return [];
         }
 
-        const HARDCODED_UNIT_PRICE = 100.00; // KSH 100.00
         const collections = {};
         
         pumpsWithIslandInfo.forEach(pump => {
@@ -205,7 +300,7 @@ export const useShiftAssets = (stationId) => {
                 };
             }
 
-            // Get meter readings from currentShift - FIXED: Use pumpId from current pump
+            // Get meter readings from currentShift
             const meterReading = getPumpMeterReadings(pump.pumpId);
             console.log(`Pump ${pump.pumpId} meter reading:`, meterReading);
             
@@ -218,15 +313,15 @@ export const useShiftAssets = (stationId) => {
             console.log(`Pump ${pump.pumpName} openings - Electric: ${openingElectric}, Manual: ${openingManual}`);
             
             // For demo - using dummy closing values (in real app, these would be user input)
-            const closingElectric = openingElectric + (Math.random() * 200 + 50); // Random between 50-250
-            const closingManual = openingManual + (Math.random() * 200 + 50); // Random between 50-250
+            const closingElectric = openingElectric + (Math.random() * 200 + 50);
+            const closingManual = openingManual + (Math.random() * 200 + 50);
             
             const electricSales = closingElectric - openingElectric;
             const manualSales = closingManual - openingManual;
             const averageSales = (electricSales + manualSales) / 2;
             
-            // Use unit price from meter reading or hardcoded value
-            const unitPrice = meterReading?.unitPrice || HARDCODED_UNIT_PRICE;
+            // USE DYNAMIC PRICING FROM PRODUCT
+            const unitPrice = pump.productPriceInfo.unitPrice;
             
             const expectedCollection = averageSales * unitPrice;
 
@@ -241,9 +336,10 @@ export const useShiftAssets = (stationId) => {
                 electricSales: Math.round(electricSales * 100) / 100,
                 manualSales: Math.round(manualSales * 100) / 100,
                 averageSales: Math.round(averageSales * 100) / 100,
-                unitPrice,
+                unitPrice, // DYNAMIC PRICING
                 expectedCollection: Math.round(expectedCollection * 100) / 100,
-                hasReadings: !!(openingElectric > 0 || openingManual > 0)
+                hasReadings: !!(openingElectric > 0 || openingManual > 0),
+                productPriceInfo: pump.productPriceInfo // Include full pricing info
             };
 
             collections[islandId].pumps.push(pumpData);
@@ -251,7 +347,7 @@ export const useShiftAssets = (stationId) => {
         });
 
         const result = Object.values(collections);
-        console.log("Final expected collections:", result);
+        console.log("Final expected collections with dynamic pricing:", result);
         return result;
     }, [pumpsWithIslandInfo, currentShift?.meterReadings]);
 
@@ -303,6 +399,7 @@ export const useShiftAssets = (stationId) => {
                     id: pump.pumpId,
                     name: pump.pumpName,
                     island: pump.islandName,
+                    product: pump.product?.name,
                     issue: 'No meter readings',
                     priority: 'HIGH'
                 });
@@ -354,183 +451,99 @@ export const useShiftAssets = (stationId) => {
 
     // ========== SHIFT CLOSING FUNCTIONS ==========
 
-    // Build the complete shift closing payload
-    // const buildShiftClosingPayload = useCallback((closingFormData, currentUser) => {
-    //     const {
-    //         pumpReadings = [],
-    //         tankReadings = [],
-    //         islandCollections = {},
-    //         endTime
-    //     } = closingFormData;
-
-    //     // Transform pump readings for API
-    //     const transformedPumpReadings = pumpReadings
-    //         .filter(reading => reading.electricMeter > 0) // Only include pumps with readings
-    //         .map(reading => {
-    //             const pump = pumpsWithIslandInfo.find(p => p.pumpId === reading.pumpId);
-    //             const startReading = pump?.meterReadings?.find(r => r.readingType === 'START');
-                
-    //             // Calculate liters dispensed if not provided
-    //             const calculatedLiters = reading.litersDispensed || 
-    //                 (reading.electricMeter - (startReading?.electricMeter || 0));
-                
-    //             // Calculate sales value if not provided
-    //             const calculatedSales = reading.salesValue || 
-    //                 (calculatedLiters * (reading.unitPrice || 100.0));
-
-    //             return {
-    //                 pumpId: reading.pumpId,
-    //                 electricMeter: reading.electricMeter || 0,
-    //                 manualMeter: reading.manualMeter || 0,
-    //                 cashMeter: reading.cashMeter || 0,
-    //                 litersDispensed: calculatedLiters,
-    //                 salesValue: calculatedSales,
-    //                 unitPrice: reading.unitPrice || 100.0
-    //             };
-    //         });
-
-    //     // Transform tank readings for API
-    //     const transformedTankReadings = tankReadings
-    //         .filter(reading => reading.dipValue > 0) // Only include tanks with readings
-    //         .map(reading => ({
-    //             tankId: reading.tankId,
-    //             dipValue: reading.dipValue || 0,
-    //             volume: reading.volume || 0,
-    //             temperature: reading.temperature || 25.0,
-    //             waterLevel: reading.waterLevel || 0.0,
-    //             density: reading.density || 0.85
-    //         }));
-
-    //     // Transform island collections for API
-    //     const transformedIslandCollections = Object.values(islandCollections)
-    //         .filter(collection => 
-    //             collection.cashAmount > 0 || 
-    //             collection.mobileMoneyAmount > 0 || 
-    //             collection.visaAmount > 0 || 
-    //             collection.mastercardAmount > 0 ||
-    //             collection.debtAmount > 0 ||
-    //             collection.otherAmount > 0
-    //         )
-    //         .map(collection => ({
-    //             islandId: collection.islandId,
-    //             cashAmount: collection.cashAmount || 0,
-    //             mobileMoneyAmount: collection.mobileMoneyAmount || 0,
-    //             visaAmount: collection.visaAmount || 0,
-    //             mastercardAmount: collection.mastercardAmount || 0,
-    //             debtAmount: collection.debtAmount || 0,
-    //             otherAmount: collection.otherAmount || 0
-    //         }));
-
-    //     // Build the complete payload
-    //     const payload = {
-    //         shiftId: currentShift?.id,
-    //         recordedById: currentUser?.id,
-    //         endTime: new Date(endTime).toISOString(),
-    //         pumpReadings: transformedPumpReadings,
-    //         tankReadings: transformedTankReadings,
-    //         islandCollections: transformedIslandCollections
-    //     };
-
-    //     // Add metadata for debugging
-    //     payload.metadata = {
-    //         stationId: stationId,
-    //         totalPumps: transformedPumpReadings.length,
-    //         totalTanks: transformedTankReadings.length,
-    //         totalIslands: transformedIslandCollections.length,
-    //         generatedAt: new Date().toISOString()
-    //     };
-
-    //     return payload;
-    // }, [currentShift, pumpsWithIslandInfo, stationId]);
-
+    // Build the complete shift closing payload with DYNAMIC PRICING
     const buildShiftClosingPayload = useCallback((closingFormData, currentUser) => {
-    const {
-        pumpReadings = [],
-        tankReadings = [],
-        islandCollections = {},
-        endTime
-    } = closingFormData;
+        const {
+            pumpReadings = [],
+            tankReadings = [],
+            islandCollections = {},
+            endTime
+        } = closingFormData;
 
-    // Transform pump readings for API
-    const transformedPumpReadings = pumpReadings
-        .filter(reading => reading.electricMeter > 0) // Only include pumps with readings
-        .map(reading => {
-            const pump = pumpsWithIslandInfo.find(p => p.pumpId === reading.pumpId);
-            const startReading = pump?.meterReadings?.find(r => r.readingType === 'START');
-            
-            // Calculate liters dispensed if not provided
-            const calculatedLiters = reading.litersDispensed || 
-                (reading.electricMeter - (startReading?.electricMeter || 0));
-            
-            // Calculate sales value if not provided
-            const calculatedSales = reading.salesValue || 
-                (calculatedLiters * (reading.unitPrice || 100.0));
+        // Transform pump readings for API
+        const transformedPumpReadings = pumpReadings
+            .filter(reading => reading.electricMeter > 0)
+            .map(reading => {
+                const pump = pumpsWithIslandInfo.find(p => p.pumpId === reading.pumpId);
+                const startReading = pump?.meterReadings?.find(r => r.readingType === 'START');
+                
+                // Calculate liters dispensed if not provided
+                const calculatedLiters = reading.litersDispensed || 
+                    (reading.electricMeter - (startReading?.electricMeter || 0));
+                
+                // Use DYNAMIC PRICING from product
+                const unitPrice = pump?.productPriceInfo?.unitPrice || reading.unitPrice || 100.0;
+                
+                // Calculate sales value if not provided
+                const calculatedSales = reading.salesValue || 
+                    (calculatedLiters * unitPrice);
 
-            return {
-                pumpId: reading.pumpId,
-                electricMeter: reading.electricMeter || 0,
-                manualMeter: reading.manualMeter || 0,
-                cashMeter: reading.cashMeter || 0,
-                litersDispensed: calculatedLiters,
-                salesValue: calculatedSales,
-                unitPrice: reading.unitPrice || 100.0
-            };
-        });
+                return {
+                    pumpId: reading.pumpId,
+                    electricMeter: reading.electricMeter || 0,
+                    manualMeter: reading.manualMeter || 0,
+                    cashMeter: reading.cashMeter || 0,
+                    litersDispensed: calculatedLiters,
+                    salesValue: calculatedSales,
+                    unitPrice: unitPrice // DYNAMIC PRICING
+                };
+            });
 
-    // Transform tank readings for API
-    const transformedTankReadings = tankReadings
-        .filter(reading => reading.dipValue > 0) // Only include tanks with readings
-        .map(reading => ({
-            tankId: reading.tankId,
-            dipValue: reading.dipValue || 0,
-            volume: reading.volume || 0,
-            temperature: reading.temperature || 25.0,
-            waterLevel: reading.waterLevel || 0.0,
-            density: reading.density || 0.85
-        }));
+        // Transform tank readings for API
+        const transformedTankReadings = tankReadings
+            .filter(reading => reading.dipValue > 0)
+            .map(reading => ({
+                tankId: reading.tankId,
+                dipValue: reading.dipValue || 0,
+                volume: reading.volume || 0,
+                temperature: reading.temperature || 25.0,
+                waterLevel: reading.waterLevel || 0.0,
+                density: reading.density || 0.85
+            }));
 
-    // Transform island collections for API - UPDATED WITH expectedAmount
-    const transformedIslandCollections = Object.values(islandCollections)
-        .filter(collection => 
-            collection.cashAmount > 0 || 
-            collection.mobileMoneyAmount > 0 || 
-            collection.visaAmount > 0 || 
-            collection.mastercardAmount > 0 ||
-            collection.debtAmount > 0 ||
-            collection.otherAmount > 0
-        )
-        .map(collection => ({
-            islandId: collection.islandId,
-            cashAmount: collection.cashAmount || 0,
-            mobileMoneyAmount: collection.mobileMoneyAmount || 0,
-            visaAmount: collection.visaAmount || 0,
-            mastercardAmount: collection.mastercardAmount || 0,
-            debtAmount: collection.debtAmount || 0,
-            otherAmount: collection.otherAmount || 0,
-            expectedAmount: collection.totalExpected || 0  // ← ADDED expectedAmount
-        }));
+        // Transform island collections for API
+        const transformedIslandCollections = Object.values(islandCollections)
+            .filter(collection => 
+                collection.cashAmount > 0 || 
+                collection.mobileMoneyAmount > 0 || 
+                collection.visaAmount > 0 || 
+                collection.mastercardAmount > 0 ||
+                collection.debtAmount > 0 ||
+                collection.otherAmount > 0
+            )
+            .map(collection => ({
+                islandId: collection.islandId,
+                cashAmount: collection.cashAmount || 0,
+                mobileMoneyAmount: collection.mobileMoneyAmount || 0,
+                visaAmount: collection.visaAmount || 0,
+                mastercardAmount: collection.mastercardAmount || 0,
+                debtAmount: collection.debtAmount || 0,
+                otherAmount: collection.otherAmount || 0,
+                expectedAmount: collection.totalExpected || 0
+            }));
 
-    // Build the complete payload
-    const payload = {
-        shiftId: currentShift?.id,
-        recordedById: currentUser?.id,
-        endTime: new Date(endTime).toISOString(),
-        pumpReadings: transformedPumpReadings,
-        tankReadings: transformedTankReadings,
-        islandCollections: transformedIslandCollections
-    };
+        // Build the complete payload
+        const payload = {
+            shiftId: currentShift?.id,
+            recordedById: currentUser?.id,
+            endTime: new Date(endTime).toISOString(),
+            pumpReadings: transformedPumpReadings,
+            tankReadings: transformedTankReadings,
+            islandCollections: transformedIslandCollections
+        };
 
-    // Add metadata for debugging
-    payload.metadata = {
-        stationId: stationId,
-        totalPumps: transformedPumpReadings.length,
-        totalTanks: transformedTankReadings.length,
-        totalIslands: transformedIslandCollections.length,
-        generatedAt: new Date().toISOString()
-    };
+        // Add metadata for debugging
+        payload.metadata = {
+            stationId: stationId,
+            totalPumps: transformedPumpReadings.length,
+            totalTanks: transformedTankReadings.length,
+            totalIslands: transformedIslandCollections.length,
+            generatedAt: new Date().toISOString(),
+            pricingUsed: 'dynamic' // Indicate that dynamic pricing was used
+        };
 
-    return payload;
-}, [currentShift, pumpsWithIslandInfo, stationId]);
+        return payload;
+    }, [currentShift, pumpsWithIslandInfo, stationId]);
 
     // Validate the closing payload
     const validateShiftClosingPayload = useCallback((payload) => {
@@ -578,29 +591,26 @@ export const useShiftAssets = (stationId) => {
     }, []);
 
     // Submit shift closing
-  const submitShiftClosing = useCallback(async (closingFormData, currentUser) => {
-  try {
-    const payload = buildShiftClosingPayload(closingFormData, currentUser);
-    const validation = validateShiftClosingPayload(payload);
+    const submitShiftClosing = useCallback(async (closingFormData, currentUser) => {
+        try {
+            const payload = buildShiftClosingPayload(closingFormData, currentUser);
+            const validation = validateShiftClosingPayload(payload);
 
-    if (!validation.isValid) {
-      throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
-    }
+            if (!validation.isValid) {
+                throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
+            }
 
-    console.log('Submitting shift closing payload:', payload);
-    
-    // Keep shiftId in the payload AND pass it as separate parameter
-    const shiftId = payload.shiftId;
-    const result = await shiftService.closeShift(shiftId, payload);
-    return result;
+            console.log('Submitting shift closing payload:', payload);
+            
+            const shiftId = payload.shiftId;
+            const result = await shiftService.closeShift(shiftId, payload);
+            return result;
 
-  } catch (error) {
-    console.error('Failed to close shift:', error);
-    throw error;
-  }
-}, [buildShiftClosingPayload, validateShiftClosingPayload]);
-
-// In hooks/useShiftAssets.js - Complete updated function
+        } catch (error) {
+            console.error('Failed to close shift:', error);
+            throw error;
+        }
+    }, [buildShiftClosingPayload, validateShiftClosingPayload]);
 
     // Get payload summary for UI
     const getClosingPayloadSummary = useCallback((closingFormData, currentUser) => {
@@ -618,13 +628,27 @@ export const useShiftAssets = (stationId) => {
                 (collection.mastercardAmount || 0) + 
                 (collection.debtAmount || 0) + 
                 (collection.otherAmount || 0), 0),
-            
             totalLiters: payload.pumpReadings.reduce((sum, reading) => sum + (reading.litersDispensed || 0), 0)
         };
     }, [buildShiftClosingPayload]);
 
+    // Get product pricing for a specific product
+    const getProductPricing = useCallback((productId) => {
+        return getProductPriceInfo(productId);
+    }, []);
+
+    // Find tank by pump ID
+    const getTankByPumpId = useCallback((pumpId) => {
+        return pumpsWithIslandInfo.find(pump => pump.pumpId === pumpId)?.connectedTank || null;
+    }, [pumpsWithIslandInfo]);
+
+    // Find pumps by tank ID
+    const getPumpsByTankId = useCallback((tankId) => {
+        return pumpsWithIslandInfo.filter(pump => pump.connectedTank?.tankId === tankId);
+    }, [pumpsWithIslandInfo]);
+
     return {
-        // Core data (existing)
+        // Core data
         data,
         currentShift,
         pumpsWithIslandInfo,
@@ -634,19 +658,26 @@ export const useShiftAssets = (stationId) => {
         enhancedSummary,
         enhancedShiftOpeningCheck,
         assetsRequiringAttention,
+        productPricing,
         
-        // State (existing)
-        loading,
+        // State
+        loading: loading || pricingLoading,
         error,
         hasData,
         
-        // Actions (existing)
+        // Actions
         refetch,
 
-        // NEW: Shift closing functions
+        // Shift closing functions
         buildShiftClosingPayload,
         validateShiftClosingPayload,
         submitShiftClosing,
-        getClosingPayloadSummary
+        getClosingPayloadSummary,
+
+        // Enhanced utility functions
+        getProductPricing,
+        getTankByPumpId,
+        getPumpsByTankId,
+        getProductPriceInfo
     };
 };

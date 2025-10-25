@@ -1,527 +1,730 @@
-// src/components/purchases/CreateEditPurchaseModal.js
+// src/components/purchases/create/CreateEditPurchaseModal.jsx
 import React, { useState, useEffect } from 'react';
-import { Input, Button, Select, Textarea, LoadingSpinner,Dialog } from '../../../../ui';
-import { useApp } from '../../../../../context/AppContext';
+import { 
+  Modal, 
+  Button, 
+  Input, 
+  Select, 
+  Card, 
+  Alert,
+  Badge,
+  Form,
+  Row,
+  Col,
+  Statistic,
+  Space,
+  Typography,
+  Spin
+} from 'antd';
+import { 
+  PlusOutlined, 
+  MinusOutlined, 
+  TruckOutlined,
+  ShoppingOutlined
+} from '@ant-design/icons';
 import { purchaseService } from '../../../../../services/purchaseService/purchaseService';
 import { supplierService } from '../../../../../services/supplierService/supplierService';
 import { fuelService } from '../../../../../services/fuelService/fuelService';
-import { Plus, Minus, DollarSign, Calendar, Truck, Package, Search } from 'lucide-react';
+import {stationService} from '../../../../../services/stationService/stationService';
+import { useApp } from '../../../../../context/AppContext';
+
+const { Option } = Select;
+const { Text } = Typography;
 
 const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated, onPurchaseUpdated }) => {
   const { state } = useApp();
+  const [form] = Form.useForm();
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  
+  const [suppliers, setSuppliers] = useState([]);
+  const [fuelProducts, setFuelProducts] = useState([]);
+  const [supplierProducts, setSupplierProducts] = useState([]);
+  const [stations, setStations]=useState([]);
+
+ 
+  
   const [formData, setFormData] = useState({
     supplierId: '',
-    stationId: '',
-    warehouseId: '',
-    purchaseDate: new Date().toISOString().split('T')[0],
+    purchaseDate: '',
     expectedDate: '',
     type: 'FUEL',
-    expectedDeliveryDate: '',
-    supplierRef: '',
-    internalRef: '',
-    termsAndConditions: '',
     deliveryAddress: '',
-    notes: '',
-    reference: '',
-    items: [{
-      productId: '',
-      orderedQty: '',
-      unitCost: '',
-      tankId: '',
-      batchNumber: '',
-      expiryDate: ''
-    }]
+    termsAndConditions: '',
+    items: []
   });
-  const [errors, setErrors] = useState({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [suppliers, setSuppliers] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [tanks, setTanks] = useState([]);
-  const [warehouses, setWarehouses] = useState([]);
-  const [loading, setLoading] = useState(false);
 
-  const isEditMode = Boolean(purchase);
+  // Format date for input[type="date"]
+  const formatDateForInput = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toISOString().split('T')[0];
+  };
+
+  // Format date for backend (ISO string)
+  const formatDateForBackend = (dateString) => {
+    if (!dateString) return null;
+    return new Date(dateString).toISOString();
+  };
 
   useEffect(() => {
     if (isOpen) {
-      loadSuppliers();
-      loadProducts();
-      loadTanks();
-      loadWarehouses();
+      const today = new Date();
+      const expectedDate = new Date();
+      expectedDate.setDate(today.getDate() + 7); // Default to 7 days from now
 
-      if (isEditMode) {
+      if (purchase) {
+        // Edit mode - populate with existing purchase data
         setFormData({
           supplierId: purchase.supplierId || '',
-          stationId: purchase.stationId || '',
-          warehouseId: purchase.warehouseId || '',
-          purchaseDate: purchase.purchaseDate ? new Date(purchase.purchaseDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-          expectedDate: purchase.expectedDate ? new Date(purchase.expectedDate).toISOString().split('T')[0] : '',
+          purchaseDate: formatDateForInput(purchase.purchaseDate),
+          expectedDate: formatDateForInput(purchase.expectedDate),
           type: purchase.type || 'FUEL',
-          expectedDeliveryDate: purchase.expectedDeliveryDate ? new Date(purchase.expectedDeliveryDate).toISOString().split('T')[0] : '',
-          supplierRef: purchase.supplierRef || '',
-          internalRef: purchase.internalRef || '',
-          termsAndConditions: purchase.termsAndConditions || '',
           deliveryAddress: purchase.deliveryAddress || '',
-          notes: purchase.notes || '',
-          reference: purchase.reference || '',
+          termsAndConditions: purchase.termsAndConditions || '',
           items: purchase.items?.map(item => ({
-            productId: item.productId,
-            orderedQty: item.orderedQty || '',
-            unitCost: item.unitCost || '',
-            tankId: item.tankId || '',
-            batchNumber: item.batchNumber || '',
-            expiryDate: item.expiryDate ? new Date(item.expiryDate).toISOString().split('T')[0] : ''
-          })) || [{
-            productId: '',
-            orderedQty: '',
-            unitCost: '',
-            tankId: '',
-            batchNumber: '',
-            expiryDate: ''
-          }]
+            ...item,
+            expiryDate: formatDateForInput(item.expiryDate)
+          })) || []
+        });
+      } else {
+        // Create mode - set defaults
+        setFormData({
+          supplierId: '',
+          purchaseDate: formatDateForInput(today),
+          expectedDate: formatDateForInput(expectedDate),
+          type: 'FUEL',
+          deliveryAddress: '',
+          termsAndConditions: '',
+          items: []
         });
       }
-      setErrors({});
+      loadInitialData();
     }
-  }, [isOpen, isEditMode, purchase]);
+  }, [isOpen, purchase]);
 
-  const loadSuppliers = async () => {
+  const loadInitialData = async () => {
     try {
-      const suppliersData = await supplierService.getSuppliers({ status: 'ACTIVE' });
-      setSuppliers(suppliersData.data || suppliersData || []);
+      setLoading(true);
+      const [suppliersData, productsData, stationData ] = await Promise.all([
+        supplierService.getSuppliers(true),
+        fuelService.getFuelProducts(),
+        stationService.getCompanyStations()
+      ]);
+      
+      setSuppliers(suppliersData);
+      console.log("stations ", stationData);
+      setFuelProducts(productsData.products || productsData || []);
+       console.log("products ", productsData);
+      setStations(stationData);
     } catch (error) {
-      console.error('Failed to load suppliers:', error);
+      console.error('Failed to load data:', error);
+      setError('Failed to load suppliers and products');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const loadProducts = async () => {
+  useEffect(() => {
+    if (formData.supplierId) {
+      loadSupplierProducts(formData.supplierId);
+    } else {
+      setSupplierProducts([]);
+    }
+  }, [formData.supplierId]);
+
+  const loadSupplierProducts = async (supplierId) => {
     try {
-      const productsData = await fuelService.getFuelProducts();
-      setProducts(productsData.products || productsData.data || productsData || []);
+      const supplier = suppliers.find(s => s.id === supplierId);
+      if (supplier && supplier.supplierProducts) {
+        setSupplierProducts(supplier.supplierProducts);
+      } else {
+        setSupplierProducts(fuelProducts);
+      }
     } catch (error) {
-      console.error('Failed to load products:', error);
+      console.error('Failed to load supplier products:', error);
+      setSupplierProducts(fuelProducts);
     }
   };
 
-  const loadTanks = async () => {
-    // This would typically come from a tank service
-    // Mock data for demonstration
-    setTanks([
-      { id: 'tank-1', name: 'Main Diesel Tank', capacity: 10000 },
-      { id: 'tank-2', name: 'Premium Petrol Tank', capacity: 8000 },
-      { id: 'tank-3', name: 'Regular Petrol Tank', capacity: 8000 }
-    ]);
-  };
-
-  const loadWarehouses = async () => {
-    // This would typically come from a warehouse service
-    // Mock data for demonstration
-    setWarehouses([
-      { id: 'wh-1', name: 'Main Warehouse' },
-      { id: 'wh-2', name: 'Spare Parts Storage' }
-    ]);
-  };
-
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
-    }
-  };
-
-  const handleItemChange = (index, field, value) => {
-    const updatedItems = [...formData.items];
-    updatedItems[index] = { ...updatedItems[index], [field]: value };
-    
-    // Auto-calculate total if both quantity and unit cost are provided
-    if ((field === 'orderedQty' || field === 'unitCost') && updatedItems[index].orderedQty && updatedItems[index].unitCost) {
-      updatedItems[index].totalCost = parseFloat(updatedItems[index].orderedQty) * parseFloat(updatedItems[index].unitCost);
-    }
-    
-    setFormData(prev => ({ ...prev, items: updatedItems }));
+  const handleFormChange = (field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
   };
 
   const addItem = () => {
     setFormData(prev => ({
       ...prev,
-      items: [...prev.items, {
-        productId: '',
-        orderedQty: '',
-        unitCost: '',
-        tankId: '',
-        batchNumber: '',
-        expiryDate: ''
-      }]
+      items: [
+        ...prev.items,
+        {
+          productId: '',
+          orderedQty: 1,
+          unitCost: 0,
+          taxRate: 0.16,
+          batchNumber: '',
+          expiryDate: ''
+        }
+      ]
     }));
   };
 
   const removeItem = (index) => {
-    if (formData.items.length > 1) {
-      const updatedItems = formData.items.filter((_, i) => i !== index);
-      setFormData(prev => ({ ...prev, items: updatedItems }));
-    }
+    setFormData(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index)
+    }));
   };
 
-  const getProductById = (productId) => {
-    return products.find(p => p.id === productId);
+  const updateItem = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      items: prev.items.map((item, i) => 
+        i === index ? { 
+          ...item, 
+          [field]: field === 'orderedQty' || field === 'unitCost' || field === 'taxRate' 
+            ? parseFloat(value) || 0 
+            : value 
+        } : item
+      )
+    }));
+  };
+
+  const calculateItemTotals = (item) => {
+    const orderedQty = parseFloat(item.orderedQty) || 0;
+    const unitCost = parseFloat(item.unitCost) || 0;
+    const taxRate = parseFloat(item.taxRate) || 0;
+    
+    const grossAmount = orderedQty * unitCost;
+    const taxAmount = grossAmount * taxRate;
+    const netAmount = grossAmount + taxAmount;
+    
+    return { grossAmount, taxAmount, netAmount };
+  };
+
+  const calculatePurchaseTotals = () => {
+    let grossAmount = 0;
+    let totalTaxAmount = 0;
+    
+    formData.items.forEach(item => {
+      const totals = calculateItemTotals(item);
+      grossAmount += totals.grossAmount;
+      totalTaxAmount += totals.taxAmount;
+    });
+    
+    const netPayable = grossAmount + totalTaxAmount;
+    
+    return {
+      grossAmount: parseFloat(grossAmount.toFixed(2)),
+      totalTaxAmount: parseFloat(totalTaxAmount.toFixed(2)),
+      netPayable: parseFloat(netPayable.toFixed(2))
+    };
   };
 
   const validateForm = () => {
-    const newErrors = {};
-
+    const errors = [];
+    
     if (!formData.supplierId) {
-      newErrors.supplierId = 'Supplier is required';
+      errors.push('Supplier is required');
     }
-
-    if (!formData.stationId) {
-      newErrors.stationId = 'Station is required';
-    }
-
+    
     if (!formData.purchaseDate) {
-      newErrors.purchaseDate = 'Purchase date is required';
+      errors.push('Purchase date is required');
     }
-
-    if (!formData.type) {
-      newErrors.type = 'Purchase type is required';
+    
+    if (formData.items.length === 0) {
+      errors.push('At least one product item is required');
     }
-
-    // Validate items
+    
     formData.items.forEach((item, index) => {
       if (!item.productId) {
-        newErrors[`items[${index}].productId`] = 'Product is required';
+        errors.push(`Product is required for item ${index + 1}`);
       }
-      if (!item.orderedQty || parseFloat(item.orderedQty) <= 0) {
-        newErrors[`items[${index}].orderedQty`] = 'Valid quantity is required';
+      if (!item.orderedQty || item.orderedQty <= 0) {
+        errors.push(`Valid quantity is required for item ${index + 1}`);
       }
-      if (!item.unitCost || parseFloat(item.unitCost) <= 0) {
-        newErrors[`items[${index}].unitCost`] = 'Valid unit cost is required';
-      }
-
-      // Fuel-specific validations
-      if (formData.type === 'FUEL' && !item.tankId) {
-        newErrors[`items[${index}].tankId`] = 'Tank selection is required for fuel products';
-      }
-
-      // Non-fuel validations
-      if (formData.type === 'NON_FUEL') {
-        if (!item.batchNumber) {
-          newErrors[`items[${index}].batchNumber`] = 'Batch number is required for non-fuel items';
-        }
-        if (!item.expiryDate) {
-          newErrors[`items[${index}].expiryDate`] = 'Expiry date is required for non-fuel items';
-        }
+      if (!item.unitCost || item.unitCost < 0) {
+        errors.push(`Valid unit cost is required for item ${index + 1}`);
       }
     });
-
-    // Warehouse validation for non-fuel
-    if (formData.type === 'NON_FUEL' && !formData.warehouseId) {
-      newErrors.warehouseId = 'Warehouse is required for non-fuel purchases';
+    
+    if (errors.length > 0) {
+      setError(errors.join('\n'));
+      return false;
     }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    
+    setError('');
+    return true;
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!validateForm()) return;
-
-    setIsSubmitting(true);
+  const handleSubmit = async () => {
+    // if (!validateForm()) {
+    //   return;
+    // }
 
     try {
-      const submitData = {
-        ...formData,
-        companyId: state.currentUser.companyId
+      setSubmitting(true);
+      setError('');
+
+      // Prepare data for backend with proper date formatting
+      const purchaseData = {
+        supplierId: formData.supplierId,
+        stationId:formData.stationId,
+        purchaseDate: formatDateForBackend(formData.purchaseDate),
+        expectedDate: formData.expectedDate ? formatDateForBackend(formData.expectedDate) : null,
+        type: formData.type,
+        deliveryAddress: formData.deliveryAddress || null,
+        termsAndConditions: formData.termsAndConditions || null,
+        items: formData.items.map(item => ({
+          productId: item.productId,
+          orderedQty: parseFloat(item.orderedQty),
+          unitCost: parseFloat(item.unitCost),
+          taxRate: parseFloat(item.taxRate),
+          batchNumber: item.batchNumber || null,
+          expiryDate: item.expiryDate ? formatDateForBackend(item.expiryDate) : null
+        })),
+        ...calculatePurchaseTotals()
       };
 
-      if (isEditMode) {
-        await purchaseService.updatePurchase({
-          ...submitData,
-          id: purchase.id
-        });
-        onPurchaseUpdated();
+      console.log('Submitting purchase data:', purchaseData);
+
+      let result;
+      if (purchase) {
+        result = await purchaseService.updatePurchase(purchase.id, purchaseData);
+        onPurchaseUpdated(result);
       } else {
-        await purchaseService.createPurchase(submitData);
-        onPurchaseCreated();
+        result = await purchaseService.createPurchase(purchaseData);
+        onPurchaseCreated(result);
       }
+      
       onClose();
+      
+      // Reset form
+      setFormData({
+        supplierId: '',
+        purchaseDate: formatDateForInput(new Date()),
+        expectedDate: formatDateForInput(new Date(new Date().setDate(new Date().getDate() + 7))),
+        type: 'FUEL',
+        deliveryAddress: '',
+        termsAndConditions: '',
+        items: []
+      });
     } catch (error) {
-      console.error('Failed to save purchase:', error);
-      if (error.response?.data?.errors) {
-        const backendErrors = {};
-        error.response.data.errors.forEach(err => {
-          backendErrors[err.field] = err.message;
-        });
-        setErrors(backendErrors);
-      } else {
-        setErrors({ general: error.message || `Failed to ${isEditMode ? 'update' : 'create'} purchase` });
-      }
+      console.error('Failed to submit purchase:', error);
+      setError(error.message || `Failed to ${purchase ? 'update' : 'create'} purchase order`);
     } finally {
-      setIsSubmitting(false);
+      setSubmitting(false);
     }
   };
 
-  const calculateTotal = () => {
-    return formData.items.reduce((total, item) => {
-      return total + (parseFloat(item.orderedQty) * parseFloat(item.unitCost) || 0);
-    }, 0);
+  const getAvailableProducts = () => {
+    if (formData.supplierId && supplierProducts.length > 0) {
+      return supplierProducts;
+    }
+    return fuelProducts;
   };
 
-  return (
-    <Dialog 
-      isOpen={isOpen} 
-      onClose={onClose} 
-      title={isEditMode ? 'Edit Purchase Order' : 'Create New Purchase Order'}
-      size="2xl"
+  const totals = calculatePurchaseTotals();
+
+  const modalFooter = [
+    <Button key="cancel" onClick={onClose} disabled={submitting}>
+      Cancel
+    </Button>,
+    <Button
+      key="submit"
+      type="primary"
+      loading={submitting}
+      disabled={formData.items.length === 0 || submitting}
+      icon={<TruckOutlined />}
+      onClick={handleSubmit}
     >
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {errors.general && (
-          <div className="p-3 text-red-700 bg-red-100 rounded-md">
-            {errors.general}
-          </div>
+      {purchase ? 'Update Purchase Order' : 'Create Purchase Order'}
+    </Button>
+  ];
+
+  if (loading) {
+    return (
+      <Modal
+        open={isOpen}
+        onCancel={onClose}
+        title={purchase ? "Edit Purchase Order" : "Create Purchase Order"}
+        width={1200}
+        footer={null}
+      >
+        <div style={{ textAlign: 'center', padding: '64px 0' }}>
+          <Spin size="large" />
+          <p style={{ marginTop: '16px', color: '#666' }}>Loading suppliers and products...</p>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal
+      open={isOpen}
+      onCancel={onClose}
+      title={
+        <Space>
+          <TruckOutlined />
+          {purchase ? "Edit Purchase Order" : "Create Purchase Order"}
+        </Space>
+      }
+      width={1200}
+      style={{ top: 20 }}
+      footer={modalFooter}
+    >
+      <Form form={form} layout="vertical">
+        {error && (
+          <Alert
+            message="Validation Error"
+            description={error}
+            type="error"
+            showIcon
+            style={{ marginBottom: 16 }}
+            action={
+              <Button size="small" type="text" onClick={() => setError('')}>
+                Dismiss
+              </Button>
+            }
+          />
         )}
 
-        {/* Basic Information */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Select
-            label="Supplier *"
-            value={formData.supplierId}
-            onChange={(e) => handleInputChange('supplierId', e.target.value)}
-            error={errors.supplierId}
-            options={suppliers.map(s => ({
-              value: s.id,
-              label: `${s.name} (${s.code})`
-            }))}
-            icon={Truck}
-          />
-
-          <Select
-            label="Purchase Type *"
-            value={formData.type}
-            onChange={(e) => handleInputChange('type', e.target.value)}
-            error={errors.type}
-            options={[
-              { value: 'FUEL', label: 'Fuel' },
-              { value: 'NON_FUEL', label: 'Non-Fuel' },
-              { value: 'MIXED', label: 'Mixed' }
-            ]}
-            icon={Package}
-          />
-
-          <Input
-            label="Purchase Date *"
-            type="date"
-            value={formData.purchaseDate}
-            onChange={(e) => handleInputChange('purchaseDate', e.target.value)}
-            error={errors.purchaseDate}
-            icon={Calendar}
-          />
-
-          <Input
-            label="Expected Date"
-            type="date"
-            value={formData.expectedDate}
-            onChange={(e) => handleInputChange('expectedDate', e.target.value)}
-            icon={Calendar}
-          />
-
-          {formData.type === 'NON_FUEL' && (
-            <Select
-              label="Warehouse *"
-              value={formData.warehouseId}
-              onChange={(e) => handleInputChange('warehouseId', e.target.value)}
-              error={errors.warehouseId}
-              options={warehouses.map(w => ({
-                value: w.id,
-                label: w.name
-              }))}
-            />
-          )}
-
-          <Input
-            label="Reference"
-            value={formData.reference}
-            onChange={(e) => handleInputChange('reference', e.target.value)}
-            placeholder="Internal reference number"
-          />
-        </div>
-
-        {/* Additional Information */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input
-            label="Supplier Reference"
-            value={formData.supplierRef}
-            onChange={(e) => handleInputChange('supplierRef', e.target.value)}
-            placeholder="Supplier's reference number"
-          />
-
-          <Input
-            label="Delivery Address"
-            value={formData.deliveryAddress}
-            onChange={(e) => handleInputChange('deliveryAddress', e.target.value)}
-            placeholder="Delivery location"
-          />
-        </div>
-
-        <Textarea
-          label="Notes"
-          value={formData.notes}
-          onChange={(e) => handleInputChange('notes', e.target.value)}
-          placeholder="Additional notes or instructions..."
-          rows={2}
-        />
-
-        {/* Purchase Items */}
-        <div>
-          <div className="flex justify-between items-center mb-4">
-            <h4 className="text-lg font-medium text-gray-900">Purchase Items</h4>
-            <Button type="button" onClick={addItem} icon={Plus} size="sm">
-              Add Item
-            </Button>
-          </div>
-
-          {formData.items.map((item, index) => (
-            <div key={index} className="border rounded-lg p-4 mb-4 relative bg-gray-50">
-              {formData.items.length > 1 && (
-                <Button
-                  type="button"
-                  onClick={() => removeItem(index)}
-                  variant="danger"
-                  size="sm"
-                  className="absolute top-2 right-2"
-                  icon={Minus}
-                >
-                  Remove
-                </Button>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <Card title="Purchase Details" style={{ marginBottom: 16 }}>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="Supplier" required>
                 <Select
-                  label="Product *"
-                  value={item.productId}
-                  onChange={(e) => handleItemChange(index, 'productId', e.target.value)}
-                  error={errors[`items[${index}].productId`]}
-                  options={products.map(p => ({
-                    value: p.id,
-                    label: `${p.name} (${p.fuelCode})`
-                  }))}
-                  placeholder="Select a product"
-                />
+                  value={formData.supplierId}
+                  onChange={(value) => handleFormChange('supplierId', value)}
+                  placeholder="Select Supplier"
+                  style={{ width: '100%' }}
+                  showSearch
+                  filterOption={(input, option) =>
+                    option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
+                  }
+                >
+                  <Option value="">Select Supplier</Option>
+                  {suppliers.map(supplier => (
+                    <Option key={supplier.id} value={supplier.id}>
+                      {supplier.name} {supplier.code ? `(${supplier.code})` : ''}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
 
+            <Col span={12}>
+              <Form.Item label="Purchase Type" required>
+                <Select
+                  value={formData.type}
+                  onChange={(value) => handleFormChange('type', value)}
+                  style={{ width: '100%' }}
+                >
+                  <Option value="FUEL">Fuel</Option>
+                  <Option value="NON_FUEL">Non-Fuel</Option>
+                  <Option value="MIXED">Mixed</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+
+            <Col span={12}>
+              <Form.Item label="Purchase Date" required>
                 <Input
-                  label="Quantity *"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={item.orderedQty}
-                  onChange={(e) => handleItemChange(index, 'orderedQty', e.target.value)}
-                  error={errors[`items[${index}].orderedQty`]}
-                  placeholder="0.00"
+                  type="date"
+                  value={formData.purchaseDate}
+                  onChange={(e) => handleFormChange('purchaseDate', e.target.value)}
+                  style={{ width: '100%' }}
                 />
+              </Form.Item>
+            </Col>
 
+            <Col span={12}>
+              <Form.Item label="Expected Delivery Date">
                 <Input
-                  label="Unit Cost *"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={item.unitCost}
-                  onChange={(e) => handleItemChange(index, 'unitCost', e.target.value)}
-                  error={errors[`items[${index}].unitCost`]}
-                  icon={DollarSign}
-                  placeholder="0.00"
+                  type="date"
+                  value={formData.expectedDate}
+                  onChange={(e) => handleFormChange('expectedDate', e.target.value)}
+                  min={formData.purchaseDate}
+                  style={{ width: '100%' }}
                 />
-              </div>
+              </Form.Item>
+            </Col>
+          </Row>
+        </Card>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-                {formData.type === 'FUEL' && (
-                  <Select
-                    label="Tank *"
-                    value={item.tankId}
-                    onChange={(e) => handleItemChange(index, 'tankId', e.target.value)}
-                    error={errors[`items[${index}].tankId`]}
-                    options={tanks.map(t => ({
-                      value: t.id,
-                      label: `${t.name} (${t.capacity}L)`
-                    }))}
-                    placeholder="Select tank"
-                  />
-                )}
+        <Card 
+          title={
+            <Space>
+              <ShoppingOutlined />
+              Products
+              <Badge count={formData.items.length} showZero color="#1890ff" />
+            </Space>
+          }
+          extra={
+            <Button
+              type="dashed"
+              onClick={addItem}
+              icon={<PlusOutlined />}
+              size="small"
+            >
+              Add Product
+            </Button>
+          }
+          style={{ marginBottom: 16 }}
+        >
+          {formData.items.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px 0', color: '#999' }}>
+              <ShoppingOutlined style={{ fontSize: 48, marginBottom: 16, color: '#d9d9d9' }} />
+              <div>No products added yet</div>
+              <Text type="secondary">Click "Add Product" to start adding products</Text>
+            </div>
+          ) : (
+            <div style={{ gap: 16, display: 'flex', flexDirection: 'column' }}>
+              {formData.items.map((item, index) => (
+                <Card 
+                  key={index} 
+                  size="small" 
+                  style={{ backgroundColor: '#fafafa' }}
+                  title={`Product #${index + 1}`}
+                  extra={
+                    <Button
+                      type="text"
+                      danger
+                      icon={<MinusOutlined />}
+                      onClick={() => removeItem(index)}
+                      size="small"
+                    >
+                      Remove
+                    </Button>
+                  }
+                >
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item label="Product" required>
+                        <Select
+                          value={item.productId}
+                          onChange={(value) => updateItem(index, 'productId', value)}
+                          placeholder="Select Product"
+                          style={{ width: '100%' }}
+                          showSearch
+                          filterOption={(input, option) =>
+                            option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
+                          }
+                        >
+                          <Option value="">Select Product</Option>
+                          {getAvailableProducts().map(product => (
+                            <Option key={product.id} value={product.id}>
+                              {/* {product.name} {product.fuelCode ? `(${product.fuelCode})` : ''} */}
+                              {product?.name}
+                            </Option>
+                          ))}
+                        </Select>
+                      </Form.Item>
+                    </Col>
 
-                {formData.type === 'NON_FUEL' && (
-                  <>
-                    <Input
-                      label="Batch Number *"
-                      value={item.batchNumber}
-                      onChange={(e) => handleItemChange(index, 'batchNumber', e.target.value)}
-                      error={errors[`items[${index}].batchNumber`]}
-                      placeholder="Batch number"
-                    />
+                    <Col span={6}>
+                      <Form.Item label="Quantity" required>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          value={item.orderedQty}
+                          onChange={(e) => updateItem(index, 'orderedQty', e.target.value)}
+                          placeholder="0.00"
+                        />
+                      </Form.Item>
+                    </Col>
 
-                    <Input
-                      label="Expiry Date *"
-                      type="date"
-                      value={item.expiryDate}
-                      onChange={(e) => handleItemChange(index, 'expiryDate', e.target.value)}
-                      error={errors[`items[${index}].expiryDate`]}
-                    />
-                  </>
-                )}
-              </div>
+                    <Col span={6}>
+                      <Form.Item label="Unit Cost" required>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={item.unitCost}
+                          onChange={(e) => updateItem(index, 'unitCost', e.target.value)}
+                          placeholder="0.00"
+                          prefix="$"
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
 
-              {item.productId && (
-                <div className="mt-2 p-2 bg-white rounded border text-sm">
-                  <div className="text-gray-600">
-                    Product: {getProductById(item.productId)?.name}
-                  </div>
-                  {item.orderedQty && item.unitCost && (
-                    <div className="font-medium text-green-600">
-                      Line Total: ${(parseFloat(item.orderedQty) * parseFloat(item.unitCost)).toFixed(2)}
-                    </div>
+                  <Row gutter={16}>
+                    <Col span={8}>
+                      <Form.Item label="Tax Rate">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="1"
+                          value={item.taxRate}
+                          onChange={(e) => updateItem(index, 'taxRate', e.target.value)}
+                          placeholder="0.16"
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item label="Batch Number">
+                        <Input
+                          value={item.batchNumber}
+                          onChange={(e) => updateItem(index, 'batchNumber', e.target.value)}
+                          placeholder="Optional"
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item label="Expiry Date">
+                        <Input
+                          type="date"
+                          value={item.expiryDate}
+                          onChange={(e) => updateItem(index, 'expiryDate', e.target.value)}
+                          placeholder="Optional"
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  {item.productId && item.orderedQty > 0 && (
+                    <Card size="small" style={{ marginTop: 8, backgroundColor: 'white' }}>
+                      <Row gutter={16}>
+                        <Col span={8}>
+                          <div style={{ textAlign: 'center' }}>
+                            <Text type="secondary">Gross Amount</Text>
+                            <div style={{ fontWeight: 'bold', fontSize: '16px' }}>
+                              ${calculateItemTotals(item).grossAmount.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2
+                              })}
+                            </div>
+                          </div>
+                        </Col>
+                        <Col span={8}>
+                          <div style={{ textAlign: 'center' }}>
+                            <Text type="secondary">Tax Amount</Text>
+                            <div style={{ fontWeight: 'bold', fontSize: '16px' }}>
+                              ${calculateItemTotals(item).taxAmount.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2
+                              })}
+                            </div>
+                          </div>
+                        </Col>
+                        <Col span={8}>
+                          <div style={{ textAlign: 'center' }}>
+                            <Text type="secondary">Net Amount</Text>
+                            <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#52c41a' }}>
+                              ${calculateItemTotals(item).netAmount.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2
+                              })}
+                            </div>
+                          </div>
+                        </Col>
+                      </Row>
+                    </Card>
                   )}
-                </div>
-              )}
+                </Card>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </Card>
 
-        {/* Summary */}
-        <div className="bg-gray-50 rounded-lg p-4">
-          <h4 className="font-medium text-gray-900 mb-2">Purchase Summary</h4>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div>Total Items:</div>
-            <div className="text-right">{formData.items.filter(item => item.productId).length}</div>
-            
-            <div>Total Quantity:</div>
-            <div className="text-right">
-              {formData.items.reduce((sum, item) => sum + (parseFloat(item.orderedQty) || 0), 0).toFixed(2)}
-            </div>
-            
-            <div className="font-medium">Total Amount:</div>
-            <div className="text-right font-bold text-green-600">
-              ${calculateTotal().toFixed(2)}
-            </div>
-          </div>
-        </div>
+        {formData.items.length > 0 && (
+          <Card title="Purchase Summary" style={{ marginBottom: 16 }}>
+            <Row gutter={16}>
+              <Col span={6}>
+                <Statistic
+                  title="Items"
+                  value={formData.items.length}
+                  valueStyle={{ color: '#1890ff' }}
+                  prefix={<ShoppingOutlined />}
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title="Gross Amount"
+                  value={totals.grossAmount}
+                  precision={2}
+                  valueStyle={{ color: '#52c41a' }}
+                  prefix="$"
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title="Total Tax"
+                  value={totals.totalTaxAmount}
+                  precision={2}
+                  valueStyle={{ color: '#fa8c16' }}
+                  prefix="$"
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title="Net Payable"
+                  value={totals.netPayable}
+                  precision={2}
+                  valueStyle={{ color: '#722ed1' }}
+                  prefix="$"
+                />
+              </Col>
+            </Row>
+          </Card>
+        )}
 
-        <div className="flex justify-end space-x-3 pt-4">
-          <Button
-            variant="secondary"
-            onClick={onClose}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            variant="cosmic"
-            loading={isSubmitting}
-            disabled={isSubmitting}
-          >
-            {isEditMode ? 'Update Purchase Order' : 'Create Purchase Order'}
-          </Button>
-        </div>
-      </form>
-    </Dialog>
+        <Card title="Additional Information" style={{ marginBottom: 16 }}>
+          <Row gutter={16}>
+
+{/* stations */}
+            <Col span={24}>
+              <Form.Item label="Deliverly Station" required>
+                <Select
+                  value={formData.stationId}
+                 onChange={(value) => handleFormChange('stationId', value)}
+                  placeholder="Select Station"
+                  style={{ width: '100%' }}
+                  showSearch
+                  filterOption={(input, option) =>
+                    option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
+                  }
+                >
+                  <Option value="">Select Station</Option>
+                  {stations.map(station => (
+                    <Option key={station.id} value={station.id}>
+                      {station.name}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+
+            <Col span={24}>
+              <Form.Item label="Delivery Address">
+                <Input.TextArea
+                  rows={3}
+                  value={formData.deliveryAddress}
+                  onChange={(e) => handleFormChange('deliveryAddress', e.target.value)}
+                  placeholder="Enter delivery address if different from station address"
+                />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item label="Terms & Conditions">
+                <Input.TextArea
+                  rows={2}
+                  value={formData.termsAndConditions}
+                  onChange={(e) => handleFormChange('termsAndConditions', e.target.value)}
+                  placeholder="Any special terms and conditions for this purchase"
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Card>
+      </Form>
+    </Modal>
   );
 };
 
