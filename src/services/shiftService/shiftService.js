@@ -20,6 +20,14 @@ class ShiftService {
       timeout: 30000,
       cacheEnabled: true
     };
+
+    // Reading type constants
+    this.READING_TYPES = {
+      ALL: 'ALL',
+      START_ONLY: 'START_ONLY',
+      END_ONLY: 'END_ONLY',
+      CONSUMPTION_ONLY: 'CONSUMPTION_ONLY'
+    };
   }
 
   // ==================== CORE UTILITIES ====================
@@ -152,6 +160,111 @@ class ShiftService {
     }
   }
 
+  // ==================== LAST SHIFT READINGS ENDPOINTS ====================
+
+/**
+ * GET LAST SHIFT READINGS BY STATION
+ * Returns the last closed shift readings with only END readings
+ */
+async getLastShiftReadingsByStation(stationId, options = {}) {
+  return this.#retryOperation(async () => {
+    const {
+      forceRefresh = false
+    } = options;
+
+    const cacheKey = `last-shift-readings-station-${stationId}-end`;
+    
+    if (!forceRefresh) {
+      const cached = this.#getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    this.logger.info(`Fetching last shift readings for station ${stationId}`);
+    
+    const url = `${this.basePath}/station/${stationId}/last-shift-readings`;
+    const response = await apiService.get(url);
+   // console.log("the response of last shift ", response);
+    
+    let data = this.#handleResponse(response, 'Last shift readings by station fetch');
+    
+    // Extract only END readings and transform to desired structure
+    data = this.#extractEndReadings(data);
+
+       // console.log("the data of last shift ", data);
+    
+    this.#setCached(cacheKey, data);
+    
+    if (data?.data?.pumpMeterReadings && Object.keys(data.data.pumpMeterReadings).length > 0) {
+      this.logger.info(`Retrieved last shift END readings for station ${stationId}`);
+    } else {
+      this.logger.info(`No closed shifts found for station ${stationId}`);
+    }
+    
+    return data;
+  }).catch(error => {
+    throw this.#handleError(error, 'Last shift readings by station fetch', 'Failed to fetch last shift readings');
+  });
+}
+
+/**
+ * EXTRACT ONLY END READINGS AND TRANSFORM TO SIMPLE STRUCTURE
+ */
+#extractEndReadings(data) {
+ // console.log("extractEndReadings data ",data);
+  if (!data?.readings) {
+    return {
+      success: data.success,
+      message: data.message,
+      data: {
+        pumpMeterReadings: {},
+        tankDipReadings: {}
+      }
+    };
+  }
+
+  const { pumpReadings, tankReadings } = data.readings;
+  
+  const transformedData = {
+    success: data.success,
+    message: data.message,
+    data: {
+      pumpMeterReadings: {},
+      tankDipReadings: {}
+    }
+  };
+
+  // Process pump end readings
+  if (pumpReadings?.end) {
+    pumpReadings.end.forEach(reading => {
+      transformedData.data.pumpMeterReadings[reading.pumpId] = {
+        electricMeter: reading.electricMeter,
+        cashMeter: reading.cashMeter,
+        manualMeter: reading.manualMeter,
+        litersDispensed: reading.litersDispensed,
+        salesValue: reading.salesValue,
+        unitPrice: reading.unitPrice,
+        recordedAt: reading.recordedAt
+      };
+    });
+  }
+
+  // Process tank end readings
+  if (tankReadings?.end) {
+    tankReadings.end.forEach(reading => {
+      transformedData.data.tankDipReadings[reading.tankId] = {
+        dipValue: reading.dipValue,
+        volume: reading.volume,
+        density: reading.density,
+        temperature: reading.temperature,
+        waterLevel: reading.waterLevel,
+        recordedAt: reading.recordedAt
+      };
+    });
+  }
+
+  return transformedData;
+}
+
   // ==================== SHIFT VISIBILITY ENDPOINTS ====================
 
   /**
@@ -184,46 +297,18 @@ class ShiftService {
    * GET SHIFTS BY STATION
    * All shifts for a specific station with access control
    */
-  // async getShiftsByStation(stationId, filters = {}, forceRefresh = false) {
-  //   return this.#retryOperation(async () => {
-  //     const cacheKey = `shifts-station-${stationId}-${JSON.stringify(filters)}`;
-      
-  //     if (!forceRefresh) {
-  //       const cached = this.#getCached(cacheKey);
-  //       if (cached) return cached;
-  //     }
-
-  //     this.logger.info(`Fetching shifts for station ${stationId}`, filters);
-      
-  //     const queryParams = this.#buildQueryParams(filters);
-  //     const url = `${this.basePath}/station/${stationId}${queryParams ? `?${queryParams}` : ''}`;
-      
-  //     console.log("url ",url);
-  //     const response = await apiService.get(url);
-  //     const data = this.#handleResponse(response, 'Station shifts fetch');
-      
-  //     this.#setCached(cacheKey, data);
-  //     this.logger.info(`Retrieved ${data.data?.shifts?.length || 0} shifts for station ${stationId}`);
-  //     return data;
-  //   }).catch(error => {
-  //     throw this.#handleError(error, 'Station shifts fetch', 'Failed to fetch station shifts');
-  //   });
-  // }
-
-    async getShiftsByStation(stationId, filters = {}) {
+  async getShiftsByStation(stationId, filters = {}) {
     return this.#retryOperation(async () => {
       const cacheKey = `shifts-station-${stationId}-${JSON.stringify(filters)}`;
       
       this.logger.info(`Fetching shifts for station ${stationId}`, filters);
       
       const queryParams = this.#buildQueryParams(filters);
-      // const url = `${this.basePath}/station/${stationId}${queryParams ? `?${queryParams}` : ''}`;
-      
       const url =`${this.basePath}/station/${stationId}`;
     
       const response = await apiService.get(url);
 
-        console.log("url ",url,' and response ',response);
+      console.log("url ",url,' and response ',response);
       const data = this.#handleResponse(response, 'Station shifts fetch');
       
       this.#setCached(cacheKey, data);
@@ -387,36 +472,37 @@ class ShiftService {
 
   // ==================== SPECIALIZED QUERIES ====================
 
-/**
- * GET CURRENT OPEN SHIFT FOR STATION
- * Returns null if no open shift found (not an error)
- */
-async getCurrentOpenShift(stationId) {
-  try {
-    return await this.#retryOperation(async () => {
-      this.logger.info(`Fetching current open shift for station ${stationId}`);
-      
-      const response = await apiService.get(`${this.basePath}/station/${stationId}/current`);
-      const data = this.#handleResponse(response, 'Current open shift fetch');
-      
-      // ✅ Backend now returns 200 with data: null for no open shift
-      if (data.success && data.data === null) {
-        this.logger.info(`No open shift found for station ${stationId}`);
-        return { 
-          success: true, 
-          data: null, 
-          message: 'No open shift found' 
-        };
-      }
-      
-      this.logger.info(`Found open shift for station ${stationId}:`, data.data?.shiftNumber);
-      return data;
-    });
-  } catch (error) {
-    // ✅ Only handle actual errors (network issues, server errors, station not found)
-    throw this.#handleError(error, 'Current open shift fetch', 'Failed to fetch current open shift');
+  /**
+   * GET CURRENT OPEN SHIFT FOR STATION
+   * Returns null if no open shift found (not an error)
+   */
+  async getCurrentOpenShift(stationId) {
+    try {
+      return await this.#retryOperation(async () => {
+        this.logger.info(`Fetching current open shift for station ${stationId}`);
+        
+        const response = await apiService.get(`${this.basePath}/station/${stationId}/current`);
+        const data = this.#handleResponse(response, 'Current open shift fetch');
+        
+        // ✅ Backend now returns 200 with data: null for no open shift
+        if (data.success && data.data === null) {
+          this.logger.info(`No open shift found for station ${stationId}`);
+          return { 
+            success: true, 
+            data: null, 
+            message: 'No open shift found' 
+          };
+        }
+        
+        this.logger.info(`Found open shift for station ${stationId}:`, data.data?.shiftNumber);
+        return data;
+      });
+    } catch (error) {
+      // ✅ Only handle actual errors (network issues, server errors, station not found)
+      throw this.#handleError(error, 'Current open shift fetch', 'Failed to fetch current open shift');
+    }
   }
-}
+
   /**
    * GET LATEST SHIFT FOR STATION
    */
@@ -1008,6 +1094,14 @@ export const COLLECTION_STATUS = {
   VERIFIED: 'VERIFIED',
   DISCREPANCY: 'DISCREPANCY',
   RESOLVED: 'RESOLVED'
+};
+
+// Add new constants for reading types
+export const READING_TYPES = {
+  ALL: 'ALL',
+  START_ONLY: 'START_ONLY',
+  END_ONLY: 'END_ONLY',
+  CONSUMPTION_ONLY: 'CONSUMPTION_ONLY'
 };
 
 export default shiftService;

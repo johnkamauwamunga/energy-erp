@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, Tabs, Tab, Input, Badge, Alert, Button, Table } from '../../../../ui';
-import { Zap, Package, Fuel, User, CheckCircle, ArrowRight, ArrowLeft, Save, Play, CheckCircle2, AlertCircle } from 'lucide-react';
-import { dummyData, mockServices, dummyDataHelpers } from './dummyData';
+import { Zap, Package, Fuel, User, CheckCircle, ArrowRight, ArrowLeft, Save, Play, CheckCircle2, AlertCircle, RotateCcw } from 'lucide-react';
 import { connectedAssetService } from '../../../../../services/connectedAssetsService/connectedAssetsService';
 import { useApp } from '../../../../../context/AppContext';
 import { shiftService } from '../../../../../services/shiftService/shiftService';
@@ -22,6 +21,11 @@ const AssetsConfigurationStep = ({ data, onChange, stationId, shiftId, onSave, o
   const [showSummary, setShowSummary] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createSuccess, setCreateSuccess] = useState(false);
+  
+  // State for last shift readings
+  const [lastShiftReadings, setLastShiftReadings] = useState(null);
+  const [loadingLastReadings, setLoadingLastReadings] = useState(false);
+  const [lastReadingsError, setLastReadingsError] = useState(null);
 
   const currentStation = state.currentStation?.id;
   const shiftDetails = localStorage.getItem("currentShiftId");
@@ -41,10 +45,13 @@ const AssetsConfigurationStep = ({ data, onChange, stationId, shiftId, onSave, o
     }
   }, []);
 
-  // Fetch assets data
+  // Fetch assets data AND last shift readings
   useEffect(() => {
-    const fetchAssets = async() => {
+    const fetchAssetsAndLastReadings = async() => {
       try {
+        setLoading(true);
+        
+        // Fetch current station assets
         const result = await connectedAssetService.getStationAssetsSimplified(currentStation);
         
         // Filter islands to only show those with pumps
@@ -76,15 +83,158 @@ const AssetsConfigurationStep = ({ data, onChange, stationId, shiftId, onSave, o
           setSelectedTankId(allTanks[0].tankId);
         }
         
+        // Fetch last shift readings for this station
+        await fetchLastShiftReadings();
+        
       } catch(e) {
         console.log("failed to get assets", e);
+      } finally {
+        setLoading(false);
       }
     };
     
     if (currentStation) {
-      fetchAssets();
+      fetchAssetsAndLastReadings();
     }
   }, [currentStation]);
+
+  // Function: Fetch last shift readings
+  const fetchLastShiftReadings = async () => {
+    if (!currentStation) return;
+    
+    setLoadingLastReadings(true);
+    setLastReadingsError(null);
+    
+    try {
+      console.log('🔄 Fetching last shift readings for station:', currentStation);
+      
+      const result = await shiftService.getLastShiftReadingsByStation(currentStation, {
+        forceRefresh: false
+      });
+      
+      console.log('📊 Full result from service:', result);
+      
+      // Check the new response structure
+      if (result.data?.pumpMeterReadings && Object.keys(result.data.pumpMeterReadings).length > 0) {
+        console.log('✅ Last shift readings loaded:', result.data);
+        setLastShiftReadings(result.data);
+      } else {
+        console.log('ℹ️ No previous shift readings found - structure:', result);
+        setLastShiftReadings(null);
+      }
+    } catch (error) {
+      console.error('❌ Failed to fetch last shift readings:', error);
+      setLastReadingsError(error.message || 'Failed to load previous readings');
+    } finally {
+      setLoadingLastReadings(false);
+    }
+  };
+
+  // Function: Get last pump reading
+  const getLastPumpReading = (pumpId) => {
+    if (!lastShiftReadings?.pumpMeterReadings) return null;
+    
+    return lastShiftReadings.pumpMeterReadings[pumpId];
+  };
+
+  // Function: Get last tank reading
+  const getLastTankReading = (tankId) => {
+    if (!lastShiftReadings?.tankDipReadings) return null;
+    
+    return lastShiftReadings.tankDipReadings[tankId];
+  };
+
+  // Function: Check if pump has last reading available
+  const hasLastPumpReading = (pumpId) => {
+    return !!getLastPumpReading(pumpId);
+  };
+
+  // Function: Check if tank has last reading available
+  const hasLastTankReading = (tankId) => {
+    return !!getLastTankReading(tankId);
+  };
+
+  // Function: Auto-fill pump with last reading
+  const autoFillPumpWithLastReading = (pumpId) => {
+    const lastReading = getLastPumpReading(pumpId);
+    if (!lastReading) return;
+
+    console.log(`🔄 Auto-filling pump ${pumpId} with last reading:`, lastReading);
+
+    const existingReading = data.pumpReadings.find(reading => reading.pumpId === pumpId);
+
+    let updatedReadings;
+
+    if (existingReading) {
+      updatedReadings = data.pumpReadings.map(reading =>
+        reading.pumpId === pumpId
+          ? {
+              ...reading,
+              electricMeter: lastReading.electricMeter || 0,
+              manualMeter: lastReading.manualMeter || 0,
+              cashMeter: lastReading.cashMeter || 0,
+              unitPrice: lastReading.unitPrice || 150.0
+            }
+          : reading
+      );
+    } else {
+      updatedReadings = [
+        ...data.pumpReadings,
+        {
+          pumpId,
+          electricMeter: lastReading.electricMeter || 0,
+          manualMeter: lastReading.manualMeter || 0,
+          cashMeter: lastReading.cashMeter || 0,
+          litersDispensed: 0,
+          salesValue: 0,
+          unitPrice: lastReading.unitPrice || 150.0
+        }
+      ];
+    }
+
+    onChange({ pumpReadings: updatedReadings });
+  };
+
+  // Function: Auto-fill tank with last reading
+  const autoFillTankWithLastReading = (tankId) => {
+    const lastReading = getLastTankReading(tankId);
+    if (!lastReading) return;
+
+    console.log(`🔄 Auto-filling tank ${tankId} with last reading:`, lastReading);
+
+    const existingReading = data.tankReadings.find(reading => reading.tankId === tankId);
+
+    let updatedReadings;
+
+    if (existingReading) {
+      updatedReadings = data.tankReadings.map(reading =>
+        reading.tankId === tankId
+          ? {
+              ...reading,
+              dipValue: lastReading.dipValue || 0,
+              volume: lastReading.volume || 0,
+              temperature: lastReading.temperature || 25.0,
+              waterLevel: lastReading.waterLevel || 0.0,
+              density: lastReading.density || 0.85
+            }
+          : reading
+      );
+    } else {
+      updatedReadings = [
+        ...data.tankReadings,
+        {
+          tankId,
+          dipValue: lastReading.dipValue || 0,
+          volume: lastReading.volume || 0,
+          temperature: lastReading.temperature || 25.0,
+          waterLevel: lastReading.waterLevel || 0.0,
+          density: lastReading.density || 0.85
+        }
+      ];
+    }
+
+    onChange({ tankReadings: updatedReadings });
+  };
 
   // Get selected island
   const selectedIsland = useMemo(() => {
@@ -226,153 +376,91 @@ const AssetsConfigurationStep = ({ data, onChange, stationId, shiftId, onSave, o
   };
 
   // Save all configurations
-//   const handleSaveConfiguration = async () => {
-//     if (!shiftDetails) {
-//       setSaveError('No shift ID available');
-//       return;
-//     }
+  const handleSaveConfiguration = async () => {
+    if (!shiftId) {
+      setSaveError('No shift ID available');
+      return;
+    }
 
-//     if (!currentUser) {
-//       setSaveError('No user information available');
-//       return;
-//     }
+    if (!currentUser) {
+      setSaveError('No user information available');
+      return;
+    }
 
-//     setSaving(true);
-//     setSaveError(null);
-//     setSaveSuccess(false);
+    setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
 
-//     console.log('💾 Saving configuration');
-//     try {
-//       const payload = {
-//         shiftId: shiftId,
-//         recordedById: currentUser,
-//         islandAssignments: data.islandAssignments,
-//         pumpReadings: data.pumpReadings,
-//         tankReadings: data.tankReadings
-//       };
+    console.log('💾 Saving configuration for shift:', shiftDetails);
+    try {
+      const payload = {
+        shiftId: shiftDetails,
+        recordedById: currentUser,
+        islandAssignments: data.islandAssignments,
+        pumpReadings: data.pumpReadings,
+        tankReadings: data.tankReadings
+      };
 
-//       console.log('💾 Saving configuration:', payload);
+      console.log('📦 Payload:', payload);
       
-//       const result = await shiftService.openShift(payload);
-//       console.log('✅ Configuration saved successfully:', result);
+      const result = await shiftService.openShift(shiftDetails, payload);
+      console.log('✅ Configuration saved successfully:', result);
       
-//       setSaveSuccess(true);
+      setSaveSuccess(true);
       
-//       // Save configuration data to localStorage for summary
-//       localStorage.setItem('shiftConfigurationData', JSON.stringify({
-//         ...data,
-//         shiftId: shiftId,
-//         recordedById: currentUser,
-//         timestamp: new Date().toISOString()
-//       }));
-      
-//       // Show summary after successful save
-//       setTimeout(() => {
-//         setShowSummary(true);
-//       }, 1500);
-      
-//       // Notify parent component
-//       if (onSave) {
-//         onSave(result);
-//       }
-      
-//     } catch (error) {
-//       console.error('❌ Failed to save configuration:', error);
-//       setSaveError(error.message || 'Failed to save configuration');
-//     } finally {
-//       setSaving(false);
-//     }
-//   };
+      // Save data for summary display
+      localStorage.setItem('shiftConfigurationData', JSON.stringify({
+        ...data,
+        shiftDetails: shiftDetails,
+        recordedById: currentUser,
+        timestamp: new Date().toISOString()
+      }));
 
- const handleClearStorage = async() =>{
-       localStorage.removeItem('currentShiftId');
-        localStorage.removeItem('currentShiftNumber');
-        localStorage.removeItem('currentShiftStartTime');
-        localStorage.removeItem('currentShiftStation');
-        localStorage.removeItem('currentShiftAttendants')
-           localStorage.removeItem('currentShiftId');
+      localStorage.setItem('currentStationAssets', JSON.stringify({
+        islands: islands,
+        tanks: tanks
+      }));
+      
+      // Show summary after successful save
+      setTimeout(() => {
+        setShowSummary(true);
+      }, 1500);
+      
+      // Notify parent component
+      if (onSave) {
+        onSave(result);
+      }
+      
+    } catch (error) {
+      console.error('❌ Failed to save configuration:', error);
+      setSaveError(error.message || 'Failed to save configuration');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleClearStorage = async() => {
+    localStorage.removeItem('currentShiftId');
     localStorage.removeItem('currentShiftNumber');
     localStorage.removeItem('currentShiftStartTime');
-      localStorage.removeItem('currentStationAssets')
-       localStorage.removeItem('shiftConfigurationData')
- }
+    localStorage.removeItem('currentShiftStation');
+    localStorage.removeItem('currentShiftAttendants');
+    localStorage.removeItem('currentStationAssets');
+    localStorage.removeItem('shiftConfigurationData');
+  };
 
-  const handleCheckStorage = async() =>{
-    const currentShift=   localStorage.getItem('currentShiftId');
-     const currentNumber=    localStorage.getItem('currentShiftNumber');
-        const startTime= localStorage.getItem('currentShiftStartTime');
-       const currentStation=  localStorage.getItem('currentShiftStation');
-        const Attedants= localStorage.getItem('currentShiftAttendants')
-      const stationAssets= localStorage.getItem('currentStationAssets')
-       const configuration= localStorage.getItem('shiftConfigurationData')
+  const handleCheckStorage = async() => {
+    const currentShift = localStorage.getItem('currentShiftId');
+    const currentNumber = localStorage.getItem('currentShiftNumber');
+    const startTime = localStorage.getItem('currentShiftStartTime');
+    const currentStation = localStorage.getItem('currentShiftStation');
+    const Attendants = localStorage.getItem('currentShiftAttendants');
+    const stationAssets = localStorage.getItem('currentStationAssets');
+    const configuration = localStorage.getItem('shiftConfigurationData');
 
-       console.log("shiftId",currentShift," Number ",currentNumber,' start Time',startTime," currentStation ")
-       console.log(" station ",currentStation," Attedants ",Attedants," stationAssets ",stationAssets," configuration ",configuration)
-    }
-
-const handleSaveConfiguration = async () => {
-  if (!shiftId) {
-    setSaveError('No shift ID available');
-    return;
-  }
-
-  if (!currentUser) {
-    setSaveError('No user information available');
-    return;
-  }
-
-  setSaving(true);
-  setSaveError(null);
-  setSaveSuccess(false);
-
-  console.log('💾 Saving configuration for shift:', shiftDetails);
-  try {
-    const payload = {
-        shiftId: shiftDetails,
-      recordedById: currentUser,
-      islandAssignments: data.islandAssignments,
-      pumpReadings: data.pumpReadings,
-      tankReadings: data.tankReadings
-    };
-
-    console.log('📦 Payload:', payload);
-    
-    // Correct API call with two parameters
-    const result = await shiftService.openShift(shiftDetails, payload);
-    console.log('✅ Configuration saved successfully:', result);
-    
-    setSaveSuccess(true);
-    
-    // Save data for summary display
-    localStorage.setItem('shiftConfigurationData', JSON.stringify({
-      ...data,
-      shiftDetails: shiftDetails,
-      recordedById: currentUser,
-      timestamp: new Date().toISOString()
-    }));
-
-    localStorage.setItem('currentStationAssets', JSON.stringify({
-      islands: islands,
-      tanks: tanks
-    }));
-    
-    // Show summary after successful save
-    setTimeout(() => {
-      setShowSummary(true);
-    }, 1500);
-    
-    // Notify parent component
-    if (onSave) {
-      onSave(result);
-    }
-    
-  } catch (error) {
-    console.error('❌ Failed to save configuration:', error);
-    setSaveError(error.message || 'Failed to save configuration');
-  } finally {
-    setSaving(false);
-  }
-};
+    console.log("shiftId", currentShift, " Number ", currentNumber, ' start Time', startTime, " currentStation ");
+    console.log(" station ", currentStation, " Attendants ", Attendants, " stationAssets ", stationAssets, " configuration ", configuration);
+  };
 
   // Handle final shift creation
   const handleFinalCreate = async () => {
@@ -385,7 +473,7 @@ const handleSaveConfiguration = async () => {
     setSaveError(null);
 
     try {
-      console.log('🎯 by john Finalizing shift creation with ID:', shiftId);
+      console.log('🎯 Finalizing shift creation with ID:', shiftId);
       
       if (onFinalCreate) {
         await onFinalCreate(shiftId, data);
@@ -432,10 +520,9 @@ const handleSaveConfiguration = async () => {
 
   const getAttendantName = (attendantId) => {
     const attendant = persistedAttendants.find(a => a.id === attendantId);
-    console.log("attedants are ",attendant);
+    console.log("attendants are ", attendant);
     return attendant ? `${attendant.firstName} ${attendant.lastName}` : `Attendant ${attendantId?.substring(0, 8)}`;
   };
-
 
   // Group island assignments by island
   const assignmentsByIsland = data.islandAssignments.reduce((acc, assignment) => {
@@ -694,7 +781,6 @@ const handleSaveConfiguration = async () => {
                 }
               </p>
             </div>
-            {/* handleCheckStorage */}
             <div className="flex flex-col gap-2">
               <Button
                 onClick={handleFinalCreate}
@@ -739,7 +825,7 @@ const handleSaveConfiguration = async () => {
     );
   }
 
-  // ========== CONFIGURATION VIEW (YOUR ORIGINAL CODE) ==========
+  // ========== CONFIGURATION VIEW ==========
   return (
     <div className="space-y-6">
       {/* Header Info */}
@@ -764,6 +850,34 @@ const handleSaveConfiguration = async () => {
           </div>
         </div>
       </Alert>
+
+      {/* Last Readings Status */}
+      {loadingLastReadings && (
+        <Alert variant="info" className="text-sm">
+          <div className="flex items-center gap-2">
+            <RotateCcw className="w-4 h-4 animate-spin" />
+            <span>Loading previous shift readings...</span>
+          </div>
+        </Alert>
+      )}
+
+      {lastReadingsError && (
+        <Alert variant="warning" className="text-sm">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" />
+            <span>Could not load previous readings: {lastReadingsError}</span>
+          </div>
+        </Alert>
+      )}
+
+      {lastShiftReadings && (
+        <Alert variant="success" className="text-sm">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4" />
+            <span>Previous shift readings loaded. Use auto-fill buttons to populate readings.</span>
+          </div>
+        </Alert>
+      )}
 
       {/* Main Tabs */}
       <Card className="p-4">
@@ -910,6 +1024,7 @@ const handleSaveConfiguration = async () => {
                       {selectedIsland.pumps?.map((pump, index) => {
                         const reading = getPumpReading(pump.pumpId);
                         const isActive = activePumpIndex === index;
+                        const hasLastReading = hasLastPumpReading(pump.pumpId);
                         
                         return (
                           <button
@@ -919,6 +1034,8 @@ const handleSaveConfiguration = async () => {
                                 ? 'border-orange-500 bg-orange-50 shadow-md'
                                 : reading
                                 ? 'border-green-300 bg-green-50'
+                                : hasLastReading
+                                ? 'border-blue-300 bg-blue-50'
                                 : 'border-gray-200 hover:border-gray-300'
                             }`}
                             onClick={() => setActivePumpIndex(index)}
@@ -936,10 +1053,18 @@ const handleSaveConfiguration = async () => {
                                     Tank: {pump.tank.tankName}
                                   </div>
                                 )}
+                                {hasLastReading && !reading && (
+                                  <div className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                                    <RotateCcw className="w-3 h-3" />
+                                    Previous reading available
+                                  </div>
+                                )}
                               </div>
                               <div className="flex flex-col items-end gap-1">
                                 {reading ? (
                                   <Badge variant="success" size="sm">Completed</Badge>
+                                ) : hasLastReading ? (
+                                  <Badge variant="info" size="sm">Auto-fill</Badge>
                                 ) : (
                                   <Badge variant="warning" size="sm">Pending</Badge>
                                 )}
@@ -980,6 +1105,23 @@ const handleSaveConfiguration = async () => {
                           </div>
                         </div>
                       </div>
+
+                      {/* Auto-fill Button */}
+                      {hasLastPumpReading(currentPump.pumpId) && !getPumpReading(currentPump.pumpId) && (
+                        <div className="mb-4">
+                          <Button
+                            onClick={() => autoFillPumpWithLastReading(currentPump.pumpId)}
+                            variant="info"
+                            size="sm"
+                            icon={RotateCcw}
+                          >
+                            Auto-fill from Previous Shift
+                          </Button>
+                          <p className="text-xs text-gray-600 mt-1">
+                            Fill readings from the last shift's END readings
+                          </p>
+                        </div>
+                      )}
 
                       {/* Pump Readings Form */}
                       <div className="space-y-6">
@@ -1077,6 +1219,7 @@ const handleSaveConfiguration = async () => {
                       const connectedPumps = islands.flatMap(island => 
                         island.pumps?.filter(pump => pump.tank?.tankId === tank.tankId) || []
                       );
+                      const hasLastReading = hasLastTankReading(tank.tankId);
                       
                       return (
                         <button
@@ -1086,6 +1229,8 @@ const handleSaveConfiguration = async () => {
                               ? 'border-orange-500 bg-orange-50 shadow-md'
                               : reading
                               ? 'border-green-300 bg-green-50'
+                              : hasLastReading
+                              ? 'border-blue-300 bg-blue-50'
                               : 'border-gray-200 hover:border-gray-300'
                           }`}
                           onClick={() => setSelectedTankId(tank.tankId)}
@@ -1094,6 +1239,8 @@ const handleSaveConfiguration = async () => {
                             <div className="font-semibold text-sm">{tank.tankName}</div>
                             {reading ? (
                               <Badge variant="success" size="sm">Recorded</Badge>
+                            ) : hasLastReading ? (
+                              <Badge variant="info" size="sm">Auto-fill</Badge>
                             ) : (
                               <Badge variant="warning" size="sm">Pending</Badge>
                             )}
@@ -1105,6 +1252,12 @@ const handleSaveConfiguration = async () => {
                             <div className="text-blue-600">
                               {connectedPumps.length} pump(s) connected
                             </div>
+                            {hasLastReading && !reading && (
+                              <div className="text-blue-600 flex items-center gap-1">
+                                <RotateCcw className="w-3 h-3" />
+                                Previous reading available
+                              </div>
+                            )}
                           </div>
                           {isSelected && (
                             <div className="w-full h-1 bg-orange-500 rounded-full mt-2"></div>
@@ -1134,6 +1287,23 @@ const handleSaveConfiguration = async () => {
                         </div>
                       </div>
                     </div>
+
+                    {/* Auto-fill Button */}
+                    {hasLastTankReading(selectedTank.tankId) && !getTankReading(selectedTank.tankId) && (
+                      <div className="mb-4">
+                        <Button
+                          onClick={() => autoFillTankWithLastReading(selectedTank.tankId)}
+                          variant="info"
+                          size="sm"
+                          icon={RotateCcw}
+                        >
+                          Auto-fill from Previous Shift
+                        </Button>
+                        <p className="text-xs text-gray-600 mt-1">
+                          Fill readings from the last shift's END readings
+                        </p>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                       <div className="space-y-4">
@@ -1238,41 +1408,6 @@ const handleSaveConfiguration = async () => {
           </div>
           
           <div className="flex flex-col gap-2">
-            <div>
-            <Button
-              onClick={handleSaveConfiguration}
-              disabled={saving || !shiftDetails || !currentUser}
-              loading={saving}
-              icon={Save}
-              size="lg"
-              className="whitespace-nowrap"
-            >
-              {saving ? 'Saving Configuration...' : 'Save & View Summary'}
-            </Button>
-            </div>
-
-            <div>
-            <Button
-              onClick={handleClearStorage}
-              icon={Save}
-              size="lg"
-              className="whitespace-nowrap"
-            >
-              {'Clear local Storage'}
-            </Button>
-            </div>
-
-              <div>
-            <Button
-              onClick={handleCheckStorage}
-              icon={Save}
-              size="lg"
-              className="whitespace-nowrap"
-            >
-              {'Check local Storage'}
-            </Button>
-            </div>
-
             <div className="text-xs text-gray-500 text-center">
               Recorded by: {currentUser?.firstName || 'Current User'}
             </div>
