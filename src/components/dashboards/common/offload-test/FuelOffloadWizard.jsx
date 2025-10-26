@@ -34,6 +34,7 @@ import {
 import { purchaseService } from '../../../../services/purchaseService/purchaseService';
 import { connectedAssetService } from '../../../../services/connectedAssetsService/connectedAssetsService';
 import { fuelOffloadService } from '../../../../services/offloadService/offloadService';
+import {shiftService} from '../../../../services/shiftService/shiftService';
 
 const { Title, Text } = Typography;
 const { Step } = Steps;
@@ -42,12 +43,16 @@ const { TabPane } = Tabs;
 
 // ========== SUB-COMPONENTS ==========
 
+// getCurrentOpenShift
+
 // Purchase Selection Step Component
 const PurchaseSelectionStep = ({ purchases, onPurchaseSelect, stationId }) => {
+  
   // Filter purchases to only show those for the current station
   const filteredPurchases = useMemo(() => {
     return purchases.filter(purchase => purchase.stationId === stationId);
   }, [purchases, stationId]);
+
 
   return (
     <div className="space-y-4">
@@ -806,6 +811,49 @@ const FuelOffloadWizard = ({ visible, onClose, onComplete, stationId }) => {
   const [selectedPumpId, setSelectedPumpId] = useState('');
   const [activeReadingTab, setActiveReadingTab] = useState('dip');
 
+    const [currentShift, setCurrentShift] = useState(null);
+    const [loadingShift, setLoadingShift] = useState(false);
+    const [latestShift, setLatestShift]=useState(null)
+
+      useEffect(() => {
+    const fetchCurrentShift = async () => {
+      if (stationId) {
+        setLoadingShift(true);
+        try {
+          console.log("🔄 Fetching current open shift for station:", stationId);
+          const response = await shiftService.getCurrentOpenShift(); // ADD AWAIT
+          console.log("✅ Current open shift response:", response);
+        //   setCurrentShift(response);
+        } catch (error) {
+          console.error("❌ Failed to fetch current shift:", error);
+         // setCurrentShift(null);
+        } finally {
+          setLoadingShift(false);
+        }
+      }
+    };
+
+   const  fetchLatestShift = async ()=>{
+        if (stationId) {
+        setLoadingShift(true);
+        try {
+          console.log("🔄 Fetching latest open shift for station:", stationId);
+          const response = await shiftService.getLatestShift(stationId); // ADD AWAIT
+          console.log("✅ Current latest shift response:", response);
+          setLatestShift(response);
+           setCurrentShift(response?.id);
+        } catch (error) {
+          console.error("❌ Failed to fetch current shift:", error);
+          setLatestShift(null);
+        } finally {
+          setLoadingShift(false);
+        }
+      }
+    }
+
+    fetchLatestShift()
+    fetchCurrentShift();
+  }, [stationId]);
   // Extract unique tanks and create pump-tank mapping
   const { uniqueTanks, pumpsByTank } = useMemo(() => {
     if (!stationAssets?.assets) return { uniqueTanks: [], pumpsByTank: {} };
@@ -1092,47 +1140,79 @@ const FuelOffloadWizard = ({ visible, onClose, onComplete, stationId }) => {
         );
     }
   };
+const handleComplete = async () => {
+  try {
+    setSubmitting(true);
+    const values = await form.validateFields();
+    
+    const tankOffloads = selectedTanks.map(tank => ({
+      tankId: tank.tankId,
+      expectedVolume: Number(tank.expectedVolume), // Convert to number
+      actualVolume: Number(calculateTankActualVolume(tank)), // Convert to number
+      dipBefore: {
+        dipValue: Number(tank.dipBefore.dipValue || 0),
+        volume: Number(tank.dipBefore.volume || 0),
+        temperature: Number(tank.dipBefore.temperature || 25), // Default temperature
+        waterLevel: Number(tank.dipBefore.waterLevel || 0), // Default to 0 instead of null
+        density: Number(tank.dipBefore.density || 0.85) // Default density
+      },
+      dipAfter: {
+        dipValue: Number(tank.dipAfter.dipValue || 0),
+        volume: Number(tank.dipAfter.volume || 0),
+        temperature: Number(tank.dipAfter.temperature || 25),
+        waterLevel: Number(tank.dipAfter.waterLevel || 0),
+        density: Number(tank.dipAfter.density || 0.85)
+      },
+      pumpReadingsBefore: (tank.pumpReadingsBefore || []).map(reading => ({
+        pumpId: reading.pumpId,
+        electricMeter: Number(reading.electricMeter || 0),
+        manualMeter: Number(reading.manualMeter || 0),
+        cashMeter: Number(reading.cashMeter || 0),
+        litersDispensed: 0, // Explicitly set to 0
+        salesValue: 0,      // Explicitly set to 0
+        unitPrice: 0        // Explicitly set to 0
+      })),
+      pumpReadingsAfter: (tank.pumpReadingsAfter || []).map(reading => ({
+        pumpId: reading.pumpId,
+        electricMeter: Number(reading.electricMeter || 0),
+        manualMeter: Number(reading.manualMeter || 0),
+        cashMeter: Number(reading.cashMeter || 0),
+        litersDispensed: 0,
+        salesValue: 0,
+        unitPrice: 0
+      })),
+      density: Number(tank.density || 0.85), // Provide default
+      temperature: Number(tank.temperature || 25) // Provide default
+    }));
 
-  const handleComplete = async () => {
-    try {
-      setSubmitting(true);
-      const values = await form.validateFields();
-      
-      const tankOffloads = selectedTanks.map(tank => ({
-        tankId: tank.tankId,
-        expectedVolume: tank.expectedVolume,
-        actualVolume: calculateTankActualVolume(tank),
-        dipBefore: tank.dipBefore,
-        dipAfter: tank.dipAfter,
-        pumpReadingsBefore: tank.pumpReadingsBefore,
-        pumpReadingsAfter: tank.pumpReadingsAfter,
-        density: tank.density,
-        temperature: tank.temperature
-      }));
+    const offloadData = {
+      purchaseId: selectedPurchase.id,
+      stationId,
+      shiftId: currentShift || undefined, // Use undefined instead of null
+      tankOffloads,
+      totalExpectedVolume: Number(calculateTotalExpected()), // Convert to number
+      totalActualVolume: Number(selectedTanks.reduce((sum, tank) => sum + calculateTankActualVolume(tank), 0)), // Convert to number
+      notes: values.notes || "defaul notes" // Use undefined instead of null
+    };
 
-      const offloadData = {
-        purchaseId: selectedPurchase.id,
-        stationId,
-        shiftId: values.shiftId || null,
-        tankOffloads,
-        totalExpectedVolume: calculateTotalExpected(),
-        totalActualVolume: selectedTanks.reduce((sum, tank) => sum + calculateTankActualVolume(tank), 0),
-        notes: values.notes || null
-      };
+    // Remove any undefined values completely
+    const cleanOffloadData = JSON.parse(JSON.stringify(offloadData));
 
-      const result = await fuelOffloadService.createFuelOffload(offloadData);
-      message.success('Fuel offload created successfully!');
-      
-      if (onComplete) {
-        onComplete(result);
-      }
-    } catch (error) {
-      console.error('Failed to create offload:', error);
-      message.error(error.message || 'Failed to create fuel offload');
-    } finally {
-      setSubmitting(false);
+    console.log('Sending offload data:', cleanOffloadData);
+    
+    const result = await fuelOffloadService.createFuelOffload(cleanOffloadData);
+    message.success('Fuel offload created successfully!');
+    
+    if (onComplete) {
+      onComplete(result);
     }
-  };
+  } catch (error) {
+    console.error('Failed to create offload:', error);
+    message.error(error.message || 'Failed to create fuel offload');
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   return (
     <Modal
