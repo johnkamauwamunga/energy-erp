@@ -139,7 +139,74 @@ export const offloadCalculations = {
   calculateDipVolumeChange: (beforeVolume, afterVolume) => afterVolume - beforeVolume
 };
 
-// Main service - UPDATED TO MATCH BACKEND ENDPOINTS EXACTLY
+// 🔥 NEW: Filter utilities for offload queries
+export const offloadFilters = {
+  buildStationFilters: (filters = {}) => {
+    const {
+      tankId,
+      productId,
+      shiftId,
+      status,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 20,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = filters;
+
+    const params = {
+      page,
+      limit,
+      sortBy,
+      sortOrder
+    };
+
+    if (tankId) params.tankId = tankId;
+    if (productId) params.productId = productId;
+    if (shiftId) params.shiftId = shiftId;
+    if (status) params.status = status;
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+
+    return params;
+  },
+
+  buildCompanyFilters: (filters = {}) => {
+    const {
+      stationId,
+      tankId,
+      productId,
+      shiftId,
+      status,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 20,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = filters;
+
+    const params = {
+      page,
+      limit,
+      sortBy,
+      sortOrder
+    };
+
+    if (stationId) params.stationId = stationId;
+    if (tankId) params.tankId = tankId;
+    if (productId) params.productId = productId;
+    if (shiftId) params.shiftId = shiftId;
+    if (status) params.status = status;
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+
+    return params;
+  }
+};
+
+// Main service - UPDATED WITH NEW ENDPOINTS
 export const fuelOffloadService = {
   // Create fuel offload - MATCHES BACKEND createFuelOffload ENDPOINT
   createFuelOffload: async (offloadData) => {
@@ -217,68 +284,135 @@ export const fuelOffloadService = {
     }
   },
 
-  // Get offload by ID
+  // 🔥 NEW: Get offloads by station
+// In your offloadService.js - update the getOffloadsByStation method
+getOffloadsByStation: async (filters = {}) => {
+  logger.info('Fetching offloads by station with filters:', filters);
+  
+  try {
+    const params = offloadFilters.buildStationFilters(filters);
+    const response = await apiService.get('/offloads/station', { params });
+    
+    console.log("🚀 ~ file: offloadService.js ~ getOffloadsByStation: ~ response:", response);
+    
+    // The backend returns: { success: true, data: [...], pagination: {...} }
+    const backendResponse = response.data;
+    
+    console.log("🚀 ~ file: offloadService.js ~ getOffloadsByStation: ~ backendResponse:", backendResponse);
+    
+    // Format the response for consistent frontend usage
+    return {
+      offloads: backendResponse || backendResponse.data || [],
+      pagination: backendResponse.pagination || {
+        page: filters.page || 1,
+        limit: filters.limit || 20,
+        totalCount: backendResponse.totalCount || 0,
+        totalPages: backendResponse.totalPages || 1
+      }
+    };
+  } catch (error) {
+    throw handleError(error, 'fetching offloads by station', 'Failed to fetch offloads for station');
+  }
+},
+  // 🔥 NEW: Get offloads by company
+  getOffloadsByCompany: async (filters = {}) => {
+    logger.info('Fetching offloads by company with filters:', filters);
+    
+    try {
+      const params = offloadFilters.buildCompanyFilters(filters);
+      const response = await apiService.get('/offloads/company', { params });
+      
+      const result = handleResponse(response, 'fetching offloads by company');
+      
+      // Format the response for consistent frontend usage
+      return {
+        offloads: result.offloads || result.data || [],
+        pagination: result.pagination || {
+          page: filters.page || 1,
+          limit: filters.limit || 20,
+          totalCount: result.totalCount || 0,
+          totalPages: result.totalPages || 1
+        }
+      };
+    } catch (error) {
+      throw handleError(error, 'fetching offloads by company', 'Failed to fetch offloads for company');
+    }
+  },
+
+  // 🔥 NEW: Get specific offload by ID
   getOffloadById: async (offloadId) => {
     logger.info(`Fetching offload: ${offloadId}`);
     
     try {
-      // Note: This endpoint might not exist in your backend, you may need to add it
       const response = await apiService.get(`/offloads/${offloadId}`);
-      return handleResponse(response, 'fetching offload');
+      return handleResponse(response, 'fetching offload by ID');
     } catch (error) {
-      throw handleError(error, 'fetching offload', 'Failed to fetch fuel offload');
+      throw handleError(error, 'fetching offload by ID', 'Failed to fetch fuel offload');
     }
   },
 
-  // Get offloads with filtering
-  getOffloads: async (filters = {}) => {
-    logger.info('Fetching offloads with filters:', filters);
+  // Get recent offloads (convenience method)
+  getRecentOffloads: async (limit = 10) => {
+    logger.info(`Fetching recent offloads, limit: ${limit}`);
     
-    try {
-      // Note: This endpoint might not exist in your backend, you may need to add it
-      // const response = await apiService.get('/offloads', { 
-      const response = await apiService.get(`/offloads/purchases/fc14caa1-d580-4968-881d-f24bbd303050/offloads`, {
-        params: filters
-      });
-      return handleResponse(response, 'fetching offloads');
-    } catch (error) {
-      throw handleError(error, 'fetching offloads', 'Failed to fetch fuel offloads');
-    }
-  },
-
-  // Get offloads by station
-  getOffloadsByStation: async (stationId, filters = {}) => {
-    logger.info(`Fetching offloads for station: ${stationId}`, filters);
-    
-    try {
-      // Note: This endpoint might not exist in your backend, you may need to add it
-      const response = await apiService.get(`/offloads/station/${stationId}`, {
-        params: filters
-      });
-      return handleResponse(response, 'fetching offloads by station');
-    } catch (error) {
-      throw handleError(error, 'fetching offloads by station', 'Failed to fetch offloads for station');
-    }
-  },
-
-  // Get recent offloads
-  getRecentOffloads: async (stationId = null, limit = 10) => {
-    logger.info(`Fetching recent offloads for station: ${stationId || 'all'}`);
-    
-    const params = { 
+    const filters = { 
       limit, 
       page: 1, 
       sortBy: 'createdAt', 
       sortOrder: 'desc' 
     };
     
-    if (stationId) params.stationId = stationId;
-    
     try {
-      const response = await apiService.get('/offloads', { params });
-      return handleResponse(response, 'fetching recent offloads');
+      // Use station endpoint by default for recent offloads
+      const result = await fuelOffloadService.getOffloadsByStation(filters);
+      return result.offloads || [];
     } catch (error) {
       throw handleError(error, 'fetching recent offloads', 'Failed to fetch recent offloads');
+    }
+  },
+
+  // Get offloads summary for dashboard
+  getOffloadsSummary: async (period = 'today') => {
+    logger.info(`Fetching offloads summary for period: ${period}`);
+    
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      let startDate = today;
+      
+      if (period === 'week') {
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        startDate = weekAgo.toISOString().split('T')[0];
+      } else if (period === 'month') {
+        const monthAgo = new Date();
+        monthAgo.setMonth(monthAgo.getMonth() - 1);
+        startDate = monthAgo.toISOString().split('T')[0];
+      }
+      
+      const filters = {
+        startDate,
+        endDate: today,
+        limit: 50,
+        page: 1,
+        sortBy: 'createdAt',
+        sortOrder: 'desc'
+      };
+      
+      const result = await fuelOffloadService.getOffloadsByStation(filters);
+      
+      // Calculate summary statistics
+      const offloads = result.offloads || [];
+      const summary = {
+        totalOffloads: offloads.length,
+        totalVolume: offloads.reduce((sum, offload) => sum + (offload.actualVolume || 0), 0),
+        completedOffloads: offloads.filter(o => o.status === 'COMPLETED').length,
+        inProgressOffloads: offloads.filter(o => o.status === 'IN_PROGRESS').length,
+        recentOffloads: offloads.slice(0, 5)
+      };
+      
+      return summary;
+    } catch (error) {
+      throw handleError(error, 'fetching offloads summary', 'Failed to fetch offloads summary');
     }
   }
 };
@@ -303,16 +437,23 @@ export const offloadFormatters = {
       'COMPLETED': { label: 'Completed', color: 'green', variant: 'success' },
       'IN_PROGRESS': { label: 'In Progress', color: 'blue', variant: 'processing' },
       'DRAFT': { label: 'Draft', color: 'gray', variant: 'default' },
-      'CANCELLED': { label: 'Cancelled', color: 'red', variant: 'error' }
+      'CANCELLED': { label: 'Cancelled', color: 'red', variant: 'error' },
+      'PENDING': { label: 'Pending', color: 'orange', variant: 'warning' }
     };
 
     const statusInfo = statusDisplay[offload.status] || { label: offload.status, color: 'gray', variant: 'secondary' };
+
+    // Calculate sales during offload from pump readings
+    const pumpReadingsBefore = offload.pumpMeterReadings?.filter(r => r.readingType === 'OFFLOAD_BEFORE') || [];
+    const pumpReadingsAfter = offload.pumpMeterReadings?.filter(r => r.readingType === 'OFFLOAD_AFTER') || [];
+    const salesDuringOffload = offloadCalculations.calculateSalesDuringOffload(pumpReadingsBefore, pumpReadingsAfter);
 
     return {
       ...offload,
       // Calculations
       variance: variance,
       variancePercentage: variancePercentage.toFixed(2),
+      salesDuringOffload: salesDuringOffload,
       
       // Status information
       statusDisplay: statusInfo.label,
@@ -325,20 +466,29 @@ export const offloadFormatters = {
       formattedCreatedAt: offload.createdAt ? new Date(offload.createdAt).toLocaleString() : 'N/A',
       
       // Quick info for display
-      purchaseNumber: offload.purchase?.purchaseNumber || 'N/A',
-      supplierName: offload.purchase?.supplier?.name || 'Unknown Supplier',
+      purchaseNumber: offload.purchaseReceiving?.purchase?.purchaseNumber || 'N/A',
+      supplierName: offload.purchaseReceiving?.purchase?.supplier?.name || 'Unknown Supplier',
       stationName: offload.station?.name || 'Unknown Station',
+      tankName: offload.tank?.asset?.name || 'Unknown Tank',
+      productName: offload.product?.name || 'Unknown Product',
       
       // Mobile-friendly formats
       shortCreatedAt: offload.createdAt ? new Date(offload.createdAt).toLocaleDateString('en-KE') : 'N/A',
       
       // Quick info for cards
       quickInfo: {
-        purchase: offload.purchase?.purchaseNumber || 'N/A',
+        purchase: offload.purchaseReceiving?.purchase?.purchaseNumber || 'N/A',
         station: offload.station?.name || 'Unknown Station',
-        supplier: offload.purchase?.supplier?.name || 'Unknown Supplier',
-        tanks: offload.tankOffloads?.length || 0
-      }
+        supplier: offload.purchaseReceiving?.purchase?.supplier?.name || 'Unknown Supplier',
+        tank: offload.tank?.asset?.name || 'Unknown Tank',
+        product: offload.product?.name || 'Unknown Product',
+        volume: `${offload.actualVolume || 0}L`
+      },
+      
+      // Enhanced display fields
+      displayVolume: `${offload.actualVolume || 0}L`,
+      displayVariance: `${variance}L (${variancePercentage}%)`,
+      displayStatus: statusInfo.label
     };
   },
 
@@ -351,19 +501,24 @@ export const offloadFormatters = {
         purchaseNumber: formatted.purchaseNumber,
         supplier: formatted.supplierName,
         station: formatted.stationName,
-        expected: `${offload.totalExpectedVolume || 0}L`,
-        actual: `${offload.totalActualVolume || 0}L`,
-        variance: `${formatted.variance}L`,
+        tank: formatted.tankName,
+        product: formatted.productName,
+        expected: `${offload.expectedVolume || 0}L`,
+        actual: `${offload.actualVolume || 0}L`,
+        variance: formatted.displayVariance,
         status: formatted.statusDisplay,
         createdAt: formatted.shortCreatedAt,
         
         // Mobile-optimized fields
         mobileSummary: `${formatted.purchaseNumber} • ${formatted.supplierName}`,
-        mobileDetails: `${offload.totalActualVolume || 0}L • ${formatted.statusDisplay}`,
+        mobileDetails: `${offload.actualVolume || 0}L • ${formatted.statusDisplay}`,
         
         // For quick actions
         canComplete: offload.status === 'IN_PROGRESS',
-        canEdit: offload.status !== 'COMPLETED' && offload.status !== 'CANCELLED'
+        canEdit: offload.status !== 'COMPLETED' && offload.status !== 'CANCELLED',
+        
+        // Full formatted object for details view
+        formatted: formatted
       };
     });
   },

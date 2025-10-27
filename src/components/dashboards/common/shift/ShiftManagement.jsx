@@ -62,6 +62,20 @@ const ShiftManagement = () => {
     }
   }, [userRole, currentUser, userCompanyId, userStationId]);
 
+  useEffect(() => {
+  const fetchCumulativeShifts = async() =>{
+    try{
+        const response =await shiftService.getShiftsByStationWithAssets(userStationId) 
+        console.log("Cumulative shifts data",response);
+    }catch(e){
+  console.log("Error fetching cumulative shifts",e);
+    }
+  
+  }
+
+  fetchCumulativeShifts()
+  },[userStationId])
+
   // Fetch shifts based on user role
   const fetchShifts = useCallback(async () => {
     setLoading(true);

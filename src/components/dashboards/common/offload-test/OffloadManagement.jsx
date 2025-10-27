@@ -23,10 +23,9 @@ import {
   SearchOutlined,
   FilterOutlined,
   EyeOutlined,
-  FileTextOutlined,
-  PlayCircleOutlined
+  FileTextOutlined
 } from '@ant-design/icons';
-import { fuelOffloadService } from '../../../../services/offloadService/offloadService';
+import { fuelOffloadService, offloadFormatters } from '../../../../services/offloadService/offloadService';
 import { useApp } from '../../../../context/AppContext';
 import FuelOffloadWizard from './FuelOffloadWizard';
 
@@ -39,40 +38,63 @@ const OffloadManagement = () => {
   const { state } = useApp();
   const [loading, setLoading] = useState(false);
   const [offloads, setOffloads] = useState([]);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    totalCount: 0,
+    totalPages: 0
+  });
   const [showWizard, setShowWizard] = useState(false);
   const [selectedOffload, setSelectedOffload] = useState(null);
   const [filters, setFilters] = useState({
     search: '',
-    status: 'all',
-    dateRange: null
+    status: '',
+    tankId: '',
+    productId: '',
+    dateRange: null,
+    page: 1,
+    limit: 10,
+    sortBy: 'createdAt',
+    sortOrder: 'desc'
   });
 
   const currentStation = state.currentStation?.id;
 
-  // Fetch offload records
+  // Fetch offload records using getOffloadsByStation
   const fetchOffloads = async () => {
     if (!currentStation) return;
     
     setLoading(true);
     try {
-      // Use getOffloads with station filter instead of getOffloadsByStation
-      const response = await fuelOffloadService.getOffloads({
-        stationId: currentStation,
-        ...filters,
-        page: 1,
-        limit: 50,
-        sortBy: 'createdAt',
-        sortOrder: 'desc'
-      });
-
-      console.log("offload response ", response);
+      console.log("🔄 Fetching offloads with filters:", filters);
       
-      // Handle different response structures
-      const offloadsData = response.offloads || response.data || response || [];
+      // Use getOffloadsByStation with filters
+      const result = await fuelOffloadService.getOffloadsByStation(filters);
+      
+      console.log("📦 Offloads response:", result);
+      
+      // Handle the response structure from getOffloadsByStation
+      const offloadsData = result.offloads || [];
+      const paginationData = result.pagination || {};
+      
+      console.log(`✅ Retrieved ${offloadsData.length} offloads`);
+      
       setOffloads(Array.isArray(offloadsData) ? offloadsData : []);
+      setPagination({
+        page: paginationData.page || 1,
+        limit: paginationData.limit || 10,
+        totalCount: paginationData.totalCount || 0,
+        totalPages: paginationData.totalPages || 0
+      });
     } catch (error) {
-      console.error('Failed to fetch offloads:', error);
+      console.error('❌ Failed to fetch offloads:', error);
       setOffloads([]);
+      setPagination({
+        page: 1,
+        limit: 10,
+        totalCount: 0,
+        totalPages: 0
+      });
     } finally {
       setLoading(false);
     }
@@ -80,14 +102,33 @@ const OffloadManagement = () => {
 
   useEffect(() => {
     fetchOffloads();
-  }, [currentStation]);
+  }, [currentStation, filters.page, filters.limit, filters.status, filters.dateRange]);
+
+  // Handle filter changes
+  const handleFilterChange = (newFilters) => {
+    setFilters(prev => ({
+      ...prev,
+      ...newFilters,
+      page: 1 // Reset to first page when filters change
+    }));
+  };
+
+  // Handle table pagination
+  const handleTableChange = (newPagination) => {
+    setFilters(prev => ({
+      ...prev,
+      page: newPagination.current,
+      limit: newPagination.pageSize
+    }));
+  };
 
   const getStatusConfig = (status) => {
     const config = {
-      'DRAFT': { color: 'default', label: 'Draft', badge: 'default' },
-      'IN_PROGRESS': { color: 'orange', label: 'In Progress', badge: 'processing' },
       'COMPLETED': { color: 'green', label: 'Completed', badge: 'success' },
-      'CANCELLED': { color: 'red', label: 'Cancelled', badge: 'error' }
+      'IN_PROGRESS': { color: 'orange', label: 'In Progress', badge: 'processing' },
+      'DRAFT': { color: 'default', label: 'Draft', badge: 'default' },
+      'CANCELLED': { color: 'red', label: 'Cancelled', badge: 'error' },
+      'PENDING': { color: 'blue', label: 'Pending', badge: 'warning' }
     };
     return config[status] || config.DRAFT;
   };
@@ -100,53 +141,54 @@ const OffloadManagement = () => {
 
   const columns = [
     {
-      title: 'Offload ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 120,
-      render: (id) => <Text code>{id?.substring(0, 8) || 'N/A'}...</Text>
-    },
-    {
       title: 'Purchase #',
-      dataIndex: 'purchase',
+      dataIndex: ['purchaseReceiving', 'purchase', 'purchaseNumber'],
       key: 'purchaseNumber',
       width: 130,
-      render: (purchase) => purchase?.purchaseNumber || 'N/A'
+      render: (purchaseNumber) => purchaseNumber || 'N/A'
     },
     {
-      title: 'Tanks',
-      key: 'tanks',
+      title: 'Supplier',
+      dataIndex: ['purchaseReceiving', 'purchase', 'supplier', 'name'],
+      key: 'supplier',
+      width: 150,
+      render: (supplierName) => supplierName || 'N/A'
+    },
+    {
+      title: 'Tank',
+      dataIndex: ['tank', 'asset', 'name'],
+      key: 'tank',
       width: 100,
-      render: (_, record) => (
-        <Badge count={record.tankOffloads?.length || 0} showZero>
-          <Text>Tanks</Text>
-        </Badge>
-      )
+      render: (tankName) => tankName || 'N/A'
     },
     {
-      title: 'Expected Qty',
-      dataIndex: 'totalExpectedVolume',
+      title: 'Product',
+      dataIndex: ['product', 'name'],
+      key: 'product',
+      width: 150,
+      render: (productName) => productName || 'N/A'
+    },
+    {
+      title: 'Expected',
+      dataIndex: 'expectedVolume',
       key: 'expected',
-      width: 120,
+      width: 100,
       render: (volume) => `${(volume || 0).toLocaleString()}L`
     },
     {
-      title: 'Actual Qty',
-      dataIndex: 'totalActualVolume',
+      title: 'Actual',
+      dataIndex: 'actualVolume',
       key: 'actual',
-      width: 120,
+      width: 100,
       render: (volume) => `${(volume || 0).toLocaleString()}L`
     },
     {
       title: 'Variance',
+      dataIndex: 'variance',
       key: 'variance',
       width: 120,
-      render: (_, record) => {
-        const expected = record.totalExpectedVolume || 0;
-        const actual = record.totalActualVolume || 0;
-        const variance = actual - expected;
-        const config = getVarianceStatus(variance);
-        
+      render: (variance) => {
+        const config = getVarianceStatus(variance || 0);
         return <Tag color={config.color}>{config.label}</Tag>;
       }
     },
@@ -191,17 +233,29 @@ const OffloadManagement = () => {
     }
   ];
 
+  // Format offloads for display
+  const formattedOffloads = offloads.map(offload => {
+    try {
+      return offloadFormatters.formatOffloadForDisplay(offload);
+    } catch (error) {
+      console.error('Error formatting offload:', error, offload);
+      return offload; // Return original if formatting fails
+    }
+  });
+
   // Statistics
   const stats = {
-    total: offloads.length,
-    completed: offloads.filter(o => o.status === 'COMPLETED').length,
-    inProgress: offloads.filter(o => o.status === 'IN_PROGRESS').length,
-    totalVolume: offloads.reduce((sum, o) => sum + (o.totalActualVolume || 0), 0)
+    total: pagination.totalCount,
+    completed: formattedOffloads.filter(o => o.status === 'COMPLETED').length,
+    inProgress: formattedOffloads.filter(o => o.status === 'IN_PROGRESS').length,
+    totalVolume: formattedOffloads.reduce((sum, o) => sum + (o.actualVolume || 0), 0)
   };
 
   // Simple Offload Details Modal
   const OffloadDetailsModal = ({ offload, visible, onClose }) => {
     if (!offload) return null;
+
+    const formattedOffload = offloadFormatters.formatOffloadForDisplay(offload);
 
     return (
       <Modal
@@ -220,46 +274,81 @@ const OffloadManagement = () => {
             <Col span={12}>
               <Card size="small" title="Basic Information">
                 <p><strong>Offload ID:</strong> {offload.id}</p>
-                <p><strong>Purchase #:</strong> {offload.purchase?.purchaseNumber || 'N/A'}</p>
-                <p><strong>Status:</strong> {getStatusConfig(offload.status).label}</p>
-                <p><strong>Created:</strong> {offload.createdAt ? new Date(offload.createdAt).toLocaleString() : 'N/A'}</p>
+                <p><strong>Purchase #:</strong> {formattedOffload.purchaseNumber}</p>
+                <p><strong>Supplier:</strong> {formattedOffload.supplierName}</p>
+                <p><strong>Tank:</strong> {formattedOffload.tankName}</p>
+                <p><strong>Product:</strong> {formattedOffload.productName}</p>
+                <p><strong>Status:</strong> {formattedOffload.statusDisplay}</p>
+                <p><strong>Created:</strong> {formattedOffload.formattedCreatedAt}</p>
               </Card>
             </Col>
             <Col span={12}>
               <Card size="small" title="Quantities">
-                <p><strong>Expected:</strong> {(offload.totalExpectedVolume || 0).toLocaleString()}L</p>
-                <p><strong>Actual:</strong> {(offload.totalActualVolume || 0).toLocaleString()}L</p>
-                <p><strong>Variance:</strong> 
-                  <Tag color={getVarianceStatus((offload.totalActualVolume || 0) - (offload.totalExpectedVolume || 0)).color}>
-                    {((offload.totalActualVolume || 0) - (offload.totalExpectedVolume || 0)).toLocaleString()}L
-                  </Tag>
-                </p>
+                <p><strong>Expected:</strong> {formattedOffload.displayVolume}</p>
+                <p><strong>Actual:</strong> {formattedOffload.displayVolume}</p>
+                <p><strong>Variance:</strong> {formattedOffload.displayVariance}</p>
+                <p><strong>Sales During Offload:</strong> {formattedOffload.salesDuringOffload || 0}L</p>
               </Card>
             </Col>
           </Row>
 
-          {offload.tankOffloads && offload.tankOffloads.length > 0 && (
-            <Card size="small" title="Tank Allocations">
+          {/* Dip Readings */}
+          {offload.tankDipReadings && offload.tankDipReadings.length > 0 && (
+            <Card size="small" title="Dip Readings">
               <Table
-                dataSource={offload.tankOffloads}
+                dataSource={offload.tankDipReadings}
                 pagination={false}
                 size="small"
                 columns={[
-                  { title: 'Tank', dataIndex: 'tankName', key: 'tankName' },
-                  { title: 'Expected', key: 'expected', render: (_, tank) => (tank.expectedVolume || 0).toLocaleString() + 'L' },
-                  { title: 'Actual', key: 'actual', render: (_, tank) => (tank.actualVolume || 0).toLocaleString() + 'L' },
                   { 
-                    title: 'Variance', 
-                    key: 'variance', 
-                    render: (_, tank) => {
-                      const variance = (tank.actualVolume || 0) - (tank.expectedVolume || 0);
-                      return (
-                        <Tag color={getVarianceStatus(variance).color}>
-                          {variance.toLocaleString()}L
-                        </Tag>
-                      );
+                    title: 'Type', 
+                    dataIndex: 'readingType', 
+                    key: 'readingType',
+                    render: (type) => {
+                      const typeMap = {
+                        'OFFLOAD_BEFORE': 'Before Offload',
+                        'OFFLOAD_AFTER': 'After Offload'
+                      };
+                      return typeMap[type] || type;
                     }
-                  }
+                  },
+                  { title: 'Dip Value', dataIndex: 'dipValue', key: 'dipValue' },
+                  { title: 'Volume', dataIndex: 'volume', key: 'volume', render: vol => `${vol}L` },
+                  { title: 'Temperature', dataIndex: 'temperature', key: 'temperature', render: temp => temp ? `${temp}°C` : 'N/A' },
+                  { title: 'Water Level', dataIndex: 'waterLevel', key: 'waterLevel', render: level => level ? `${level}cm` : 'N/A' }
+                ]}
+              />
+            </Card>
+          )}
+
+          {/* Pump Readings */}
+          {offload.pumpMeterReadings && offload.pumpMeterReadings.length > 0 && (
+            <Card size="small" title="Pump Meter Readings">
+              <Table
+                dataSource={offload.pumpMeterReadings}
+                pagination={false}
+                size="small"
+                columns={[
+                  { 
+                    title: 'Type', 
+                    dataIndex: 'readingType', 
+                    key: 'readingType',
+                    render: (type) => {
+                      const typeMap = {
+                        'OFFLOAD_BEFORE': 'Before Offload',
+                        'OFFLOAD_AFTER': 'After Offload'
+                      };
+                      return typeMap[type] || type;
+                    }
+                  },
+                  { 
+                    title: 'Pump', 
+                    key: 'pump',
+                    render: (_, reading) => reading.pump?.asset?.name || 'N/A'
+                  },
+                  { title: 'Electric Meter', dataIndex: 'electricMeter', key: 'electricMeter' },
+                  { title: 'Manual Meter', dataIndex: 'manualMeter', key: 'manualMeter' },
+                  { title: 'Cash Meter', dataIndex: 'cashMeter', key: 'cashMeter' }
                 ]}
               />
             </Card>
@@ -350,9 +439,9 @@ const OffloadManagement = () => {
         <Row gutter={16} align="middle">
           <Col span={6}>
             <Search
-              placeholder="Search offloads..."
+              placeholder="Search by purchase #..."
               value={filters.search}
-              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+              onChange={(e) => handleFilterChange({ search: e.target.value })}
               onSearch={fetchOffloads}
             />
           </Col>
@@ -361,9 +450,9 @@ const OffloadManagement = () => {
               style={{ width: '100%' }}
               placeholder="Status"
               value={filters.status}
-              onChange={(value) => setFilters(prev => ({ ...prev, status: value }))}
+              onChange={(value) => handleFilterChange({ status: value })}
+              allowClear
             >
-              <Option value="all">All Statuses</Option>
               <Option value="COMPLETED">Completed</Option>
               <Option value="IN_PROGRESS">In Progress</Option>
               <Option value="DRAFT">Draft</Option>
@@ -375,7 +464,7 @@ const OffloadManagement = () => {
               style={{ width: '100%' }}
               placeholder={['Start Date', 'End Date']}
               value={filters.dateRange}
-              onChange={(dates) => setFilters(prev => ({ ...prev, dateRange: dates }))}
+              onChange={(dates) => handleFilterChange({ dateRange: dates })}
             />
           </Col>
           <Col span={8}>
@@ -387,32 +476,53 @@ const OffloadManagement = () => {
               >
                 Refresh
               </Button>
-              <Button icon={<FilterOutlined />}>
-                More Filters
+              <Button 
+                icon={<FilterOutlined />}
+                onClick={() => {
+                  // Reset filters
+                  handleFilterChange({
+                    search: '',
+                    status: '',
+                    dateRange: null,
+                    page: 1
+                  });
+                }}
+              >
+                Clear Filters
               </Button>
             </Space>
           </Col>
         </Row>
       </Card>
 
+      {/* Debug Info */}
+      <Card size="small">
+        <Text type="secondary">
+          Debug: Station ID: {currentStation} | Showing {formattedOffloads.length} of {pagination.totalCount} offloads
+        </Text>
+      </Card>
+
       {/* Offloads Table */}
       <Card>
         <Table
           columns={columns}
-          dataSource={offloads}
+          dataSource={formattedOffloads}
           loading={loading}
           rowKey="id"
           pagination={{
-            pageSize: 10,
+            current: pagination.page,
+            pageSize: pagination.limit,
+            total: pagination.totalCount,
             showSizeChanger: true,
             showQuickJumper: true,
             showTotal: (total, range) => 
               `Showing ${range[0]}-${range[1]} of ${total} offload records`
           }}
+          onChange={handleTableChange}
           locale={{
             emptyText: loading ? 
               'Loading offload records...' : 
-              filters.search || filters.status !== 'all' ? 
+              filters.search || filters.status ? 
                 'No offloads match your filters' : 
                 'No offload records found. Start a new fuel offload process.'
           }}
