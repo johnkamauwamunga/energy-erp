@@ -3,6 +3,7 @@ import { Button, Card, Table, Badge, Alert, Tab } from '../../../ui';
 import { useApp } from '../../../../context/AppContext';
 import { assetService } from '../../../../services/assetService/assetService';
 import { assetConnectionService } from '../../../../services/assetConnection/assetConnectionService';
+import {fuelService} from '../../../../services/fuelService/fuelService'
 import { Fuel, Zap, Package, Link, Unlink, Warehouse, Edit } from 'lucide-react';
 
 // Edit Asset Modal Component
@@ -159,6 +160,13 @@ const StationAssetManagement = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [editingAsset, setEditingAsset] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
+
+  // fetch products
+  useEffect(() => {
+   const response= fuelService.getFuelProducts()
+
+   console.log("the products are ",response);
+  },[]);
 
   // Load assets and connections
   const loadAssetsAndConnections = useCallback(async (currentUser) => {

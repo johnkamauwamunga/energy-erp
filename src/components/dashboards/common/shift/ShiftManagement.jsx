@@ -19,6 +19,7 @@ const ShiftManagement = () => {
   const [error, setError] = useState(null);
   const [hasOpenShift, setHasOpenShift] = useState(false);
   const [openShiftData, setOpenShiftData] = useState(null);
+  const [cumulativeData, setCumulativeData] = useState(null);
 
   const [filters, setFilters] = useState({
     status: '',
@@ -28,6 +29,51 @@ const ShiftManagement = () => {
 
   const [wizardMode, setWizardMode] = useState(null);
   const [selectedShift, setSelectedShift] = useState(null);
+
+  // ========== EVENT HANDLERS - DEFINED FIRST ==========
+
+  // Handle open shift
+  const handleOpenShift = () => {
+    console.log("🔄 Opening shift wizard");
+    setWizardMode('open');
+  };
+
+  // Handle close shift
+  const handleCloseShift = () => {
+    console.log("🔄 Handling close shift, openShiftData:", openShiftData);
+    if (openShiftData) {
+      setSelectedShift(openShiftData);
+      setWizardMode('close');
+    } else {
+      console.error("❌ No open shift data available to close");
+      // Try to refetch open shift data
+      checkOpenShift();
+    }
+  };
+
+  // Handle shift creation success
+  const handleShiftCreated = () => {
+    console.log("✅ Shift created successfully");
+    setWizardMode(null);
+    fetchShifts(); // Refresh data
+  };
+
+  // Handle shift closing success
+  const handleShiftClosed = () => {
+    console.log("✅ Shift closed successfully");
+    setWizardMode(null);
+    setSelectedShift(null);
+    setHasOpenShift(false);
+    setOpenShiftData(null);
+    fetchShifts(); // Refresh data
+  };
+
+  // Handle cancel wizard
+  const handleCancelWizard = () => {
+    console.log("❌ Wizard cancelled");
+    setWizardMode(null);
+    setSelectedShift(null);
+  };
 
   // Determine scope based on user role
   const getScopeParams = useCallback(() => {
@@ -62,87 +108,6 @@ const ShiftManagement = () => {
     }
   }, [userRole, currentUser, userCompanyId, userStationId]);
 
-  useEffect(() => {
-  const fetchCumulativeShifts = async() =>{
-    try{
-        const response =await shiftService.getShiftsByStationWithAssets(userStationId) 
-        console.log("Cumulative shifts data",response);
-    }catch(e){
-  console.log("Error fetching cumulative shifts",e);
-    }
-  
-  }
-
-  fetchCumulativeShifts()
-  },[userStationId])
-
-  // Fetch shifts based on user role
-  const fetchShifts = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      let response;
-      const queryParams = {
-        status: filters.status,
-        startDate: filters.startDate,
-        endDate: filters.endDate,
-        page: 1,
-        limit: 1000
-      };
-
-      const scopeParams = getScopeParams();
-      console.log('📡 Fetching shifts with scope:', scopeParams);
-
-      switch (scopeParams.scope) {
-        case 'all':
-          response = await shiftService.getAllShifts(queryParams);
-          break;
-
-        case 'company':
-          response = await shiftService.getShiftsByCompany(
-            scopeParams.companyId,
-            queryParams
-          );
-          break;
-
-        case 'station':
-          response = await shiftService.getShiftsByStation(
-            scopeParams.stationId,
-            queryParams
-          );
-          break;
-
-        case 'attendant':
-          response = await shiftService.getShiftsByAttendant(
-            scopeParams.attendantId,
-            queryParams
-          );
-          break;
-
-        default:
-          response = { data: { shifts: [] } };
-      }
-
-      // Handle different response structures
-      const shiftsData = response.shifts || response.data?.shifts || [];
-      console.log('📊 Fetched shifts:', shiftsData);
-      setShifts(shiftsData);
-
-      // Check for open shift (only for station-level roles)
-      if (['STATION_MANAGER', 'SUPERVISOR', 'LINES_MANAGER'].includes(userRole)) {
-        await checkOpenShift(shiftsData);
-      }
-
-    } catch (err) {
-      console.error('❌ Failed to fetch shifts:', err);
-      setError(err.message || 'Failed to load shift data');
-      setShifts([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [getScopeParams, userRole, filters]);
-
   // Check for open shift in current station
   const checkOpenShift = useCallback(async (shiftsData = null) => {
     if (!['STATION_MANAGER', 'SUPERVISOR', 'LINES_MANAGER'].includes(userRole)) {
@@ -161,14 +126,20 @@ const ShiftManagement = () => {
       // Method 1: Try API first
       try {
         const result = await shiftService.getCurrentOpenShift(stationId);
+        console.log("🔍 Open shift API result:", result);
+        
         if (result && result.data) {
           console.log('✅ Open shift found via API:', result.data.shiftNumber);
           setHasOpenShift(true);
           setOpenShiftData(result.data);
           return;
+        } else {
+          console.log('✅ No open shift found via API');
+          setHasOpenShift(false);
+          setOpenShiftData(null);
         }
       } catch (apiError) {
-        console.log('⚠️ API check failed, falling back to local check');
+        console.log('⚠️ API check failed, falling back to local check:', apiError);
       }
 
       // Method 2: Check local shifts data
@@ -195,47 +166,139 @@ const ShiftManagement = () => {
     }
   }, [userRole, userStationId, shifts]);
 
-  // Initial data fetch
+  // Fetch cumulative shifts with assets
   useEffect(() => {
-    fetchShifts();
-  }, [currentUser]);
+    const fetchCumulativeShifts = async() => {
+      try {
+        const response = await shiftService.getShiftsByStationWithAssets(userStationId);
+        console.log("📊 Cumulative shifts data with assets:", response);
+        setCumulativeData(response);
+        
+        // Also set the shifts for the table
+        if (response?.shifts) {
+          setShifts(response?.shifts);
+        }
 
-  // Handle open shift
-  const handleOpenShift = () => {
-    setWizardMode('open');
-  };
+        // Check for open shift separately
+        await checkOpenShift(response?.shifts);
 
-  // Handle close shift
-  const handleCloseShift = () => {
-    if (openShiftData) {
-      setSelectedShift(openShiftData);
-      setWizardMode('close');
+      } catch (e) {
+        console.log("❌ Error fetching cumulative shifts:", e);
+        setError(e.message || 'Failed to load shift data');
+      }
     }
-  };
 
-  // Handle shift creation success
-  const handleShiftCreated = () => {
-    setWizardMode(null);
-    fetchShifts(); // Refresh data
-  };
+    if (userStationId) {
+      fetchCumulativeShifts();
+    }
+  }, [userStationId, checkOpenShift]);
 
-  // Handle shift closing success
-  const handleShiftClosed = () => {
-    setWizardMode(null);
-    setSelectedShift(null);
-    fetchShifts(); // Refresh data
-  };
+  // Fetch shifts based on user role (fallback method)
+  const fetchShifts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      let response;
+      const queryParams = {
+        status: filters.status,
+        startDate: filters.startDate,
+        endDate: filters.endDate,
+        page: 1,
+        limit: 1000
+      };
 
-  // Handle cancel wizard
-  const handleCancelWizard = () => {
-    setWizardMode(null);
-    setSelectedShift(null);
-  };
+      const scopeParams = getScopeParams();
+      console.log('📡 Fetching shifts with scope:', scopeParams);
 
+      switch (scopeParams.scope) {
+        case 'all':
+          response = await shiftService.getAllShiftsWithAssets(queryParams);
+          break;
 
-  // Process shift data for the table
-  const tableData = useMemo(() => {
-    return shifts.map(shift => ({
+        case 'company':
+          response = await shiftService.getShiftsByCompanyWithAssets(
+            scopeParams.companyId,
+            queryParams
+          );
+          break;
+
+        case 'station':
+          response = await shiftService.getShiftsByStationWithAssets(
+            scopeParams.stationId,
+            queryParams
+          );
+          break;
+
+        case 'attendant':
+          response = await shiftService.getShiftsByAttendant(
+            scopeParams.attendantId,
+            queryParams
+          );
+          break;
+
+        default:
+          response = { data: { shifts: [] } };
+      }
+
+      // Handle different response structures
+      const shiftsData = response.shifts || response.data?.shifts || [];
+      console.log('📊 Fetched shifts with assets:', shiftsData);
+      setShifts(shiftsData);
+
+      // Check for open shift (only for station-level roles)
+      if (['STATION_MANAGER', 'SUPERVISOR', 'LINES_MANAGER'].includes(userRole)) {
+        await checkOpenShift(shiftsData);
+      }
+
+    } catch (err) {
+      console.error('❌ Failed to fetch shifts:', err);
+      setError(err.message || 'Failed to load shift data');
+      setShifts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [getScopeParams, userRole, filters, checkOpenShift]);
+
+  // Enhanced shift data processing with asset relationships and null safety
+  const processShiftData = useCallback((shift) => {
+    // Extract asset relationships
+    const assetChain = shiftService.extractAssetChain({ data: { shift } });
+    const assetSummary = shiftService.getAssetSummary({ data: { shift } });
+
+    // Safely handle collections data
+    const collections = shift.shiftCollection ? {
+      total: shift.shiftCollection.totalCollected || 0,
+      cash: shift.shiftCollection.cashAmount || 0,
+      mobileMoney: shift.shiftCollection.mobileMoneyAmount || 0,
+      visa: shift.shiftCollection.visaAmount || 0,
+      mastercard: shift.shiftCollection.mastercardAmount || 0,
+      debt: shift.shiftCollection.debtAmount || 0,
+      other: shift.shiftCollection.otherAmount || 0,
+      expectedAmount: shift.shiftCollection.expectedAmount || 0,
+      variance: shift.shiftCollection.variance || 0,
+      variancePercentage: shift.shiftCollection.variancePercentage || 0
+    } : null;
+
+    // Safely handle sales data
+    const sales = shift.sales?.[0] ? {
+      totalRevenue: shift.sales[0].totalRevenue || 0,
+      fuelRevenue: shift.sales[0].totalFuelRevenue || 0,
+      nonFuelRevenue: shift.sales[0].totalNonFuelRevenue || 0,
+      totalQuantity: shift.sales[0].totalQuantity || 0,
+      productSales: shift.productSale || []
+    } : null;
+
+    // Safely handle reconciliation data
+    const reconciliation = shift.reconciliation ? {
+      ...shift.reconciliation,
+      variance: shift.reconciliation.variance || 0,
+      variancePct: shift.reconciliation.variancePct || 0,
+      expectedQty: shift.reconciliation.expectedQty || 0,
+      actualQty: shift.reconciliation.actualQty || 0
+    } : null;
+
+    return {
       id: shift.id,
       shiftNumber: shift.shiftNumber,
       status: shift.status,
@@ -244,78 +307,95 @@ const ShiftManagement = () => {
       supervisor: shift.supervisor,
       station: shift.station,
       
-      // Collections data
-      collections: shift.shiftCollection ? {
-        total: shift.shiftCollection.totalCollected,
-        cash: shift.shiftCollection.cashAmount,
-        mobileMoney: shift.shiftCollection.mobileMoneyAmount,
-        visa: shift.shiftCollection.visaAmount,
-        mastercard: shift.shiftCollection.mastercardAmount,
-        breakdown: shift.report?.paymentBreakdown
-      } : null,
+      // Enhanced collections data with null safety
+      collections: collections,
       
-      // Tanks data
-      tanks: shift.dipReadings?.reduce((acc, reading) => {
-        const tankId = reading.tankId;
-        if (!acc.find(t => t.tankId === tankId)) {
-          acc.push({
-            tankId,
-            tankName: reading.tank?.assetId,
-            product: reading.tank?.product,
-            capacity: reading.tank?.capacity,
-            currentVolume: reading.tank?.currentVolume,
-            dipReadings: shift.dipReadings?.filter(r => r.tankId === tankId)
-          });
-        }
-        return acc;
-      }, []) || [],
+      // Enhanced tanks data with asset relationships
+      tanks: shift.dipReadings?.map(reading => {
+        const tank = reading.tank;
+        const asset = tank?.asset;
+        
+        return {
+          tankId: reading.tankId,
+          tankName: asset?.name || `Tank ${reading.tankId?.slice(-4) || 'N/A'}`,
+          product: tank?.product,
+          capacity: tank?.capacity || 0,
+          currentVolume: reading.volume || 0,
+          dipValue: reading.dipValue || 0,
+          temperature: reading.temperature || 0,
+          waterLevel: reading.waterLevel || 0,
+          asset: asset,
+          readings: [reading]
+        };
+      }) || [],
       
-      // Pumps data
+      // Enhanced pumps data with asset relationships
       pumps: shift.meterReadings?.reduce((acc, reading) => {
-        const pumpId = reading.pumpId;
-        if (!acc.find(p => p.pumpId === pumpId)) {
+        const pump = reading.pump;
+        const existingPump = acc.find(p => p.pumpId === reading.pumpId);
+        
+        if (!existingPump) {
+          const asset = pump?.asset;
+          const tank = pump?.tank;
+          const island = pump?.island;
+          
           const startReading = shift.meterReadings?.find(r => 
-            r.pumpId === pumpId && r.readingType === 'START'
+            r.pumpId === reading.pumpId && r.readingType === 'START'
           );
           const endReading = shift.meterReadings?.find(r => 
-            r.pumpId === pumpId && r.readingType === 'END'
+            r.pumpId === reading.pumpId && r.readingType === 'END'
           );
           
           acc.push({
-            pumpId,
-            pumpName: reading.pump?.asset?.name,
-            product: reading.pump?.tank?.product,
+            pumpId: reading.pumpId,
+            pumpName: asset?.name || `Pump ${reading.pumpId?.slice(-4) || 'N/A'}`,
+            product: pump?.product,
+            island: island,
+            tank: tank,
+            asset: asset,
             totalVolume: endReading && startReading ? 
-              endReading.electricMeter - startReading.electricMeter : 0,
-            readings: shift.meterReadings?.filter(r => r.pumpId === pumpId)
+              (endReading.litersDispensed || (endReading.electricMeter - startReading.electricMeter)) : 0,
+            salesValue: endReading?.salesValue || 0,
+            unitPrice: endReading?.unitPrice || 0,
+            readings: shift.meterReadings?.filter(r => r.pumpId === reading.pumpId) || []
           });
         }
         return acc;
       }, []) || [],
       
-      // Attendants data
-      attendants: shift.shiftIslandAttedant?.map(assignment => ({
+      // Enhanced attendants data
+      attendants: shift.shiftIslandAttendant?.map(assignment => ({
         id: assignment.attendantId,
-        name: `${assignment.attendant?.firstName} ${assignment.attendant?.lastName}`,
+        name: `${assignment.attendant?.firstName || ''} ${assignment.attendant?.lastName || ''}`.trim() || 'Unknown',
         email: assignment.attendant?.email,
-        islandCode: assignment.island?.code,
+        island: assignment.island,
         assignmentType: assignment.assignmentType,
-        assignedAt: assignment.assignedAt
+        assignedAt: assignment.createdAt
       })) || [],
       
-      // Sales data
-      sales: shift.sales?.[0] ? {
-        totalRevenue: shift.sales[0].totalRevenue,
-        fuelRevenue: shift.sales[0].totalFuelRevenue,
-        productSales: []
-      } : null,
+      // Enhanced sales data with null safety
+      sales: sales,
       
-      // Reconciliation data
-      reconciliation: shift.reconciliation
-    }));
-  }, [shifts]);
+      // Enhanced reconciliation data
+      reconciliation: reconciliation,
+      
+      // Asset relationships
+      assetChain: assetChain,
+      assetSummary: assetSummary,
+      
+      // Additional data from the shift
+      shiftOpeningCheck: shift.shiftOpeningCheck?.[0],
+      nonFuelStocks: shift.nonFuelStocks || [],
+      islandCollections: shift.islandCollections || []
+    };
+  }, []);
 
-  // Table columns configuration
+  // Process shift data for the table
+  const tableData = useMemo(() => {
+    return shifts.map(shift => processShiftData(shift));
+  }, [shifts, processShiftData]);
+
+  // Enhanced columns with asset information and null safety
   const columns = [
     {
       key: 'shift-number',
@@ -358,6 +438,20 @@ const ShiftManagement = () => {
       render: (value) => new Date(value).toLocaleDateString()
     },
     {
+      key: 'assets',
+      header: 'Assets',
+      accessor: 'assetSummary',
+      render: (value) => (
+        <div className="text-blue-600 cursor-pointer hover:underline font-medium">
+          {value ? `${value.totalPumps || 0}P ${value.totalTanks || 0}T` : '0P 0T'}
+        </div>
+      ),
+      clickable: true,
+      modalType: 'assets',
+      modalTitle: (rowData) => `Shift ${rowData.shiftNumber} - Asset Overview`,
+      modalDataAccessor: 'assetChain'
+    },
+    {
       key: 'collections',
       header: 'Collections',
       accessor: 'collections.total',
@@ -367,6 +461,11 @@ const ShiftManagement = () => {
           onClick={(e) => e.stopPropagation()}
         >
           KES {value ? value.toLocaleString() : '0'}
+          {rowData.collections?.variance !== undefined && rowData.collections.variance !== 0 && (
+            <span className={`ml-1 text-xs ${rowData.collections.variance > 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {rowData.collections.variance > 0 ? '+' : ''}{rowData.collections.variance}
+            </span>
+          )}
         </div>
       ),
       clickable: true,
@@ -375,40 +474,26 @@ const ShiftManagement = () => {
       modalDataAccessor: 'collections'
     },
     {
-      key: 'tanks',
-      header: 'Tanks',
-      accessor: 'tanks',
-      render: (value) => (
-        <div className="text-teal-600 cursor-pointer hover:underline font-medium">
-          {value.length} tanks
+      key: 'sales',
+      header: 'Sales',
+      accessor: 'sales.totalRevenue',
+      render: (value, rowData) => (
+        <div className="text-green-600 cursor-pointer hover:underline font-medium">
+          KES {value ? value.toLocaleString() : '0'}
         </div>
       ),
       clickable: true,
-      modalType: 'tanks',
-      modalTitle: 'Tank Operations',
-      modalDataAccessor: 'tanks'
-    },
-    {
-      key: 'pumps',
-      header: 'Pumps',
-      accessor: 'pumps',
-      render: (value) => (
-        <div className="text-orange-600 cursor-pointer hover:underline font-medium">
-          {value.length} pumps
-        </div>
-      ),
-      clickable: true,
-      modalType: 'pumps',
-      modalTitle: 'Pump Operations',
-      modalDataAccessor: 'pumps'
+      modalType: 'sales',
+      modalTitle: (rowData) => `Shift ${rowData.shiftNumber} - Sales Summary`,
+      modalDataAccessor: 'sales'
     },
     {
       key: 'attendants',
-      header: 'Attendants',
+      header: 'Staff',
       accessor: 'attendants',
       render: (value) => (
-        <div className="text-blue-600 cursor-pointer hover:underline font-medium">
-          {value.length} staff
+        <div className="text-orange-600 cursor-pointer hover:underline font-medium">
+          {value?.length || 0} staff
         </div>
       ),
       clickable: true,
@@ -418,9 +503,9 @@ const ShiftManagement = () => {
     }
   ];
 
-  // Expanded row content
+  // Enhanced expanded row content with asset data and null safety
   const renderExpandedContent = (rowData) => (
-    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 p-4">
       {/* Shift Overview */}
       <div className="space-y-4">
         <h4 className="font-semibold text-gray-800 border-b pb-2">Shift Overview</h4>
@@ -451,40 +536,106 @@ const ShiftManagement = () => {
               {rowData.endTime ? new Date(rowData.endTime).toLocaleString() : 'Not ended'}
             </span>
           </div>
+          {rowData.shiftOpeningCheck && (
+            <div className="flex justify-between">
+              <span className="text-gray-600">Opening Status:</span>
+              <span className={`font-medium ${
+                rowData.shiftOpeningCheck.checksPassed ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {rowData.shiftOpeningCheck.checksPassed ? '✅ Passed' : '❌ Failed'}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Operations Summary */}
+      {/* Asset Summary */}
       <div className="space-y-4">
-        <h4 className="font-semibold text-gray-800 border-b pb-2">Operations Summary</h4>
+        <h4 className="font-semibold text-gray-800 border-b pb-2">Asset Summary</h4>
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-blue-50 p-3 rounded-lg text-center">
-            <div className="text-2xl font-bold text-blue-700">{rowData.tanks.length}</div>
+            <div className="text-2xl font-bold text-blue-700">{rowData.tanks?.length || 0}</div>
             <div className="text-sm text-blue-600">Tanks</div>
           </div>
           <div className="bg-orange-50 p-3 rounded-lg text-center">
-            <div className="text-2xl font-bold text-orange-700">{rowData.pumps.length}</div>
+            <div className="text-2xl font-bold text-orange-700">{rowData.pumps?.length || 0}</div>
             <div className="text-sm text-orange-600">Pumps</div>
           </div>
           <div className="bg-green-50 p-3 rounded-lg text-center">
-            <div className="text-2xl font-bold text-green-700">{rowData.attendants.length}</div>
+            <div className="text-2xl font-bold text-green-700">{rowData.attendants?.length || 0}</div>
             <div className="text-sm text-green-600">Attendants</div>
           </div>
           <div className="bg-purple-50 p-3 rounded-lg text-center">
             <div className="text-2xl font-bold text-purple-700">
-              KES {rowData.collections?.total?.toLocaleString() || '0'}
+              {rowData.assetSummary?.products?.length || 0}
             </div>
-            <div className="text-sm text-purple-600">Collections</div>
+            <div className="text-sm text-purple-600">Products</div>
           </div>
         </div>
+        
+        {/* Asset Connections */}
+        {rowData.assetChain?.connections && rowData.assetChain.connections.length > 0 && (
+          <div className="mt-4">
+            <h5 className="font-medium text-gray-700 mb-2">Asset Connections:</h5>
+            <div className="space-y-1 text-sm">
+              {rowData.assetChain.connections.slice(0, 3).map((conn, index) => (
+                <div key={index} className="flex items-center text-gray-600">
+                  <span className="w-2 h-2 bg-gray-400 rounded-full mr-2"></span>
+                  {conn.source?.name || 'Unknown'} → {conn.target?.name || 'Unknown'}
+                </div>
+              ))}
+              {rowData.assetChain.connections.length > 3 && (
+                <div className="text-gray-500 text-xs">
+                  +{rowData.assetChain.connections.length - 3} more connections
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Quick Actions */}
+      {/* Financial Summary */}
       <div className="space-y-4">
-        <h4 className="font-semibold text-gray-800 border-b pb-2">Quick Actions</h4>
-        <div className="space-y-2">
-               
+        <h4 className="font-semibold text-gray-800 border-b pb-2">Financial Summary</h4>
+        <div className="space-y-3">
+          <div className="flex justify-between">
+            <span className="text-gray-600">Total Sales:</span>
+            <span className="font-medium text-green-600">
+              KES {rowData.sales?.totalRevenue?.toLocaleString() || '0'}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Collections:</span>
+            <span className="font-medium text-purple-600">
+              KES {rowData.collections?.total?.toLocaleString() || '0'}
+            </span>
+          </div>
+          {rowData.collections && rowData.collections.variance !== 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-600">Collection Variance:</span>
+              <span className={`font-medium ${
+                rowData.collections.variance > 0 ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {rowData.collections.variance > 0 ? '+' : ''}
+                KES {rowData.collections.variance?.toLocaleString() || '0'}
+              </span>
+            </div>
+          )}
+          {rowData.reconciliation && (
+            <div className="flex justify-between">
+              <span className="text-gray-600">Fuel Variance:</span>
+              <span className={`font-medium ${
+                rowData.reconciliation.variance > 0 ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {rowData.reconciliation.variance > 0 ? '+' : ''}
+                {rowData.reconciliation.variance}L
+              </span>
+            </div>
+          )}
+        </div>
 
+        {/* Quick Actions */}
+        <div className="mt-4 space-y-2">
           <button 
             className="w-full text-left p-3 bg-blue-50 hover:bg-blue-100 rounded-lg text-sm text-blue-700 flex items-center"
             onClick={() => console.log('View full report', rowData)}
@@ -506,6 +657,7 @@ const ShiftManagement = () => {
             <button 
               className="w-full text-left p-3 bg-red-50 hover:bg-red-100 rounded-lg text-sm text-red-700 flex items-center"
               onClick={() => {
+                console.log("🔄 Close Shift clicked from expanded content");
                 setSelectedShift(rowData);
                 setWizardMode('close');
               }}
@@ -526,32 +678,88 @@ const ShiftManagement = () => {
         </div>
       </div>
 
-      {/* Sales Summary */}
-      {rowData.sales && (
-        <div className="space-y-4 lg:col-span-2 xl:col-span-3">
-          <h4 className="font-semibold text-gray-800 border-b pb-2">Sales Summary</h4>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <div className="text-sm text-blue-600 font-medium">Total Revenue</div>
-              <div className="text-2xl font-bold text-blue-800">
-                KES {rowData.sales.totalRevenue?.toLocaleString() || '0'}
-              </div>
+      {/* Detailed Asset Information */}
+      <div className="lg:col-span-2 xl:col-span-3 space-y-6">
+        {/* Pumps Summary */}
+        {rowData.pumps && rowData.pumps.length > 0 && (
+          <div className="space-y-4">
+            <h4 className="font-semibold text-gray-800 border-b pb-2">Pump Operations</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {rowData.pumps.slice(0, 6).map((pump, index) => (
+                <div key={pump.pumpId || index} className="bg-white border border-gray-200 rounded-lg p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <h5 className="font-medium text-gray-800">{pump.pumpName}</h5>
+                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                      {pump.product?.name || 'N/A'}
+                    </span>
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Volume:</span>
+                      <span className="font-medium">{(pump.totalVolume || 0).toFixed(2)}L</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Sales:</span>
+                      <span className="font-medium text-green-600">
+                        KES {(pump.salesValue || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    {pump.island && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Island:</span>
+                        <span className="font-medium">{pump.island.code}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="bg-green-50 p-4 rounded-lg">
-              <div className="text-sm text-green-600 font-medium">Fuel Revenue</div>
-              <div className="text-xl font-bold text-green-800">
-                KES {rowData.sales.fuelRevenue?.toLocaleString() || '0'}
+            {rowData.pumps.length > 6 && (
+              <div className="text-center text-gray-500 text-sm">
+                +{rowData.pumps.length - 6} more pumps
               </div>
-            </div>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <div className="text-sm text-gray-600 font-medium">Status</div>
-              <div className="text-xl font-bold text-gray-800 capitalize">
-                {rowData.status.toLowerCase()}
-              </div>
-            </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Tanks Summary */}
+        {rowData.tanks && rowData.tanks.length > 0 && (
+          <div className="space-y-4">
+            <h4 className="font-semibold text-gray-800 border-b pb-2">Tank Status</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {rowData.tanks.slice(0, 6).map((tank, index) => (
+                <div key={tank.tankId || index} className="bg-white border border-gray-200 rounded-lg p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <h5 className="font-medium text-gray-800">{tank.tankName}</h5>
+                    <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                      {tank.product?.name || 'N/A'}
+                    </span>
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Current Volume:</span>
+                      <span className="font-medium">{(tank.currentVolume || 0).toFixed(2)}L</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Capacity:</span>
+                      <span className="font-medium">{(tank.capacity || 0).toFixed(2)}L</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Dip Reading:</span>
+                      <span className="font-medium">{(tank.dipValue || 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {rowData.tanks.length > 6 && (
+              <div className="text-center text-gray-500 text-sm">
+                +{rowData.tanks.length - 6} more tanks
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -569,6 +777,7 @@ const ShiftManagement = () => {
   }
 
   if (wizardMode === 'close') {
+    console.log("🔄 Rendering ShiftClosingWizard with data:", selectedShift || openShiftData);
     return (
       <ShiftClosingWizard
         onClose={handleCancelWizard}
@@ -633,23 +842,35 @@ const ShiftManagement = () => {
 
             {/* Open/Close Shift buttons - Only for station-level roles */}
             {['STATION_MANAGER', 'SUPERVISOR', 'LINES_MANAGER'].includes(userRole) && (
-              !hasOpenShift ? (
+              <div className="flex items-center space-x-3">
+                {/* Always show Open Shift button */}
                 <button
                   onClick={handleOpenShift}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center transition-colors"
+                  disabled={hasOpenShift} // Disable if there's already an open shift
+                  className={`px-4 py-2 rounded-lg flex items-center transition-colors ${
+                    hasOpenShift 
+                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
                 >
                   <span className="mr-2">➕</span>
                   Open Shift
                 </button>
-              ) : (
-                <button
-                  onClick={handleCloseShift}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center transition-colors"
-                >
-                  <span className="mr-2">🔒</span>
-                  Close Shift
-                </button>
-              )
+
+                {/* Show Close Shift button only when there's an open shift */}
+                {hasOpenShift && (
+                  <button
+                    onClick={() => {
+                      console.log("🔄 Close Shift clicked from header, hasOpenShift:", hasOpenShift, "openShiftData:", openShiftData);
+                      handleCloseShift();
+                    }}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center transition-colors"
+                  >
+                    <span className="mr-2">🔒</span>
+                    Close Shift
+                  </button>
+                )}
+              </div>
             )}
             
             <button
@@ -680,7 +901,10 @@ const ShiftManagement = () => {
                 </p>
               </div>
               <button
-                onClick={handleCloseShift}
+                onClick={() => {
+                  console.log("🔄 Close Shift clicked from alert");
+                  handleCloseShift();
+                }}
                 className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors"
               >
                 Close Shift
@@ -717,17 +941,6 @@ const ShiftManagement = () => {
           </div>
         </div>
       )}
-
-      {/* Role-based debug info */}
-      <div className="mb-4 p-3 bg-gray-50 rounded-lg text-sm">
-        <div className="flex flex-wrap gap-4">
-          <span><strong>Role:</strong> {userRole}</span>
-          <span><strong>Scope:</strong> {getScopeParams().scope}</span>
-          {userStationId && <span><strong>Station ID:</strong> {userStationId}</span>}
-          {userCompanyId && <span><strong>Company ID:</strong> {userCompanyId}</span>}
-          <span><strong>Shifts Loaded:</strong> {shifts.length}</span>
-        </div>
-      </div>
 
       {/* Main Table */}
       <MultiTable
