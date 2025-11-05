@@ -1,459 +1,549 @@
 import React, { useState, useEffect } from 'react';
-import { Input, Button, Select, MultiSelect, Tabs, TabPanel } from '../../../ui';
-import Dialog from '../../../ui/Dialog';
+import {
+  Modal,
+  Form,
+  Input,
+  Button,
+  Select,
+  Tabs,
+  Tag,
+  Space,
+  Alert,
+  Row,
+  Col,
+  Card,
+  List,
+  Divider,
+  Spin,
+  Empty,
+  Popconfirm,
+  message
+} from 'antd';
+import {
+  UserOutlined,
+  MailOutlined,
+  TeamOutlined,
+  ShopOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  PlusOutlined,
+  EnvironmentOutlined,
+  CalendarOutlined,
+  SafetyOutlined
+} from '@ant-design/icons';
 import { useApp } from '../../../../context/AppContext';
-import { Edit, User, MapPin } from 'lucide-react';
 import { userService } from '../../../../services/userService/userService';
 import { stationService } from '../../../../services/stationService/stationService';
 
+const { Option } = Select;
+const { TabPane } = Tabs;
+
 const EditUserModal = ({ isOpen, onClose, user, onUserUpdated }) => {
   const { state } = useApp();
+  const [personalForm] = Form.useForm();
+  const [stationForm] = Form.useForm();
   const [activeTab, setActiveTab] = useState('personal');
-  const [formData, setFormData] = useState({
-    // Personal Info
-    firstName: '',
-    lastName: '',
-    email: '',
-    role: '',
-    status: '',
-    
-    // Station Assignments
-    stationAssignments: [],
-    newStationId: '',
-    newStationRole: 'ATTENDANT'
-  });
-  
   const [stations, setStations] = useState([]);
   const [userAssignments, setUserAssignments] = useState([]);
-  const [errors, setErrors] = useState({});
-  const [successMessage, setSuccessMessage] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoadingStations, setIsLoadingStations] = useState(false);
-  const [isLoadingAssignments, setIsLoadingAssignments] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [actionLoading, setActionLoading] = useState({});
 
-  // Load data when modal opens or user changes
+  // Load data when modal opens
   useEffect(() => {
     const loadData = async () => {
       if (isOpen && user) {
-        setIsLoadingStations(true);
-        setIsLoadingAssignments(true);
-        
+        setLoading(true);
         try {
           // Load stations
           const stationsResponse = await stationService.getCompanyStations();
           setStations(stationsResponse || []);
-          
+
           // Load user's current assignments
           const assignmentsResponse = await userService.getUserStationAssignments(user.id);
           setUserAssignments(assignmentsResponse.data || []);
-          
-          // Set form data
-          setFormData({
-            firstName: user.firstName || '',
-            lastName: user.lastName || '',
-            email: user.email || '',
-            role: user.role || '',
-            status: user.status || 'ACTIVE',
-            stationAssignments: assignmentsResponse.data || [],
-            newStationId: '',
-            newStationRole: 'ATTENDANT'
+
+          // Set personal form data
+          personalForm.setFieldsValue({
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            role: user.role,
+            status: user.status
           });
-          
+
+          // Reset station form
+          stationForm.resetFields();
+
         } catch (error) {
           console.error('Failed to load data:', error);
+          message.error('Failed to load user data');
         } finally {
-          setIsLoadingStations(false);
-          setIsLoadingAssignments(false);
+          setLoading(false);
         }
       }
     };
 
     if (isOpen) {
       loadData();
-      setErrors({});
-      setSuccessMessage('');
       setActiveTab('personal');
     }
-  }, [isOpen, user]);
+  }, [isOpen, user, personalForm, stationForm]);
 
-  const validatePersonalInfo = () => {
-    const newErrors = {};
-    if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
-    if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
-    if (!formData.email.trim()) newErrors.email = 'Email is required';
-    if (!formData.email.includes('@')) newErrors.email = 'Valid email is required';
-    return newErrors;
-  };
-
-  const handleUpdatePersonalInfo = async (e) => {
-    e.preventDefault();
-    const validationErrors = validatePersonalInfo();
-    
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      return;
-    }
-
-    setIsSubmitting(true);
+  const handlePersonalInfoUpdate = async (values) => {
+    setSubmitting(true);
     
     try {
       const updateData = {
-        firstName: formData.firstName.trim(),
-        lastName: formData.lastName.trim(),
-        email: formData.email.trim().toLowerCase(),
-        role: formData.role,
-        status: formData.status
+        ...values,
+        email: values.email.toLowerCase().trim()
       };
-      
+
       console.log('🟢 [UPDATE USER] Sending data:', updateData);
-      
+
       const response = await userService.updateUser(user.id, updateData);
 
       if (response.success) {
-        setSuccessMessage('User information updated successfully!');
+        message.success('User information updated successfully!');
         onUserUpdated();
-        
-        setTimeout(() => {
-          onClose();
-        }, 1500);
       } else {
-        setErrors({ general: response.message || 'Failed to update user' });
+        message.error(response.message || 'Failed to update user');
       }
     } catch (error) {
       console.error('❌ [UPDATE USER] Failed to update user:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to update user';
-      setErrors({ general: errorMessage });
+      message.error(errorMessage);
     } finally {
-      setIsSubmitting(false);
+      setSubmitting(false);
     }
   };
 
-  const handleAddStationAssignment = async () => {
-    if (!formData.newStationId) {
-      setErrors({ stations: 'Please select a station' });
-      return;
-    }
-
-    setIsSubmitting(true);
+  const handleAddStationAssignment = async (values) => {
+    setActionLoading(prev => ({ ...prev, add: true }));
     
     try {
+      const { stationId, role } = values;
+
       const response = await userService.assignUserToStation(
         user.id,
-        formData.newStationId,
-        formData.newStationRole
+        stationId,
+        role
       );
 
       if (response.success) {
-        setSuccessMessage('User assigned to station successfully!');
+        message.success('Station assignment added successfully!');
         
         // Refresh assignments
         const assignmentsResponse = await userService.getUserStationAssignments(user.id);
         setUserAssignments(assignmentsResponse.data || []);
-        setFormData(prev => ({
-          ...prev,
-          stationAssignments: assignmentsResponse.data || [],
-          newStationId: '',
-          newStationRole: 'ATTENDANT'
-        }));
+        
+        // Reset station form
+        stationForm.resetFields();
         
         onUserUpdated();
       } else {
-        setErrors({ stations: response.message || 'Failed to assign station' });
+        message.error(response.message || 'Failed to add station assignment');
       }
     } catch (error) {
-      console.error('❌ [STATION ASSIGN] Failed to assign station:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to assign station';
-      setErrors({ stations: errorMessage });
+      console.error('❌ [STATION ASSIGN] Failed to add station assignment:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to add station assignment';
+      message.error(errorMessage);
     } finally {
-      setIsSubmitting(false);
+      setActionLoading(prev => ({ ...prev, add: false }));
     }
   };
 
   const handleRemoveStationAssignment = async (assignmentId) => {
-    if (!window.confirm('Are you sure you want to remove this station assignment?')) {
-      return;
-    }
-
-    setIsSubmitting(true);
+    setActionLoading(prev => ({ ...prev, [assignmentId]: true }));
     
     try {
       const response = await userService.unassignUserFromStation(user.id, assignmentId);
 
       if (response.success) {
-        setSuccessMessage('Station assignment removed successfully!');
+        message.success('Station assignment removed successfully!');
         
         // Refresh assignments
         const assignmentsResponse = await userService.getUserStationAssignments(user.id);
         setUserAssignments(assignmentsResponse.data || []);
-        setFormData(prev => ({
-          ...prev,
-          stationAssignments: assignmentsResponse.data || []
-        }));
         
         onUserUpdated();
       } else {
-        setErrors({ stations: response.message || 'Failed to remove assignment' });
+        message.error(response.message || 'Failed to remove station assignment');
       }
     } catch (error) {
       console.error('❌ [STATION UNASSIGN] Failed to remove assignment:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to remove assignment';
-      setErrors({ stations: errorMessage });
+      message.error(errorMessage);
     } finally {
-      setIsSubmitting(false);
+      setActionLoading(prev => ({ ...prev, [assignmentId]: false }));
     }
   };
 
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-    
-    // Clear error when user provides input
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: null }));
+  const getRoleOptions = () => {
+    const baseRoles = [
+      { value: 'STATION_MANAGER', label: 'Station Manager' },
+      { value: 'SUPERVISOR', label: 'Supervisor' },
+      { value: 'ATTENDANT', label: 'Attendant' }
+    ];
+
+    if (state.currentUser?.role === 'SUPER_ADMIN') {
+      return [
+        { value: 'SUPER_ADMIN', label: 'Super Admin' },
+        { value: 'COMPANY_ADMIN', label: 'Company Admin' },
+        ...baseRoles
+      ];
     }
+
+    return baseRoles;
   };
 
-  const roleOptions = [
+  const getStationRoleOptions = () => [
     { value: 'STATION_MANAGER', label: 'Station Manager' },
     { value: 'SUPERVISOR', label: 'Supervisor' },
     { value: 'ATTENDANT', label: 'Attendant' }
   ];
 
-  // Add company admin role if current user is super admin
-  if (state.currentUser?.role === 'SUPER_ADMIN') {
-    roleOptions.unshift(
-      { value: 'COMPANY_ADMIN', label: 'Company Admin' },
-      { value: 'SUPER_ADMIN', label: 'Super Admin' }
-    );
-  }
+  const canHaveStations = () => {
+    const role = personalForm.getFieldValue('role');
+    return ['STATION_MANAGER', 'SUPERVISOR', 'ATTENDANT'].includes(role);
+  };
 
   // Get available stations (stations user is not already assigned to)
-  const availableStations = stations.filter(station => 
-    !userAssignments.some(assignment => assignment.stationId === station.id)
-  );
+  const getAvailableStations = () => {
+    return stations.filter(station => 
+      !userAssignments.some(assignment => assignment.stationId === station.id)
+    );
+  };
 
-  const canHaveStations = ['STATION_MANAGER', 'SUPERVISOR', 'ATTENDANT'].includes(formData.role);
+  const getRoleDisplayName = (role) => {
+    const roleMap = {
+      'SUPER_ADMIN': 'Super Admin',
+      'COMPANY_ADMIN': 'Company Admin',
+      'STATION_MANAGER': 'Station Manager',
+      'SUPERVISOR': 'Supervisor',
+      'ATTENDANT': 'Attendant'
+    };
+    return roleMap[role] || role;
+  };
+
+  const getRoleColor = (role) => {
+    const colorMap = {
+      'SUPER_ADMIN': 'purple',
+      'COMPANY_ADMIN': 'blue',
+      'STATION_MANAGER': 'green',
+      'SUPERVISOR': 'orange',
+      'ATTENDANT': 'default'
+    };
+    return colorMap[role] || 'default';
+  };
 
   return (
-    <Dialog
-      isOpen={isOpen}
-      onClose={onClose}
-      title={`Edit User - ${user?.firstName} ${user?.lastName}`}
-      size="lg"
+    <Modal
+      title={
+        <Space>
+          <EditOutlined />
+          Edit User - {user?.firstName} {user?.lastName}
+        </Space>
+      }
+      open={isOpen}
+      onCancel={onClose}
+      footer={null}
+      width={800}
+      destroyOnClose
     >
-      <div className="space-y-4">
-        {/* General Error */}
-        {errors.general && (
-          <div className="p-3 mb-4 text-red-700 bg-red-100 rounded-lg">
-            {errors.general}
-          </div>
-        )}
-
-        {/* Success Message */}
-        {successMessage && (
-          <div className="p-3 mb-4 text-green-700 bg-green-100 rounded-lg">
-            {successMessage}
-          </div>
-        )}
-
-        <Tabs
-          value={activeTab}
+      <Spin spinning={loading}>
+        <Tabs 
+          activeKey={activeTab} 
           onChange={setActiveTab}
-          tabs={[
-            { value: 'personal', label: 'Personal Info', icon: User },
-            { value: 'stations', label: 'Station Assignments', icon: MapPin }
-          ]}
-        />
+          type="card"
+        >
+          {/* Personal Information Tab */}
+          <TabPane 
+            tab={
+              <span>
+                <UserOutlined />
+                Personal Information
+              </span>
+            } 
+            key="personal"
+          >
+            <Form
+              form={personalForm}
+              layout="vertical"
+              onFinish={handlePersonalInfoUpdate}
+            >
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    label="First Name"
+                    name="firstName"
+                    rules={[
+                      { required: true, message: 'Please enter first name' },
+                      { min: 2, message: 'First name must be at least 2 characters' }
+                    ]}
+                  >
+                    <Input 
+                      prefix={<UserOutlined />} 
+                      placeholder="Enter first name" 
+                    />
+                  </Form.Item>
+                </Col>
+                
+                <Col span={12}>
+                  <Form.Item
+                    label="Last Name"
+                    name="lastName"
+                    rules={[
+                      { required: true, message: 'Please enter last name' },
+                      { min: 2, message: 'Last name must be at least 2 characters' }
+                    ]}
+                  >
+                    <Input 
+                      placeholder="Enter last name" 
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
 
-        {/* Personal Info Tab */}
-        <TabPanel value="personal" activeValue={activeTab}>
-          <form onSubmit={handleUpdatePersonalInfo} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
-                label="First Name"
-                value={formData.firstName}
-                onChange={(e) => handleInputChange('firstName', e.target.value)}
-                required
-                error={errors.firstName}
-                placeholder="Enter first name"
-              />
-              
-              <Input
-                label="Last Name"
-                value={formData.lastName}
-                onChange={(e) => handleInputChange('lastName', e.target.value)}
-                required
-                error={errors.lastName}
-                placeholder="Enter last name"
-              />
-              
-              <Input
-                label="Email"
-                type="email"
-                value={formData.email}
-                onChange={(e) => handleInputChange('email', e.target.value)}
-                required
-                error={errors.email}
-                placeholder="user@example.com"
-              />
-              
-              <Select
-                label="Role"
-                value={formData.role}
-                onChange={(e) => handleInputChange('role', e.target.value)}
-                options={roleOptions}
-                required
-              />
-              
-              <Select
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    label="Email"
+                    name="email"
+                    rules={[
+                      { required: true, message: 'Please enter email' },
+                      { type: 'email', message: 'Please enter a valid email' }
+                    ]}
+                  >
+                    <Input 
+                      prefix={<MailOutlined />} 
+                      placeholder="user@example.com" 
+                    />
+                  </Form.Item>
+                </Col>
+                
+                <Col span={12}>
+                  <Form.Item
+                    label="Role"
+                    name="role"
+                    rules={[{ required: true, message: 'Please select a role' }]}
+                  >
+                    <Select placeholder="Select role">
+                      {getRoleOptions().map(role => (
+                        <Option key={role.value} value={role.value}>
+                          <TeamOutlined /> {role.label}
+                        </Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <Form.Item
                 label="Status"
-                value={formData.status}
-                onChange={(e) => handleInputChange('status', e.target.value)}
-                options={[
-                  { value: 'ACTIVE', label: 'Active' },
-                  { value: 'INACTIVE', label: 'Inactive' },
-                  { value: 'SUSPENDED', label: 'Suspended' }
-                ]}
+                name="status"
+              >
+                <Select placeholder="Select status">
+                  <Option value="ACTIVE">Active</Option>
+                  <Option value="INACTIVE">Inactive</Option>
+                  <Option value="SUSPENDED">Suspended</Option>
+                </Select>
+              </Form.Item>
+
+              <Divider />
+
+              <div style={{ textAlign: 'right' }}>
+                <Space>
+                  <Button onClick={onClose}>
+                    Cancel
+                  </Button>
+                  <Button 
+                    type="primary" 
+                    htmlType="submit" 
+                    loading={submitting}
+                    icon={<EditOutlined />}
+                  >
+                    Update User
+                  </Button>
+                </Space>
+              </div>
+            </Form>
+          </TabPane>
+
+          {/* Station Assignments Tab */}
+          <TabPane 
+            tab={
+              <span>
+                <ShopOutlined />
+                Station Assignments
+                {userAssignments.length > 0 && (
+                  <Tag style={{ marginLeft: 8 }} color="blue">
+                    {userAssignments.length}
+                  </Tag>
+                )}
+              </span>
+            } 
+            key="stations"
+          >
+            {!canHaveStations() ? (
+              <Alert
+                message="Role Information"
+                description={
+                  personalForm.getFieldValue('role') === 'COMPANY_ADMIN' 
+                    ? 'Company Admins have access to all stations in the company automatically.'
+                    : 'Super Admins have system-wide access to all stations and company data.'
+                }
+                type="info"
+                showIcon
               />
-            </div>
-
-            <div className="flex justify-end space-x-3 pt-4">
-              <Button 
-                variant="secondary" 
-                onClick={onClose}
-                disabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button 
-                type="submit" 
-                variant="cosmic"
-                icon={Edit}
-                loading={isSubmitting}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? 'Updating...' : 'Update User'}
-              </Button>
-            </div>
-          </form>
-        </TabPanel>
-
-        {/* Station Assignments Tab */}
-        <TabPanel value="stations" activeValue={activeTab}>
-          <div className="space-y-6">
-            {/* Current Assignments */}
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-3">Current Station Assignments</h3>
-              
-              {isLoadingAssignments ? (
-                <div className="text-center py-4">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="text-gray-500 mt-2">Loading assignments...</p>
-                </div>
-              ) : userAssignments.length === 0 ? (
-                <div className="text-center py-6 bg-gray-50 rounded-lg">
-                  <MapPin className="mx-auto h-12 w-12 text-gray-400" />
-                  <p className="mt-2 text-gray-500">No station assignments</p>
-                  {!canHaveStations && (
-                    <p className="text-sm text-gray-400 mt-1">
-                      {formData.role} role does not support station assignments
-                    </p>
+            ) : (
+              <div>
+                {/* Current Assignments */}
+                <Card 
+                  size="small" 
+                  title="Current Station Assignments"
+                  style={{ marginBottom: 16 }}
+                >
+                  {userAssignments.length === 0 ? (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="No station assignments"
+                    />
+                  ) : (
+                    <List
+                      size="small"
+                      dataSource={userAssignments}
+                      renderItem={(assignment) => (
+                        <List.Item
+                          actions={[
+                            <Popconfirm
+                              title="Remove Station Assignment"
+                              description="Are you sure you want to remove this station assignment?"
+                              onConfirm={() => handleRemoveStationAssignment(assignment.id)}
+                              okText="Yes"
+                              cancelText="No"
+                            >
+                              <Button
+                                type="text"
+                                danger
+                                size="small"
+                                loading={actionLoading[assignment.id]}
+                                icon={<DeleteOutlined />}
+                              >
+                                Remove
+                              </Button>
+                            </Popconfirm>
+                          ]}
+                        >
+                          <List.Item.Meta
+                            avatar={<EnvironmentOutlined />}
+                            title={
+                              <Space>
+                                <span>{assignment.station?.name}</span>
+                                <Tag color={getRoleColor(assignment.role)}>
+                                  {getRoleDisplayName(assignment.role)}
+                                </Tag>
+                              </Space>
+                            }
+                            description={
+                              <Space>
+                                <CalendarOutlined />
+                                Assigned {new Date(assignment.assignedAt).toLocaleDateString()}
+                                {assignment.station?.location && (
+                                  <>
+                                    <Divider type="vertical" />
+                                    <EnvironmentOutlined />
+                                    {assignment.station.location}
+                                  </>
+                                )}
+                              </Space>
+                            }
+                          />
+                        </List.Item>
+                      )}
+                    />
                   )}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {userAssignments.map((assignment) => (
-                    <div key={assignment.id} className="flex items-center justify-between p-3 bg-white border rounded-lg">
-                      <div>
-                        <p className="font-medium">{assignment.station?.name}</p>
-                        <p className="text-sm text-gray-500 capitalize">
-                          {assignment.role.toLowerCase()} • Assigned {new Date(assignment.assignedAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => handleRemoveStationAssignment(assignment.id)}
-                        disabled={isSubmitting}
+                </Card>
+
+                {/* Add New Assignment */}
+                <Card size="small" title="Add New Station Assignment">
+                  <Form
+                    form={stationForm}
+                    layout="vertical"
+                    onFinish={handleAddStationAssignment}
+                    initialValues={{ role: 'ATTENDANT' }}
+                  >
+                    <Row gutter={16}>
+                      <Col span={12}>
+                        <Form.Item
+                          label="Station"
+                          name="stationId"
+                          rules={[{ required: true, message: 'Please select a station' }]}
+                        >
+                          <Select 
+                            placeholder="Select station"
+                            loading={loading}
+                            showSearch
+                            optionFilterProp="children"
+                            filterOption={(input, option) =>
+                              option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
+                            }
+                          >
+                            {getAvailableStations().map(station => (
+                              <Option key={station.id} value={station.id}>
+                                {station.name} {station.location && `- ${station.location}`}
+                              </Option>
+                            ))}
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                      
+                      <Col span={12}>
+                        <Form.Item
+                          label="Role at Station"
+                          name="role"
+                          rules={[{ required: true, message: 'Please select a role' }]}
+                        >
+                          <Select placeholder="Select role">
+                            {getStationRoleOptions().map(role => (
+                              <Option key={role.value} value={role.value}>
+                                <SafetyOutlined /> {role.label}
+                              </Option>
+                            ))}
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                    </Row>
+
+                    {getAvailableStations().length === 0 && (
+                      <Alert
+                        message="No Available Stations"
+                        description="This user is already assigned to all available stations."
+                        type="warning"
+                        showIcon
+                        style={{ marginBottom: 16 }}
+                      />
+                    )}
+
+                    <div style={{ textAlign: 'right' }}>
+                      <Button 
+                        type="primary" 
+                        htmlType="submit" 
+                        loading={actionLoading.add}
+                        disabled={getAvailableStations().length === 0}
+                        icon={<PlusOutlined />}
                       >
-                        Remove
+                        Add Assignment
                       </Button>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Add New Assignment */}
-            {canHaveStations && (
-              <div className="border-t pt-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-3">Add New Station Assignment</h3>
-                
-                {errors.stations && (
-                  <div className="p-3 mb-4 text-red-700 bg-red-100 rounded-lg">
-                    {errors.stations}
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Select
-                    label="Station"
-                    value={formData.newStationId}
-                    onChange={(e) => handleInputChange('newStationId', e.target.value)}
-                    options={availableStations.map(station => ({
-                      value: station.id,
-                      label: station.name
-                    }))}
-                    disabled={isLoadingStations || availableStations.length === 0}
-                    placeholder={availableStations.length === 0 ? "No available stations" : "Select station"}
-                  />
-                  
-                  <Select
-                    label="Role at Station"
-                    value={formData.newStationRole}
-                    onChange={(e) => handleInputChange('newStationRole', e.target.value)}
-                    options={[
-                      { value: 'STATION_MANAGER', label: 'Station Manager' },
-                      { value: 'SUPERVISOR', label: 'Supervisor' },
-                      { value: 'ATTENDANT', label: 'Attendant' }
-                    ]}
-                  />
-                </div>
-
-                {availableStations.length === 0 && (
-                  <p className="text-sm text-gray-500 mt-2">
-                    User is already assigned to all available stations
-                  </p>
-                )}
-
-                <div className="flex justify-end mt-4">
-                  <Button
-                    onClick={handleAddStationAssignment}
-                    disabled={!formData.newStationId || isSubmitting || availableStations.length === 0}
-                    loading={isSubmitting}
-                  >
-                    Add Assignment
-                  </Button>
-                </div>
+                  </Form>
+                </Card>
               </div>
             )}
-
-            {!canHaveStations && (
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <p className="text-blue-700">
-                  {formData.role === 'COMPANY_ADMIN' 
-                    ? 'Company Admins have access to all stations automatically'
-                    : 'Super Admins have system-wide access to all stations'
-                  }
-                </p>
-              </div>
-            )}
-          </div>
-        </TabPanel>
-      </div>
-    </Dialog>
+          </TabPane>
+        </Tabs>
+      </Spin>
+    </Modal>
   );
 };
 
