@@ -1,276 +1,417 @@
 import React, { useState, useEffect } from 'react';
-import { Input, Button, Select, MultiSelect } from '../../../ui';
-import Dialog from '../../../ui/Dialog';
+import {
+  Modal,
+  Form,
+  Input,
+  Button,
+  Select,
+  Tag,
+  Space,
+  Alert,
+  Row,
+  Col,
+  Card,
+  Divider,
+  Spin,
+  message
+} from 'antd';
+import {
+  UserOutlined,
+  MailOutlined,
+  TeamOutlined,
+  ShopOutlined,
+  PlusOutlined
+} from '@ant-design/icons';
 import { useApp } from '../../../../context/AppContext';
-import { UserPlus } from 'lucide-react';
 import { userService } from '../../../../services/userService/userService';
 import { stationService } from '../../../../services/stationService/stationService';
 
+const { Option } = Select;
+
 const CreateStaffModal = ({ isOpen, onClose, onUserCreated }) => {
-  const { state, dispatch } = useApp();
-  const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    role: 'ATTENDANT',
-    status: 'ACTIVE',
-    stationIds: [],
-  });
-  
+  const { state } = useApp();
+  const [form] = Form.useForm();
   const [stations, setStations] = useState([]);
-  const [errors, setErrors] = useState({});
-  const [successMessage, setSuccessMessage] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoadingStations, setIsLoadingStations] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [selectedStations, setSelectedStations] = useState([]);
 
   // Load stations when modal opens
   useEffect(() => {
     const loadStations = async () => {
       if (isOpen) {
-        setIsLoadingStations(true);
+        setLoading(true);
         try {
           const response = await stationService.getCompanyStations();
           setStations(response || []);
         } catch (error) {
           console.error('Failed to load stations:', error);
+          message.error('Failed to load stations');
         } finally {
-          setIsLoadingStations(false);
+          setLoading(false);
         }
       }
     };
 
     if (isOpen) {
       loadStations();
-      // Reset form
-      setFormData({
-        firstName: '',
-        lastName: '',
-        email: '',
-        role: 'ATTENDANT',
-        status: 'ACTIVE',
-        stationIds: [],
-      });
-      setErrors({});
+      // Reset form and selections
+      form.resetFields();
+      setSelectedStations([]);
     }
-  }, [isOpen]);
+  }, [isOpen, form]);
 
-  const validate = () => {
-    const newErrors = {};
-    if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
-    if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
-    if (!formData.email.trim()) newErrors.email = 'Email is required';
-    if (!formData.email.includes('@')) newErrors.email = 'Valid email is required';
-    
-    // Role-specific validations
-    if (formData.role !== 'SUPER_ADMIN' && formData.role !== 'COMPANY_ADMIN') {
-      if (formData.stationIds.length === 0) {
-        newErrors.stationIds = 'At least one station assignment is required';
-      }
-    }
-    
-    return newErrors;
-  };
+const handleSubmit = async (values) => {
+  setSubmitting(true);
+  
+  try {
+    // Prepare station assignments if user has station-based role
+    const stationAssignments = selectedStations.map(stationId => ({
+      stationId,
+      role: values.role
+    }));
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const validationErrors = validate();
-    
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      return;
-    }
+    const userData = {
+      firstName: values.firstName.trim(),
+      lastName: values.lastName.trim(),
+      email: values.email.toLowerCase().trim(),
+      role: values.role,
+      status: values.status,
+      // REMOVED: password field - will be auto-generated on backend
+      ...(stationAssignments.length > 0 && { stationAssignments })
+    };
 
-    setIsSubmitting(true);
-    
-    try {
-      // Prepare data for API - create user first
-      const userData = {
-        firstName: formData.firstName.trim(),
-        lastName: formData.lastName.trim(),
-        email: formData.email.trim().toLowerCase(),
-        role: formData.role,
-        status: formData.status,
-        // Don't include stationIds in initial user creation
-      };
+    console.log('🟢 [CREATE USER] Sending data:', userData);
+
+    const response = await userService.createUser(userData);
+
+    console.log("response ",response)
+
+    if (response.id) {
+      message.success('User created successfully!');
       
-      // Call the userService to create the user
-      const response = await userService.createUser(userData, dispatch);
-
-      console.log("use create response ",response)
+      // Call onUserCreated first to refresh the table
+      onUserCreated();
       
-      if (response.id) {
-
-        setSuccessMessage('User created successfully! Temporary password: ',response.tempPassword);
-    
-        onUserCreated(); // Refetch users
-        onClose();
-      } else {
-        setErrors({ general: response.message || 'Failed to create user' });
+      // Then close the modal
+      onClose();
+      
+      // Show temporary password in a separate message if available
+      if (response.data?.tempPassword) {
+        // Use setTimeout to ensure modal is closed before showing the password modal
+        setTimeout(() => {
+          Modal.info({
+            title: 'Temporary Password',
+            content: (
+              <div>
+                <p>The temporary password for <strong>{userData.email}</strong> is:</p>
+                <div style={{ 
+                  background: '#f5f5f5', 
+                  padding: '8px', 
+                  borderRadius: '4px',
+                  margin: '8px 0',
+                  fontFamily: 'monospace',
+                  fontWeight: 'bold'
+                }}>
+                  {response.data.tempPassword}
+                </div>
+                <p style={{ fontSize: '12px', color: '#666' }}>
+                  Please save this password securely. It will not be shown again.
+                </p>
+              </div>
+            ),
+            okText: 'Copy Password',
+            width: 500,
+            onOk: () => {
+              // Copy to clipboard
+              navigator.clipboard.writeText(response.data.tempPassword);
+              message.success('Password copied to clipboard!');
+            }
+          });
+        }, 300);
       }
-    } catch (error) {
-      console.error('Failed to create user:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to create user';
-      setErrors({ general: errorMessage });
-    } finally {
-      setIsSubmitting(false);
+    } else {
+      message.error(response.message || 'Failed to create user');
     }
-  };
-
-  const handleInputChange = (field, value) => {
-    setFormData({
-      ...formData,
-      [field]: value
-    });
-    
-    // Clear error when user provides input
-    if (errors[field]) {
-      setErrors({ ...errors, [field]: null });
-    }
-  };
-
-  const handleStationChange = (selectedOptions) => {
-    setFormData({
-      ...formData,
-      stationIds: selectedOptions.map(option => option.value)
-    });
-    
-    // Clear error when user selects stations
-    if (selectedOptions.length > 0 && errors.stationIds) {
-      setErrors({ ...errors, stationIds: null });
-    }
-  };
-
-  const roleOptions = [
-    { value: 'STATION_MANAGER', label: 'Station Manager' },
-    { value: 'SUPERVISOR', label: 'Supervisor' },
-    { value: 'ATTENDANT', label: 'Attendant' }
-  ];
-
-  // Add company admin role if current user is super admin
-  if (state.currentUser?.role === 'SUPER_ADMIN') {
-    roleOptions.unshift(
-      { value: 'COMPANY_ADMIN', label: 'Company Admin' },
-      { value: 'SUPER_ADMIN', label: 'Super Admin' }
-    );
+  } catch (error) {
+    console.error('❌ [CREATE USER] Failed to create user:', error);
+    const errorMessage = error.response?.data?.message || error.message || 'Failed to create user';
+    message.error(errorMessage);
+  } finally {
+    setSubmitting(false);
   }
+};
 
-  // Determine if station assignment should be shown
-  const showStationAssignment = 
-    formData.role === 'STATION_MANAGER' || 
-    formData.role === 'SUPERVISOR' || 
-    formData.role === 'ATTENDANT';
+  const handleStationChange = (selectedValues) => {
+    console.log('🟢 [STATION CHANGE] Selected values:', selectedValues);
+    setSelectedStations(selectedValues);
+  };
+
+  const handleRoleChange = (role) => {
+    // Clear station selections if role changes to non-station role
+    if (role === 'COMPANY_ADMIN' || role === 'SUPER_ADMIN') {
+      setSelectedStations([]);
+    }
+  };
+
+  const getRoleOptions = () => {
+    const baseRoles = [
+      { value: 'STATION_MANAGER', label: 'Station Manager' },
+      { value: 'SUPERVISOR', label: 'Supervisor' },
+      { value: 'ATTENDANT', label: 'Attendant' }
+    ];
+
+    if (state.currentUser?.role === 'SUPER_ADMIN') {
+      return [
+        { value: 'SUPER_ADMIN', label: 'Super Admin' },
+        { value: 'COMPANY_ADMIN', label: 'Company Admin' },
+        ...baseRoles
+      ];
+    }
+
+    return baseRoles;
+  };
+
+  const showStationAssignment = () => {
+    const role = form.getFieldValue('role');
+    return role === 'STATION_MANAGER' || role === 'SUPERVISOR' || role === 'ATTENDANT';
+  };
+
+  const renderStationTags = () => {
+    if (selectedStations.length === 0) return null;
+
+    return (
+      <div style={{ marginTop: 8 }}>
+        <Divider orientation="left" plain>
+          Selected Stations
+        </Divider>
+        <Space wrap size={[8, 8]}>
+          {selectedStations.map(stationId => {
+            const station = stations.find(s => s.id === stationId);
+            return station ? (
+              <Tag
+                key={stationId}
+                color="blue"
+                closable
+                onClose={() => {
+                  setSelectedStations(prev => prev.filter(id => id !== stationId));
+                }}
+                icon={<ShopOutlined />}
+              >
+                {station.name}
+              </Tag>
+            ) : null;
+          })}
+        </Space>
+      </div>
+    );
+  };
 
   return (
-    <Dialog
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Register New Staff Member"
-      size="md"
+    <Modal
+      title={
+        <Space>
+          <UserOutlined />
+          Register New Staff Member
+        </Space>
+      }
+      open={isOpen}
+      onCancel={onClose}
+      footer={null}
+      width={700}
+      destroyOnClose
+      maskClosable={!submitting}
+      keyboard={!submitting}
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* General Error */}
-        {errors.general && (
-          <div className="p-3 mb-4 text-red-700 bg-red-100 rounded-lg">
-            {errors.general}
-          </div>
-        )}
+      <Spin spinning={loading}>
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSubmit}
+          initialValues={{
+            role: 'ATTENDANT',
+            status: 'ACTIVE'
+          }}
+        >
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                label="First Name"
+                name="firstName"
+                rules={[
+                  { required: true, message: 'Please enter first name' },
+                  { min: 2, message: 'First name must be at least 2 characters' }
+                ]}
+              >
+                <Input 
+                  prefix={<UserOutlined />} 
+                  placeholder="Enter first name" 
+                />
+              </Form.Item>
+            </Col>
+            
+            <Col span={12}>
+              <Form.Item
+                label="Last Name"
+                name="lastName"
+                rules={[
+                  { required: true, message: 'Please enter last name' },
+                  { min: 2, message: 'Last name must be at least 2 characters' }
+                ]}
+              >
+                <Input 
+                  placeholder="Enter last name" 
+                />
+              </Form.Item>
+            </Col>
+          </Row>
 
-        {/* Success Message */}
-        {successMessage && (
-          <div className="p-3 mb-4 text-green-700 bg-green-100 rounded-lg">
-            {successMessage}
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                label="Email"
+                name="email"
+                rules={[
+                  { required: true, message: 'Please enter email' },
+                  { type: 'email', message: 'Please enter a valid email' }
+                ]}
+              >
+                <Input 
+                  prefix={<MailOutlined />} 
+                  placeholder="user@example.com" 
+                />
+              </Form.Item>
+            </Col>
+            
+            <Col span={12}>
+              <Form.Item
+                label="Role"
+                name="role"
+                rules={[{ required: true, message: 'Please select a role' }]}
+              >
+                <Select 
+                  onChange={handleRoleChange}
+                  placeholder="Select role"
+                >
+                  {getRoleOptions().map(role => (
+                    <Option key={role.value} value={role.value}>
+                      <TeamOutlined /> {role.label}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                label="Status"
+                name="status"
+              >
+                <Select placeholder="Select status">
+                  <Option value="ACTIVE">Active</Option>
+                  <Option value="INACTIVE">Inactive</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            
+            <Col span={12}>
+              <Form.Item
+                label="Password"
+                name="password"
+                extra="Leave empty to auto-generate a secure password"
+              >
+                <Input.Password 
+                  placeholder="Optional: Enter custom password" 
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* Station Assignments Section */}
+          {showStationAssignment() && (
+            <Card 
+              size="small" 
+              title={
+                <Space>
+                  <ShopOutlined />
+                  Station Assignments
+                </Space>
+              }
+              style={{ marginTop: 16 }}
+            >
+              <Form.Item
+                help="Select stations where this staff member will work"
+                validateStatus={selectedStations.length === 0 ? 'error' : ''}
+                extra={selectedStations.length === 0 ? 'At least one station assignment is required for this role' : ''}
+              >
+                <Select
+                  mode="multiple"
+                  placeholder="Select stations for assignment"
+                  value={selectedStations}
+                  onChange={handleStationChange}
+                  loading={loading}
+                  optionFilterProp="children"
+                  showSearch
+                  filterOption={(input, option) =>
+                    option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
+                  }
+                >
+                  {stations.map(station => (
+                    <Option key={station.id} value={station.id}>
+                      {station.name} {station.location && `- ${station.location}`}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+
+              {renderStationTags()}
+
+              <div style={{ marginTop: 8, fontSize: '12px', color: '#666' }}>
+                <Space direction="vertical" size={2}>
+                  <div>• User will be assigned as: <Tag color="blue">{form.getFieldValue('role')}</Tag></div>
+                  <div>• Selected stations: <strong>{selectedStations.length}</strong></div>
+                </Space>
+              </div>
+            </Card>
+          )}
+
+          {/* Info for non-station roles */}
+          {!showStationAssignment() && form.getFieldValue('role') && (
+            <Alert
+              message="Role Information"
+              description={
+                form.getFieldValue('role') === 'COMPANY_ADMIN' 
+                  ? 'Company Admins have access to all stations in the company automatically.'
+                  : 'Super Admins have system-wide access to all stations and company data.'
+              }
+              type="info"
+              showIcon
+              style={{ marginTop: 16 }}
+            />
+          )}
+
+          {/* Form Actions */}
+          <div style={{ marginTop: 24, textAlign: 'right' }}>
+            <Space>
+              <Button onClick={onClose} disabled={submitting}>
+                Cancel
+              </Button>
+              <Button 
+                type="primary" 
+                htmlType="submit" 
+                loading={submitting}
+                icon={<PlusOutlined />}
+                disabled={showStationAssignment() && selectedStations.length === 0}
+              >
+                Register Staff
+              </Button>
+            </Space>
           </div>
-        )}
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input
-            label="First Name"
-            value={formData.firstName}
-            onChange={(e) => handleInputChange('firstName', e.target.value)}
-            required
-            error={errors.firstName}
-            placeholder="Enter first name"
-          />
-          
-          <Input
-            label="Last Name"
-            value={formData.lastName}
-            onChange={(e) => handleInputChange('lastName', e.target.value)}
-            required
-            error={errors.lastName}
-            placeholder="Enter last name"
-          />
-          
-          <Input
-            label="Email"
-            type="email"
-            value={formData.email}
-            onChange={(e) => handleInputChange('email', e.target.value)}
-            required
-            error={errors.email}
-            placeholder="user@example.com"
-          />
-          
-          <Select
-            label="Role"
-            value={formData.role}
-            onChange={(e) => handleInputChange('role', e.target.value)}
-            options={roleOptions}
-            required
-          />
-          
-          <Select
-            label="Status"
-            value={formData.status}
-            onChange={(e) => handleInputChange('status', e.target.value)}
-            options={[
-              { value: 'ACTIVE', label: 'Active' },
-              { value: 'INACTIVE', label: 'Inactive' }
-            ]}
-          />
-         
-     {showStationAssignment && (
-  <div className="md:col-span-2">
-    <MultiSelect
-      label="Station Assignments"
-      options={stations.map(station => ({
-        value: station.id,
-        label: `${station.name}`
-      }))}
-      value={formData.stationIds} // Just pass the array of IDs directly
-      onChange={(e) => handleInputChange('stationIds', e.target.value)}
-      isLoading={isLoadingStations}
-      error={errors.stationIds}
-      placeholder="Select stations (optional)"
-      isRequired={false}
-    />
-    <p className="text-sm text-gray-500 mt-1">
-      Select the stations this staff member will be assigned to (optional)
-    </p>
-  </div>
-)}
-        </div>
-        
-        <div className="flex justify-end space-x-3 pt-4">
-          <Button 
-            variant="secondary" 
-            onClick={onClose}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button 
-            type="submit" 
-            variant="cosmic"
-            icon={UserPlus}
-            loading={isSubmitting}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? 'Creating...' : 'Register Staff'}
-          </Button>
-        </div>
-      </form>
-    </Dialog>
+        </Form>
+      </Spin>
+    </Modal>
   );
 };
 

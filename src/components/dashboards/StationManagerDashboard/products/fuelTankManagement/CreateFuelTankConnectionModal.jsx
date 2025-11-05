@@ -1,421 +1,489 @@
-// components/tankFuel/CreateTankFuelConnectionModal.jsx
+// components/tank/CreateTankFuelConnectionModal.jsx
 import React, { useState, useEffect } from 'react';
-import { Input, Button, Select, MultiSelect } from '../../../ui';
-import Dialog from '../../../ui/Dialog';
-import { useApp } from '../../../../context/AppContext';
-import { Fuel, Tank, Link2 } from 'lucide-react';
-import { tankFuelConnectionService } from '../../../../services/tankFuelConnectionService';
-import { fuelService } from '../../../../services/fuelService';
-import { stationService } from '../../../../services/stationService';
+import { 
+  Dialog, 
+  Button, 
+  Select, 
+  Input,
+  Progress 
+} from '../../../../ui';
+import { Link2, Fuel, Zap, Building } from 'lucide-react';
+import { useApp } from '../../../../../context/AppContext';
+import { tankFuelConnectionService } from '../../../../../services/tankFuelConnectionService/tankFuelConnectionService';
+import { stationService } from '../../../../../services/stationService/stationService';
+import { fuelService } from '../../../../../services/fuelService/fuelService';
 
-const CreateTankFuelConnectionModal = ({ isOpen, onClose, onConnectionCreated }) => {
-  const { state, dispatch } = useApp();
+const CreateTankFuelConnectionModal = ({ 
+  isOpen, 
+  onClose, 
+  onConnectionCreated,
+  editConnection = null 
+}) => {
+  const { state } = useApp();
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+  
+  // Data states
+  const [stations, setStations] = useState([]);
+  const [tanks, setTanks] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [pumps, setPumps] = useState([]);
+  
+  // Form state
   const [formData, setFormData] = useState({
     stationId: '',
     tankId: '',
     productId: '',
-    assetId: '',
+    assetIds: [] // Multiple pumps can be connected
   });
-  
-  const [stations, setStations] = useState([]);
-  const [tanks, setTanks] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [assets, setAssets] = useState([]);
+
+  // Selected items for display
+  const [selectedStation, setSelectedStation] = useState(null);
   const [selectedTank, setSelectedTank] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [errors, setErrors] = useState({});
-  const [successMessage, setSuccessMessage] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoading, setIsLoading] = useState({
-    stations: false,
-    tanks: false,
-    products: false,
-    assets: false
-  });
 
-  // Load initial data when modal opens
+  // Load initial data
   useEffect(() => {
-    const loadInitialData = async () => {
-      if (isOpen) {
-        setIsLoading(prev => ({ ...prev, stations: true }));
-        try {
-          const [stationsResponse, productsResponse] = await Promise.all([
-            stationService.getCompanyStations(),
-            fuelService.getFuelProducts()
-          ]);
-          
-          setStations(stationsResponse?.data || stationsResponse || []);
-          setProducts(productsResponse?.data || productsResponse || []);
-        } catch (error) {
-          console.error('Failed to load initial data:', error);
-        } finally {
-          setIsLoading(prev => ({ ...prev, stations: false }));
-        }
-        
-        // Reset form
-        setFormData({
-          stationId: '',
-          tankId: '',
-          productId: '',
-          assetId: '',
-        });
-        setSelectedTank(null);
-        setSelectedProduct(null);
-        setErrors({});
-        setSuccessMessage('');
-      }
-    };
-
     if (isOpen) {
       loadInitialData();
-    }
-  }, [isOpen]);
-
-  // Load tanks when station is selected
-  useEffect(() => {
-    const loadTanks = async () => {
-      if (formData.stationId) {
-        setIsLoading(prev => ({ ...prev, tanks: true }));
-        try {
-          // You might need to create a tanks service or use existing asset service
-          const tanksResponse = await stationService.getStationTanks(formData.stationId);
-          setTanks(tanksResponse?.data || tanksResponse || []);
-        } catch (error) {
-          console.error('Failed to load tanks:', error);
-          setTanks([]);
-        } finally {
-          setIsLoading(prev => ({ ...prev, tanks: false }));
-        }
+      if (editConnection) {
+        setFormData({
+          stationId: editConnection.stationId,
+          tankId: editConnection.tankId,
+          productId: editConnection.productId,
+          assetIds: [editConnection.assetId]
+        });
       } else {
-        setTanks([]);
-        setFormData(prev => ({ ...prev, tankId: '' }));
-        setSelectedTank(null);
-      }
-    };
-
-    if (formData.stationId) {
-      loadTanks();
-    }
-  }, [formData.stationId]);
-
-  // Load assets (pumps) when station is selected
-  useEffect(() => {
-    const loadAssets = async () => {
-      if (formData.stationId) {
-        setIsLoading(prev => ({ ...prev, assets: true }));
-        try {
-          // You might need to create an assets service or use existing one
-          const assetsResponse = await stationService.getStationAssets(formData.stationId, 'PUMP');
-          setAssets(assetsResponse?.data || assetsResponse || []);
-        } catch (error) {
-          console.error('Failed to load assets:', error);
-          setAssets([]);
-        } finally {
-          setIsLoading(prev => ({ ...prev, assets: false }));
-        }
-      } else {
-        setAssets([]);
-        setFormData(prev => ({ ...prev, assetId: '' }));
-      }
-    };
-
-    if (formData.stationId) {
-      loadAssets();
-    }
-  }, [formData.stationId]);
-
-  // Update selected tank when tankId changes
-  useEffect(() => {
-    if (formData.tankId && tanks.length > 0) {
-      const tank = tanks.find(t => t.id === formData.tankId);
-      setSelectedTank(tank || null);
-    } else {
-      setSelectedTank(null);
-    }
-  }, [formData.tankId, tanks]);
-
-  // Update selected product when productId changes
-  useEffect(() => {
-    if (formData.productId && products.length > 0) {
-      const product = products.find(p => p.id === formData.productId);
-      setSelectedProduct(product || null);
-    } else {
-      setSelectedProduct(null);
-    }
-  }, [formData.productId, products]);
-
-  const validate = () => {
-    const newErrors = tankFuelConnectionService.validateTankFuelConnection(formData);
-    
-    // Additional validation for tank capacity
-    if (selectedTank && selectedTank.currentVolume !== undefined && selectedTank.capacity !== undefined) {
-      if (selectedTank.currentVolume > selectedTank.capacity) {
-        newErrors.tankId = 'Tank current volume cannot exceed capacity';
+        resetForm();
       }
     }
+  }, [isOpen, editConnection]);
 
-    return newErrors;
+  const loadInitialData = async () => {
+    try {
+      setLoading(true);
+      
+      const [stationsRes, productsRes] = await Promise.all([
+        stationService.getCompanyStations(),
+        fuelService.getFuelProducts()
+      ]);
+      
+      setStations(stationsRes?.data || stationsRes || []);
+      setProducts(productsRes?.data || productsRes || []);
+    } catch (error) {
+      console.error('Failed to load initial data:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const validationErrors = validate();
-    
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      return;
-    }
-
-    setIsSubmitting(true);
+  const loadStationAssets = async (stationId) => {
+    if (!stationId) return;
     
     try {
-      const connectionData = tankFuelConnectionService.mapFormToConnection(formData);
+      setLoading(true);
       
-      const response = await tankFuelConnectionService.createTankFuelConnection(connectionData);
+      const [tanksRes, pumpsRes] = await Promise.all([
+        stationService.getStationTanks(stationId),
+        stationService.getStationAssets(stationId, 'FUEL_PUMP')
+      ]);
+      
+      setTanks(tanksRes?.data || tanksRes || []);
+      setPumps(pumpsRes?.data || pumpsRes || []);
+    } catch (error) {
+      console.error('Failed to load station assets:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      if (response.data) {
-        setSuccessMessage('Tank-Fuel connection created successfully!');
-        
-        // Wait a moment before closing to show success message
-        setTimeout(() => {
-          onConnectionCreated(); // Refetch connections
-          onClose();
-        }, 1500);
+  const resetForm = () => {
+    setFormData({
+      stationId: '',
+      tankId: '',
+      productId: '',
+      assetIds: []
+    });
+    setStep(1);
+    setErrors({});
+    setSelectedStation(null);
+    setSelectedTank(null);
+    setSelectedProduct(null);
+  };
+
+  const handleStationSelect = (stationId) => {
+    setFormData(prev => ({ 
+      ...prev, 
+      stationId,
+      tankId: '',
+      assetIds: []
+    }));
+    
+    const station = stations.find(s => s.id === stationId);
+    setSelectedStation(station);
+    loadStationAssets(stationId);
+  };
+
+  const handleTankSelect = (tankId) => {
+    setFormData(prev => ({ ...prev, tankId }));
+    const tank = tanks.find(t => t.id === tankId);
+    setSelectedTank(tank);
+  };
+
+  const handleProductSelect = (productId) => {
+    setFormData(prev => ({ ...prev, productId }));
+    const product = products.find(p => p.id === productId);
+    setSelectedProduct(product);
+  };
+
+  const handlePumpToggle = (pumpId) => {
+    setFormData(prev => ({
+      ...prev,
+      assetIds: prev.assetIds.includes(pumpId)
+        ? prev.assetIds.filter(id => id !== pumpId)
+        : [...prev.assetIds, pumpId]
+    }));
+  };
+
+  const validateStep = (step) => {
+    const newErrors = {};
+    
+    switch (step) {
+      case 1:
+        if (!formData.stationId) newErrors.stationId = 'Station is required';
+        break;
+      case 2:
+        if (!formData.tankId) newErrors.tankId = 'Tank selection is required';
+        break;
+      case 3:
+        if (!formData.productId) newErrors.productId = 'Fuel product is required';
+        break;
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleNext = () => {
+    if (validateStep(step)) {
+      setStep(step + 1);
+    }
+  };
+
+  const handleBack = () => {
+    setStep(step - 1);
+  };
+
+  const handleSubmit = async () => {
+    try {
+      setLoading(true);
+      
+      // Create connections for each selected pump
+      const connections = formData.assetIds.map(assetId => ({
+        stationId: formData.stationId,
+        tankId: formData.tankId,
+        productId: formData.productId,
+        assetId
+      }));
+
+      let result;
+      if (editConnection) {
+        // Update existing connection (single connection edit)
+        result = await tankFuelConnectionService.updateTankFuelConnection({
+          id: editConnection.id,
+          ...connections[0] // For edit, we only handle one connection
+        });
       } else {
-        setErrors({ general: response.message || 'Failed to create connection' });
+        // Create new connections
+        if (connections.length === 1) {
+          result = await tankFuelConnectionService.createTankFuelConnection(connections[0]);
+        } else {
+          result = await tankFuelConnectionService.bulkCreateTankFuelConnections(connections);
+        }
+      }
+
+      if (result.success !== false) {
+        onConnectionCreated();
+        resetForm();
+        onClose();
       }
     } catch (error) {
-      console.error('Failed to create tank-fuel connection:', error);
-      const errorMessage = error.message || 'Failed to create tank-fuel connection';
-      setErrors({ general: errorMessage });
+      setErrors({ general: error.message });
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
 
-  const handleInputChange = (field, value) => {
-    setFormData({
-      ...formData,
-      [field]: value
-    });
-    
-    // Clear error when user provides input
-    if (errors[field]) {
-      setErrors({ ...errors, [field]: null });
-    }
+  const steps = [
+    { number: 1, title: 'Select Station', icon: Building },
+    { number: 2, title: 'Choose Tank', icon: Zap },
+    { number: 3, title: 'Select Fuel', icon: Fuel },
+    { number: 4, title: 'Connect Pumps', icon: Zap }
+  ];
 
-    // Clear dependent fields when station changes
-    if (field === 'stationId') {
-      setFormData(prev => ({
-        ...prev,
-        tankId: '',
-        assetId: ''
-      }));
+  const canProceed = () => {
+    switch (step) {
+      case 1: return !!formData.stationId;
+      case 2: return !!formData.tankId;
+      case 3: return !!formData.productId;
+      case 4: return formData.assetIds.length > 0;
+      default: return false;
     }
   };
-
-  // Filter products by type (FUEL only)
-  const fuelProducts = products.filter(product => 
-    product.type === 'FUEL' || !product.type // Include if type is not specified
-  );
 
   return (
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
-      title="Create Tank-Fuel Connection"
+      title={editConnection ? "Edit Tank Connection" : "Connect Tank to Fuel"}
       size="lg"
+      onAfterClose={resetForm}
     >
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* General Error */}
+      {/* Progress Steps */}
+      <div className="mb-6">
+        <Progress steps={steps} currentStep={step} />
+      </div>
+
+      {/* Step Content */}
+      <div className="space-y-6">
+        {/* Step 1: Station Selection */}
+        {step === 1 && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium">Select Station</h3>
+            <Select
+              label="Station"
+              value={formData.stationId}
+              onChange={(e) => handleStationSelect(e.target.value)}
+              options={stations.map(station => ({
+                value: station.id,
+                label: station.name
+              }))}
+              error={errors.stationId}
+              placeholder="Choose a station"
+            />
+            
+            {selectedStation && (
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <h4 className="font-medium text-blue-900 mb-2">Station Details</h4>
+                <p className="text-blue-700">{selectedStation.name}</p>
+                <p className="text-sm text-blue-600">{selectedStation.address}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Step 2: Tank Selection */}
+        {step === 2 && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium">Select Tank</h3>
+            <Select
+              label="Storage Tank"
+              value={formData.tankId}
+              onChange={(e) => handleTankSelect(e.target.value)}
+              options={tanks.map(tank => ({
+                value: tank.id,
+                label: tank.asset?.name || `Tank ${tank.id.slice(-4)}`
+              }))}
+              error={errors.tankId}
+              placeholder="Choose a tank"
+            />
+            
+            {selectedTank && (
+              <div className="p-4 bg-green-50 rounded-lg space-y-3">
+                <h4 className="font-medium text-green-900">Tank Capacity</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-green-600">Total Capacity:</span>
+                    <div className="text-green-900 font-medium">
+                      {selectedTank.capacity?.toLocaleString()} L
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-green-600">Current Volume:</span>
+                    <div className="text-green-900 font-medium">
+                      {selectedTank.currentVolume?.toLocaleString()} L
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-green-600">Available:</span>
+                    <div className="text-green-900 font-medium">
+                      {((selectedTank.capacity || 0) - (selectedTank.currentVolume || 0)).toLocaleString()} L
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-green-600">Utilization:</span>
+                    <div className="text-green-900 font-medium">
+                      {selectedTank.capacity ? 
+                        (((selectedTank.currentVolume || 0) / selectedTank.capacity) * 100).toFixed(1) 
+                        : 0}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Step 3: Fuel Selection */}
+        {step === 3 && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium">Select Fuel Product</h3>
+            <Select
+              label="Fuel Product"
+              value={formData.productId}
+              onChange={(e) => handleProductSelect(e.target.value)}
+              options={products
+                .filter(p => p.type === 'FUEL')
+                .map(product => ({
+                  value: product.id,
+                  label: `${product.name} (${product.fuelCode || 'No Code'})`
+                }))
+              }
+              error={errors.productId}
+              placeholder="Choose fuel product"
+            />
+            
+            {selectedProduct && (
+              <div className="p-4 bg-purple-50 rounded-lg">
+                <h4 className="font-medium text-purple-900 mb-2">Product Specifications</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-purple-600">Product:</span>
+                    <div className="text-purple-900 font-medium">{selectedProduct.name}</div>
+                  </div>
+                  <div>
+                    <span className="text-purple-600">Fuel Code:</span>
+                    <div className="text-purple-900 font-medium">{selectedProduct.fuelCode}</div>
+                  </div>
+                  {selectedProduct.density && (
+                    <div>
+                      <span className="text-purple-600">Density:</span>
+                      <div className="text-purple-900 font-medium">{selectedProduct.density} kg/L</div>
+                    </div>
+                  )}
+                  {selectedProduct.octaneRating && (
+                    <div>
+                      <span className="text-purple-600">Octane:</span>
+                      <div className="text-purple-900 font-medium">RON {selectedProduct.octaneRating}</div>
+                    </div>
+                  )}
+                  {selectedProduct.fuelSubType && (
+                    <>
+                      <div>
+                        <span className="text-purple-600">Category:</span>
+                        <div className="text-purple-900 font-medium">
+                          {selectedProduct.fuelSubType.category?.name}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-purple-600">Sub Type:</span>
+                        <div className="text-purple-900 font-medium">
+                          {selectedProduct.fuelSubType.name}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Step 4: Pump Connection */}
+        {step === 4 && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium">Connect Pumps</h3>
+            <p className="text-gray-600">Select pumps that will dispense from this tank</p>
+            
+            <div className="max-h-60 overflow-y-auto space-y-2">
+              {pumps.length > 0 ? (
+                pumps.map(pump => (
+                  <div
+                    key={pump.id}
+                    className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                      formData.assetIds.includes(pump.id)
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    onClick={() => handlePumpToggle(pump.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <Zap className={`w-4 h-4 ${
+                          formData.assetIds.includes(pump.id) ? 'text-blue-500' : 'text-gray-400'
+                        }`} />
+                        <div>
+                          <div className="font-medium">{pump.name}</div>
+                          <div className="text-sm text-gray-500">
+                            {pump.asset?.stationLabel || 'No label'}
+                          </div>
+                        </div>
+                      </div>
+                      {formData.assetIds.includes(pump.id) && (
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4 text-gray-500">
+                  No pumps available at this station
+                </div>
+              )}
+            </div>
+            
+            {formData.assetIds.length > 0 && (
+              <div className="p-3 bg-blue-50 rounded-lg">
+                <p className="text-blue-700 text-sm">
+                  {formData.assetIds.length} pump(s) selected
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Error Display */}
         {errors.general && (
-          <div className="p-3 mb-4 text-red-700 bg-red-100 rounded-lg">
+          <div className="p-3 bg-red-100 text-red-700 rounded-lg">
             {errors.general}
           </div>
         )}
+      </div>
 
-        {/* Success Message */}
-        {successMessage && (
-          <div className="p-3 mb-4 text-green-700 bg-green-100 rounded-lg">
-            {successMessage}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Station Selection */}
-          <Select
-            label="Station"
-            value={formData.stationId}
-            onChange={(e) => handleInputChange('stationId', e.target.value)}
-            options={stations.map(station => ({
-              value: station.id,
-              label: station.name
-            }))}
-            required
-            error={errors.stationId}
-            isLoading={isLoading.stations}
-            placeholder="Select station"
-          />
-
-          {/* Tank Selection */}
-          <Select
-            label="Tank"
-            value={formData.tankId}
-            onChange={(e) => handleInputChange('tankId', e.target.value)}
-            options={tanks.map(tank => ({
-              value: tank.id,
-              label: tank.asset?.name || `Tank ${tank.id.slice(-4)}`
-            }))}
-            required
-            error={errors.tankId}
-            isLoading={isLoading.tanks}
-            placeholder="Select tank"
-            disabled={!formData.stationId}
-          />
-
-          {/* Fuel Product Selection */}
-          <Select
-            label="Fuel Product"
-            value={formData.productId}
-            onChange={(e) => handleInputChange('productId', e.target.value)}
-            options={fuelProducts.map(product => ({
-              value: product.id,
-              label: `${product.name} (${product.fuelCode || 'No Code'})`
-            }))}
-            required
-            error={errors.productId}
-            isLoading={isLoading.products}
-            placeholder="Select fuel product"
-          />
-
-          {/* Asset (Pump) Selection */}
-          <Select
-            label="Connected Asset (Pump)"
-            value={formData.assetId}
-            onChange={(e) => handleInputChange('assetId', e.target.value)}
-            options={assets.map(asset => ({
-              value: asset.id,
-              label: asset.name || `Asset ${asset.id.slice(-4)}`
-            }))}
-            error={errors.assetId}
-            isLoading={isLoading.assets}
-            placeholder="Select pump (optional)"
-            disabled={!formData.stationId}
-          />
+      {/* Navigation Buttons */}
+      <div className="flex justify-between pt-6 mt-6 border-t">
+        <Button
+          onClick={step === 1 ? onClose : handleBack}
+          variant="secondary"
+          disabled={loading}
+        >
+          {step === 1 ? 'Cancel' : 'Back'}
+        </Button>
+        
+        <div className="flex space-x-3">
+          {step < 4 && (
+            <Button
+              onClick={handleNext}
+              variant="cosmic"
+              disabled={!canProceed() || loading}
+            >
+              Next
+            </Button>
+          )}
+          
+          {step === 4 && (
+            <Button
+              onClick={handleSubmit}
+              icon={Link2}
+              loading={loading}
+              disabled={!canProceed() || loading}
+            >
+              {editConnection ? 'Update Connection' : 'Create Connections'}
+            </Button>
+          )}
         </div>
-
-        {/* Tank Capacity Information */}
-        {selectedTank && (
-          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
-              <Tank className="w-4 h-4" />
-              Selected Tank Information
-            </h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="text-blue-600 font-medium">Capacity:</span>
-                <div className="text-blue-900">{selectedTank.capacity?.toLocaleString() || 'N/A'} L</div>
-              </div>
-              <div>
-                <span className="text-blue-600 font-medium">Current Volume:</span>
-                <div className="text-blue-900">{selectedTank.currentVolume?.toLocaleString() || '0'} L</div>
-              </div>
-              <div>
-                <span className="text-blue-600 font-medium">Available:</span>
-                <div className="text-blue-900">
-                  {selectedTank.capacity && selectedTank.currentVolume !== undefined 
-                    ? (selectedTank.capacity - selectedTank.currentVolume).toLocaleString() 
-                    : 'N/A'} L
-                </div>
-              </div>
-              <div>
-                <span className="text-blue-600 font-medium">Utilization:</span>
-                <div className="text-blue-900">
-                  {selectedTank.capacity && selectedTank.currentVolume !== undefined 
-                    ? ((selectedTank.currentVolume / selectedTank.capacity) * 100).toFixed(1) 
-                    : '0'}%
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Product Information */}
-        {selectedProduct && (
-          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-            <h4 className="font-semibold text-green-900 mb-2 flex items-center gap-2">
-              <Fuel className="w-4 h-4" />
-              Selected Fuel Product
-            </h4>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-              <div>
-                <span className="text-green-600 font-medium">Product:</span>
-                <div className="text-green-900">{selectedProduct.name}</div>
-              </div>
-              <div>
-                <span className="text-green-600 font-medium">Fuel Code:</span>
-                <div className="text-green-900">{selectedProduct.fuelCode || 'N/A'}</div>
-              </div>
-              <div>
-                <span className="text-green-600 font-medium">Density:</span>
-                <div className="text-green-900">
-                  {selectedProduct.density ? `${selectedProduct.density} kg/L` : 'N/A'}
-                </div>
-              </div>
-              {selectedProduct.octaneRating && (
-                <div>
-                  <span className="text-green-600 font-medium">Octane:</span>
-                  <div className="text-green-900">RON {selectedProduct.octaneRating}</div>
-                </div>
-              )}
-              {selectedProduct.fuelSubType && (
-                <div className="md:col-span-2">
-                  <span className="text-green-600 font-medium">Category:</span>
-                  <div className="text-green-900">
-                    {selectedProduct.fuelSubType.category?.name} → {selectedProduct.fuelSubType.name}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Connection Summary */}
-        {selectedTank && selectedProduct && (
-          <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-            <h4 className="font-semibold text-purple-900 mb-2 flex items-center gap-2">
-              <Link2 className="w-4 h-4" />
-              Connection Summary
-            </h4>
-            <div className="text-sm text-purple-800">
-              Connecting <strong>{selectedProduct.name}</strong> to{' '}
-              <strong>{selectedTank.asset?.name || 'Selected Tank'}</strong>
-              {formData.assetId && assets.find(a => a.id === formData.assetId) && (
-                <> via <strong>{assets.find(a => a.id === formData.assetId).name}</strong></>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div className="flex justify-end space-x-3 pt-4 border-t">
-          <Button 
-            variant="secondary" 
-            onClick={onClose}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button 
-            type="submit" 
-            variant="cosmic"
-            icon={Link2}
-            loading={isSubmitting}
-            disabled={isSubmitting || !formData.stationId || !formData.tankId || !formData.productId}
-          >
-            {isSubmitting ? 'Creating Connection...' : 'Create Connection'}
-          </Button>
-        </div>
-      </form>
+      </div>
     </Dialog>
   );
 };

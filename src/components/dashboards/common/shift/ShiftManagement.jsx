@@ -194,71 +194,114 @@ const ShiftManagement = () => {
   }, [userStationId, checkOpenShift]);
 
   // Fetch shifts based on user role (fallback method)
-  const fetchShifts = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+// Fetch shifts based on user role (fallback method)
+const fetchShifts = useCallback(async () => {
+  setLoading(true);
+  setError(null);
+  
+  try {
+    let response;
     
-    try {
-      let response;
-      const queryParams = {
-        status: filters.status,
-        startDate: filters.startDate,
-        endDate: filters.endDate,
-        page: 1,
-        limit: 1000
-      };
+    // Use minimal, cleaned parameters for asset endpoints
+    const queryParams = {
+      status: filters.status || undefined, // Only include if has value
+      startDate: filters.startDate || undefined,
+      endDate: filters.endDate || undefined,
+      page: 1,
+      limit: 50, // Reduced from 1000 for better performance
+      includeReadings: true,
+      includeAssets: true
+    };
 
-      const scopeParams = getScopeParams();
-      console.log('📡 Fetching shifts with scope:', scopeParams);
+    // Clean up undefined values
+    Object.keys(queryParams).forEach(key => {
+      if (queryParams[key] === undefined) {
+        delete queryParams[key];
+      }
+    });
 
-      switch (scopeParams.scope) {
-        case 'all':
+    const scopeParams = getScopeParams();
+    console.log('📡 Fetching shifts with scope:', scopeParams);
+    console.log('🔍 Query params:', queryParams);
+
+    switch (scopeParams.scope) {
+      case 'all':
+        console.log('🔄 [SUPER_ADMIN] Calling getAllShiftsWithAssets');
+        if (userRole === 'SUPER_ADMIN') {
           response = await shiftService.getAllShiftsWithAssets(queryParams);
-          break;
-
-        case 'company':
+        } else {
+          console.warn('⚠️ Non-super admin trying to access all shifts, falling back');
+          // Fall back to company scope
           response = await shiftService.getShiftsByCompanyWithAssets(
-            scopeParams.companyId,
+            userCompanyId,
             queryParams
           );
-          break;
+        }
+        break;
 
-        case 'station':
-          response = await shiftService.getShiftsByStationWithAssets(
-            scopeParams.stationId,
-            queryParams
-          );
-          break;
+      case 'company':
+        console.log('🔄 [COMPANY_ADMIN] Calling getShiftsByCompanyWithAssets');
+        response = await shiftService.getShiftsByCompanyWithAssets(
+          scopeParams.companyId,
+          queryParams
+        );
+        break;
 
-        case 'attendant':
-          response = await shiftService.getShiftsByAttendant(
-            scopeParams.attendantId,
-            queryParams
-          );
-          break;
+      case 'station':
+        console.log('🔄 [STATION] Calling getShiftsByStationWithAssets');
+        response = await shiftService.getShiftsByStationWithAssets(
+          scopeParams.stationId,
+          queryParams
+        );
+        break;
 
-        default:
-          response = { data: { shifts: [] } };
-      }
+      case 'attendant':
+        console.log('🔄 [ATTENDANT] Calling getShiftsByAttendant');
+        response = await shiftService.getShiftsByAttendant(
+          scopeParams.attendantId,
+          queryParams
+        );
+        break;
 
-      // Handle different response structures
-      const shiftsData = response.shifts || response.data?.shifts || [];
-      console.log('📊 Fetched shifts with assets:', shiftsData);
-      setShifts(shiftsData);
-
-      // Check for open shift (only for station-level roles)
-      if (['STATION_MANAGER', 'SUPERVISOR', 'LINES_MANAGER'].includes(userRole)) {
-        await checkOpenShift(shiftsData);
-      }
-
-    } catch (err) {
-      console.error('❌ Failed to fetch shifts:', err);
-      setError(err.message || 'Failed to load shift data');
-      setShifts([]);
-    } finally {
-      setLoading(false);
+      default:
+        console.warn('⚠️ Unknown scope, using empty response');
+        response = { data: { shifts: [] } };
     }
-  }, [getScopeParams, userRole, filters, checkOpenShift]);
+
+    // Handle different response structures
+    const shiftsData = response.shifts || response.data?.shifts || [];
+    console.log('📊 Fetched shifts with assets:', shiftsData.length, 'shifts');
+    setShifts(shiftsData);
+
+    // Check for open shift (only for station-level roles)
+    if (['STATION_MANAGER', 'SUPERVISOR', 'LINES_MANAGER'].includes(userRole)) {
+      await checkOpenShift(shiftsData);
+    }
+
+  } catch (err) {
+    console.error('❌ Failed to fetch shifts:', err);
+    console.error('❌ Error details:', {
+      message: err.message,
+      status: err.response?.status,
+      data: err.response?.data
+    });
+    
+    // Provide more specific error messages
+    let errorMessage = 'Failed to load shift data';
+    if (err.message.includes('Access denied') || err.response?.status === 403) {
+      errorMessage = 'You do not have permission to view these shifts';
+    } else if (err.response?.status === 401) {
+      errorMessage = 'Authentication failed. Please login again.';
+    } else if (err.message.includes('not found')) {
+      errorMessage = 'Shift data not found';
+    }
+    
+    setError(errorMessage);
+    setShifts([]);
+  } finally {
+    setLoading(false);
+  }
+}, [getScopeParams, userRole, filters, checkOpenShift, userCompanyId]);
 
   // Enhanced shift data processing with asset relationships and null safety
   const processShiftData = useCallback((shift) => {

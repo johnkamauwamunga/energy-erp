@@ -1,174 +1,261 @@
-// components/PreClosingValidationStep.js
 import React from 'react';
-import { Card, Alert, Badge } from '../../../../ui';
-import { CheckCircle, AlertTriangle, Clock, FileText, Zap, Fuel } from 'lucide-react';
+import {
+  Card,
+  Alert,
+  Row,
+  Col,
+  Tag,
+  Descriptions,
+  Typography,
+  Space,
+  Statistic
+} from 'antd';
+import {
+  CheckCircleOutlined,
+  ExclamationCircleOutlined,
+  ClockCircleOutlined,
+  ThunderboltOutlined,
+  DashboardOutlined,
+  SafetyCertificateOutlined
+} from '@ant-design/icons';
+
+const { Text } = Typography;
 
 const PreClosingValidationStep = ({ currentShift, enhancedShiftOpeningCheck, closingData }) => {
-    const getValidationStatus = () => {
-        const issues = [];
-        const warnings = [];
+  const getValidationStatus = () => {
+    const issues = [];
+    const warnings = [];
 
-        // Check if shift has opening readings
-        if (!currentShift?.meterReadings?.length) {
-            issues.push('No opening pump meter readings found');
+    if (!currentShift?.meterReadings?.length) {
+      issues.push('No opening pump readings');
+    }
+
+    if (!currentShift?.dipReadings?.length) {
+      issues.push('No opening tank readings');
+    }
+
+    const shiftStart = new Date(currentShift?.startTime);
+    const now = new Date();
+    const shiftDuration = (now - shiftStart) / (1000 * 60 * 60);
+
+    if (shiftDuration < 1) {
+      warnings.push('Shift < 1 hour');
+    }
+
+    if (shiftDuration > 24) {
+      warnings.push('Shift > 24 hours');
+    }
+
+    return { issues, warnings, isValid: issues.length === 0 };
+  };
+
+  const { issues, warnings, isValid } = getValidationStatus();
+  const shiftDuration = currentShift?.startTime ? 
+    Math.round((new Date() - new Date(currentShift.startTime)) / (1000 * 60 * 60)) : 0;
+
+  return (
+    <div style={{ padding: 16 }}>
+      {/* Header Alert */}
+      <Alert
+        message={isValid ? "Ready to Close Shift" : "Validation Required"}
+        description={isValid ? 
+          "All opening readings verified. Proceed to close shift." : 
+          "Complete opening readings before closing."
         }
+        type={isValid ? "success" : "error"}
+        showIcon
+        icon={isValid ? <CheckCircleOutlined /> : <ExclamationCircleOutlined />}
+        style={{ marginBottom: 16 }}
+      />
 
-        if (!currentShift?.dipReadings?.length) {
-            issues.push('No opening tank dip readings found');
-        }
+      <Row gutter={[12, 12]}>
+        {/* Shift Overview */}
+        <Col xs={24} sm={12} lg={8}>
+          <Card size="small" bodyStyle={{ padding: 12 }}>
+            <Space direction="vertical" style={{ width: '100%' }} size={8}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text strong>Shift #{currentShift?.shiftNumber}</Text>
+                <Tag color="green" size="small">OPEN</Tag>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Text type="secondary">Duration:</Text>
+                <Text strong>{shiftDuration}h</Text>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Text type="secondary">Started:</Text>
+                <Text style={{ fontSize: 12 }}>
+                  {currentShift?.startTime ? new Date(currentShift.startTime).toLocaleTimeString() : 'N/A'}
+                </Text>
+              </div>
+            </Space>
+          </Card>
+        </Col>
 
-        // Check shift timing
-        const shiftStart = new Date(currentShift?.startTime);
-        const now = new Date();
-        const shiftDuration = (now - shiftStart) / (1000 * 60 * 60); // hours
+        {/* Opening Readings Stats */}
+        <Col xs={12} sm={6} lg={4}>
+          <Card size="small" bodyStyle={{ padding: 12, textAlign: 'center' }}>
+            <ThunderboltOutlined style={{ fontSize: 16, color: '#1890ff', marginBottom: 4 }} />
+            <div style={{ fontSize: 18, fontWeight: 'bold', color: '#1890ff' }}>
+              {currentShift?.meterReadings?.length || 0}
+            </div>
+            <Text type="secondary" style={{ fontSize: 12 }}>Pumps</Text>
+          </Card>
+        </Col>
 
-        if (shiftDuration < 1) {
-            warnings.push('Shift duration is less than 1 hour');
-        }
+        <Col xs={12} sm={6} lg={4}>
+          <Card size="small" bodyStyle={{ padding: 12, textAlign: 'center' }}>
+            <DashboardOutlined style={{ fontSize: 16, color: '#52c41a', marginBottom: 4 }} />
+            <div style={{ fontSize: 18, fontWeight: 'bold', color: '#52c41a' }}>
+              {currentShift?.dipReadings?.length || 0}
+            </div>
+            <Text type="secondary" style={{ fontSize: 12 }}>Tanks</Text>
+          </Card>
+        </Col>
 
-        if (shiftDuration > 24) {
-            warnings.push('Shift duration exceeds 24 hours');
-        }
-
-        return { issues, warnings, isValid: issues.length === 0 };
-    };
-
-    const { issues, warnings, isValid } = getValidationStatus();
-
-    return (
-        <div className="space-y-4">
-            {/* Shift Information */}
-            <Card title="Shift Information" className="p-4">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                        <p className="text-sm text-gray-600">Shift Number</p>
-                        <p className="font-semibold">{currentShift?.shiftNumber}</p>
-                    </div>
-                    <div>
-                        <p className="text-sm text-gray-600">Status</p>
-                        <Badge variant="success" size="sm">OPEN</Badge>
-                    </div>
-                    <div>
-                        <p className="text-sm text-gray-600">Start Time</p>
-                        <p className="font-semibold">
-                            {currentShift?.startTime ? new Date(currentShift.startTime).toLocaleString() : 'N/A'}
-                        </p>
-                    </div>
-                    <div>
-                        <p className="text-sm text-gray-600">Duration</p>
-                        <p className="font-semibold">
-                            {currentShift?.startTime ? 
-                                `${Math.round((new Date() - new Date(currentShift.startTime)) / (1000 * 60 * 60))} hours` : 
-                                'N/A'
-                            }
-                        </p>
-                    </div>
+        {/* Cash Float */}
+        {enhancedShiftOpeningCheck?.cashFloat && (
+          <Col xs={24} sm={12} lg={8}>
+            <Card size="small" bodyStyle={{ padding: 12 }}>
+              <Space direction="vertical" style={{ width: '100%' }} size={6}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <SafetyCertificateOutlined style={{ color: '#faad14' }} />
+                  <Text strong>Opening Float</Text>
                 </div>
-            </Card>
-
-            {/* Validation Results */}
-            {isValid ? (
-                <Alert variant="success">
-                    <CheckCircle className="w-4 h-4" />
-                    <div>
-                        <p className="font-medium">Pre-closing validation passed</p>
-                        <p>All required opening readings are available. You can proceed to close the shift.</p>
-                    </div>
-                </Alert>
-            ) : (
-                <Alert variant="error">
-                    <AlertTriangle className="w-4 h-4" />
-                    <div>
-                        <p className="font-medium">Pre-closing validation failed</p>
-                        <p>Please ensure all opening readings are completed before proceeding.</p>
-                    </div>
-                </Alert>
-            )}
-
-            {/* Opening Readings Summary */}
-            <Card title="Opening Readings Summary" className="p-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center gap-3">
-                        <Zap className="w-8 h-8 text-blue-500" />
-                        <div>
-                            <p className="font-medium">Pump Readings</p>
-                            <p className="text-sm text-gray-600">
-                                {currentShift?.meterReadings?.length || 0} pumps with opening readings
-                            </p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <Fuel className="w-8 h-8 text-green-500" />
-                        <div>
-                            <p className="font-medium">Tank Readings</p>
-                            <p className="text-sm text-gray-600">
-                                {currentShift?.dipReadings?.length || 0} tanks with opening dip readings
-                            </p>
-                        </div>
-                    </div>
+                <div style={{ fontSize: 16, fontWeight: 'bold', color: '#faad14' }}>
+                  KES {enhancedShiftOpeningCheck.cashFloat.toFixed(0)}
                 </div>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {enhancedShiftOpeningCheck.verifiedBy ? `Verified by ${enhancedShiftOpeningCheck.verifiedBy}` : 'Not verified'}
+                </Text>
+              </Space>
             </Card>
+          </Col>
+        )}
+      </Row>
 
-            {/* Issues & Warnings */}
-            {(issues.length > 0 || warnings.length > 0) && (
-                <Card title="Validation Details" className="p-4">
-                    {issues.length > 0 && (
-                        <div className="mb-4">
-                            <h4 className="font-medium text-red-700 mb-2 flex items-center gap-2">
-                                <AlertTriangle className="w-4 h-4" />
-                                Critical Issues ({issues.length})
-                            </h4>
-                            <ul className="list-disc list-inside text-sm text-red-600">
-                                {issues.map((issue, index) => (
-                                    <li key={index}>{issue}</li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
-                    
-                    {warnings.length > 0 && (
-                        <div>
-                            <h4 className="font-medium text-orange-700 mb-2 flex items-center gap-2">
-                                <Clock className="w-4 h-4" />
-                                Warnings ({warnings.length})
-                            </h4>
-                            <ul className="list-disc list-inside text-sm text-orange-600">
-                                {warnings.map((warning, index) => (
-                                    <li key={index}>{warning}</li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
-                </Card>
-            )}
-
-            {/* Shift Opening Check */}
-            {enhancedShiftOpeningCheck && (
-                <Card title="Shift Opening Verification" className="p-4">
-                    <div className="space-y-3">
-                        <div className="flex justify-between items-center">
-                            <span className="text-sm text-gray-600">Opening Cash Float</span>
-                            <span className="font-semibold">
-                                KES {enhancedShiftOpeningCheck.cashFloat?.toFixed(2) || '0.00'}
-                            </span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                            <span className="text-sm text-gray-600">Price List</span>
-                            <span className="font-semibold">
-                                {enhancedShiftOpeningCheck.priceList?.name || 'Not set'}
-                            </span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                            <span className="text-sm text-gray-600">Verified By</span>
-                            <span className="font-semibold">
-                                {enhancedShiftOpeningCheck.verifiedBy || 'Not recorded'}
-                            </span>
-                        </div>
+      {/* Issues & Warnings */}
+      {(issues.length > 0 || warnings.length > 0) && (
+        <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
+          {/* Critical Issues */}
+          {issues.length > 0 && (
+            <Col xs={24} md={warnings.length > 0 ? 12 : 24}>
+              <Card 
+                size="small" 
+                title={
+                  <Space size={4}>
+                    <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />
+                    <Text>Critical Issues ({issues.length})</Text>
+                  </Space>
+                }
+                bodyStyle={{ padding: '12px 16px' }}
+              >
+                <Space direction="vertical" style={{ width: '100%' }} size={6}>
+                  {issues.map((issue, index) => (
+                    <div key={index} style={{ 
+                      display: 'flex', 
+                      alignItems: 'flex-start', 
+                      gap: 8,
+                      padding: '4px 0'
+                    }}>
+                      <div style={{
+                        width: 6,
+                        height: 6,
+                        backgroundColor: '#ff4d4f',
+                        borderRadius: '50%',
+                        marginTop: 6,
+                        flexShrink: 0
+                      }} />
+                      <Text style={{ fontSize: 13 }}>{issue}</Text>
                     </div>
-                </Card>
-            )}
+                  ))}
+                </Space>
+              </Card>
+            </Col>
+          )}
+
+          {/* Warnings */}
+          {warnings.length > 0 && (
+            <Col xs={24} md={issues.length > 0 ? 12 : 24}>
+              <Card 
+                size="small" 
+                title={
+                  <Space size={4}>
+                    <ClockCircleOutlined style={{ color: '#faad14' }} />
+                    <Text>Warnings ({warnings.length})</Text>
+                  </Space>
+                }
+                bodyStyle={{ padding: '12px 16px' }}
+              >
+                <Space direction="vertical" style={{ width: '100%' }} size={6}>
+                  {warnings.map((warning, index) => (
+                    <div key={index} style={{ 
+                      display: 'flex', 
+                      alignItems: 'flex-start', 
+                      gap: 8,
+                      padding: '4px 0'
+                    }}>
+                      <div style={{
+                        width: 6,
+                        height: 6,
+                        backgroundColor: '#faad14',
+                        borderRadius: '50%',
+                        marginTop: 6,
+                        flexShrink: 0
+                      }} />
+                      <Text style={{ fontSize: 13 }}>{warning}</Text>
+                    </div>
+                  ))}
+                </Space>
+              </Card>
+            </Col>
+          )}
+        </Row>
+      )}
+
+      {/* Price List Info */}
+      {enhancedShiftOpeningCheck?.priceList && (
+        <Card size="small" style={{ marginTop: 12 }} bodyStyle={{ padding: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text strong>Active Price List</Text>
+            <Tag color="blue" size="small">
+              {enhancedShiftOpeningCheck.priceList.name}
+            </Tag>
+          </div>
+          {enhancedShiftOpeningCheck.priceList.effectiveDate && (
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+              Effective: {new Date(enhancedShiftOpeningCheck.priceList.effectiveDate).toLocaleDateString()}
+            </Text>
+          )}
+        </Card>
+      )}
+
+      {/* Validation Status Summary */}
+      <Card size="small" style={{ marginTop: 12 }} bodyStyle={{ padding: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text strong>Validation Status</Text>
+          <Tag 
+            color={isValid ? 'green' : issues.length > 0 ? 'red' : 'orange'} 
+            icon={isValid ? <CheckCircleOutlined /> : <ExclamationCircleOutlined />}
+          >
+            {isValid ? 'Passed' : issues.length > 0 ? 'Failed' : 'Warning'}
+          </Tag>
         </div>
-    );
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          marginTop: 8,
+          fontSize: 12 
+        }}>
+          <Text type={issues.length > 0 ? 'danger' : 'secondary'}>
+            Issues: {issues.length}
+          </Text>
+          <Text type={warnings.length > 0 ? 'warning' : 'secondary'}>
+            Warnings: {warnings.length}
+          </Text>
+        </div>
+      </Card>
+    </div>
+  );
 };
 
 export default PreClosingValidationStep;

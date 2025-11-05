@@ -1,9 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Plus, Eye, Edit, RefreshCw, Trash2, Mail, Phone, Calendar, MapPin } from 'lucide-react';
-import { Button } from '../../../../components/ui';
+import {
+  Table,
+  Card,
+  Button,
+  Space,
+  Tag,
+  message,
+  Modal,
+  Spin,
+  Alert,
+  Empty,
+  Tooltip,
+  Typography,
+  Row,
+  Col
+} from 'antd';
+import {
+  PlusOutlined,
+  EyeOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  ReloadOutlined,
+  EnvironmentOutlined,
+  CalendarOutlined,
+  ExclamationCircleOutlined
+} from '@ant-design/icons';
+import { Building2, MapPin, Calendar } from 'lucide-react';
 import { useApp } from '../../../../context/AppContext';
 import { stationService } from '../../../../services/stationService/stationService';
 import CreateStationsModal from './CreateStationsModal';
+import dayjs from 'dayjs';
+
+const { Title, Text } = Typography;
+const { confirm } = Modal;
 
 const CompanyStationsManagement = () => {
   const { state, dispatch } = useApp();
@@ -12,6 +41,7 @@ const CompanyStationsManagement = () => {
   const [deletingId, setDeletingId] = useState(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingStation, setEditingStation] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Fetch stations from the backend
   const fetchStations = async () => {
@@ -19,41 +49,41 @@ const CompanyStationsManagement = () => {
       setIsLoading(true);
       setError(null);
       
-      // Determine which API to call based on user role
       let response;
       if (state.currentUser?.role === 'superadmin') {
-        // Superadmin can view all stations
         response = await stationService.getCompanyStations();
       } else {
-        // Regular users only see their company's stations
         response = await stationService.getCompanyStations();
       }
       
-      // Handle the response format
       const stationsData = response.success ? response.data : response;
       
       if (!Array.isArray(stationsData)) {
         throw new Error('Invalid response format from server');
       }
       
-      // Transform the backend response
-      const transformedStations = stationsData.map(station => ({
-        id: station.id,
-        name: station.name,
-        location: station.location,
-        companyId: station.companyId,
-        createdAt: station.createdAt,
-        updatedAt: station.updatedAt,
-        warehousesCount: station.warehouses ? station.warehouses.length : 0,
-        companyName: station.companyId // You might want to fetch company names separately
-      }));
+      // Add validation to ensure all stations have required fields
+      const transformedStations = stationsData
+        .filter(station => station && station.id) // Filter out undefined or stations without id
+        .map(station => ({
+          id: station.id,
+          name: station.name || 'Unnamed Station',
+          location: station.location || 'No location',
+          companyId: station.companyId,
+          createdAt: station.createdAt || new Date().toISOString(),
+          updatedAt: station.updatedAt || new Date().toISOString(),
+          warehousesCount: station.warehouses ? station.warehouses.length : 0,
+          companyName: station.companyId
+        }));
       
-      // Update global state
       dispatch({ type: 'SET_STATIONS', payload: transformedStations });
+      message.success('Stations updated successfully');
       
     } catch (error) {
       console.error('Failed to fetch stations:', error);
-      setError(error.message || 'Failed to fetch stations');
+      const errorMessage = error.message || 'Failed to fetch stations';
+      setError(errorMessage);
+      message.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -65,18 +95,18 @@ const CompanyStationsManagement = () => {
       setDeletingId(stationId);
       const response = await stationService.deleteStation(stationId);
       
-      // Handle the response format
       const isSuccess = response.success;
       
       if (isSuccess) {
-        // Remove station from state
         dispatch({ type: 'DELETE_STATION', payload: stationId });
+        message.success('Station deleted successfully');
+        setRefreshKey(prev => prev + 1);
       } else {
         throw new Error(response.message || 'Failed to delete station');
       }
     } catch (error) {
       console.error('Failed to delete station:', error);
-      alert(error.message || 'Failed to delete station');
+      message.error(error.message || 'Failed to delete station');
     } finally {
       setDeletingId(null);
     }
@@ -84,9 +114,22 @@ const CompanyStationsManagement = () => {
 
   // Confirm before deleting
   const confirmDelete = (station) => {
-    if (window.confirm(`Are you sure you want to delete ${station.name}? This action cannot be undone.`)) {
-      handleDeleteStation(station.id);
+    if (!station?.id) {
+      message.error('Invalid station data');
+      return;
     }
+
+    confirm({
+      title: 'Delete Station',
+      icon: <ExclamationCircleOutlined />,
+      content: `Are you sure you want to delete "${station.name}"? This action cannot be undone.`,
+      okText: 'Yes, Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk() {
+        handleDeleteStation(station.id);
+      }
+    });
   };
 
   // Handle creating a new station
@@ -97,194 +140,261 @@ const CompanyStationsManagement = () => {
 
   // Handle editing a station
   const handleEditStation = (station) => {
+    if (!station?.id) {
+      message.error('Invalid station data');
+      return;
+    }
     setEditingStation(station);
     setIsCreateModalOpen(true);
   };
 
-  // Close the modal
-  const handleCloseModal = () => {
+  // Close the modal and refresh data if needed
+  const handleCloseModal = (shouldRefresh = false) => {
     setIsCreateModalOpen(false);
     setEditingStation(null);
+    if (shouldRefresh) {
+      fetchStations();
+      setRefreshKey(prev => prev + 1);
+    }
+  };
+
+  // Handle successful station creation/update
+  const handleStationSuccess = () => {
+    handleCloseModal(true);
   };
 
   useEffect(() => {
     fetchStations();
-  }, []);
+  }, [refreshKey]);
 
   // Format date for display
   const formatDate = (dateString) => {
-    const options = { year: 'numeric', month: 'short', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString(undefined, options);
+    if (!dateString) return 'Unknown date';
+    return dayjs(dateString).format('MMM D, YYYY');
   };
 
-  // Use serviceStations from state instead of stations
-  const stations = state.serviceStations || [];
+  // Use serviceStations from state with validation
+  const stations = (state.serviceStations || []).filter(station => 
+    station && station.id && typeof station === 'object'
+  );
 
-  console.log("stations be ",stations)
+  console.log("Validated stations:", stations);
+
+  // Table columns configuration
+  const columns = [
+    {
+      title: 'Station',
+      dataIndex: 'name',
+      key: 'name',
+      width: 200,
+      render: (name, record) => {
+        if (!record) return null;
+        
+        return (
+          <Space>
+            <div style={{
+              width: 32,
+              height: 32,
+              backgroundColor: '#e6f7ff',
+              borderRadius: 6,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Building2 style={{ color: '#1890ff' }} />
+            </div>
+            <div>
+              <Text strong>{name || 'Unnamed Station'}</Text>
+              <br />
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                ID: {record.id || 'N/A'}
+              </Text>
+            </div>
+          </Space>
+        );
+      }
+    },
+    {
+      title: 'Location',
+      dataIndex: 'location',
+      key: 'location',
+      width: 200,
+      render: (location, record) => {
+        if (!record) return null;
+        
+        return (
+          location ? (
+            <Space>
+              <EnvironmentOutlined style={{ color: '#8c8c8c' }} />
+              <Text>{location}</Text>
+            </Space>
+          ) : (
+            <Text type="secondary" italic>No location set</Text>
+          )
+        );
+      }
+    },
+    {
+      title: 'Warehouses',
+      dataIndex: 'warehousesCount',
+      key: 'warehousesCount',
+      width: 120,
+      render: (count, record) => {
+        if (!record) return null;
+        
+        return (
+          <Tag color="blue">
+            {count || 0} warehouse{(count || 0) !== 1 ? 's' : ''}
+          </Tag>
+        );
+      }
+    },
+    {
+      title: 'Created Date',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      width: 150,
+      render: (date, record) => {
+        if (!record) return null;
+        
+        return (
+          <Space>
+            <CalendarOutlined style={{ color: '#8c8c8c' }} />
+            <Text>{formatDate(date)}</Text>
+          </Space>
+        );
+      }
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 150,
+      render: (_, record) => {
+        if (!record?.id) return null;
+        
+        return (
+          <Space size="small">
+            <Tooltip title="View Station">
+              <Button 
+                icon={<EyeOutlined />} 
+                size="small"
+                onClick={() => console.log('View station:', record.id)}
+              />
+            </Tooltip>
+            <Tooltip title="Edit Station">
+              <Button 
+                icon={<EditOutlined />} 
+                size="small"
+                onClick={() => handleEditStation(record)}
+              />
+            </Tooltip>
+            <Tooltip title="Delete Station">
+              <Button 
+                icon={<DeleteOutlined />} 
+                size="small"
+                danger
+                loading={deletingId === record.id}
+                onClick={() => confirmDelete(record)}
+              />
+            </Tooltip>
+          </Space>
+        );
+      }
+    }
+  ];
 
   if (isLoading) {
     return (
-      <div className="p-6 flex justify-center items-center h-64">
-        <div className="text-center">
-          <RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-500" />
-          <p className="mt-2 text-gray-600">Loading stations...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-          <div className="flex items-center">
-            <div className="text-red-600">
-              <p className="font-medium">Error loading stations</p>
-              <p className="text-sm">{error}</p>
-            </div>
-          </div>
-          <Button 
-            onClick={fetchStations} 
-            variant="secondary" 
-            size="sm" 
-            className="mt-2"
-          >
-            Try Again
-          </Button>
-        </div>
-        
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h3 className="text-2xl font-bold text-gray-900 mb-2">Station Management</h3>
-            <p className="text-gray-600">Manage all stations in your company</p>
-          </div>
-          <Button onClick={handleCreateStation} icon={Plus} variant="cosmic">
-            Create New Station
-          </Button>
-        </div>
+      <div style={{ 
+        padding: 24, 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        minHeight: 400 
+      }}>
+        <Spin size="large" tip="Loading stations..." />
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h3 className="text-xl font-bold text-gray-900">Station Management</h3>
-          <p className="text-sm text-gray-600">Manage all stations in your company</p>
-        </div>
-        <div className="flex space-x-2">
-          <Button 
-            onClick={fetchStations} 
-            variant="secondary" 
-            icon={RefreshCw}
-            size="sm"
-          >
-            Refresh
-          </Button>
-          <Button onClick={handleCreateStation} icon={Plus} variant="cosmic" size="sm">
-            New Station
-          </Button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="text-left py-3 px-4 font-medium text-gray-700">Station</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-700">Location</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-700">Warehouses</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-700">Created</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {stations.map(station => (
-                <tr key={station.id} className="hover:bg-gray-50">
-                  <td className="py-3 px-4">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center flex-shrink-0">
-                        <Building2 className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-medium text-gray-900 truncate">{station.name}</div>
-                        <div className="text-xs text-gray-500 truncate">{station.id}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    {station.location ? (
-                      <div className="flex items-center text-gray-700 text-sm">
-                        <MapPin className="w-3 h-3 mr-1 text-gray-400" />
-                        <span className="truncate">{station.location}</span>
-                      </div>
-                    ) : (
-                      <span className="text-gray-400 text-sm">No location set</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
-                      {station.warehousesCount} warehouses
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center text-gray-500 text-xs">
-                      <Calendar className="w-3 h-3 mr-1 text-gray-400" />
-                      {formatDate(station.createdAt)}
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex space-x-1">
-                      <Button 
-                        size="xs" 
-                        variant="secondary" 
-                        icon={Eye}
-                        onClick={() => console.log('View station:', station.id)}
-                      />
-                      <Button 
-                        size="xs" 
-                        variant="secondary" 
-                        icon={Edit}
-                        onClick={() => handleEditStation(station)}
-                      />
-                      <Button 
-                        size="xs" 
-                        variant="danger" 
-                        icon={Trash2}
-                        loading={deletingId === station.id}
-                        onClick={() => confirmDelete(station)}
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        
-        {stations.length === 0 && (
-          <div className="text-center py-8">
-            <Building2 className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-            <p className="text-gray-500 text-sm">No stations found</p>
-            <Button 
-              onClick={handleCreateStation} 
-              variant="cosmic" 
-              size="sm"
-              className="mt-3"
-            >
-              Create Your First Station
+    <div style={{ padding: 24 }}>
+      {/* Error Display */}
+      {error && (
+        <Alert
+          message="Error loading stations"
+          description={error}
+          type="error"
+          action={
+            <Button size="small" onClick={fetchStations}>
+              Try Again
             </Button>
-          </div>
-        )}
-      </div>
+          }
+          style={{ marginBottom: 16 }}
+        />
+      )}
+
+      <Card>
+        {/* Header Section */}
+        <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
+          <Col>
+            <Title level={3} style={{ margin: 0 }}>Station Management</Title>
+            <Text type="secondary">Manage all stations in your company</Text>
+          </Col>
+          <Col>
+            <Space>
+              <Button 
+                icon={<ReloadOutlined />}
+                onClick={fetchStations}
+                loading={isLoading}
+              >
+                Refresh
+              </Button>
+              <Button 
+                type="primary" 
+                icon={<PlusOutlined />}
+                onClick={handleCreateStation}
+              >
+                New Station
+              </Button>
+            </Space>
+          </Col>
+        </Row>
+
+        {/* Stations Table */}
+        <Table
+          columns={columns}
+          dataSource={stations.map(station => ({ ...station, key: station.id }))}
+          loading={isLoading}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="No stations found"
+              >
+                <Button type="primary" onClick={handleCreateStation}>
+                  Create Your First Station
+                </Button>
+              </Empty>
+            )
+          }}
+          scroll={{ x: 800 }}
+          pagination={{
+            pageSize: 10,
+            showSizeChanger: true,
+            showTotal: (total, range) => 
+              `${range[0]}-${range[1]} of ${total} stations`
+          }}
+        />
+      </Card>
 
       {/* Create/Edit Station Modal */}
       <CreateStationsModal
         isOpen={isCreateModalOpen}
         onClose={handleCloseModal}
+        onSuccess={handleStationSuccess}
         editingStation={editingStation}
+        refreshStations={fetchStations}
       />
     </div>
   );

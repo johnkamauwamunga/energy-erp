@@ -102,30 +102,49 @@ class ShiftService {
     throw new Error('Validation failed');
   }
 
-  #buildQueryParams(filters = {}) {
-    const params = new URLSearchParams();
+#buildQueryParams(filters = {}) {
+  const params = new URLSearchParams();
+  
+  Object.keys(filters).forEach(key => {
+    const value = filters[key];
     
-    Object.keys(filters).forEach(key => {
-      const value = filters[key];
-      
-      if (value !== undefined && value !== null && value !== '') {
-        if (Array.isArray(value)) {
-          value.forEach(item => params.append(`${key}[]`, item));
-        } 
-        else if (value instanceof Date) {
-          params.append(key, value.toISOString());
-        }
-        else if (typeof value === 'object') {
-          params.append(key, JSON.stringify(value));
-        }
-        else {
-          params.append(key, value);
+    // More robust validation
+    if (value !== undefined && value !== null && value !== '') {
+      // Handle boolean values (includeReadings, includeAssets)
+      if (typeof value === 'boolean') {
+        params.append(key, value.toString());
+      }
+      // Handle numbers (page, limit)
+      else if (typeof value === 'number') {
+        params.append(key, value.toString());
+      }
+      // Handle dates (startDate, endDate)
+      else if (key.includes('Date') && value instanceof Date) {
+        params.append(key, value.toISOString());
+      }
+      // Handle string dates (startDate, endDate as strings)
+      else if (key.includes('Date') && typeof value === 'string') {
+        // Try to parse and format the date
+        try {
+          const date = new Date(value);
+          if (!isNaN(date.getTime())) {
+            params.append(key, date.toISOString());
+          }
+        } catch (e) {
+          console.warn(`⚠️ Invalid date for ${key}:`, value);
         }
       }
-    });
-    
-    return params.toString();
-  }
+      // Handle strings (status)
+      else if (typeof value === 'string') {
+        params.append(key, value);
+      }
+    }
+  });
+  
+  const result = params.toString();
+  console.log('🔍 [QueryParams] Built:', result);
+  return result;
+}
 
   #getCached(key) {
     if (!this.config.cacheEnabled) return null;
@@ -166,30 +185,43 @@ class ShiftService {
    * GET ALL SHIFTS WITH ASSETS (Super Admin only)
    * Global view across all companies with complete asset relationships
    */
-  async getAllShiftsWithAssets(filters = {}, forceRefresh = false) {
-    return this.#retryOperation(async () => {
-      const cacheKey = `all-shifts-assets-${JSON.stringify(filters)}`;
-      
-      if (!forceRefresh) {
-        const cached = this.#getCached(cacheKey);
-        if (cached) return cached;
-      }
+async getAllShiftsWithAssets(filters = {}, forceRefresh = false) {
+  return this.#retryOperation(async () => {
+    // Use the new cleaner method
+    const cleanFilters = this.#cleanFiltersForAllShifts(filters);
+    const cacheKey = `all-shifts-assets-${JSON.stringify(cleanFilters)}`;
+    
+    if (!forceRefresh) {
+      const cached = this.#getCached(cacheKey);
+      if (cached) return cached;
+    }
 
-      this.logger.info('Fetching all shifts with assets across companies', filters);
-      
-      const queryParams = this.#buildQueryParams(filters);
-      const url = `${this.basePath}/with-assets/all${queryParams ? `?${queryParams}` : ''}`;
-      
+    this.logger.info('Fetching all shifts with assets across companies', cleanFilters);
+    
+    const queryParams = this.#buildQueryParams(cleanFilters);
+    const url = `${this.basePath}/with-assets/all${queryParams ? `?${queryParams}` : ''}`;
+    
+    console.log('🔍 [DEBUG] Final URL for getAllShiftsWithAssets:', url);
+    
+    try {
       const response = await apiService.get(url);
       const data = this.#handleResponse(response, 'All shifts with assets fetch');
       
       this.#setCached(cacheKey, data);
       this.logger.info(`Retrieved ${data.data?.shifts?.length || 0} shifts with complete asset relationships`);
       return data;
-    }).catch(error => {
-      throw this.#handleError(error, 'All shifts with assets fetch', 'Failed to fetch all shifts with assets');
-    });
-  }
+    } catch (error) {
+      console.error('❌ [DEBUG] API Call Failed:', {
+        url,
+        filters: cleanFilters,
+        error: error.response?.data
+      });
+      throw error;
+    }
+  }).catch(error => {
+    throw this.#handleError(error, 'All shifts with assets fetch', 'Failed to fetch all shifts with assets');
+  });
+}
 
   /**
    * GET SHIFTS BY STATION WITH ASSETS
@@ -517,6 +549,40 @@ class ShiftService {
     });
   }
 
+  #cleanFiltersForAllShifts(filters) {
+  console.log('🧹 [DEBUG] Original filters for all shifts:', filters);
+  
+  const allowedParams = [
+    'status',
+    'startDate', 
+    'endDate',
+    'page',
+    'limit',
+    'includeReadings',
+    'includeAssets'
+  ];
+  
+  const cleanFilters = {};
+  
+  Object.keys(filters).forEach(key => {
+    // Only include allowed parameters that have values
+    if (allowedParams.includes(key) && 
+        filters[key] !== undefined && 
+        filters[key] !== null && 
+        filters[key] !== '') {
+      cleanFilters[key] = filters[key];
+    }
+  });
+  
+  // Set defaults for required parameters
+  if (!cleanFilters.page) cleanFilters.page = 1;
+  if (!cleanFilters.limit) cleanFilters.limit = 50;
+  if (cleanFilters.includeReadings === undefined) cleanFilters.includeReadings = true;
+  if (cleanFilters.includeAssets === undefined) cleanFilters.includeAssets = true;
+  
+  console.log('✅ [DEBUG] Cleaned filters for all shifts:', cleanFilters);
+  return cleanFilters;
+}
   // ==================== SHIFT OPERATIONS ====================
 
   /**
@@ -921,7 +987,7 @@ class ShiftService {
   /**
    * BUILD SHIFT FILTERS FOR DIFFERENT VISIBILITY LEVELS
    */
-  buildShiftFilters(options = {}) {
+  #buildShiftFilters(options = {}) {
     const {
       // Basic filters
       stationId,

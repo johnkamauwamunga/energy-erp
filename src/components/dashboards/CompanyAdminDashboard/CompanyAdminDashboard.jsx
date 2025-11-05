@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { 
   BarChart3, Building2, MapPin, Clock, Users, FileCheck, Truck, 
-  TrendingUp, FileText, Warehouse, Flame, X, Menu,DollarSign,Coins,
-  User, Settings, LogOut
+  TrendingUp, FileText, Warehouse, Flame, X, Menu, DollarSign, Coins,
+  User, Settings, LogOut, UserCog
 } from 'lucide-react';
 import { Button } from '../../ui';
 import { useApp, useAppDispatch, logout } from '../../../context/AppContext';
@@ -22,6 +22,8 @@ import AnalyticsDemo from '../common/analytics/AnalyticsDemo';
 import CustomDashboard from '../common/analytics/CustomDashboard';
 import FuelPriceManagement from './fuel-price/FuelPriceManagement';
 import SupplierManagement from './supplier/SupplierManagement';
+import SupplierAccountManagement from './supplier/accounts/SupplierAccountManagement';
+import Debug from './Debug';
 
 const CompanyAdminDashboard = () => {
   const { state } = useApp();
@@ -44,7 +46,8 @@ const CompanyAdminDashboard = () => {
     { id: 'staff', label: 'Staff Management', icon: Users },
     { id: 'assets', label: 'Assets', icon: Building2 },
     { id: 'suppliers', label: 'Supplier', icon: Warehouse },
-    {id:  'products_mant', label: 'Product Management', icon: MapPin },
+    { id: 'supplier_account', label: 'Supplier Account', icon: UserCog },
+    { id: 'products_mant', label: 'Product Management', icon: MapPin },
     { id: 'fuel_price', label: 'Fuel Price', icon: Coins },
     { id: 'purchase', label: 'Purchase', icon: TrendingUp },
     { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
@@ -68,6 +71,8 @@ const CompanyAdminDashboard = () => {
         return <FuelPriceManagement />;
       case 'suppliers':
         return <SupplierManagement />;
+      case 'supplier_account':
+        return <SupplierAccountManagement />;
       case 'purchase':
         return <FuelPurchaseManagement />;
       case 'offloads':
@@ -75,7 +80,7 @@ const CompanyAdminDashboard = () => {
       case 'sales':
         return <PlaceholderComponent title="Sales Analytics" icon={TrendingUp} />;
       case 'reports':
-        return <CustomDashboard />;
+        return <Debug />;
       default:
         return <CompanyOverview />;
     }
@@ -99,13 +104,13 @@ const CompanyAdminDashboard = () => {
               <div className="cosmic-gradient p-2 rounded-lg flame-animation">
                 <Flame className="w-6 h-6 text-white" />
               </div>
-              <div>
-                <h1 className="text-lg font-bold text-gray-900">Energy ERP</h1>
-                <p className="text-xs text-gray-500">Company Admin</p>
+              <div className="min-w-0 flex-1">
+                <h1 className="text-lg font-bold text-gray-900 truncate">Energy ERP</h1>
+                <p className="text-xs text-gray-500 truncate">Company Admin</p>
               </div>
             </div>
             <button 
-              className="lg:hidden p-2 rounded-lg hover:bg-gray-100"
+              className="lg:hidden p-2 rounded-lg hover:bg-gray-100 flex-shrink-0"
               onClick={() => setSidebarOpen(false)}
             >
               <X className="w-5 h-5" />
@@ -127,45 +132,50 @@ const CompanyAdminDashboard = () => {
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
-              <item.icon className="w-5 h-5 mr-3" />
-              {item.label}
+              <item.icon className="w-5 h-5 mr-3 flex-shrink-0" />
+              <span className="truncate">{item.label}</span>
             </button>
           ))}
         </nav>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="bg-white shadow-sm border-b px-6 py-4">
+        <header className="bg-white shadow-sm border-b px-4 sm:px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 sm:space-x-4 min-w-0 flex-1">
               <button 
-                className="lg:hidden p-2 rounded-lg hover:bg-gray-100"
+                className="lg:hidden p-2 rounded-lg hover:bg-gray-100 flex-shrink-0"
                 onClick={() => setSidebarOpen(true)}
               >
-                <Menu className="w-6 h-6" />
+                <Menu className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
-              <h2 className="text-2xl font-bold text-gray-900">
-                Welcome, {state.currentUser?.firstName || 'User'}
-              </h2>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 truncate">
+                  Welcome, {state.currentUser?.firstName || 'User'}
+                </h2>
+                <p className="text-xs sm:text-sm text-gray-600 truncate">
+                  Company Administrator
+                </p>
+              </div>
             </div>
             
             {/* User Profile with Dropdown */}
-            <div className="relative">
+            <div className="relative flex-shrink-0 ml-2 sm:ml-4">
               <button 
                 className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100"
                 onClick={() => setShowDropdown(!showDropdown)}
               >
-                <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold text-sm sm:text-base flex-shrink-0">
                   {state.currentUser?.firstName?.charAt(0) || 'U'}
                 </div>
-                <div className="hidden md:block text-left">
-                  <div className="text-sm font-medium text-gray-900">
+                <div className="hidden md:block text-left min-w-0 max-w-[120px]">
+                  <div className="text-sm font-medium text-gray-900 truncate">
                     {state.currentUser?.firstName} {state.currentUser?.lastName}
                   </div>
-                  <div className="text-xs text-gray-500">
-                    Company Administrator
+                  <div className="text-xs text-gray-500 truncate">
+                    Company Admin
                   </div>
                 </div>
               </button>
@@ -177,23 +187,23 @@ const CompanyAdminDashboard = () => {
                     className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                     onClick={() => setShowDropdown(false)}
                   >
-                    <User className="w-4 h-4 mr-2" />
-                    My Profile
+                    <User className="w-4 h-4 mr-2 flex-shrink-0" />
+                    <span className="truncate">My Profile</span>
                   </button>
                   <button 
                     className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                     onClick={() => setShowDropdown(false)}
                   >
-                    <Settings className="w-4 h-4 mr-2" />
-                    Settings
+                    <Settings className="w-4 h-4 mr-2 flex-shrink-0" />
+                    <span className="truncate">Settings</span>
                   </button>
                   <div className="border-t border-gray-100 my-1"></div>
                   <button 
                     onClick={handleLogout}
                     className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
                   >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Logout
+                    <LogOut className="w-4 h-4 mr-2 flex-shrink-0" />
+                    <span className="truncate">Logout</span>
                   </button>
                 </div>
               )}

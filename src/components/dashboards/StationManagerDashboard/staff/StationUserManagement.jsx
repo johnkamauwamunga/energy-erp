@@ -1,158 +1,385 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Card, Tabs, Tab, Badge } from '../../../ui';
-import { User, UserPlus, Link, Shield, Settings } from 'lucide-react';
+import { 
+  Card, 
+  Button, 
+  Table, 
+  Tabs, 
+  Tag,
+  Avatar,
+  Space,
+  message,
+  Tooltip,
+  Spin,
+  Empty,
+  Select,
+  Row,
+  Col
+} from 'antd';
+import { 
+  UserOutlined,
+  PlusOutlined,
+  EditOutlined,
+  SettingOutlined,
+  SafetyCertificateOutlined,
+  ShopOutlined
+} from '@ant-design/icons';
 import { formatDate } from '../../../../utils/helpers';
 import { useApp } from '../../../../context/AppContext';
 import { userService } from '../../../../services/userService/userService';
+import { stationService } from '../../../../services/stationService/stationService';
+
+const { TabPane } = Tabs;
+const { Option } = Select;
 
 const StationUserManagement = () => {
-  const { state, dispatch } = useApp();
-  const [activeTab, setActiveTab] = useState('admins');
-
+  const { state } = useApp();
+  const [activeTab, setActiveTab] = useState('managers');
   const [isLoading, setIsLoading] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
+  const [filteredUsers, setFilteredUsers] = useState([]);
+  const [stations, setStations] = useState([]);
+  const [selectedStation, setSelectedStation] = useState('');
 
-  // Fetch users on component mount
+  // Fetch stations and users on component mount
+  useEffect(() => {
+    fetchStations();
+    fetchUsers();
+  }, []);
+
+  // Filter users when station selection changes
+  useEffect(() => {
+    filterUsersByStation();
+  }, [selectedStation, allUsers, activeTab]);
+
+  const fetchStations = async () => {
+    try {
+      const response = await stationService.getCompanyStations();
+      setStations(response || []);
+    } catch (error) {
+      console.error('❌ Failed to fetch stations:', error);
+      message.error('Failed to load stations');
+    }
+  };
+
   const fetchUsers = async () => {
     setIsLoading(true);
     try {
-      const response = await userService.getUsers({}, dispatch);
+      const response = await userService.getUsers();
       console.log("✅ Users loaded successfully:", response);
-      setAllUsers(response);
+      
+      if (response.success) {
+        setAllUsers(response.data || []);
+      } else {
+        message.error('Failed to fetch users');
+        setAllUsers([]);
+      }
     } catch (error) {
       console.error('❌ Failed to fetch users:', error);
+      message.error('Failed to load users');
+      setAllUsers([]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
+  // Filter users by station and role
+  const filterUsersByStation = () => {
+    let filtered = allUsers;
 
-  // Filter users by role from API response
-  const filterUsersByRole = (role) => {
-    return allUsers.filter(user => user.role === role);
+    // Filter by station if selected
+    if (selectedStation) {
+      filtered = filtered.filter(user => 
+        user.stationAssignments?.some(assignment => 
+          assignment.stationId === selectedStation
+        )
+      );
+    }
+
+    // Filter by role based on active tab
+    const roleMap = {
+      'managers': 'STATION_MANAGER',
+      'supervisors': 'SUPERVISOR',
+      'attendants': 'ATTENDANT'
+    };
+
+    const currentRole = roleMap[activeTab];
+    if (currentRole) {
+      filtered = filtered.filter(user => user.role === currentRole);
+    }
+
+    setFilteredUsers(filtered);
   };
 
-  const staffTypes = {
-    managers: filterUsersByRole('STATION_MANAGER'),
-    supervisors: filterUsersByRole('SUPERVISOR'),
-    attendants: filterUsersByRole('ATTENDANT')
-  };
-  
-  const currentStaff = staffTypes[activeTab] || [];
-
-  const columns = [
-    { header: 'Name', accessor: 'name' },
-    { header: 'Email', accessor: 'email' },
-    { header: 'Phone', accessor: 'phone' },
-    { header: 'Status', accessor: 'status' },
-    { header: 'Joined', accessor: 'joinDate' },
-    ...(activeTab === 'supervisors' ? [{ header: 'Shift', accessor: 'shift' }] : []),
-    { header: 'Station', accessor: 'station' },
-    { header: 'Actions', accessor: 'actions' }
-  ];
-
-  const renderStaffRow = (staff) => {
-    let stationInfo = '';
-    if (staff.stationId) {
-      const station = state.serviceStations?.find(s => s.id === staff.stationId);
-      stationInfo = station ? `${station.code} - ${station.name}` : 'Unknown Station';
+  // Get station name from stationId
+  const getStationName = (user) => {
+    if (!user.stationAssignments || user.stationAssignments.length === 0) {
+      return 'Not assigned';
     }
     
-    return (
-      <tr key={staff.id} className="hover:bg-gray-50">
-        <td className="p-3">{staff.firstName} {staff.lastName}</td>
-        <td className="p-3">{staff.email}</td>
-        <td className="p-3">{staff.phoneNumber || 'N/A'}</td>
-        <td className="p-3">
-          <Badge 
-            variant={staff.status === 'ACTIVE' ? 'success' : 'warning'}
-            className="capitalize"
+    const stationNames = user.stationAssignments
+      .slice(0, 2)
+      .map(assignment => {
+        const station = stations.find(s => s.id === assignment.stationId);
+        return station ? `${station.name}` : 'Unknown Station';
+      })
+      .join(', ');
+    
+    if (user.stationAssignments.length > 2) {
+      return `${stationNames} +${user.stationAssignments.length - 2} more`;
+    }
+    
+    return stationNames;
+  };
+
+  // Get status color
+  const getStatusColor = (status) => {
+    const colorMap = {
+      'ACTIVE': 'green',
+      'INACTIVE': 'red',
+      'SUSPENDED': 'orange',
+      'ON_LEAVE': 'blue'
+    };
+    return colorMap[status] || 'default';
+  };
+
+  // Get role display name
+  const getRoleDisplayName = (role) => {
+    const roleMap = {
+      'STATION_MANAGER': 'Station Manager',
+      'SUPERVISOR': 'Supervisor',
+      'ATTENDANT': 'Attendant',
+      'COMPANY_ADMIN': 'Company Admin',
+      'SUPER_ADMIN': 'Super Admin'
+    };
+    return roleMap[role] || role;
+  };
+
+  // Table columns
+  const columns = [
+    {
+      title: 'User',
+      key: 'name',
+      render: (user) => (
+        <Space>
+          <Avatar 
+            style={{ backgroundColor: '#1890ff' }}
+            icon={<UserOutlined />}
           >
-            {staff.status.toLowerCase()}
-          </Badge>
-        </td>
-        <td className="p-3">{formatDate(staff.createdAt)}</td>
-        {activeTab === 'supervisors' && (
-          <td className="p-3 capitalize">{staff.shift || 'N/A'}</td>
-        )}
-        <td className="p-3">{stationInfo || 'Not assigned'}</td>
-        <td className="p-3">
-          <Button 
-            size="sm" 
-            variant="secondary"
-            onClick={() => console.log('Edit', staff.id)}
-          >
-            Edit
-          </Button>
-        </td>
-      </tr>
-    );
+            {user.firstName?.[0]}{user.lastName?.[0]}
+          </Avatar>
+          <div>
+            <div style={{ fontWeight: 500 }}>
+              {user.firstName} {user.lastName}
+            </div>
+            <div style={{ color: '#666', fontSize: '12px' }}>
+              {getRoleDisplayName(user.role)}
+            </div>
+          </div>
+        </Space>
+      )
+    },
+    {
+      title: 'Email',
+      key: 'email',
+      render: (user) => (
+        <div style={{ fontSize: '14px' }}>{user.email}</div>
+      )
+    },
+    {
+      title: 'Phone',
+      key: 'phone',
+      render: (user) => (
+        <div style={{ fontSize: '14px' }}>
+          {user.phoneNumber || 'N/A'}
+        </div>
+      )
+    },
+    {
+      title: 'Status',
+      key: 'status',
+      render: (user) => (
+        <Tag color={getStatusColor(user.status)}>
+          {user.status}
+        </Tag>
+      )
+    },
+    {
+      title: 'Joined Date',
+      key: 'joinDate',
+      render: (user) => (
+        <div style={{ fontSize: '14px' }}>
+          {formatDate(user.createdAt)}
+        </div>
+      )
+    },
+    {
+      title: 'Station',
+      key: 'station',
+      render: (user) => (
+        <div style={{ maxWidth: '200px' }}>
+          <span style={{ fontSize: '14px' }}>
+            {getStationName(user)}
+          </span>
+        </div>
+      )
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (user) => (
+        <Space>
+          <Tooltip title="Edit User">
+            <Button
+              type="text"
+              icon={<EditOutlined />}
+              onClick={() => console.log('Edit', user.id)}
+            />
+          </Tooltip>
+        </Space>
+      )
+    }
+  ];
+
+  // Add shift column for supervisors
+  const supervisorColumns = [
+    ...columns.slice(0, 5), // All columns except station and actions
+    {
+      title: 'Shift',
+      key: 'shift',
+      render: (user) => (
+        <div style={{ fontSize: '14px' }}>
+          {user.shift || 'N/A'}
+        </div>
+      )
+    },
+    ...columns.slice(5) // Station and actions columns
+  ];
+
+  const getCurrentColumns = () => {
+    return activeTab === 'supervisors' ? supervisorColumns : columns;
+  };
+
+  const getTabItems = () => {
+    const roleCounts = {
+      managers: allUsers.filter(user => user.role === 'STATION_MANAGER').length,
+      supervisors: allUsers.filter(user => user.role === 'SUPERVISOR').length,
+      attendants: allUsers.filter(user => user.role === 'ATTENDANT').length
+    };
+
+    return [
+      {
+        key: 'managers',
+        label: (
+          <span>
+            <SafetyCertificateOutlined />
+            Managers ({roleCounts.managers})
+          </span>
+        )
+      },
+      {
+        key: 'supervisors',
+        label: (
+          <span>
+            <SettingOutlined />
+            Supervisors ({roleCounts.supervisors})
+          </span>
+        )
+      },
+      {
+        key: 'attendants',
+        label: (
+          <span>
+            <UserOutlined />
+            Attendants ({roleCounts.attendants})
+          </span>
+        )
+      }
+    ];
   };
 
   return (
-    <div className="space-y-6">
+    <div style={{ padding: '24px' }}>
       <Card
-        title="Company User Management"
-        actions={
+        title={
+          <Space>
+            <ShopOutlined />
+            Station User Management
+          </Space>
+        }
+        extra={
           <Button 
-            variant="cosmic" 
-            icon={UserPlus}
+            type="primary" 
+            icon={<PlusOutlined />}
           >
             Add New Staff
           </Button>
         }
       >
-        <Tabs value={activeTab} onChange={setActiveTab}>
-          <Tab value="admins" icon={Shield}>
-            Managers ({staffTypes.managers.length})
-          </Tab>
-          <Tab value="supervisors" icon={Settings}>
-            Supervisors ({staffTypes.supervisors.length})
-          </Tab>
-          <Tab value="attendants" icon={User}>
-            Attendants ({staffTypes.attendants.length})
-          </Tab>
-        </Tabs>
-        
-      
-          <div className="mt-6 overflow-x-auto">
-            <div className="bg-white rounded-lg shadow">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr>
-                    {columns.map(column => (
-                      <th 
-                        key={column.accessor} 
-                        className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                      >
-                        {column.header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {currentStaff.map(staff => renderStaffRow(staff))}
-                </tbody>
-              </table>
+        {/* Station Filter */}
+        <Row gutter={16} style={{ marginBottom: '16px' }}>
+          <Col span={8}>
+            <Select
+              value={selectedStation}
+              onChange={setSelectedStation}
+              placeholder="Filter by station"
+              style={{ width: '100%' }}
+              allowClear
+            >
+              {stations.map(station => (
+                <Option key={station.id} value={station.id}>
+                  {station.code} - {station.name}
+                </Option>
+              ))}
+            </Select>
+          </Col>
+        </Row>
+
+        {/* Tabs */}
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={getTabItems()}
+        />
+
+        {/* Users Table */}
+        <div style={{ marginTop: '16px' }}>
+          {isLoading ? (
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'center', 
+              alignItems: 'center', 
+              padding: '48px' 
+            }}>
+              <Spin size="large" />
+              <span style={{ marginLeft: '8px', color: '#666' }}>
+                Loading users...
+              </span>
             </div>
-            {currentStaff.length === 0 && !isLoading && (
-              <div className="text-center py-8 text-gray-500">
-                No {activeTab} found
-              </div>
-            )}
-            {isLoading && (
-              <div className="text-center py-8 text-gray-500">
-                Loading...
-              </div>
-            )}
-          </div>
-      
+          ) : filteredUsers.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={
+                selectedStation 
+                  ? `No ${activeTab} found for selected station`
+                  : `No ${activeTab} found`
+              }
+            />
+          ) : (
+            <Table
+              columns={getCurrentColumns()}
+              dataSource={filteredUsers}
+              rowKey="id"
+              pagination={{
+                pageSize: 10,
+                showSizeChanger: true,
+                showTotal: (total, range) => 
+                  `${range[0]}-${range[1]} of ${total} items`
+              }}
+              scroll={{ x: 800 }}
+            />
+          )}
+        </div>
       </Card>
-      
- 
     </div>
   );
 };

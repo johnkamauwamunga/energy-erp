@@ -1,177 +1,192 @@
-// then show in the list of tanks
-// every tank shoul sho the fule product related to it including the fule type, the subtype and the dip capacity last recorded
-// fuelOfflaod dirrectly affects this bit
-// all pumps dispensing form this tanks shoud be vsit=be when i single out a tannk
-import React, { useState, useEffect } from 'react';
-import { Building2, Plus, Eye, Edit, Fuel, Zap, Package, Link, RefreshCw, AlertCircle, Trash2, Search, Filter } from 'lucide-react';
-import { Button, Input, Select } from '../../../components/ui';
-import { useApp } from '../../../context/AppContext';
-import CreateAssetModal from './CreateAssetModal';
-import AssetAttachmentsTab from '../../features/assets/AssetAttachmentsTab';
-import { assetService } from '../../../services/assetService/assetService';
-import { fuelService} from '../../../services/fuelService/fuelService'
+// components/tank/TankManagement.jsx
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Fuel, 
+  Plus, 
+  Eye, 
+  Search, 
+  Filter, 
+  RefreshCw, 
+  AlertCircle,
+  Droplets,
+  Gauge,
+  Truck,
+  Edit,
+  Check,
+  X
+} from 'lucide-react';
+import { Button, Input, Select, Card, Badge, Modal } from '../../../../ui';
+import { useApp } from '../../../../../context/AppContext';
+import { tankService } from '../../../../../services/tankService/tankService';
+import { fuelService } from '../../../../../services/fuelService/fuelService';
 
-const CompanyAssetManagement = () => {
-  const { state, dispatch } = useApp();
-  const [activeTab, setActiveTab] = useState('all');
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [assetType, setAssetType] = useState('');
+const FuelTankManagement = () => {
+  const { state } = useApp();
+  const [tanks, setTanks] = useState([]);
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [assets, setAssets] = useState([]);
   const [error, setError] = useState('');
-  const [retryCount, setRetryCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [selectedTank, setSelectedTank] = useState(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [selectedProductId, setSelectedProductId] = useState('');
+  const [updating, setUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState('');
 
-  const tabs = [
-    { id: 'all', label: 'All Assets', icon: Package },
-    { id: 'STORAGE_TANK', label: 'Tanks', icon: Fuel },
-    { id: 'FUEL_PUMP', label: 'Pumps', icon: Zap },
-    { id: 'ISLAND', label: 'Islands', icon: Package },
-    { id: 'WAREHOUSE', label: 'Warehouses', icon: Building2 },
-    { id: 'attachments', label: 'Attachments', icon: Link }
-  ];
-
-  // Get assets based on tab selection
-  const getFilteredAssets = () => {
-    if (!assets || !Array.isArray(assets)) return [];
-    
-    let filtered = assets;
-    
-    // Filter by tab
-    if (activeTab !== 'all') {
-      filtered = filtered.filter(asset => asset.type === activeTab);
-    }
-    
-    // Filter by search query
-    if (searchQuery) {
-      filtered = filtered.filter(asset => 
-        asset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        asset.id.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-    
-    // Filter by status
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(asset => asset.status === statusFilter);
-    }
-    
-    return filtered;
-  };
-
-  const filteredAssets = getFilteredAssets();
-
-  // Load assets from backend based on user role
-  const loadAssetsFromBackend = async () => {
+  // Load tanks
+  const loadTanks = async () => {
     try {
       setLoading(true);
       setError('');
       
-      const currentUser = state.currentUser;
-      let assetsData;
-      
-      // Choose the right API endpoint based on user role
-      if (currentUser.role === 'SUPER_ADMIN') {
-        assetsData = await assetService.getAssets();
-      } else if (currentUser.role === 'COMPANY_ADMIN' || currentUser.role === 'COMPANY_MANAGER') {
-        // Make sure companyId exists
-        if (!currentUser.companyId) {
-          throw new Error('Company ID not found for user');
-        }
-        assetsData = await assetService.getCompanyAssets(currentUser.companyId);
-        console.log("Company admin sees ",currentUser.companyId);
-      } else if (currentUser.role === 'STATION_MANAGER' || currentUser.role === 'SUPERVISOR') {
-        // Make sure stationId exists
-        if (!currentUser.stationId) {
-          throw new Error('Station ID not found for user');
-        }
-        assetsData = await assetService.getStationAssets(currentUser.stationId);
-      } else {
-        assetsData = await assetService.getAssets();
+      const filters = {};
+      if (state.currentUser.role === 'STATION_MANAGER' && state.currentStation?.id) {
+        filters.stationId = state.currentStation.id;
       }
       
-      // Set the local assets state
-      setAssets(assetsData || []);
-      
-      // Also update the global state if needed
-      dispatch({ type: 'SET_ASSETS', payload: assetsData || [] });
+      const response = await tankService.getAllTanks(filters);
+      const tanksData = response.data || response || [];
+      setTanks(tanksData);
     } catch (error) {
-      console.error('Failed to load assets:', error);
-      setError(error.message || 'Failed to load assets. Please try again.');
-      setAssets([]);
+      console.error('Failed to load tanks:', error);
+      setError(error.message || 'Failed to load tanks');
+      setTanks([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Load assets on component mount and when retryCount changes
-  useEffect(() => {
-    loadAssetsFromBackend();
-  }, [retryCount]);
-
-  const openCreateModal = (type) => {
-    // Check if user has permission to create assets
-    if (!canCreateAssets()) {
-      setError('You do not have permission to create assets');
-      return;
-    }
-    
-    setAssetType(type);
-    setIsCreateModalOpen(true);
-  };
-
-  const handleAssetCreated = () => {
-    // Refresh assets after creating a new one
-    loadAssetsFromBackend();
-  };
-
-  const handleRetry = () => {
-    setRetryCount(prev => prev + 1);
-  };
-
-  const getStatusBadgeClass = (status) => {
-    switch (status) {
-      case 'ASSIGNED': return 'bg-green-100 text-green-800';
-      case 'OPERATIONAL': return 'bg-blue-100 text-blue-800';
-      case 'MAINTENANCE': return 'bg-yellow-100 text-yellow-800';
-      case 'DECOMMISSIONED': return 'bg-red-100 text-red-800';
-      case 'REGISTERED': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getAssetIcon = (type) => {
-    switch (type) {
-      case 'STORAGE_TANK': return <Fuel className="w-5 h-5 text-blue-500" />;
-      case 'FUEL_PUMP': return <Zap className="w-5 h-5 text-yellow-500" />;
-      case 'ISLAND': return <Package className="w-5 h-5 text-green-500" />;
-      case 'WAREHOUSE': return <Building2 className="w-5 h-5 text-purple-500" />;
-      default: return <Package className="w-5 h-5 text-gray-500" />;
-    }
-  };
-
-  // Safe count function for assets
-  const getAssetCount = (tabId) => {
-    if (!assets || !Array.isArray(assets)) return 0;
-    
-    if (tabId === 'all') return assets.length;
-    return assets.filter(a => a.type === tabId).length;
-  };
-
-  // Check if user can create assets
-  const canCreateAssets = () => {
-    return ['SUPER_ADMIN', 'COMPANY_ADMIN', 'COMPANY_MANAGER'].includes(state.currentUser.role);
-  };
-
-  const handleDeleteAsset = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this asset?')) return;
-    
+  // Load fuel products
+  const loadProducts = async () => {
     try {
-      await assetService.deleteAsset(id);
-      // Refresh the assets list
-      loadAssetsFromBackend();
+      const response = await fuelService.getFuelProducts();
+      console.log("Raw products response:", response);
+      
+      // Handle different response structures
+      let productsData = response;
+      if (!Array.isArray(productsData) && productsData.data) {
+        productsData = productsData.data;
+      }
+      
+      if (Array.isArray(productsData)) {
+        console.log("Loaded products:", productsData.length);
+        setProducts(productsData);
+      } else {
+        console.error("Products data is not an array:", productsData);
+        setProducts([]);
+      }
     } catch (error) {
-      setError(error.message || 'Failed to delete asset');
+      console.error('Failed to load products:', error);
+      setProducts([]);
+    }
+  };
+
+  useEffect(() => {
+    loadTanks();
+    loadProducts();
+  }, [state.currentStation]);
+
+  // Filter tanks based on search and filters
+  const filteredTanks = useMemo(() => {
+    return tanks.filter(tank => {
+      // Search filter
+      const matchesSearch = !searchQuery || 
+        tank?.asset?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        tank?.product?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        tank?.product?.fuelCode?.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      // Status filter
+      const matchesStatus = statusFilter === 'all' || 
+        (statusFilter === 'assigned' && tank.productId) ||
+        (statusFilter === 'unassigned' && !tank.productId);
+      
+      return matchesSearch && matchesStatus;
+    });
+  }, [tanks, searchQuery, statusFilter]);
+
+  const handleViewTank = (tank) => {
+    setSelectedTank(tank);
+    setIsDetailModalOpen(true);
+  };
+
+  const handleUpdateProduct = async (tank) => {
+    setSelectedTank(tank);
+    setSelectedProductId(tank.productId || '');
+    setUpdateError('');
+    
+    // Ensure products are loaded
+    if (products.length === 0) {
+      await loadProducts();
+    }
+    
+    setIsUpdateModalOpen(true);
+  };
+
+  const handleSaveProduct = async () => {
+    if (!selectedTank) return;
+
+    try {
+      setUpdating(true);
+      setUpdateError('');
+
+      await tankService.updateTankProduct(selectedTank.id, {
+        productId: selectedProductId || null
+      });
+
+      // Refresh tanks list
+      await loadTanks();
+      
+      // Close modal
+      setIsUpdateModalOpen(false);
+      setSelectedTank(null);
+      setSelectedProductId('');
+      
+    } catch (error) {
+      console.error('Failed to update tank product:', error);
+      setUpdateError(error.message || 'Failed to update tank product');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleUnassignProduct = async () => {
+    if (!selectedTank) return;
+
+    try {
+      setUpdating(true);
+      setUpdateError('');
+
+      await tankService.unassignProductFromTank(selectedTank.id);
+
+      // Refresh tanks list
+      await loadTanks();
+      
+      // Close modal
+      setIsUpdateModalOpen(false);
+      setSelectedTank(null);
+      setSelectedProductId('');
+      
+    } catch (error) {
+      console.error('Failed to unassign product:', error);
+      setUpdateError(error.message || 'Failed to unassign product');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const getUtilizationColor = (percentage) => {
+    if (percentage < 50) return 'green';
+    if (percentage < 80) return 'yellow';
+    return 'red';
+  };
+
+  const getStatusBadge = (tank) => {
+    if (tank.productId) {
+      return <Badge color="green">Assigned</Badge>;
+    } else {
+      return <Badge color="yellow">Unassigned</Badge>;
     }
   };
 
@@ -180,250 +195,394 @@ const CompanyAssetManagement = () => {
       <div className="p-6 flex justify-center items-center h-64">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading assets...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error && assets.length === 0) {
-    return (
-      <div className="p-6 flex justify-center items-center h-64">
-        <div className="text-center">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Failed to load assets</h3>
-          <p className="text-gray-600 mb-4">{error}</p>
-          <Button onClick={handleRetry} icon={RefreshCw}>
-            Try Again
-          </Button>
+          <p className="mt-4 text-gray-600">Loading tanks...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center">
         <div>
-          <h3 className="text-2xl font-bold text-gray-900 mb-2">Assets Management</h3>
+          <h1 className="text-2xl font-bold text-gray-900">Tank Management</h1>
           <p className="text-gray-600">
-            {state.currentUser.role === 'SUPER_ADMIN' 
-              ? 'All assets across all companies' 
-              : state.currentUser.role === 'COMPANY_ADMIN' || state.currentUser.role === 'COMPANY_MANAGER' 
-                ? 'Your company assets' 
-                : 'Assets assigned to your station'
-            }
+            Manage fuel tanks and assign products
           </p>
         </div>
-        {canCreateAssets() && (
-          <div className="flex space-x-3">
-            <Button 
-              onClick={() => openCreateModal('STORAGE_TANK')} 
-              icon={Fuel} 
-              variant="cosmic"
-              size="sm"
-            >
-              Add Tank
-            </Button>
-            <Button 
-              onClick={() => openCreateModal('FUEL_PUMP')} 
-              icon={Zap} 
-              variant="cosmic"
-              size="sm"
-            >
-              Add Pump
-            </Button>
-            <Button 
-              onClick={() => openCreateModal('ISLAND')} 
-              icon={Package} 
-              variant="cosmic"
-              size="sm"
-            >
-              Add Island
-            </Button>
-            <Button 
-              onClick={() => openCreateModal('WAREHOUSE')} 
-              icon={Building2} 
-              variant="cosmic"
-              size="sm"
-            >
-              Add Warehouse
-            </Button>
-          </div>
-        )}
+        
+        <Button 
+          onClick={loadTanks}
+          icon={RefreshCw}
+          variant="outline"
+        >
+          Refresh
+        </Button>
       </div>
 
+      {/* Error Alert */}
       {error && (
-        <div className="mb-6 p-4 bg-yellow-100 text-yellow-700 rounded-lg flex items-center">
+        <div className="p-4 bg-red-100 text-red-700 rounded-lg flex items-center">
           <AlertCircle className="w-5 h-5 mr-2" />
           {error}
-          <Button onClick={handleRetry} size="sm" variant="secondary" className="ml-auto">
+          <Button onClick={loadTanks} size="sm" variant="secondary" className="ml-auto">
             <RefreshCw className="w-4 h-4 mr-1" />
             Retry
           </Button>
         </div>
       )}
 
-      {/* Search and Filter Bar */}
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex space-x-4 items-center">
-          <div className="relative">
-            <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-            <Input
-              type="text"
-              placeholder="Search assets..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 w-64"
-            />
+      {/* Filters */}
+      <Card className="p-4">
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+              <Input
+                type="text"
+                placeholder="Search tanks or products..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <Filter className="w-5 h-5 text-gray-500" />
-            <Select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-40"
-            >
-              <option value="all">All Statuses</option>
-              <option value="REGISTERED">Registered</option>
-              <option value="OPERATIONAL">Operational</option>
-              <option value="MAINTENANCE">Maintenance</option>
-              <option value="DECOMMISSIONED">Decommissioned</option>
-            </Select>
+          
+          <div className="flex gap-4">
+            <div className="flex items-center space-x-2">
+              <Filter className="w-5 h-5 text-gray-500" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-40 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Tanks</option>
+                <option value="assigned">Assigned</option>
+                <option value="unassigned">Unassigned</option>
+              </select>
+            </div>
           </div>
         </div>
-        <Button onClick={loadAssetsFromBackend} icon={RefreshCw} variant="outline">
-          Refresh
-        </Button>
-      </div>
+      </Card>
 
-      {/* Asset Type Tabs */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="flex space-x-8">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              className={`pb-3 px-1 border-b-2 font-medium text-sm flex items-center ${
-                activeTab === tab.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              <tab.icon className="w-4 h-4 mr-1" />
-              <span className="capitalize">{tab.label}</span>
-              {tab.id !== 'attachments' && (
-                <span className="ml-1">
-                  ({getAssetCount(tab.id)})
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
-      </div>
+      {/* Tanks Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredTanks.length > 0 ? (
+          filteredTanks.map((tank) => {
+            const utilization = tank.capacity ? 
+              ((tank.currentVolume || 0) / tank.capacity * 100) : 0;
 
-      {/* Conditional rendering based on active tab */}
-      {activeTab === 'attachments' ? (
-        <AssetAttachmentsTab />
-      ) : (
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Name</th>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Type</th>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Capacity</th>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Status</th>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Station</th>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Company</th>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {filteredAssets && filteredAssets.length > 0 ? (
-                  filteredAssets.map(asset => (
-                    <tr key={asset.id} className="hover:bg-gray-50">
-                      <td className="py-4 px-6">
-                        <div className="flex items-center">
-                          <div className="mr-3">
-                            {getAssetIcon(asset.type)}
-                          </div>
-                          <div>
-                            <div className="font-medium text-gray-900">{asset.name}</div>
-                            <div className="text-sm text-gray-500">ID: {asset.id.substring(0, 8)}...</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-4 px-6 text-sm text-gray-500">
-                        {asset.type.replace('_', ' ')}
-                      </td>
-                      <td className="py-4 px-6 text-sm text-gray-500">
-                        {asset.tank?.capacity ? `${asset.tank.capacity} L` : 'N/A'}
-                      </td>
-                      <td className="py-4 px-6">
-                        <span className={`px-2 py-1 text-xs rounded-full ${getStatusBadgeClass(asset.status)}`}>
-                          {asset.status}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6 text-sm text-gray-500">
-                        {asset.station 
-                          ? asset.station.name 
-                          : asset.stationId 
-                            ? 'Unknown Station' 
-                            : 'Unassigned'}
-                      </td>
-                      <td className="py-4 px-6 text-sm text-gray-500">
-                        {state.currentUser.role === 'SUPER_ADMIN' && asset.companyId 
-                          ? `Company ${asset.companyId.substring(0, 8)}...` 
-                          : '-'}
-                      </td>
-                      <td className="py-4 px-6">
-                        <div className="flex space-x-2">
-                          <Button size="sm" variant="secondary" icon={Eye}>
-                            View
-                          </Button>
-                          <Button size="sm" variant="secondary" icon={Edit}>
-                            Edit
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            variant="danger" 
-                            icon={Trash2}
-                            onClick={() => handleDeleteAsset(asset.id)}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+            return (
+              <Card key={tank.id} className="p-6 hover:shadow-lg transition-shadow">
+                {/* Header */}
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                      <Fuel className="w-5 h-5 text-blue-500" />
+                      {tank.asset?.name || 'Unnamed Tank'}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      {tank.asset?.station?.name || 'No Station'}
+                    </p>
+                  </div>
+                  {getStatusBadge(tank)}
+                </div>
+
+                {/* Product Info */}
+                {tank.product ? (
+                  <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+                    <div className="flex justify-between items-center">
+                      <span className="font-medium text-blue-900">
+                        {tank.product.name}
+                      </span>
+                      <Badge color="blue">{tank.product.fuelCode}</Badge>
+                    </div>
+                    {tank.product.fuelSubType && (
+                      <p className="text-sm text-blue-700 mt-1">
+                        {tank.product.fuelSubType.category?.name} • {tank.product.fuelSubType.name}
+                      </p>
+                    )}
+                  </div>
                 ) : (
-                  <tr>
-                    <td colSpan={8} className="py-8 px-6 text-center text-gray-500">
-                      {searchQuery || statusFilter !== 'all' 
-                        ? 'No assets match your search criteria.' 
-                        : `No ${activeTab === 'all' ? 'assets' : activeTab.toLowerCase()} found.`
-                      }
-                    </td>
-                  </tr>
+                  <div className="mb-4 p-3 bg-yellow-50 rounded-lg text-center">
+                    <p className="text-yellow-700 text-sm">
+                      No product assigned
+                    </p>
+                  </div>
                 )}
-              </tbody>
-            </table>
+
+                {/* Capacity & Volume */}
+                <div className="space-y-3 mb-4">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600 flex items-center gap-1">
+                      <Droplets className="w-4 h-4" />
+                      Current Volume
+                    </span>
+                    <span className="font-medium">
+                      {tank.currentVolume?.toLocaleString() || 0} L
+                    </span>
+                  </div>
+                  
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Capacity</span>
+                    <span className="font-medium">
+                      {tank.capacity?.toLocaleString() || 0} L
+                    </span>
+                  </div>
+
+                  {/* Utilization Bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Utilization</span>
+                      <span className={`font-medium text-${getUtilizationColor(utilization)}-600`}>
+                        {utilization.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className={`bg-${getUtilizationColor(utilization)}-500 h-2 rounded-full transition-all`}
+                        style={{ width: `${Math.min(utilization, 100)}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex space-x-2">
+                  <Button
+                    onClick={() => handleViewTank(tank)}
+                    icon={Eye}
+                    variant="secondary"
+                    className="flex-1"
+                  >
+                    Details
+                  </Button>
+                  <Button
+                    onClick={() => handleUpdateProduct(tank)}
+                    icon={Edit}
+                    variant="primary"
+                  >
+                    {tank.productId ? 'Change' : 'Assign'}
+                  </Button>
+                </div>
+              </Card>
+            );
+          })
+        ) : (
+          <div className="col-span-full text-center py-12">
+            <Fuel className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              No tanks found
+            </h3>
+            <p className="text-gray-600 mb-4">
+              {searchQuery || statusFilter !== 'all' 
+                ? 'No tanks match your search criteria' 
+                : 'No tanks available in this station'
+              }
+            </p>
           </div>
-        </div>
-      )}
-      
-      {/* Asset Creation Modal */}
-      <CreateAssetModal 
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        assetType={assetType}
-        onAssetCreated={handleAssetCreated}
-        user={state.currentUser}
-      />
+        )}
+      </div>
+
+      {/* Tank Detail Modal */}
+      <Modal
+        isOpen={isDetailModalOpen}
+        onClose={() => setIsDetailModalOpen(false)}
+        title="Tank Details"
+        size="lg"
+      >
+        {selectedTank && (
+          <div className="space-y-6">
+            {/* Tank Basic Info */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700">Tank Name</label>
+                <p className="text-lg font-semibold">{selectedTank.asset?.name}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Station</label>
+                <p className="text-lg">{selectedTank.asset?.station?.name}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Status</label>
+                <div className="mt-1">{getStatusBadge(selectedTank)}</div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Capacity</label>
+                <p className="text-lg">{selectedTank.capacity?.toLocaleString()} L</p>
+              </div>
+            </div>
+
+            {/* Current Product */}
+            <div className="border-t pt-4">
+              <h4 className="font-medium text-gray-900 mb-3">Current Product</h4>
+              {selectedTank.product ? (
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-semibold text-blue-900">{selectedTank.product.name}</p>
+                      <p className="text-blue-700">Code: {selectedTank.product.fuelCode}</p>
+                      {selectedTank.product.fuelSubType && (
+                        <p className="text-blue-600 text-sm">
+                          {selectedTank.product.fuelSubType.category?.name} • {selectedTank.product.fuelSubType.name}
+                        </p>
+                      )}
+                    </div>
+                    <Badge color="blue">Assigned</Badge>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-yellow-50 p-4 rounded-lg text-center">
+                  <p className="text-yellow-700">No product assigned to this tank</p>
+                </div>
+              )}
+            </div>
+
+            {/* Volume Information */}
+            <div className="border-t pt-4">
+              <h4 className="font-medium text-gray-900 mb-3">Volume Information</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Current Volume</label>
+                  <p className="text-xl font-semibold">
+                    {selectedTank.currentVolume?.toLocaleString() || 0} L
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Available Capacity</label>
+                  <p className="text-xl font-semibold text-green-600">
+                    {((selectedTank.capacity || 0) - (selectedTank.currentVolume || 0)).toLocaleString()} L
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="border-t pt-4 flex justify-end space-x-3">
+              <Button
+                onClick={() => {
+                  setIsDetailModalOpen(false);
+                  handleUpdateProduct(selectedTank);
+                }}
+                icon={Edit}
+                variant="primary"
+              >
+                {selectedTank.productId ? 'Change Product' : 'Assign Product'}
+              </Button>
+              <Button
+                onClick={() => setIsDetailModalOpen(false)}
+                variant="secondary"
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Update Product Modal */}
+      <Modal
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
+        title={selectedTank?.productId ? "Update Tank Product" : "Assign Product to Tank"}
+        size="md"
+      >
+        {selectedTank && (
+          <div className="space-y-6">
+            {/* Tank Info */}
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h4 className="font-medium text-gray-900">{selectedTank.asset?.name}</h4>
+              <p className="text-sm text-gray-600">
+                Station: {selectedTank.asset?.station?.name}
+              </p>
+              <p className="text-sm text-gray-600">
+                Capacity: {selectedTank.capacity?.toLocaleString()} L
+              </p>
+              {selectedTank.product && (
+                <p className="text-sm text-blue-600 mt-1">
+                  Current: {selectedTank.product.name} ({selectedTank.product.fuelCode})
+                </p>
+              )}
+            </div>
+
+            {/* Product Selection */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Product
+              </label>
+              
+              {products.length === 0 ? (
+                <div className="text-center py-4 border border-gray-300 rounded-md">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto"></div>
+                  <p className="text-sm text-gray-500 mt-2">Loading products...</p>
+                </div>
+              ) : (
+                <select
+                  value={selectedProductId}
+                  onChange={(e) => setSelectedProductId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">-- Select a product --</option>
+                  {products.map(product => (
+                    <option key={product.id} value={product.id}>
+                      {product.name} {product.fuelCode ? `(${product.fuelCode})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+              
+              <p className="text-sm text-gray-500 mt-1">
+                {products.length} product(s) available
+              </p>
+            </div>
+
+            {/* Error Display */}
+            {updateError && (
+              <div className="p-3 bg-red-100 text-red-700 rounded-lg flex items-center">
+                <AlertCircle className="w-4 h-4 mr-2" />
+                {updateError}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex justify-between pt-4 border-t">
+              <div>
+                {selectedTank.productId && (
+                  <Button
+                    onClick={handleUnassignProduct}
+                    icon={X}
+                    variant="danger"
+                    disabled={updating}
+                  >
+                    Remove Product
+                  </Button>
+                )}
+              </div>
+              
+              <div className="flex space-x-3">
+                <Button
+                  onClick={() => setIsUpdateModalOpen(false)}
+                  variant="secondary"
+                  disabled={updating}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveProduct}
+                  icon={Check}
+                  variant="primary"
+                  disabled={updating || selectedProductId === selectedTank.productId}
+                >
+                  {updating ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
 
-export default CompanyAssetManagement;
+export default FuelTankManagement;

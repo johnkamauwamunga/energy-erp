@@ -14,8 +14,7 @@ export const authService = {
 
       const data = await response.json();
 
-
-      //console.log('Login response data:', data);
+      console.log('🔐 Login API response:', data);
 
       if (!response.ok) {
         throw new Error(data.message || 'Login failed');
@@ -25,8 +24,10 @@ export const authService = {
         throw new Error(data.message || 'Login failed');
       }
 
-      return data.data;
+      // Return the FULL response including success status
+      return data;
     } catch (error) {
+      console.error('❌ Login service error:', error);
       throw new Error(error.message || 'Login failed. Please try again.');
     }
   },
@@ -50,14 +51,10 @@ export const authService = {
     }
   },
 
-  refreshToken: async () => {
+  refreshToken: async (refreshToken) => {
     try {
-      const refreshToken = localStorage.getItem('refreshToken');
+      console.log('🔄 Refresh token API call with:', refreshToken?.substring(0, 20) + '...');
       
-      if (!refreshToken) {
-        throw new Error('No refresh token available');
-      }
-
       const response = await fetch(`${API_BASE_URL}/auth/refresh-token`, {
         method: 'POST',
         headers: {
@@ -68,12 +65,16 @@ export const authService = {
 
       const data = await response.json();
 
+      console.log('🔐 Refresh token API response:', data);
+
       if (!data.success) {
         throw new Error(data.message || 'Token refresh failed');
       }
 
-      return data.data;
+      // Return the FULL response
+      return data;
     } catch (error) {
+      console.error('❌ Refresh token service error:', error);
       throw new Error(error.message || 'Token refresh failed');
     }
   },

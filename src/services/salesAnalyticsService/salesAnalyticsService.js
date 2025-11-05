@@ -89,34 +89,25 @@ export const salesAnalyticsService = {
     logger.info(`Fetching shift sales for shift: ${shiftId}`);
     
     try {
-      debugRequest('GET', `/analytics/sales/shifts/${shiftId}/sales`);
-      const response = await apiService.get(`/analytics/sales/shifts/${shiftId}/sales`);
-      debugResponse('GET', `/analytics/sales/shifts/${shiftId}/sales`, response);
+      debugRequest('GET', `/analytics/shifts/${shiftId}/sales`);
+      const response = await apiService.get(`/analytics/shifts/${shiftId}/sales`);
+      debugResponse('GET', `/analytics/shifts/${shiftId}/sales`, response);
       return handleResponse(response, 'fetching shift sales');
     } catch (error) {
       throw handleError(error, 'fetching shift sales', 'Failed to fetch shift sales');
     }
   },
 
-  // =====================
-  // ISLAND-LEVEL ANALYTICS
-  // =====================
-
-  getIslandSales: async (islandId, period, periodType = 'DAILY') => {
-    logger.info(`Fetching island sales for island: ${islandId}`, { period, periodType });
+  getShiftCollections: async (shiftId) => {
+    logger.info(`Fetching shift collections for shift: ${shiftId}`);
     
     try {
-      const params = new URLSearchParams();
-      if (period) params.append('period', period);
-      params.append('periodType', periodType);
-      
-      const url = `/analytics/sales/islands/${islandId}/sales?${params.toString()}`;
-      debugRequest('GET', url);
-      const response = await apiService.get(url);
-      debugResponse('GET', url, response);
-      return handleResponse(response, 'fetching island sales');
+      debugRequest('GET', `/analytics/shifts/${shiftId}/collections`);
+      const response = await apiService.get(`/analytics/shifts/${shiftId}/collections`);
+      debugResponse('GET', `/analytics/shifts/${shiftId}/collections`, response);
+      return handleResponse(response, 'fetching shift collections');
     } catch (error) {
-      throw handleError(error, 'fetching island sales', 'Failed to fetch island sales');
+      throw handleError(error, 'fetching shift collections', 'Failed to fetch shift collections');
     }
   },
 
@@ -129,16 +120,53 @@ export const salesAnalyticsService = {
     
     try {
       const params = new URLSearchParams();
-      if (period) params.append('period', period);
+      if (period) params.append('period', period.toISOString());
       params.append('periodType', periodType);
       
-      const url = `/analytics/sales/stations/${stationId}/sales?${params.toString()}`;
+      const url = `/analytics/stations/${stationId}/sales?${params.toString()}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
       return handleResponse(response, 'fetching station sales');
     } catch (error) {
       throw handleError(error, 'fetching station sales', 'Failed to fetch station sales');
+    }
+  },
+
+  getStationSalesByRange: async (stationId, startDate, endDate, periodType = 'DAILY') => {
+    logger.info(`Fetching station sales by range for station: ${stationId}`, { startDate, endDate, periodType });
+    
+    try {
+      const params = new URLSearchParams();
+      params.append('startDate', startDate.toISOString());
+      params.append('endDate', endDate.toISOString());
+      params.append('periodType', periodType);
+      
+      const url = `/analytics/stations/${stationId}/sales/range?${params.toString()}`;
+      debugRequest('GET', url);
+      const response = await apiService.get(url);
+      debugResponse('GET', url, response);
+      return handleResponse(response, 'fetching station sales by range');
+    } catch (error) {
+      throw handleError(error, 'fetching station sales by range', 'Failed to fetch station sales by range');
+    }
+  },
+
+  getStationPaymentAnalysis: async (stationId, period, periodType = 'MONTHLY') => {
+    logger.info(`Fetching payment analysis for station: ${stationId}`, { period, periodType });
+    
+    try {
+      const params = new URLSearchParams();
+      if (period) params.append('period', period.toISOString());
+      params.append('periodType', periodType);
+      
+      const url = `/analytics/stations/${stationId}/payment-analysis?${params.toString()}`;
+      debugRequest('GET', url);
+      const response = await apiService.get(url);
+      debugResponse('GET', url, response);
+      return handleResponse(response, 'fetching station payment analysis');
+    } catch (error) {
+      throw handleError(error, 'fetching station payment analysis', 'Failed to fetch payment analysis');
     }
   },
 
@@ -151,10 +179,10 @@ export const salesAnalyticsService = {
     
     try {
       const params = new URLSearchParams();
-      if (period) params.append('period', period);
+      if (period) params.append('period', period.toISOString());
       params.append('periodType', periodType);
       
-      const url = `/analytics/sales/company/sales?${params.toString()}`;
+      const url = `/analytics/company/sales?${params.toString()}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
@@ -164,25 +192,22 @@ export const salesAnalyticsService = {
     }
   },
 
-  // =====================
-  // PRODUCT PERFORMANCE
-  // =====================
-
-  getProductPerformance: async (productId, period, periodType = 'MONTHLY') => {
-    logger.info(`Fetching product performance for product: ${productId}`, { period, periodType });
+  getCompanySalesByRange: async (startDate, endDate, periodType = 'DAILY') => {
+    logger.info('Fetching company sales by range', { startDate, endDate, periodType });
     
     try {
       const params = new URLSearchParams();
-      if (period) params.append('period', period);
+      params.append('startDate', startDate.toISOString());
+      params.append('endDate', endDate.toISOString());
       params.append('periodType', periodType);
       
-      const url = `/analytics/sales/products/${productId}/performance?${params.toString()}`;
+      const url = `/analytics/company/sales/range?${params.toString()}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
-      return handleResponse(response, 'fetching product performance');
+      return handleResponse(response, 'fetching company sales by range');
     } catch (error) {
-      throw handleError(error, 'fetching product performance', 'Failed to fetch product performance');
+      throw handleError(error, 'fetching company sales by range', 'Failed to fetch company sales by range');
     }
   },
 
@@ -197,6 +222,7 @@ export const salesAnalyticsService = {
       const {
         periodType = 'MONTHLY',
         compareWith = 'PREVIOUS_PERIOD',
+        stationId,
         customStart,
         customEnd 
       } = options;
@@ -204,10 +230,11 @@ export const salesAnalyticsService = {
       const params = new URLSearchParams();
       params.append('periodType', periodType);
       params.append('compareWith', compareWith);
-      if (customStart) params.append('customStart', customStart);
-      if (customEnd) params.append('customEnd', customEnd);
+      if (stationId) params.append('stationId', stationId);
+      if (customStart) params.append('customStart', customStart.toISOString());
+      if (customEnd) params.append('customEnd', customEnd.toISOString());
       
-      const url = `/analytics/sales/sales/comparison?${params.toString()}`;
+      const url = `/analytics/sales/comparison?${params.toString()}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
@@ -227,20 +254,84 @@ export const salesAnalyticsService = {
     try {
       const {
         periodType = 'MONTHLY',
-        dataPoints = 12 
+        dataPoints = 12,
+        stationId
       } = options;
 
       const params = new URLSearchParams();
       params.append('periodType', periodType);
       params.append('dataPoints', dataPoints.toString());
+      if (stationId) params.append('stationId', stationId);
       
-      const url = `/analytics/sales/sales/trends?${params.toString()}`;
+      const url = `/analytics/sales/trends?${params.toString()}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
       return handleResponse(response, 'fetching sales trends');
     } catch (error) {
       throw handleError(error, 'fetching sales trends', 'Failed to fetch sales trends');
+    }
+  },
+
+  // =====================
+  // PRODUCT PERFORMANCE
+  // =====================
+
+  getProductPerformance: async (productId, period, periodType = 'MONTHLY') => {
+    logger.info(`Fetching product performance for product: ${productId}`, { period, periodType });
+    
+    try {
+      const params = new URLSearchParams();
+      if (period) params.append('period', period.toISOString());
+      params.append('periodType', periodType);
+      
+      const url = `/analytics/products/${productId}/performance?${params.toString()}`;
+      debugRequest('GET', url);
+      const response = await apiService.get(url);
+      debugResponse('GET', url, response);
+      return handleResponse(response, 'fetching product performance');
+    } catch (error) {
+      throw handleError(error, 'fetching product performance', 'Failed to fetch product performance');
+    }
+  },
+
+  getProductPerformanceByStation: async (productId, period, periodType = 'MONTHLY') => {
+    logger.info(`Fetching product performance by station for product: ${productId}`, { period, periodType });
+    
+    try {
+      const params = new URLSearchParams();
+      if (period) params.append('period', period.toISOString());
+      params.append('periodType', periodType);
+      
+      const url = `/analytics/products/${productId}/performance/stations?${params.toString()}`;
+      debugRequest('GET', url);
+      const response = await apiService.get(url);
+      debugResponse('GET', url, response);
+      return handleResponse(response, 'fetching product performance by station');
+    } catch (error) {
+      throw handleError(error, 'fetching product performance by station', 'Failed to fetch product performance by station');
+    }
+  },
+
+  // =====================
+  // PAYMENT ANALYSIS
+  // =====================
+
+  getPaymentAnalysis: async (period, periodType = 'MONTHLY') => {
+    logger.info('Fetching payment analysis', { period, periodType });
+    
+    try {
+      const params = new URLSearchParams();
+      if (period) params.append('period', period.toISOString());
+      params.append('periodType', periodType);
+      
+      const url = `/analytics/analysis/payment-methods?${params.toString()}`;
+      debugRequest('GET', url);
+      const response = await apiService.get(url);
+      debugResponse('GET', url, response);
+      return handleResponse(response, 'fetching payment analysis');
+    } catch (error) {
+      throw handleError(error, 'fetching payment analysis', 'Failed to fetch payment analysis');
     }
   },
 
@@ -262,9 +353,27 @@ export const salesAnalyticsService = {
       }
     }
 
-    const validPeriodTypes = ['HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY'];
+    const validPeriodTypes = ['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY'];
     if (periodType && !validPeriodTypes.includes(periodType)) {
       errors.push(`Invalid period type. Must be one of: ${validPeriodTypes.join(', ')}`);
+    }
+
+    return errors;
+  },
+
+  validateDateRange: (startDate, endDate) => {
+    const errors = [];
+
+    if (!startDate) {
+      errors.push('Start date is required');
+    }
+
+    if (!endDate) {
+      errors.push('End date is required');
+    }
+
+    if (startDate && endDate && startDate > endDate) {
+      errors.push('Start date must be before end date');
     }
 
     return errors;
@@ -280,6 +389,9 @@ export const salesAnalyticsService = {
     return {
       ...analyticsData,
       formattedTotalSales: this.formatCurrency(analyticsData.totalSales),
+      formattedTotalRevenue: this.formatCurrency(analyticsData.totalRevenue),
+      formattedTotalCollections: this.formatCurrency(analyticsData.totalCollections),
+      formattedVariance: this.formatCurrency(analyticsData.variance),
       formattedGrowthRate: analyticsData.growthRate ? `${analyticsData.growthRate.toFixed(2)}%` : '0%',
       growthIndicator: analyticsData.growthRate > 0 ? 'positive' : analyticsData.growthRate < 0 ? 'negative' : 'neutral',
       formattedPeriod: this.formatAnalyticsPeriod(analyticsData.period, analyticsData.periodType),
@@ -293,14 +405,6 @@ export const salesAnalyticsService = {
     const periodDate = new Date(period);
     
     switch (periodType) {
-      case 'HOURLY':
-        return periodDate.toLocaleString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        });
-      
       case 'DAILY':
         return periodDate.toLocaleDateString('en-US', {
           weekday: 'short',
@@ -335,17 +439,25 @@ export const salesAnalyticsService = {
     }
   },
 
-  formatCurrency: (amount) => {
+  formatCurrency: (amount, currency = 'USD') => {
+    if (amount === null || amount === undefined) return 'N/A';
+    
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD',
+      currency: currency,
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
     }).format(amount || 0);
   },
 
   formatPercentage: (value) => {
-    return `${value?.toFixed(2) || '0.00'}%`;
+    if (value === null || value === undefined) return '0.00%';
+    return `${value.toFixed(2)}%`;
+  },
+
+  formatNumber: (value) => {
+    if (value === null || value === undefined) return '0';
+    return new Intl.NumberFormat('en-US').format(value);
   },
 
   formatDateTime: (dateTime) => {
@@ -363,19 +475,19 @@ export const salesAnalyticsService = {
   calculatePerformanceMetrics: (currentData, previousData) => {
     if (!currentData || !previousData) return null;
     
-    const growthRate = previousData.totalSales > 0 
-      ? ((currentData.totalSales - previousData.totalSales) / previousData.totalSales) * 100 
+    const revenueGrowth = previousData.totalRevenue > 0 
+      ? ((currentData.totalRevenue - previousData.totalRevenue) / previousData.totalRevenue) * 100 
       : 0;
     
-    const averageTransactionChange = previousData.avgTransactionValue > 0
-      ? ((currentData.avgTransactionValue - previousData.avgTransactionValue) / previousData.avgTransactionValue) * 100
+    const volumeGrowth = previousData.totalQuantity > 0
+      ? ((currentData.totalQuantity - previousData.totalQuantity) / previousData.totalQuantity) * 100
       : 0;
     
     return {
-      growthRate,
-      averageTransactionChange,
-      absoluteGrowth: currentData.totalSales - previousData.totalSales,
-      performance: growthRate > 5 ? 'EXCELLENT' : growthRate > 0 ? 'GOOD' : growthRate > -5 ? 'STABLE' : 'POOR'
+      revenueGrowth,
+      volumeGrowth,
+      absoluteGrowth: currentData.totalRevenue - previousData.totalRevenue,
+      performance: revenueGrowth > 5 ? 'EXCELLENT' : revenueGrowth > 0 ? 'GOOD' : revenueGrowth > -5 ? 'STABLE' : 'POOR'
     };
   },
 
@@ -384,31 +496,34 @@ export const salesAnalyticsService = {
   // =====================
 
   prepareSalesTrendChartData: (trendsData) => {
-    if (!trendsData || !Array.isArray(trendsData)) return null;
+    if (!trendsData || !Array.isArray(trendsData.trends)) return null;
     
     return {
-      labels: trendsData.map(trend => this.formatAnalyticsPeriod(trend.period, 'MONTHLY')),
+      labels: trendsData.trends.map(trend => this.formatAnalyticsPeriod(trend.period, 'MONTHLY')),
       datasets: [
         {
           label: 'Total Sales',
-          data: trendsData.map(trend => trend.totalSales),
+          data: trendsData.trends.map(trend => trend.totalSales || trend.totalRevenue),
           borderColor: 'rgb(75, 192, 192)',
           backgroundColor: 'rgba(75, 192, 192, 0.2)',
-          tension: 0.1
+          tension: 0.1,
+          fill: true
         }
       ]
     };
   },
 
   prepareProductPerformanceChartData: (productData) => {
-    if (!productData || !Array.isArray(productData)) return null;
+    if (!productData || !Array.isArray(productData.productBreakdown)) return null;
+    
+    const topProducts = productData.productBreakdown.slice(0, 5);
     
     return {
-      labels: productData.map(product => product.productName),
+      labels: topProducts.map(product => product.productName),
       datasets: [
         {
           label: 'Revenue',
-          data: productData.map(product => product.totalRevenue),
+          data: topProducts.map(product => product.totalRevenue),
           backgroundColor: [
             'rgba(255, 99, 132, 0.8)',
             'rgba(54, 162, 235, 0.8)',
@@ -423,51 +538,85 @@ export const salesAnalyticsService = {
             'rgba(75, 192, 192, 1)',
             'rgba(153, 102, 255, 1)'
           ],
-          borderWidth: 1
+          borderWidth: 2
         }
       ]
     };
   },
 
-  preparePaymentMethodChartData: (paymentBreakdown) => {
-    if (!paymentBreakdown) return null;
+  preparePaymentMethodChartData: (paymentData) => {
+    if (!paymentData || !paymentData.summary) return null;
     
-    const methods = ['cash', 'mobileMoney', 'visa', 'mastercard', 'debt', 'other'];
-    const labels = ['Cash', 'Mobile Money', 'Visa', 'Mastercard', 'Debt', 'Other'];
-    const colors = [
-      'rgba(75, 192, 192, 0.8)',
-      'rgba(54, 162, 235, 0.8)',
-      'rgba(255, 206, 86, 0.8)',
-      'rgba(255, 99, 132, 0.8)',
-      'rgba(153, 102, 255, 0.8)',
-      'rgba(201, 203, 207, 0.8)'
-    ];
+    const { summary } = paymentData;
     
     return {
-      labels,
+      labels: ['Cash', 'Electronic', 'Debt', 'Other'],
       datasets: [
         {
-          data: methods.map(method => paymentBreakdown[`${method}Amount`] || 0),
-          backgroundColor: colors,
-          borderColor: colors.map(color => color.replace('0.8', '1')),
-          borderWidth: 1
+          data: [
+            summary.cash.amount,
+            summary.electronic.amount,
+            summary.debt.amount,
+            summary.other.amount
+          ],
+          backgroundColor: [
+            'rgba(75, 192, 192, 0.8)',    // Cash - Teal
+            'rgba(54, 162, 235, 0.8)',    // Electronic - Blue
+            'rgba(255, 159, 64, 0.8)',    // Debt - Orange
+            'rgba(201, 203, 207, 0.8)'    // Other - Gray
+          ],
+          borderColor: [
+            'rgba(75, 192, 192, 1)',
+            'rgba(54, 162, 235, 1)',
+            'rgba(255, 159, 64, 1)',
+            'rgba(201, 203, 207, 1)'
+          ],
+          borderWidth: 2
         }
       ]
     };
   },
 
-  preparePeakHoursChartData: (peakHoursData) => {
-    if (!peakHoursData || !Array.isArray(peakHoursData)) return null;
+  prepareStationComparisonChartData: (comparisonData) => {
+    if (!comparisonData || !Array.isArray(comparisonData.stationPerformance)) return null;
+    
+    const topStations = comparisonData.stationPerformance.slice(0, 6);
     
     return {
-      labels: peakHoursData.map(hour => hour.hour),
+      labels: topStations.map(station => station.stationName),
       datasets: [
         {
-          label: 'Sales by Hour',
-          data: peakHoursData.map(hour => hour.sales),
+          label: 'Total Revenue',
+          data: topStations.map(station => station.totalRevenue),
           backgroundColor: 'rgba(54, 162, 235, 0.8)',
           borderColor: 'rgba(54, 162, 235, 1)',
           borderWidth: 1
+        }
+      ]
+    };
+  },
+
+  prepareGrowthComparisonChartData: (comparisonData) => {
+    if (!comparisonData || !comparisonData.currentPeriod || !comparisonData.previousPeriod) return null;
+    
+    return {
+      labels: ['Previous Period', 'Current Period'],
+      datasets: [
+        {
+          label: 'Total Revenue',
+          data: [
+            comparisonData.previousPeriod.totalRevenue,
+            comparisonData.currentPeriod.totalRevenue
+          ],
+          backgroundColor: [
+            'rgba(201, 203, 207, 0.8)',
+            'rgba(75, 192, 192, 0.8)'
+          ],
+          borderColor: [
+            'rgba(201, 203, 207, 1)',
+            'rgba(75, 192, 192, 1)'
+          ],
+          borderWidth: 2
         }
       ]
     };
@@ -484,7 +633,11 @@ export const salesAnalyticsService = {
       const params = new URLSearchParams();
       Object.keys(options).forEach(key => {
         if (options[key] !== undefined && options[key] !== null && options[key] !== '') {
-          params.append(key, options[key]);
+          if (options[key] instanceof Date) {
+            params.append(key, options[key].toISOString());
+          } else {
+            params.append(key, options[key]);
+          }
         }
       });
       
@@ -540,27 +693,53 @@ export const salesAnalyticsService = {
   },
 
   // =====================
-  // REAL-TIME ANALYTICS
+  // HEALTH CHECK
   // =====================
 
-  subscribeToRealTimeSales: (stationId, callback) => {
-    // This would typically use WebSockets or Server-Sent Events
-    // For now, we'll simulate with setInterval
-    logger.info(`Subscribing to real-time sales for station: ${stationId}`);
+  getAnalyticsHealth: async () => {
+    logger.info('Checking analytics service health');
     
-    const interval = setInterval(async () => {
-      try {
-        const salesData = await this.getStationSales(stationId, new Date(), 'HOURLY');
-        callback(salesData);
-      } catch (error) {
-        logger.error('Error in real-time sales subscription:', error);
+    try {
+      const response = await apiService.get('/analytics/health');
+      return handleResponse(response, 'health check');
+    } catch (error) {
+      throw handleError(error, 'health check', 'Analytics service is unavailable');
+    }
+  },
+
+  // =====================
+  // CACHING UTILITIES
+  // =====================
+
+  cache: {
+    set: (key, data, ttl = 5 * 60 * 1000) => { // 5 minutes default
+      const item = {
+        data,
+        expiry: Date.now() + ttl
+      };
+      localStorage.setItem(`analytics_cache_${key}`, JSON.stringify(item));
+    },
+
+    get: (key) => {
+      const itemStr = localStorage.getItem(`analytics_cache_${key}`);
+      if (!itemStr) return null;
+
+      const item = JSON.parse(itemStr);
+      if (Date.now() > item.expiry) {
+        localStorage.removeItem(`analytics_cache_${key}`);
+        return null;
       }
-    }, 30000); // Update every 30 seconds
-    
-    return () => {
-      clearInterval(interval);
-      logger.info(`Unsubscribed from real-time sales for station: ${stationId}`);
-    };
+
+      return item.data;
+    },
+
+    clear: (pattern = 'analytics_cache_') => {
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith(pattern)) {
+          localStorage.removeItem(key);
+        }
+      });
+    }
   }
 };
 

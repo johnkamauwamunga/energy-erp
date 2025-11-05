@@ -11,29 +11,43 @@ export const useAuth = () => {
     const initializeAuth = () => {
       try {
         const storedAuthData = localStorage.getItem('authData');
-       
-
         const accessToken = localStorage.getItem('accessToken');
         const refreshToken = localStorage.getItem('refreshToken');
-     
-        if (storedAuthData && accessToken) {
+
+        console.log('🔄 Auth initialization check:', {
+          hasStoredAuthData: !!storedAuthData,
+          hasAccessToken: !!accessToken,
+          hasRefreshToken: !!refreshToken
+        });
+
+        if (storedAuthData && accessToken && refreshToken) {
           const authData = JSON.parse(storedAuthData);
           
-          dispatch({ 
-            type: 'SET_AUTH_DATA', 
-            payload: {
-              ...authData,
-              accessToken,
-              refreshToken
-            }
-          });
+          console.log('📦 Parsed auth data from localStorage:', authData);
+          
+          // Check if token is still valid
+          if (isTokenValid(accessToken)) {
+            console.log('✅ Token valid, setting auth state with user:', authData.user?.email);
+            dispatch({ 
+              type: 'SET_AUTH_DATA', 
+              payload: {
+                user: authData.user,
+                company: authData.company,
+                station: authData.station,
+                permissions: authData.permissions,
+                accessToken: accessToken,
+                refreshToken: refreshToken
+              }
+            });
+          } else {
+            console.log('⚠️ Token expired on initialization');
+          }
+        } else {
+          console.log('❌ Missing auth data in localStorage');
         }
       } catch (error) {
-        console.error('Failed to initialize auth state', error);
-        // Clear corrupted data
-        localStorage.removeItem('authData');
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
+        console.error('❌ Failed to initialize auth state:', error);
+        clearAuthData();
       } finally {
         setIsLoading(false);
       }
@@ -42,46 +56,98 @@ export const useAuth = () => {
     initializeAuth();
   }, [dispatch]);
 
+  // Helper function to update auth data
+  const updateAuthData = (responseData) => {
+    console.log('💾 Updating auth data with full response:', responseData);
+    
+    // Extract the actual data from response
+    const authData = {
+      user: responseData.user,
+      company: responseData.company,
+      station: responseData.station,
+      permissions: responseData.permissions,
+      accessToken: responseData.accessToken,
+      refreshToken: responseData.refreshToken
+    };
+
+    console.log('📦 Extracted auth data:', {
+      user: authData.user,
+      company: authData.company,
+      accessToken: !!authData.accessToken,
+      refreshToken: !!authData.refreshToken
+    });
+
+    // Store in localStorage - make sure we're storing the actual user object
+    const storageData = {
+      user: authData.user,
+      company: authData.company,
+      station: authData.station,
+      permissions: authData.permissions
+    };
+
+    localStorage.setItem('authData', JSON.stringify(storageData));
+    localStorage.setItem('accessToken', authData.accessToken);
+    localStorage.setItem('refreshToken', authData.refreshToken);
+
+    console.log('✅ Auth data stored in localStorage, user:', storageData.user?.email);
+
+    // Update context with the actual data
+    dispatch({ 
+      type: 'SET_AUTH_DATA', 
+      payload: authData 
+    });
+
+    console.log('🔄 Dispatch completed, context should be updated');
+  };
+
+  const clearAuthData = () => {
+    localStorage.removeItem('authData');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    dispatch({ type: 'LOGOUT' });
+  };
+
+  const isTokenValid = useCallback((token) => {
+    if (!token) return false;
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const currentTime = Date.now() / 1000;
+      return payload.exp > currentTime + 30;
+    } catch (error) {
+      return false;
+    }
+  }, []);
+
   const login = useCallback(async (email, password) => {
     try {
+      console.log('🔄 Starting login process for:', email);
       const response = await authService.login(email, password);
       
-      console.log('Login successful, response:', response);
-      // Store all authentication data
-      const authData = {
-        user: response.user,
-        company: response.company,
-        station: response.station,
-        permissions: response.permissions,
-        accessToken: response.accessToken,
-        refreshToken: response.refreshToken
-      };
-
-      // Store in localStorage
-      localStorage.setItem('authData', JSON.stringify({
-        user: response.user,
-        company: response.company,
-        station: response.station,
-        permissions: response.permissions
-      }));
-      localStorage.setItem('accessToken', response.accessToken);
-      localStorage.setItem('refreshToken', response.refreshToken);
+      console.log('📨 Login service response:', response);
       
-      // Update context
-      dispatch({ 
-        type: 'SET_AUTH_DATA', 
-        payload: authData 
-      });
-      
-      return { success: true, data: response };
+      if (response.success && response.data) {
+        console.log('✅ Login successful, updating auth data...');
+        updateAuthData(response.data);
+        
+        return { 
+          success: true, 
+          data: response.data,
+          message: response.message 
+        };
+      } else {
+        return { 
+          success: false, 
+          message: response.message || 'Login failed' 
+        };
+      }
     } catch (error) {
-      console.error('Login failed:', error);
+      console.error('❌ Login error:', error);
       return { 
         success: false, 
         message: error.message || 'Login failed' 
       };
     }
-  }, [dispatch]);
+  }, []);
 
   const logout = useCallback(async () => {
     try {
@@ -89,13 +155,9 @@ export const useAuth = () => {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      // Clear all stored data regardless of server response
-      localStorage.removeItem('authData');
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      dispatch({ type: 'LOGOUT' });
+      clearAuthData();
     }
-  }, [dispatch]);
+  }, []);
 
   const refreshToken = useCallback(async () => {
     try {
@@ -106,78 +168,51 @@ export const useAuth = () => {
       
       const response = await authService.refreshToken(refreshToken);
       
-      // Update stored tokens
-      localStorage.setItem('accessToken', response.accessToken);
-      localStorage.setItem('refreshToken', response.refreshToken);
-      
-      // Update auth data with new user info if needed
-      const existingAuthData = JSON.parse(localStorage.getItem('authData') || '{}');
-      const updatedAuthData = {
-        ...existingAuthData,
-        accessToken: response.accessToken,
-        refreshToken: response.refreshToken,
-        user: response.user || existingAuthData.user,
-        station: response.station || existingAuthData.station
-      };
-      
-      localStorage.setItem('authData', JSON.stringify(updatedAuthData));
-      dispatch({ 
-        type: 'SET_AUTH_DATA', 
-        payload: updatedAuthData 
-      });
-      
-      return { success: true, data: response };
+      if (response.success && response.data) {
+        updateAuthData(response.data);
+        return { success: true, data: response.data };
+      } else {
+        throw new Error(response.message || 'Refresh failed');
+      }
     } catch (error) {
-      console.error('Token refresh failed:', error);
-      // If refresh fails, logout the user
+      console.error('❌ Refresh failed:', error);
       logout();
       return { 
         success: false, 
-        message: error.message || 'Token refresh failed' 
+        message: error.message 
       };
     }
-  }, [dispatch, logout]);
+  }, [logout]);
 
   const resetPassword = useCallback(async (email, newPassword) => {
     try {
       const response = await authService.resetPassword(email, newPassword);
       return { success: true, data: response };
     } catch (error) {
-      console.error('Password reset failed:', error);
       return { 
         success: false, 
-        message: error.message || 'Password reset failed' 
+        message: error.message 
       };
     }
   }, []);
 
-  // Check if token is expired or about to expire
-  const isTokenValid = useCallback(() => {
+  const checkTokenValidity = useCallback(() => {
     const token = localStorage.getItem('accessToken');
-    if (!token) return false;
+    return isTokenValid(token);
+  }, [isTokenValid]);
 
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const currentTime = Date.now() / 1000;
-      // Consider token valid if it expires in more than 30 seconds
-      return payload.exp > currentTime + 30;
-    } catch (error) {
-      console.error('Token validation error:', error);
-      return false;
-    }
-  }, []);
-
+  // FIXED: Use the correct state property names that match your reducer
   return { 
     login, 
     logout, 
     refreshToken, 
     resetPassword,
-    isTokenValid,
+    isTokenValid: checkTokenValidity,
     isLoading,
-    isAuthenticated: !!state.accessToken && isTokenValid(),
-   user: state.currentUser, 
-  company: state.currentCompany,    // 👈
-  station: state.currentStation,
+    isAuthenticated: !!state.accessToken && checkTokenValidity(),
+    user: state.currentUser,        // ← CHANGED: state.currentUser
+    company: state.currentCompany,  // ← CHANGED: state.currentCompany
+    station: state.currentStation,  // ← CHANGED: state.currentStation
     permissions: state.permissions
   };
 };
