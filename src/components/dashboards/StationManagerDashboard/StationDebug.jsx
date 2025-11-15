@@ -1,191 +1,404 @@
-import React, { useEffect, useState } from 'react'
-import { stationService } from '../../../services/stationService/stationService'
-import { userService } from '../../../services/userService/userService'
-import { supplierService } from '../../../services/supplierService/supplierService'
-import { debtorService } from '../../../services/debtorService/debtorService'
-import { purchaseService } from '../../../services/purchaseService/purchaseService'
-import { fuelService } from '../../../services/fuelService/fuelService'
-import { assetService } from '../../../services/assetService/assetService'
-import { fuelOffloadService } from '../../../services/offloadService/offloadService'
-import { useApp } from '../../../context/AppContext'
-import { useShiftAssets } from '../common/shift/shiftClose/hooks/useShiftAssets'
+import React, { useEffect, useState } from 'react';
+import { shiftService } from '../../../services/shiftService/shiftService';
+import { stationService } from '../../../services/stationService/stationService';
+import { useApp } from '../../../context/AppContext';
 
 const StationDebug = () => {
-  const { state } = useApp()
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [stationData, setStationData] = useState({
-    assets: [],
-    debtors: [],
-    offloads: [],
-    users: [],
-    purchases: []
-  })
+  const { state } = useApp();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [stations, setStations] = useState([]);
+  const [selectedStation, setSelectedStation] = useState('');
+  const [selectedShift, setSelectedShift] = useState('');
+  const [debugData, setDebugData] = useState({
+    stationPumps: null,
+    stationTanks: null,
+    openShift: null,
+    currentShift: null,
+    previousShift: null,
+    allShifts: null,
+    shiftDetails: null
+  });
+  const [activeTab, setActiveTab] = useState('stations');
 
   const companyId = state?.currentCompany?.id;
-  const stationId = state?.currentStation?.id;
-  const currentStation = state?.currentStation;
 
-  // Use shift hook - only call if stationId exists
-  const {
-    currentShift,
-    loading: shiftLoading
-  } = useShiftAssets(stationId);
-
-  const shiftId = currentShift?.id;
-
-  // Helper function to safely get string value from object properties
-  const getSafeString = (value, defaultValue = 'N/A') => {
-    if (value === null || value === undefined) return defaultValue;
-    if (typeof value === 'object') {
-      // If it's an object with name property, use that
-      if (value.name) return value.name;
-      // If it's an object with id, use that
-      if (value.id) return String(value.id);
-      // Otherwise stringify the object
-      return JSON.stringify(value);
+  // Load stations
+  const loadStations = async () => {
+    try {
+      const stationsData = await stationService.getCompanyStations();
+      const stationsArray = stationsData.stations || stationsData.data || stationsData || [];
+      setStations(stationsArray);
+      
+      if (stationsArray.length > 0 && !selectedStation) {
+        setSelectedStation(stationsArray[0].id);
+      }
+    } catch (error) {
+      console.error('Failed to load stations:', error);
+      setStations([]);
     }
-    return String(value);
   };
 
-  // Load station-specific data - only when stationId is available
-  const loadStationData = async () => {
-    if (!stationId) {
-      console.log("No station ID available, skipping data load");
+  // Test station pumps with last readings
+  const testStationPumps = async () => {
+    if (!selectedStation) {
+      setError('Please select a station first');
       return;
     }
 
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true)
-      setError('')
+      console.log(`🔍 Testing station pumps for station: ${selectedStation}`);
+      const result = await shiftService.getStationPumpsWithLastEndReadings(selectedStation);
+      console.log('✅ Station pumps result:', result);
+      setDebugData(prev => ({ ...prev, stationPumps: result }));
+    } catch (error) {
+      console.error('❌ Error testing station pumps:', error);
+      setError(`Failed to get station pumps: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      console.log("Loading data for station:", stationId);
+  // Test station tanks with last readings
+  const testStationTanks = async () => {
+    if (!selectedStation) {
+      setError('Please select a station first');
+      return;
+    }
 
-      const [
-        debtorsData,
-        offloadsData,
-        usersData,
-        purchasesData
-      ] = await Promise.all([
-        debtorService.getDebtors({ stationId }).catch(err => {
-          console.error('Failed to load station debtors:', err)
-          return { debtors: [] }
-        }),
-        fuelOffloadService.getOffloadsByStation({ stationId }).catch(err => {
-          console.error('Failed to load station offloads:', err)
-          return { offloads: [] }
-        }),
-        userService.getUsers({ stationId }).catch(err => {
-          console.error('Failed to load station users:', err)
-          return { users: [] }
-        }),
-        purchaseService.getPurchases({ stationId }).catch(err => {
-          console.error('Failed to load station purchases:', err)
-          return { purchases: [] }
-        })
-      ])
+    setLoading(true);
+    setError(null);
+    try {
+      console.log(`🔍 Testing station tanks for station: ${selectedStation}`);
+      const result = await shiftService.getStationTanksWithLastEndReadings(selectedStation);
+      console.log('✅ Station tanks result:', result);
+      setDebugData(prev => ({ ...prev, stationTanks: result }));
+    } catch (error) {
+      console.error('❌ Error testing station tanks:', error);
+      setError(`Failed to get station tanks: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      // For assets, we need to handle the 403 error - use getAssets with station filter instead
-      let assetsData = { assets: [] };
-      try {
-        // Try to get assets for the current user's station context
-        const allAssets = await assetService.getAssets();
-        assetsData.assets = Array.isArray(allAssets) ? allAssets : 
-                           allAssets?.data || allAssets?.assets || [];
-        
-        // Filter assets by station ID if we have the data
-        if (assetsData.assets.length > 0) {
-          assetsData.assets = assetsData.assets.filter(asset => 
-            asset.stationId === stationId
-          );
-        }
-      } catch (assetsError) {
-        console.warn('Could not load station assets:', assetsError.message);
-        assetsData.assets = [];
+  // Test open shift
+  const testOpenShift = async () => {
+    if (!selectedStation) {
+      setError('Please select a station first');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      console.log(`🔍 Testing open shift for station: ${selectedStation}`);
+      const result = await shiftService.getOpenShift(selectedStation);
+      console.log('✅ Open shift result:', result);
+      setDebugData(prev => ({ ...prev, openShift: result }));
+      
+      if (result?.shift?.id) {
+        setSelectedShift(result.shift.id);
       }
+    } catch (error) {
+      console.error('❌ Error testing open shift:', error);
+      setError(`Failed to get open shift: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      setStationData({
-        assets: assetsData?.assets || [],
-        debtors: debtorsData?.debtors || debtorsData?.data || debtorsData || [],
-        offloads: offloadsData?.offloads || offloadsData?.data || offloadsData || [],
-        users: usersData?.users || usersData?.data || usersData || [],
-        purchases: purchasesData?.purchases || purchasesData?.data || purchasesData || []
-      })
+  // Test current shift
+  const testCurrentShift = async () => {
+    if (!selectedStation) {
+      setError('Please select a station first');
+      return;
+    }
 
-      console.log("Station data loaded successfully:", {
-        assets: stationData.assets.length,
-        debtors: stationData.debtors.length,
-        offloads: stationData.offloads.length,
-        users: stationData.users.length,
-        purchases: stationData.purchases.length
+    setLoading(true);
+    setError(null);
+    try {
+      console.log(`🔍 Testing current shift for station: ${selectedStation}`);
+      const result = await shiftService.getCurrentShift(selectedStation);
+      console.log('✅ Current shift result:', result);
+      setDebugData(prev => ({ ...prev, currentShift: result }));
+    } catch (error) {
+      console.error('❌ Error testing current shift:', error);
+      setError(`Failed to get current shift: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Test previous shift
+  const testPreviousShift = async () => {
+    if (!selectedStation) {
+      setError('Please select a station first');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      console.log(`🔍 Testing previous shift for station: ${selectedStation}`);
+      const result = await shiftService.getPreviousClosedShift(selectedStation);
+      console.log('✅ Previous shift result:', result);
+      setDebugData(prev => ({ ...prev, previousShift: result }));
+    } catch (error) {
+      console.error('❌ Error testing previous shift:', error);
+      setError(`Failed to get previous shift: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Test all shifts
+  const testAllShifts = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      console.log('🔍 Testing all shifts');
+      const result = await shiftService.getAllShifts({ limit: 10 });
+      console.log('✅ All shifts result:', result);
+      setDebugData(prev => ({ ...prev, allShifts: result }));
+    } catch (error) {
+      console.error('❌ Error testing all shifts:', error);
+      setError(`Failed to get all shifts: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Test shift details
+  const testShiftDetails = async () => {
+    if (!selectedShift) {
+      setError('Please select a shift first');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      console.log(`🔍 Testing shift details for shift: ${selectedShift}`);
+      const result = await shiftService.getShiftById(selectedShift);
+      console.log('✅ Shift details result:', result);
+      setDebugData(prev => ({ ...prev, shiftDetails: result }));
+    } catch (error) {
+      console.error('❌ Error testing shift details:', error);
+      setError(`Failed to get shift details: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Run all tests for selected station
+  const runAllStationTests = async () => {
+    if (!selectedStation) {
+      setError('Please select a station first');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      console.log(`🚀 Running all tests for station: ${selectedStation}`);
+      
+      const results = await Promise.allSettled([
+        shiftService.getStationPumpsWithLastEndReadings(selectedStation),
+        shiftService.getStationTanksWithLastEndReadings(selectedStation),
+        shiftService.getOpenShift(selectedStation),
+        shiftService.getCurrentShift(selectedStation),
+        shiftService.getPreviousClosedShift(selectedStation)
+      ]);
+
+      const [pumpsResult, tanksResult, openShiftResult, currentShiftResult, previousShiftResult] = results;
+
+      setDebugData({
+        stationPumps: pumpsResult.status === 'fulfilled' ? pumpsResult.value : { error: pumpsResult.reason?.message },
+        stationTanks: tanksResult.status === 'fulfilled' ? tanksResult.value : { error: tanksResult.reason?.message },
+        openShift: openShiftResult.status === 'fulfilled' ? openShiftResult.value : { error: openShiftResult.reason?.message },
+        currentShift: currentShiftResult.status === 'fulfilled' ? currentShiftResult.value : { error: currentShiftResult.reason?.message },
+        previousShift: previousShiftResult.status === 'fulfilled' ? previousShiftResult.value : { error: previousShiftResult.reason?.message },
+        allShifts: debugData.allShifts,
+        shiftDetails: debugData.shiftDetails
+      });
+
+      // Log results
+      results.forEach((result, index) => {
+        const testNames = ['Pumps', 'Tanks', 'Open Shift', 'Current Shift', 'Previous Shift'];
+        if (result.status === 'fulfilled') {
+          console.log(`✅ ${testNames[index]} test successful:`, result.value);
+        } else {
+          console.error(`❌ ${testNames[index]} test failed:`, result.reason);
+        }
       });
 
     } catch (error) {
-      console.error('Failed to load station data:', error)
-      setError(error.message || 'Failed to load station data')
+      console.error('❌ Error running all tests:', error);
+      setError(`Failed to run all tests: ${error.message}`);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  const refreshAll = async () => {
-    if (stationId) {
-      await loadStationData()
-    }
-  }
-
+  // Load stations on component mount
   useEffect(() => {
-    if (stationId) {
-      console.log("Station ID detected, loading data...");
-      loadStationData()
-    } else {
-      console.log("No station ID available");
-      setStationData({
-        assets: [],
-        debtors: [],
-        offloads: [],
-        users: [],
-        purchases: []
-      })
-    }
-  }, [stationId])
+    loadStations();
+  }, []);
 
-  // Helper function to format currency
+  // Format currency helper
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-KE', {
       style: 'currency',
       currency: 'KES'
-    }).format(amount || 0)
-  }
+    }).format(amount || 0);
+  };
+
+  // Render pumps data
+  const renderPumpsData = () => {
+    if (!debugData.stationPumps) return null;
+
+    if (debugData.stationPumps.error) {
+      return <div style={{ color: 'red' }}>Error: {debugData.stationPumps.error}</div>;
+    }
+
+    const pumps = Array.isArray(debugData.stationPumps) ? debugData.stationPumps : debugData.stationPumps.data || [];
+
+    return (
+      <div>
+        <h4>Pumps Found: {pumps.length}</h4>
+        {pumps.map((item, index) => (
+          <div key={item.pump?.id || index} style={{
+            padding: '10px',
+            margin: '10px 0',
+            border: '1px solid #ddd',
+            borderRadius: '4px',
+            backgroundColor: '#f9f9f9'
+          }}>
+            <div style={{ fontWeight: 'bold' }}>
+              {item.pump?.name} ({item.pump?.stationLabel})
+            </div>
+            <div>Product: {item.pump?.product?.name || 'No product'}</div>
+            <div>Island: {item.pump?.island?.name || 'No island'}</div>
+            <div>Connection: {item.pump?.connectionStatus}</div>
+            
+            {item.lastEndReading ? (
+              <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#e8f5e8', borderRadius: '4px' }}>
+                <div style={{ fontWeight: 'bold' }}>Last END Reading:</div>
+                <div>Electric Meter: {item.lastEndReading.electricMeter || 'N/A'}</div>
+                <div>Manual Meter: {item.lastEndReading.manualMeter || 'N/A'}</div>
+                <div>Cash Meter: {item.lastEndReading.cashMeter || 'N/A'}</div>
+                <div>Liters: {item.lastEndReading.litersDispensed || 'N/A'}</div>
+                <div>Sales: {formatCurrency(item.lastEndReading.salesValue)}</div>
+                <div>Recorded: {new Date(item.lastEndReading.recordedAt).toLocaleString()}</div>
+              </div>
+            ) : (
+              <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#ffebee', borderRadius: '4px', color: '#c62828' }}>
+                No END readings found
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // Render tanks data
+  const renderTanksData = () => {
+    if (!debugData.stationTanks) return null;
+
+    if (debugData.stationTanks.error) {
+      return <div style={{ color: 'red' }}>Error: {debugData.stationTanks.error}</div>;
+    }
+
+    const tanks = Array.isArray(debugData.stationTanks) ? debugData.stationTanks : debugData.stationTanks.data || [];
+
+    return (
+      <div>
+        <h4>Tanks Found: {tanks.length}</h4>
+        {tanks.map((item, index) => (
+          <div key={item.tank?.id || index} style={{
+            padding: '10px',
+            margin: '10px 0',
+            border: '1px solid #ddd',
+            borderRadius: '4px',
+            backgroundColor: '#f9f9f9'
+          }}>
+            <div style={{ fontWeight: 'bold' }}>
+              {item.tank?.name} ({item.tank?.stationLabel})
+            </div>
+            <div>Capacity: {item.tank?.capacity}L</div>
+            <div>Current Volume: {item.tank?.currentVolume}L</div>
+            <div>Product: {item.tank?.product?.name || 'No product'}</div>
+            <div>Pumps Connected: {item.tank?.pumps?.length || 0}</div>
+            
+            {item.lastEndReading ? (
+              <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#e3f2fd', borderRadius: '4px' }}>
+                <div style={{ fontWeight: 'bold' }}>Last END Reading:</div>
+                <div>Dip Value: {item.lastEndReading.dipValue || 'N/A'}</div>
+                <div>Volume: {item.lastEndReading.volume || 'N/A'}L</div>
+                <div>Temperature: {item.lastEndReading.temperature || 'N/A'}°C</div>
+                <div>Water Level: {item.lastEndReading.waterLevel || 'N/A'}</div>
+                <div>Recorded: {new Date(item.lastEndReading.recordedAt).toLocaleString()}</div>
+              </div>
+            ) : (
+              <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#fff3cd', borderRadius: '4px', color: '#856404' }}>
+                No END readings found
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // Render shift data
+  const renderShiftData = (shiftData, title) => {
+    if (!shiftData) return null;
+
+    if (shiftData.error) {
+      return <div style={{ color: 'red' }}>Error: {shiftData.error}</div>;
+    }
+
+    const shift = shiftData.shift || shiftData;
+    
+    return (
+      <div style={{
+        padding: '15px',
+        margin: '10px 0',
+        border: '1px solid #ddd',
+        borderRadius: '4px',
+        backgroundColor: '#f0f8ff'
+      }}>
+        <h4>{title}</h4>
+        <div><strong>Shift #{shift.shiftNumber}</strong></div>
+        <div>Status: <span style={{ 
+          color: shift.status === 'OPEN' ? 'green' : 
+                 shift.status === 'CLOSED' ? 'blue' : 'orange'
+        }}>{shift.status}</span></div>
+        <div>Supervisor: {shift.supervisor?.firstName} {shift.supervisor?.lastName}</div>
+        <div>Start: {new Date(shift.startTime).toLocaleString()}</div>
+        {shift.endTime && <div>End: {new Date(shift.endTime).toLocaleString()}</div>}
+        <div>Pump Readings: {shift.pumpMeterReadings?.length || 0}</div>
+        <div>Tank Readings: {shift.tankDipReadings?.length || 0}</div>
+        <div>Attendants: {shift.shiftIslandAttendant?.length || 0}</div>
+      </div>
+    );
+  };
 
   if (loading) {
     return (
-      <div className="debug-container">
-        <div className="loading">Loading station debug data...</div>
+      <div style={{ padding: '20px', textAlign: 'center' }}>
+        <div>Loading debug data...</div>
       </div>
-    )
+    );
   }
 
   return (
-    <div className="debug-container" style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
-      <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1>🚀 Station Debug Dashboard</h1>
-        <button 
-          onClick={refreshAll}
-          disabled={!stationId}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: stationId ? '#007bff' : '#ccc',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: stationId ? 'pointer' : 'not-allowed'
-          }}
-        >
-          🔄 Refresh All
-        </button>
-      </div>
-
+    <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
+      <h1>🔧 Shift Service Debug Dashboard</h1>
+      
       {error && (
         <div style={{ 
           padding: '10px', 
@@ -199,325 +412,234 @@ const StationDebug = () => {
         </div>
       )}
 
-      <div style={{ marginBottom: '20px', color: '#666' }}>
-        <div>Company ID: <strong>{companyId || 'Not set'}</strong></div>
-        <div>Station ID: <strong>{stationId || 'Not set'}</strong></div>
-        <div>Station Name: <strong>{currentStation?.name || 'Not set'}</strong></div>
+      {/* Station Selection */}
+      <div style={{ marginBottom: '20px' }}>
+        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+          Select Station:
+        </label>
+        <select 
+          value={selectedStation} 
+          onChange={(e) => setSelectedStation(e.target.value)}
+          style={{ 
+            padding: '8px', 
+            marginRight: '10px',
+            border: '1px solid #ddd',
+            borderRadius: '4px',
+            minWidth: '200px'
+          }}
+        >
+          <option value="">Select a station</option>
+          {stations.map(station => (
+            <option key={station.id} value={station.id}>
+              {station.name} ({station.location})
+            </option>
+          ))}
+        </select>
+        
+        <span style={{ color: '#666', marginLeft: '10px' }}>
+          {stations.length} stations available
+        </span>
       </div>
 
-      {!stationId ? (
-        <div style={{ 
-          padding: '40px', 
-          textAlign: 'center', 
-          backgroundColor: '#fff3cd',
-          border: '1px solid #ffeaa7',
-          borderRadius: '8px',
-          color: '#856404'
-        }}>
-          <h3>⚠️ No Station Selected</h3>
-          <p>Please select a station from the main navigation to view station-specific data.</p>
+      {/* Quick Actions */}
+      <div style={{ marginBottom: '20px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+        <button 
+          onClick={runAllStationTests}
+          disabled={!selectedStation || loading}
+          style={{
+            padding: '10px 16px',
+            backgroundColor: '#28a745',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: selectedStation && !loading ? 'pointer' : 'not-allowed'
+          }}
+        >
+          🚀 Run All Station Tests
+        </button>
+        
+        <button 
+          onClick={testStationPumps}
+          disabled={!selectedStation || loading}
+          style={{
+            padding: '8px 12px',
+            backgroundColor: '#17a2b8',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: selectedStation && !loading ? 'pointer' : 'not-allowed'
+          }}
+        >
+          ⛽ Test Station Pumps
+        </button>
+        
+        <button 
+          onClick={testStationTanks}
+          disabled={!selectedStation || loading}
+          style={{
+            padding: '8px 12px',
+            backgroundColor: '#6f42c1',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: selectedStation && !loading ? 'pointer' : 'not-allowed'
+          }}
+        >
+          🛢️ Test Station Tanks
+        </button>
+        
+        <button 
+          onClick={testOpenShift}
+          disabled={!selectedStation || loading}
+          style={{
+            padding: '8px 12px',
+            backgroundColor: '#fd7e14',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: selectedStation && !loading ? 'pointer' : 'not-allowed'
+          }}
+        >
+          📋 Test Open Shift
+        </button>
+        
+        <button 
+          onClick={testAllShifts}
+          disabled={loading}
+          style={{
+            padding: '8px 12px',
+            backgroundColor: '#6c757d',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: !loading ? 'pointer' : 'not-allowed'
+          }}
+        >
+          📊 Test All Shifts
+        </button>
+      </div>
+
+      {/* Results Tabs */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ borderBottom: '1px solid #ddd', marginBottom: '20px' }}>
+          {['stations', 'shifts'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: activeTab === tab ? '#007bff' : 'transparent',
+                color: activeTab === tab ? 'white' : '#007bff',
+                border: 'none',
+                borderBottom: activeTab === tab ? '2px solid #007bff' : 'none',
+                cursor: 'pointer',
+                textTransform: 'capitalize'
+              }}
+            >
+              {tab}
+            </button>
+          ))}
         </div>
-      ) : (
-        <>
-          {/* Current Shift Info */}
-          <div style={{ 
-            padding: '15px', 
-            backgroundColor: shiftId ? '#e8f5e8' : '#fff3cd',
-            borderRadius: '8px',
-            border: `1px solid ${shiftId ? '#c8e6c9' : '#ffeaa7'}`,
-            marginBottom: '20px'
-          }}>
-            <h3>🕒 Current Shift</h3>
-            {shiftLoading ? (
-              <div>Loading shift information...</div>
-            ) : shiftId ? (
-              <div style={{ lineHeight: '1.8' }}>
-                <div><strong>Shift ID:</strong> {currentShift.id}</div>
-                <div><strong>Status:</strong> {currentShift.status || 'Active'}</div>
-                <div><strong>Start Time:</strong> {currentShift.startTime ? new Date(currentShift.startTime).toLocaleString() : 'N/A'}</div>
-                {currentShift.endTime && (
-                  <div><strong>End Time:</strong> {new Date(currentShift.endTime).toLocaleString()}</div>
+
+        {/* Station Results */}
+        {activeTab === 'stations' && (
+          <div>
+            <h3>Station Assets & Readings</h3>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+              {/* Pumps Column */}
+              <div>
+                <h4>Pumps with Last END Readings</h4>
+                {debugData.stationPumps ? renderPumpsData() : (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
+                    No pump data loaded yet. Click "Test Station Pumps" to load data.
+                  </div>
                 )}
               </div>
-            ) : (
-              <div style={{ color: '#d32f2f', fontWeight: 'bold' }}>
-                ⚠️ No current shift active for this station
+
+              {/* Tanks Column */}
+              <div>
+                <h4>Tanks with Last END Readings</h4>
+                {debugData.stationTanks ? renderTanksData() : (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
+                    No tank data loaded yet. Click "Test Station Tanks" to load data.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Shift Results */}
+        {activeTab === 'shifts' && (
+          <div>
+            <h3>Shift Management</h3>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '15px' }}>
+              {renderShiftData(debugData.openShift, 'Open Shift')}
+              {renderShiftData(debugData.currentShift, 'Current Shift')}
+              {renderShiftData(debugData.previousShift, 'Previous Shift')}
+            </div>
+
+            {/* All Shifts */}
+            {debugData.allShifts && (
+              <div style={{ marginTop: '20px' }}>
+                <h4>All Shifts ({debugData.allShifts.shifts?.length || debugData.allShifts.length || 0})</h4>
+                {debugData.allShifts.shifts?.map(shift => (
+                  <div key={shift.id} style={{
+                    padding: '10px',
+                    margin: '5px 0',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    backgroundColor: '#f8f9fa'
+                  }}>
+                    <div>
+                      <strong>Shift #{shift.shiftNumber}</strong> - {shift.status}
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#666' }}>
+                      {new Date(shift.startTime).toLocaleString()} 
+                      {shift.endTime && ` to ${new Date(shift.endTime).toLocaleString()}`}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
+        )}
+      </div>
 
-          {/* Station Summary */}
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
-            gap: '20px',
-            marginBottom: '30px'
-          }}>
-            <div style={{ 
-              padding: '15px', 
-              backgroundColor: '#f8f9fa', 
-              borderRadius: '8px',
-              border: '1px solid #dee2e6'
-            }}>
-              <h3>📊 Station Summary - {currentStation?.name}</h3>
-              <div style={{ lineHeight: '1.8' }}>
-                <div>📍 Location: <strong>{currentStation?.location || 'Not specified'}</strong></div>
-                <div>📧 Email: <strong>{currentStation?.contactEmail || 'Not specified'}</strong></div>
-                <div>📞 Phone: <strong>{currentStation?.contactPhone || 'Not specified'}</strong></div>
-                <div>Status: <strong>{currentStation?.isActive ? '✅ Active' : '❌ Inactive'}</strong></div>
-              </div>
-            </div>
-
-            <div style={{ 
-              padding: '15px', 
-              backgroundColor: '#fff3cd', 
-              borderRadius: '8px',
-              border: '1px solid #ffeaa7'
-            }}>
-              <h3>📈 Station Metrics</h3>
-              <div style={{ lineHeight: '1.8' }}>
-                <div>🏢 Assets: <strong>{stationData.assets.length}</strong></div>
-                <div>👤 Debtors: <strong>{stationData.debtors.length}</strong></div>
-                <div>⛽ Offloads: <strong>{stationData.offloads.length}</strong></div>
-                <div>👥 Staff: <strong>{stationData.users.length}</strong></div>
-                <div>📦 Purchases: <strong>{stationData.purchases.length}</strong></div>
-              </div>
-            </div>
-          </div>
-
-          {/* Detailed Sections */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-
-            {/* Assets Section */}
-            <section style={{ 
-              padding: '20px', 
-              backgroundColor: '#e8f5e8', 
-              borderRadius: '8px',
-              border: '1px solid #c8e6c9'
-            }}>
-              <h2>🏢 Station Assets ({stationData.assets.length})</h2>
-              {stationData.assets.length > 0 ? (
-                <div style={{ display: 'grid', gap: '10px' }}>
-                  {stationData.assets.slice(0, 10).map((asset, index) => (
-                    <div key={asset.id} style={{
-                      padding: '12px',
-                      backgroundColor: 'white',
-                      borderRadius: '6px',
-                      border: '1px solid #ddd'
-                    }}>
-                      <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
-                        {index + 1}. {getSafeString(asset.name, `Asset ${asset.id}`)}
-                      </div>
-                      <div style={{ fontSize: '14px', color: '#666' }}>
-                        Type: {getSafeString(asset.type)} | Status: {getSafeString(asset.status)}
-                      </div>
-                      {asset.description && (
-                        <div style={{ fontSize: '13px', color: '#666', marginTop: '5px' }}>
-                          {getSafeString(asset.description)}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {stationData.assets.length > 10 && (
-                    <div style={{ padding: '10px', textAlign: 'center', color: '#666' }}>
-                      ... and {stationData.assets.length - 10} more assets
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
-                  No assets found for this station
-                </div>
-              )}
-            </section>
-
-            {/* Debtors Section */}
-            <section style={{ 
-              padding: '20px', 
-              backgroundColor: '#e3f2fd', 
-              borderRadius: '8px',
-              border: '1px solid #bbdefb'
-            }}>
-              <h2>👤 Station Debtors ({stationData.debtors.length})</h2>
-              {stationData.debtors.length > 0 ? (
-                <div style={{ display: 'grid', gap: '10px' }}>
-                  {stationData.debtors.slice(0, 10).map((debtor, index) => (
-                    <div key={debtor.id} style={{
-                      padding: '12px',
-                      backgroundColor: 'white',
-                      borderRadius: '6px',
-                      border: '1px solid #ddd'
-                    }}>
-                      <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
-                        {index + 1}. {getSafeString(debtor.name)}
-                      </div>
-                      <div style={{ fontSize: '14px', color: '#666' }}>
-                        📞 {getSafeString(debtor.phone)} | 📧 {getSafeString(debtor.email, 'No email')}
-                      </div>
-                      <div style={{ fontSize: '14px', color: '#d32f2f', marginTop: '5px' }}>
-                        💰 Total Debt: {formatCurrency(debtor.totalDebt)} | 
-                        📊 Transactions: {debtor.totalOutstandingTransactions || 0}
-                      </div>
-                    </div>
-                  ))}
-                  {stationData.debtors.length > 10 && (
-                    <div style={{ padding: '10px', textAlign: 'center', color: '#666' }}>
-                      ... and {stationData.debtors.length - 10} more debtors
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
-                  No debtors found for this station
-                </div>
-              )}
-            </section>
-
-            {/* Offloads Section */}
-            <section style={{ 
-              padding: '20px', 
-              backgroundColor: '#f3e5f5', 
-              borderRadius: '8px',
-              border: '1px solid #e1bee7'
-            }}>
-              <h2>⛽ Fuel Offloads ({stationData.offloads.length})</h2>
-              {stationData.offloads.length > 0 ? (
-                <div style={{ display: 'grid', gap: '10px' }}>
-                  {stationData.offloads.slice(0, 10).map((offload, index) => (
-                    <div key={offload.id} style={{
-                      padding: '12px',
-                      backgroundColor: 'white',
-                      borderRadius: '6px',
-                      border: '1px solid #ddd'
-                    }}>
-                      <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
-                        {index + 1}. Offload #{offload.id?.slice(-8) || 'N/A'}
-                      </div>
-                      <div style={{ fontSize: '14px', color: '#666' }}>
-                        Product: {getSafeString(offload.product)} | 
-                        Quantity: {offload.quantity || 0}L
-                      </div>
-                      <div style={{ fontSize: '13px', color: '#666', marginTop: '5px' }}>
-                        Date: {offload.createdAt ? new Date(offload.createdAt).toLocaleDateString() : 'No date'}
-                      </div>
-                    </div>
-                  ))}
-                  {stationData.offloads.length > 10 && (
-                    <div style={{ padding: '10px', textAlign: 'center', color: '#666' }}>
-                      ... and {stationData.offloads.length - 10} more offloads
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
-                  No fuel offloads found for this station
-                </div>
-              )}
-            </section>
-
-            {/* Staff Section */}
-            <section style={{ 
-              padding: '20px', 
-              backgroundColor: '#e0f2f1', 
-              borderRadius: '8px',
-              border: '1px solid #b2dfdb'
-            }}>
-              <h2>👥 Station Staff ({stationData.users.length})</h2>
-              {stationData.users.length > 0 ? (
-                <div style={{ display: 'grid', gap: '10px' }}>
-                  {stationData.users.slice(0, 10).map((user, index) => (
-                    <div key={user.id} style={{
-                      padding: '12px',
-                      backgroundColor: 'white',
-                      borderRadius: '6px',
-                      border: '1px solid #ddd'
-                    }}>
-                      <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
-                        {index + 1}. {getSafeString(user.name || user.username)}
-                      </div>
-                      <div style={{ fontSize: '14px', color: '#666' }}>
-                        📧 {getSafeString(user.email)} | 📞 {getSafeString(user.phone, 'No phone')}
-                      </div>
-                      <div style={{ fontSize: '13px', color: '#666', marginTop: '5px' }}>
-                        Role: {getSafeString(user.role)} | Status: {user.isActive ? '✅ Active' : '❌ Inactive'}
-                      </div>
-                    </div>
-                  ))}
-                  {stationData.users.length > 10 && (
-                    <div style={{ padding: '10px', textAlign: 'center', color: '#666' }}>
-                      ... and {stationData.users.length - 10} more staff
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
-                  No staff found for this station
-                </div>
-              )}
-            </section>
-
-            {/* Purchases Section */}
-            <section style={{ 
-              padding: '20px', 
-              backgroundColor: '#fff8e1', 
-              borderRadius: '8px',
-              border: '1px solid #ffecb3'
-            }}>
-              <h2>📦 Station Purchases ({stationData.purchases.length})</h2>
-              {stationData.purchases.length > 0 ? (
-                <div style={{ display: 'grid', gap: '10px' }}>
-                  {stationData.purchases.slice(0, 10).map((purchase, index) => (
-                    <div key={purchase.id} style={{
-                      padding: '12px',
-                      backgroundColor: 'white',
-                      borderRadius: '6px',
-                      border: '1px solid #ddd'
-                    }}>
-                      <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
-                        {index + 1}. Purchase #{purchase.id?.slice(-8) || 'N/A'}
-                      </div>
-                      <div style={{ fontSize: '14px', color: '#666' }}>
-                        Amount: {formatCurrency(purchase.totalAmount)} | 
-                        Status: <span style={{ 
-                          color: purchase.status === 'completed' ? '#2e7d32' : 
-                                 purchase.status === 'pending' ? '#f57c00' : '#757575'
-                        }}>{getSafeString(purchase.status, 'unknown')}</span>
-                      </div>
-                      <div style={{ fontSize: '13px', color: '#666', marginTop: '5px' }}>
-                        Date: {purchase.createdAt ? new Date(purchase.createdAt).toLocaleDateString() : 'No date'}
-                      </div>
-                    </div>
-                  ))}
-                  {stationData.purchases.length > 10 && (
-                    <div style={{ padding: '10px', textAlign: 'center', color: '#666' }}>
-                      ... and {stationData.purchases.length - 10} more purchases
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
-                  No purchases found for this station
-                </div>
-              )}
-            </section>
-
-          </div>
-        </>
-      )}
+      {/* Raw Data View */}
+      <details style={{ marginTop: '30px' }}>
+        <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>
+          📋 Raw Debug Data (for development)
+        </summary>
+        <pre style={{ 
+          backgroundColor: '#f8f9fa', 
+          padding: '15px', 
+          borderRadius: '4px',
+          overflow: 'auto',
+          maxHeight: '400px',
+          fontSize: '12px'
+        }}>
+          {JSON.stringify(debugData, null, 2)}
+        </pre>
+      </details>
 
       <div style={{ 
-        marginTop: '30px', 
-        padding: '15px', 
+        marginTop: '20px', 
+        padding: '10px', 
         backgroundColor: '#f5f5f5', 
-        borderRadius: '8px',
+        borderRadius: '4px',
         textAlign: 'center',
         color: '#666',
         fontSize: '14px'
       }}>
-        Last updated: {new Date().toLocaleString()}
+        Last updated: {new Date().toLocaleString()} | 
+        Company ID: {companyId || 'Not set'} | 
+        Selected Station: {selectedStation || 'None'}
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default StationDebug
+export default StationDebug;

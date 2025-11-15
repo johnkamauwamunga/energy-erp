@@ -23,6 +23,7 @@ import CustomDashboard from '../common/analytics/CustomDashboard';
 import FuelPriceManagement from './fuel-price/FuelPriceManagement';
 import SupplierManagement from './supplier/SupplierManagement';
 import SupplierAccountManagement from './supplier/accounts/SupplierAccountManagement';
+import BankManagementTabs from '../common/banks/BankManagementTabs';
 import Debug from './Debug';
 
 const CompanyAdminDashboard = () => {
@@ -50,7 +51,7 @@ const CompanyAdminDashboard = () => {
     { id: 'products_mant', label: 'Product Management', icon: MapPin },
     { id: 'fuel_price', label: 'Fuel Price', icon: Coins },
     { id: 'purchase', label: 'Purchase', icon: TrendingUp },
-    { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
+    { id: 'banks', label: 'Banks', icon:Coins },
     { id: 'sales', label: 'Sales Analytics', icon: TrendingUp },
     { id: 'reports', label: 'Reports', icon: FileText }
   ];
@@ -75,8 +76,8 @@ const CompanyAdminDashboard = () => {
         return <SupplierAccountManagement />;
       case 'purchase':
         return <FuelPurchaseManagement />;
-      case 'offloads':
-        return <PlaceholderComponent title="Fuel Offloads" icon={Truck} />;
+      case 'banks':
+        return <BankManagementTabs />;
       case 'sales':
         return <PlaceholderComponent title="Sales Analytics" icon={TrendingUp} />;
       case 'reports':

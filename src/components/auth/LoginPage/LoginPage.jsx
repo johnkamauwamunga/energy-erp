@@ -1,22 +1,40 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Flame, Mail, Lock, LogIn, Home } from 'lucide-react';
-import { Button, Input } from '../../../components/ui';
+import {
+  Card,
+  Form,
+  Input,
+  Button,
+  Alert,
+  Divider,
+  Space,
+  Typography,
+  Switch,
+  Layout,
+  Row,
+  Col,
+  message,
+  Tag  // Added Tag import
+} from 'antd';
+import {
+  UserOutlined,
+  LockOutlined,
+  HomeOutlined,
+  SafetyCertificateOutlined,
+  RocketOutlined
+} from '@ant-design/icons';
 import { useAuth } from '../../../hooks/useAuth';
 
+const { Title, Text, Link } = Typography;
+const { Content } = Layout;
+
 const LoginPage = () => {
-  const [credentials, setCredentials] = useState({ email: '', password: '' });
+  const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const { login, isAuthenticated, user, isLoading } = useAuth();
   const navigate = useNavigate();
-
-  console.log("🔍 LoginPage State:", {
-    isAuthenticated,
-    user: user?.email,
-    userRole: user?.role,
-    isLoading
-  });
 
   // Redirect when authenticated
   useEffect(() => {
@@ -26,7 +44,6 @@ const LoginPage = () => {
         email: user.email
       });
       
-      // Small delay to ensure state is fully updated
       const redirectTimer = setTimeout(() => {
         redirectBasedOnRole(user.role);
       }, 100);
@@ -36,227 +53,246 @@ const LoginPage = () => {
   }, [isAuthenticated, user, navigate]);
 
   const redirectBasedOnRole = (role) => {
-    console.log("🔄 Redirecting based on role:", role);
+    const routes = {
+      'SUPER_ADMIN': '/super-admin/dashboard',
+      'COMPANY_ADMIN': '/company-admin/dashboard',
+      'STATION_MANAGER': '/station-manager/dashboard',
+      'SUPERVISOR': '/supervisor/dashboard',
+      'ATTENDANT': '/attendant/dashboard'
+    };
     
-    switch (role) {
-      case 'SUPER_ADMIN':
-        navigate('/super-admin/dashboard');
-        break;
-      case 'COMPANY_ADMIN':
-        navigate('/company-admin/dashboard');
-        break;
-      case 'STATION_MANAGER':
-        navigate('/station-manager/dashboard');
-        break;
-      case 'SUPERVISOR':
-        navigate('/supervisor/dashboard');
-        break;
-      case 'ATTENDANT':
-        navigate('/attendant/dashboard');
-        break;
-      default:
-        console.warn("⚠️ Unknown role, redirecting to default dashboard");
-        navigate('/dashboard');
-    }
+    navigate(routes[role] || '/dashboard');
   };
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  const handleLogin = async (values) => {
     setLoading(true);
     setError('');
     
-    console.log("🔄 LoginPage: Starting login process", {
-      email: credentials.email
-    });
-    
     try {
-      const result = await login(credentials.email, credentials.password);
-      
-      console.log("📨 LoginPage: Login result received", {
-        success: result.success,
-        message: result.message,
-        hasUserData: !!result.data?.user
-      });
+      const result = await login(values.email, values.password);
       
       if (result.success) {
-        console.log("✅ LoginPage: Login successful in component", {
-          userRole: result.data?.user?.role,
-          userEmail: result.data?.user?.email
-        });
-        
-        // The useEffect will handle redirection automatically
-        // We don't need to redirect here as the auth state change will trigger it
+        message.success('Login successful!');
+        // Redirect handled by useEffect
       } else {
-        console.log("❌ LoginPage: Login failed in component", {
-          message: result.message
-        });
         setError(result.message || 'Login failed. Please try again.');
+        message.error(result.message || 'Login failed');
       }
     } catch (err) {
-      console.error("💥 LoginPage: Login error caught", err);
+      console.error("Login error:", err);
       setError(err.message || 'An unexpected error occurred');
+      message.error('Login failed');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && credentials.email && credentials.password) {
-      handleLogin(e);
-    }
-  };
-
-  const handleInputChange = (field, value) => {
-    setCredentials(prev => ({
-      ...prev,
-      [field]: value
-    }));
-    // Clear error when user starts typing
-    if (error) {
-      setError('');
-    }
+  const onFinishFailed = (errorInfo) => {
+    console.log('Failed:', errorInfo);
   };
 
   // Show loading while initializing auth state
   if (isLoading) {
     return (
-      <div className="min-h-screen cosmic-gradient flex items-center justify-center p-4">
-        <div className="text-center">
-          <div className="inline-block cosmic-gradient p-4 rounded-xl flame-animation mb-4">
-            <Flame className="w-12 h-12 text-white animate-pulse" />
-          </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Initializing</h2>
-          <p className="text-blue-100">Checking authentication status...</p>
-        </div>
-      </div>
+      <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
+        <Content style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <Card style={{ textAlign: 'center', maxWidth: 400, width: '100%' }}>
+            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+              <RocketOutlined style={{ fontSize: 48, color: '#1890ff' }} spin />
+              <Title level={3}>Initializing</Title>
+              <Text type="secondary">Checking authentication status...</Text>
+            </Space>
+          </Card>
+        </Content>
+      </Layout>
     );
   }
 
   return (
-    <div className="min-h-screen cosmic-gradient flex items-center justify-center relative overflow-hidden p-4">
-      {/* Background Elements */}
-      <div className="absolute inset-0">
-        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-blue-400 rounded-full opacity-10 animate-pulse"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-48 h-48 bg-purple-400 rounded-full opacity-10 animate-pulse delay-1000"></div>
-        <div className="absolute top-3/4 left-1/3 w-32 h-32 bg-cyan-400 rounded-full opacity-10 animate-pulse delay-500"></div>
-      </div>
-
-      <div className="relative z-10 max-w-md w-full">
-        {/* Back to Home */}
-        <div className="mb-8">
-          <Button 
-            onClick={() => navigate('/')}
-            variant="ghost"
-            icon={Home}
-            className="text-white hover:bg-white hover:bg-opacity-20 transition-all duration-200"
-          >
-            Back to Home
-          </Button>
-        </div>
-
-        {/* Login Card */}
-        <div className="glass-effect rounded-2xl p-8 shadow-2xl border border-white border-opacity-10">
-          <div className="text-center mb-8">
-            <div className="inline-block cosmic-gradient p-3 rounded-xl flame-animation mb-4">
-              <Flame className="w-10 h-10 text-white" />
-            </div>
-            <h2 className="text-2xl font-bold text-white mb-2">System Access</h2>
-            <p className="text-blue-100">Sign in to your dashboard</p>
-          </div>
-
-          {error && (
-            <div className="mb-4 p-4 bg-red-500 bg-opacity-20 border border-red-400 rounded-lg text-red-100 animate-shake">
-              <div className="flex items-center">
-                <div className="w-2 h-2 bg-red-400 rounded-full mr-2 animate-pulse"></div>
-                <span className="font-medium">Authentication Error</span>
-              </div>
-              <p className="mt-1 text-sm">{error}</p>
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} className="space-y-6">
-            <Input
-              label="Email Address"
-              type="email"
-              value={credentials.email}
-              onChange={(e) => handleInputChange('email', e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Enter your email"
-              icon={Mail}
-              required
-              autoComplete="email"
-              disabled={loading}
-              className="transition-all duration-200"
-            />
-            
-            <Input
-              label="Password"
-              type="password"
-              value={credentials.password}
-              onChange={(e) => handleInputChange('password', e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Enter your password"
-              icon={Lock}
-              required
-              autoComplete="current-password"
-              disabled={loading}
-              className="transition-all duration-200"
-            />
-
-            <Button
-              type="submit"
-              variant="cosmic"
-              size="lg"
-              className="w-full transform transition-all duration-200 hover:scale-105 active:scale-95"
-              icon={loading ? null : LogIn}
-              loading={loading}
-              disabled={!credentials.email || !credentials.password || loading}
+    <Layout style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+      <Content style={{ padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Row justify="center" style={{ width: '100%', maxWidth: 1200 }}>
+          <Col xs={24} sm={20} md={16} lg={12} xl={8}>
+            {/* Back to Home Button */}
+            <Button 
+              type="text" 
+              icon={<HomeOutlined />}
+              onClick={() => navigate('/')}
+              style={{ 
+                color: 'white', 
+                marginBottom: 16,
+                border: '1px solid rgba(255,255,255,0.2)'
+              }}
             >
-              {loading ? (
-                <span className="flex items-center justify-center">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                  Signing In...
-                </span>
-              ) : (
-                'Sign In'
-              )}
+              Back to Home
             </Button>
-          </form>
 
-          <div className="mt-8 pt-6 border-t border-white border-opacity-10">
-            <div className="text-center">
-              <div className="text-blue-100 text-sm mb-2">
-                Secure access with role-based permissions
+            {/* Login Card */}
+            <Card
+              style={{
+                borderRadius: 12,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
+                border: '1px solid #e8e8e8'
+              }}
+              bodyStyle={{ padding: '32px' }}
+            >
+              {/* Header */}
+              <div style={{ textAlign: 'center', marginBottom: 32 }}>
+                <Space direction="vertical" size="middle">
+                  <div style={{ 
+                    background: 'linear-gradient(135deg, #1890ff 0%, #722ed1 100%)',
+                    width: 64,
+                    height: 64,
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto'
+                  }}>
+                    <SafetyCertificateOutlined style={{ fontSize: 28, color: 'white' }} />
+                  </div>
+                  <Title level={2} style={{ margin: 0, color: '#262626' }}>
+                    System Access
+                  </Title>
+                  <Text type="secondary" style={{ fontSize: 16 }}>
+                    Sign in to your dashboard
+                  </Text>
+                </Space>
               </div>
-              <a 
-                href='/forgot-password' 
-                className="text-red-200 text-sm hover:text-red-100 transition-colors duration-200 underline"
+
+              {/* Error Alert */}
+              {error && (
+                <Alert
+                  message="Authentication Error"
+                  description={error}
+                  type="error"
+                  showIcon
+                  closable
+                  style={{ marginBottom: 24 }}
+                  onClose={() => setError('')}
+                />
+              )}
+
+              {/* Login Form */}
+              <Form
+                form={form}
+                name="login"
+                onFinish={handleLogin}
+                onFinishFailed={onFinishFailed}
+                autoComplete="off"
+                size="large"
+                layout="vertical"
               >
-                Forgot password?
-              </a>
-            </div>
-          </div>
+                <Form.Item
+                  label="Email Address"
+                  name="email"
+                  rules={[
+                    { required: true, message: 'Please input your email!' },
+                    { type: 'email', message: 'Please enter a valid email!' }
+                  ]}
+                >
+                  <Input 
+                    prefix={<UserOutlined />}
+                    placeholder="Enter your email"
+                    autoComplete="email"
+                  />
+                </Form.Item>
 
-          {/* Debug info - remove in production */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-4 p-3 bg-black bg-opacity-20 rounded-lg">
-              <div className="text-xs text-blue-200">
-                <div>Status: {isAuthenticated ? 'Authenticated' : 'Not Authenticated'}</div>
-                <div>User: {user?.email || 'None'}</div>
-                <div>Role: {user?.role || 'None'}</div>
+                <Form.Item
+                  label="Password"
+                  name="password"
+                  rules={[{ required: true, message: 'Please input your password!' }]}
+                >
+                  <Input.Password
+                    prefix={<LockOutlined />}
+                    placeholder="Enter your password"
+                    autoComplete="current-password"
+                  />
+                </Form.Item>
+
+                <Form.Item>
+                  <Row justify="space-between" align="middle">
+                    <Col>
+                      <Space>
+                        <Switch 
+                          size="small" 
+                          checked={rememberMe}
+                          onChange={setRememberMe}
+                        />
+                        <Text>Remember me</Text>
+                      </Space>
+                    </Col>
+                    <Col>
+                      <Link href="/forgot-password" style={{ fontSize: 14 }}>
+                        Forgot password?
+                      </Link>
+                    </Col>
+                  </Row>
+                </Form.Item>
+
+                <Form.Item style={{ marginBottom: 16 }}>
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    loading={loading}
+                    block
+                    size="large"
+                    style={{ 
+                      height: 48,
+                      fontSize: 16,
+                      background: 'linear-gradient(135deg, #1890ff 0%, #722ed1 100%)',
+                      border: 'none'
+                    }}
+                  >
+                    {loading ? 'Signing In...' : 'Sign In'}
+                  </Button>
+                </Form.Item>
+              </Form>
+
+              <Divider plain>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Secure access with role-based permissions
+                </Text>
+              </Divider>
+
+              {/* Debug info - remove in production */}
+              {process.env.NODE_ENV === 'development' && (
+                <Card 
+                  size="small" 
+                  title="Debug Info" 
+                  style={{ marginTop: 16 }}
+                  bodyStyle={{ padding: '12px' }}
+                >
+                  <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                    <Row justify="space-between">
+                      <Text type="secondary">Status:</Text>
+                      <Tag color={isAuthenticated ? 'green' : 'red'}>
+                        {isAuthenticated ? 'Authenticated' : 'Not Authenticated'}
+                      </Tag>
+                    </Row>
+                    <Row justify="space-between">
+                      <Text type="secondary">User:</Text>
+                      <Text strong>{user?.email || 'None'}</Text>
+                    </Row>
+                    <Row justify="space-between">
+                      <Text type="secondary">Role:</Text>
+                      <Tag color="blue">{user?.role || 'None'}</Tag>
+                    </Row>
+                  </Space>
+                </Card>
+              )}
+
+              {/* Version Info */}
+              <div style={{ textAlign: 'center', marginTop: 24 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Fuel Management System v1.0
+                </Text>
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* Version Info */}
-        <div className="text-center mt-6">
-          <p className="text-blue-200 text-xs opacity-70">
-            Fuel Management System v1.0
-          </p>
-        </div>
-      </div>
-    </div>
+            </Card>
+          </Col>
+        </Row>
+      </Content>
+    </Layout>
   );
 };
 

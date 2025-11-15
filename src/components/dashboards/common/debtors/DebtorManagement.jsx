@@ -1,799 +1,892 @@
-// src/components/debtor/DebtorManagement.jsx
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Card,
   Table,
+  Card,
   Button,
-  Tag,
   Space,
-  Alert,
+  Tag,
+  Tooltip,
   Input,
   Select,
-  Badge,
-  Tooltip,
-  Typography,
+  Modal,
+  Form,
+  message,
   Row,
   Col,
   Statistic,
-  Modal,
-  Descriptions,
-  Popconfirm,
-  message,
-  Progress,
-  Grid,
+  Empty,
+  Badge,
   Avatar,
-  Switch
+  List,
+  Descriptions,
+  Spin,
+  Typography
 } from 'antd';
 import {
-  PlusOutlined,
   SearchOutlined,
-  FilterOutlined,
-  EyeOutlined,
   EditOutlined,
-  DeleteOutlined,
-  UserOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  EyeOutlined,
   PhoneOutlined,
   MailOutlined,
+  UserOutlined,
   DollarOutlined,
-  ShopOutlined,
-  ExclamationCircleOutlined,
-  ReloadOutlined,
-  UserAddOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined
+  TransactionOutlined,
+  CloseOutlined,
+  DownloadOutlined
 } from '@ant-design/icons';
-import { debtorService } from '../../../../services/debtorService/debtorService';
 import { useApp } from '../../../../context/AppContext';
-import CreateDebtorModal from './modal/CreateDebtorModal';
-import EditDebtorModal from './modal/EditDebtorModal';
+import { debtorService } from '../../../../services/debtorService/debtorService';
+import { debtorTransactionService } from '../../../../services/debtorTransactionService/debtorTransactionService';
+import UpdateDebtorModal from './modal/UpdateDebtorModal';
+import DebtorDetailModal from './modal/DebtorDetailModal';
+import { utils, writeFile } from 'xlsx';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
 
-const { Title, Text } = Typography;
 const { Option } = Select;
-const { useBreakpoint } = Grid;
+const { Search } = Input;
+const { Title, Text } = Typography;
 
-const DebtorManagement = () => {
+const DebtorsManagement = ({ onShowCreateModal }) => {
   const { state } = useApp();
-  const screens = useBreakpoint();
-  const [loading, setLoading] = useState(false);
   const [debtors, setDebtors] = useState([]);
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 10,
-    totalCount: 0,
-    totalPages: 0
-  });
-  const [showCreateDebtorModal, setShowCreateDebtorModal] = useState(false);
-  const [showEditDebtorModal, setShowEditDebtorModal] = useState(false);
-  const [selectedDebtor, setSelectedDebtor] = useState(null);
-  const [debtorDetails, setDebtorDetails] = useState(null);
-  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({
     search: '',
-    status: '',
-    minDebt: '',
-    maxDebt: '',
+    categoryId: undefined,
+    isActive: undefined,
+    isBlacklisted: undefined,
+    hasCreditLimit: undefined,
     page: 1,
-    limit: 10,
-    sortBy: 'name',
-    sortOrder: 'asc'
+    limit: 10
   });
+  const [pagination, setPagination] = useState({});
+  const [categories, setCategories] = useState([]);
+  const [selectedDebtor, setSelectedDebtor] = useState(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showTransactionsModal, setShowTransactionsModal] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [transactions, setTransactions] = useState([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
 
-  const currentCompany = state.currentUser?.companyId;
+  const stationId = state.currentStation?.id;
+  const [currentStationId, setCurrentStationId] = useState(stationId);
+  const tableRef = useRef();
 
-  // Fetch all debtors
-  const fetchDebtors = async () => {
-    if (!currentCompany) return;
-    
+  // Load debtors and categories
+  const loadDebtors = useCallback(async () => {
     setLoading(true);
     try {
-      console.log("🔄 Fetching debtors with filters:", filters);
+      const result = await debtorService.getDebtors(filters);
       
-      const result = await debtorService.getDebtors({
-        ...filters,
-        includeStatistics: true
-      });
-      
-      console.log("📦 Debtors response:", result);
-      
-      const debtorsData = result.debtors || result.data || result || [];
-      setDebtors(debtorsData);
-      
-      setPagination({
-        page: result.page || 1,
-        limit: result.limit || 10,
-        totalCount: result.totalCount || debtorsData.length,
-        totalPages: result.totalPages || Math.ceil(debtorsData.length / 10)
-      });
-      
+      console.log("Debtors loaded:", result);
+      if (result.debtors) {
+        setDebtors(result.debtors);
+        setPagination(result.pagination || {});
+      } else {
+        setDebtors(result);
+        setPagination({});
+      }
     } catch (error) {
-      console.error('❌ Failed to fetch debtors:', error);
-      message.error('Failed to load debtors');
-      setDebtors([]);
-      setPagination({
-        page: 1,
-        limit: 10,
-        totalCount: 0,
-        totalPages: 0
-      });
+      message.error(error.message || 'Failed to load debtors');
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters]);
 
-  // Fetch debtor statistics
-  const [statistics, setStatistics] = useState(null);
-  const fetchStatistics = async () => {
+  const loadCategories = async () => {
     try {
-      const stats = await debtorService.getDebtorStatistics();
-      setStatistics(stats);
+      const categoriesData = await debtorService.getActiveDebtorCategories();
+      setCategories(categoriesData);
     } catch (error) {
-      console.error('Failed to fetch statistics:', error);
+      console.error('Failed to load categories:', error);
     }
   };
 
   useEffect(() => {
-    fetchDebtors();
-    fetchStatistics();
-  }, [currentCompany, filters.page, filters.limit, filters.status]);
+    loadDebtors();
+    loadCategories();
+  }, [loadDebtors]);
 
-  // Handle filter changes
-  const handleFilterChange = useCallback((newFilters) => {
-    setFilters(prev => ({
-      ...prev,
-      ...newFilters,
-      page: 1
-    }));
-  }, []);
+  // Load transactions for a specific debtor
+  const loadDebtorTransactions = async (debtorId) => {
+    console.log("Loading transactions for debtor:", debtorId, "station:", currentStationId);
+    
+    if (!currentStationId || !debtorId) {
+      console.error('Missing required IDs:', { currentStationId, debtorId });
+      message.error('Station ID and Debtor ID are required');
+      return;
+    }
 
-  // Handle table pagination
-  const handleTableChange = (newPagination) => {
-    setFilters(prev => ({
-      ...prev,
-      page: newPagination.current,
-      limit: newPagination.pageSize
-    }));
-  };
-
-  // Handle actions
-  const handleEditDebtor = useCallback((debtor) => {
-    setSelectedDebtor(debtor);
-    setShowEditDebtorModal(true);
-  }, []);
-
-  const handleViewDetails = useCallback((debtor) => {
-    setDebtorDetails(debtor);
-    setShowDetailsModal(true);
-  }, []);
-
-  const handleToggleStatus = async (debtorId, currentStatus) => {
+    setTransactionsLoading(true);
     try {
-      await debtorService.updateDebtorStatus(debtorId, !currentStatus);
-      message.success(`Debtor ${!currentStatus ? 'activated' : 'deactivated'} successfully`);
-      fetchDebtors();
-      fetchStatistics();
+      const result = await debtorTransactionService.getDebtorTransactions(
+        currentStationId, 
+        debtorId
+      );
+      console.log("Transactions loaded:", result);
+      setTransactions(result.transactions || []);
     } catch (error) {
-      message.error('Failed to update debtor status');
+      console.error('Failed to fetch transactions:', error);
+      message.error(error.message || 'Failed to load transactions');
+      setTransactions([]);
+    } finally {
+      setTransactionsLoading(false);
     }
   };
 
-  const handleDeleteDebtor = async (debtorId) => {
-    try {
-      await debtorService.deleteDebtor(debtorId);
-      message.success('Debtor deleted successfully');
-      fetchDebtors();
-      fetchStatistics();
-    } catch (error) {
-      message.error('Failed to delete debtor');
-    }
-  };
-
-  // Status configurations
-  const getDebtorStatusConfig = useCallback((debtor) => {
-    if (!debtor.isActive) {
-      return { color: 'red', label: 'Inactive', badge: 'error' };
+  // Handle view transactions - ALWAYS CLICKABLE
+  const handleViewTransactions = async (debtor) => {
+    console.log("View transactions clicked for:", debtor);
+    
+    if (!debtor || !debtor.id) {
+      message.error('Invalid debtor data');
+      return;
     }
     
-    if (debtor.totalDebt > 10000) {
-      return { color: 'red', label: 'High Debt', badge: 'error' };
-    } else if (debtor.totalDebt > 5000) {
-      return { color: 'orange', label: 'Medium Debt', badge: 'warning' };
-    } else if (debtor.totalDebt > 0) {
-      return { color: 'blue', label: 'Active', badge: 'processing' };
-    } else {
-      return { color: 'green', label: 'No Debt', badge: 'success' };
+    setSelectedDebtor(debtor);
+    setShowTransactionsModal(true);
+    
+    try {
+      await loadDebtorTransactions(debtor.id);
+    } catch (error) {
+      console.error('Failed to load transactions:', error);
+      message.error('Failed to load transactions');
     }
-  }, []);
+  };
 
-  // Responsive columns configuration
-  const columns = useMemo(() => {
-    const baseColumns = [
-      {
-        title: 'Debtor',
-        dataIndex: 'name',
-        key: 'name',
-        width: screens.xs ? 140 : 200,
-        render: (name, record) => (
+  // Handle filter changes
+  const handleSearch = (value) => {
+    setFilters(prev => ({ ...prev, search: value, page: 1 }));
+  };
+
+  const handleFilterChange = (key, value) => {
+    setFilters(prev => ({ ...prev, [key]: value, page: 1 }));
+  };
+
+  const handleTableChange = (pagination) => {
+    setFilters(prev => ({ 
+      ...prev, 
+      page: pagination.current,
+      limit: pagination.pageSize
+    }));
+  };
+
+  // Handle debtor actions
+  const handleViewDetails = (debtor) => {
+    setSelectedDebtor(debtor);
+    setShowDetailModal(true);
+  };
+
+  const handleEdit = (debtor) => {
+    setSelectedDebtor(debtor);
+    setShowUpdateModal(true);
+  };
+
+  const handleUpdateSuccess = () => {
+    setShowUpdateModal(false);
+    setSelectedDebtor(null);
+    loadDebtors();
+    message.success('Debtor updated successfully');
+  };
+
+  // Format debtor for display
+  const formatDebtor = (debtor) => {
+    return debtorService.formatDebtor(debtor);
+  };
+
+  // Get transaction count for a debtor
+  const getTransactionCount = (debtor) => {
+    const count = debtor.transactionCount || debtor.debtorTransactions?.length || 0;
+    console.log(`Transaction count for ${debtor.name}:`, count);
+    return count;
+  };
+
+  // Format currency
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'KES'
+    }).format(amount || 0);
+  };
+
+  // Format date for table
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  // Format date with time for detailed view
+  const formatDateTime = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // Calculate totals for transactions
+  const calculateTotals = () => {
+    const totalDebit = transactions
+      .filter(t => t.type === 'DEBIT')
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+    
+    const totalCredit = transactions
+      .filter(t => t.type === 'CREDIT')
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+    
+    const netAmount = totalCredit - totalDebit;
+
+    return { totalDebit, totalCredit, netAmount };
+  };
+
+  // Calculate statistics for debtors
+  const stats = {
+    total: debtors.length,
+    active: debtors.filter(debtor => debtor.isActive).length,
+    blacklisted: debtors.filter(debtor => debtor.isBlacklisted).length,
+    totalDebt: debtors.reduce((sum, debtor) => sum + (debtor.totalDebt || 0), 0),
+    totalTransactions: debtors.reduce((sum, debtor) => sum + getTransactionCount(debtor), 0)
+  };
+
+  // Download as PDF
+  const downloadPDF = () => {
+    const doc = new jsPDF();
+    const totals = calculateTotals();
+
+    // Title
+    doc.setFontSize(16);
+    doc.text(`Transactions Report - ${selectedDebtor.name}`, 14, 15);
+    
+    // Subtitle
+    doc.setFontSize(10);
+    doc.text(`Station: ${state.currentStation?.name || 'N/A'} | Generated: ${new Date().toLocaleDateString()}`, 14, 22);
+
+    // Table data
+    const tableColumn = ["Date", "Type", "Amount", "Description", "Status", "Shift"];
+    const tableRows = transactions.map(transaction => [
+      formatDate(transaction.transactionDate),
+      transaction.type,
+      formatCurrency(transaction.amount),
+      transaction.description || 'N/A',
+      transaction.status,
+      transaction.shift?.shiftNumber || 'N/A'
+    ]);
+
+    // Add totals row
+    tableRows.push([
+      'TOTALS',
+      'DEBIT',
+      formatCurrency(totals.totalDebit),
+      '',
+      '',
+      ''
+    ]);
+    tableRows.push([
+      '',
+      'CREDIT',
+      formatCurrency(totals.totalCredit),
+      '',
+      '',
+      ''
+    ]);
+    tableRows.push([
+      '',
+      'NET',
+      formatCurrency(totals.netAmount),
+      '',
+      '',
+      ''
+    ]);
+
+    // Add table to PDF
+    doc.autoTable({
+      head: [tableColumn],
+      body: tableRows,
+      startY: 30,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [41, 128, 185] }
+    });
+
+    // Save PDF
+    doc.save(`transactions-${selectedDebtor.name}-${new Date().toISOString().split('T')[0]}.pdf`);
+    message.success('PDF downloaded successfully');
+  };
+
+  // Download as Excel
+  const downloadExcel = () => {
+    const totals = calculateTotals();
+    
+    const worksheetData = [
+      ['Date', 'Type', 'Amount', 'Description', 'Status', 'Shift', 'Previous Balance', 'New Balance'],
+      ...transactions.map(transaction => [
+        formatDateTime(transaction.transactionDate),
+        transaction.type,
+        transaction.amount,
+        transaction.description || 'N/A',
+        transaction.status,
+        transaction.shift?.shiftNumber || 'N/A',
+        transaction.previousBalance,
+        transaction.newBalance
+      ]),
+      ['', 'DEBIT TOTAL', totals.totalDebit, '', '', '', '', ''],
+      ['', 'CREDIT TOTAL', totals.totalCredit, '', '', '', '', ''],
+      ['', 'NET AMOUNT', totals.netAmount, '', '', '', '', '']
+    ];
+
+    const ws = utils.aoa_to_sheet(worksheetData);
+    const wb = utils.book_new();
+    utils.book_append_sheet(wb, ws, 'Transactions');
+    writeFile(wb, `transactions-${selectedDebtor.name}-${new Date().toISOString().split('T')[0]}.xlsx`);
+    message.success('Excel file downloaded successfully');
+  };
+
+  // Transaction table columns
+  const transactionColumns = [
+    {
+      title: 'Date & Time',
+      dataIndex: 'transactionDate',
+      key: 'transactionDate',
+      width: 120,
+      render: (date) => formatDateTime(date),
+      sorter: (a, b) => new Date(a.transactionDate) - new Date(b.transactionDate)
+    },
+    {
+      title: 'Type',
+      dataIndex: 'type',
+      key: 'type',
+      width: 80,
+      render: (type) => (
+        <Tag color={type === 'DEBIT' ? 'red' : 'green'}>
+          {type}
+        </Tag>
+      ),
+      filters: [
+        { text: 'DEBIT', value: 'DEBIT' },
+        { text: 'CREDIT', value: 'CREDIT' }
+      ],
+      onFilter: (value, record) => record.type === value
+    },
+    {
+      title: 'Amount',
+      dataIndex: 'amount',
+      key: 'amount',
+      width: 100,
+      render: (amount, record) => (
+        <Text strong style={{ 
+          color: record.type === 'DEBIT' ? '#ff4d4f' : '#52c41a'
+        }}>
+          {formatCurrency(amount)}
+        </Text>
+      ),
+      sorter: (a, b) => a.amount - b.amount
+    },
+    {
+      title: 'Description',
+      dataIndex: 'description',
+      key: 'description',
+      width: 150,
+      render: (desc) => desc || 'No description'
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      width: 100,
+      render: (status) => (
+        <Tag color={
+          status === 'SETTLED' ? 'green' :
+          status === 'OUTSTANDING' ? 'orange' : 'red'
+        }>
+          {status}
+        </Tag>
+      ),
+      filters: [
+        { text: 'SETTLED', value: 'SETTLED' },
+        { text: 'OUTSTANDING', value: 'OUTSTANDING' },
+        { text: 'PENDING', value: 'PENDING' }
+      ],
+      onFilter: (value, record) => record.status === value
+    },
+    {
+      title: 'Shift',
+      dataIndex: 'shift',
+      key: 'shift',
+      width: 80,
+      render: (shift) => shift?.shiftNumber || 'N/A'
+    },
+    {
+      title: 'Previous Balance',
+      dataIndex: 'previousBalance',
+      key: 'previousBalance',
+      width: 120,
+      render: (balance) => formatCurrency(balance)
+    },
+    {
+      title: 'New Balance',
+      dataIndex: 'newBalance',
+      key: 'newBalance',
+      width: 120,
+      render: (balance) => formatCurrency(balance)
+    }
+  ];
+
+  // Columns definition for main debtors table
+  const columns = [
+    {
+      title: 'Debtor',
+      dataIndex: 'name',
+      key: 'name',
+      width: 200,
+      render: (name, record) => {
+        const formatted = formatDebtor(record);
+        return (
           <Space>
             <Avatar 
-              size={screens.xs ? 32 : 40} 
+              size="small" 
+              style={{ 
+                backgroundColor: record.category?.color || '#666666' 
+              }}
               icon={<UserOutlined />}
-              style={{ backgroundColor: '#1890ff' }}
             />
-            <Space direction="vertical" size={0}>
-              <Text strong style={{ fontSize: screens.xs ? '14px' : '16px' }}>
-                {name}
-              </Text>
-              <Text type="secondary" style={{ fontSize: '12px' }}>
-                {record.contactPerson}
-              </Text>
-            </Space>
-          </Space>
-        ),
-        fixed: screens.xs ? 'left' : false,
-        sorter: (a, b) => a.name.localeCompare(b.name)
-      },
-      {
-        title: 'Contact',
-        key: 'contact',
-        width: screens.xs ? 120 : 180,
-        render: (_, record) => (
-          <Space direction="vertical" size={2}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <PhoneOutlined style={{ fontSize: '12px', color: '#8c8c8c' }} />
-              <Text style={{ fontSize: '12px' }}>{record.phone}</Text>
+            <div>
+              <div style={{ fontWeight: 500 }}>{name}</div>
+              {record.code && (
+                <div style={{ fontSize: '12px', color: '#666' }}>
+                  {record.code}
+                </div>
+              )}
             </div>
-            {record.email && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <MailOutlined style={{ fontSize: '12px', color: '#8c8c8c' }} />
-                <Text style={{ fontSize: '12px' }}>{record.email}</Text>
+          </Space>
+        );
+      }
+    },
+    {
+      title: 'Category',
+      dataIndex: 'category',
+      key: 'category',
+      width: 150,
+      render: (category) => (
+        <Space>
+          {category && (
+            <>
+              <div
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  backgroundColor: category.color || '#666666'
+                }}
+              />
+              <span>{category.name}</span>
+            </>
+          )}
+        </Space>
+      )
+    },
+    {
+      title: 'Contact',
+      key: 'contact',
+      width: 180,
+      render: (_, record) => (
+        <Space direction="vertical" size={0}>
+          {record.contactPerson && (
+            <div style={{ fontSize: '12px' }}>
+              <UserOutlined /> {record.contactPerson}
+            </div>
+          )}
+          {record.phone && (
+            <div style={{ fontSize: '12px' }}>
+              <PhoneOutlined /> {record.phone}
+            </div>
+          )}
+          {record.email && (
+            <div style={{ fontSize: '12px' }}>
+              <MailOutlined /> {record.email}
+            </div>
+          )}
+        </Space>
+      )
+    },
+    {
+      title: 'Credit/Debt',
+      key: 'creditDebt',
+      width: 150,
+      render: (_, record) => {
+        const formatted = formatDebtor(record);
+        return (
+          <Space direction="vertical" size={0}>
+            <div style={{ fontSize: '12px' }}>
+              <strong>Limit:</strong> {formatted.creditLimitDisplay}
+            </div>
+            <div style={{ fontSize: '12px' }}>
+              <strong>Debt:</strong> {formatted.totalDebtDisplay}
+            </div>
+            {record.creditLimit && record.totalDebt && (
+              <div style={{ fontSize: '11px', color: '#666' }}>
+                {formatted.creditUtilization}
               </div>
             )}
           </Space>
-        ),
-        responsive: ['md']
-      },
-      {
-        title: 'Total Debt',
-        dataIndex: 'totalDebt',
-        key: 'totalDebt',
-        width: screens.xs ? 90 : 120,
-        render: (amount) => (
-          <Text strong type={amount > 0 ? "danger" : "success"}>
-            {debtorService.formatCurrency(amount)}
-          </Text>
-        ),
-        sorter: (a, b) => a.totalDebt - b.totalDebt
-      },
-      {
-        title: 'Stations',
-        dataIndex: 'totalStations',
-        key: 'totalStations',
-        width: screens.xs ? 80 : 100,
-        render: (count, record) => (
-          <Space>
-            <ShopOutlined style={{ color: '#1890ff' }} />
-            <Text>{count || record.stationAccounts?.length || 0}</Text>
-          </Space>
-        ),
-        responsive: ['sm'],
-        sorter: (a, b) => (a.totalStations || 0) - (b.totalStations || 0)
-      },
-      {
-        title: 'Outstanding',
-        dataIndex: 'totalOutstandingTransactions',
-        key: 'outstanding',
-        width: screens.xs ? 80 : 100,
-        render: (count) => (
-          <Badge 
-            count={count} 
-            showZero 
-            style={{ backgroundColor: count > 0 ? '#faad14' : '#52c41a' }}
-          />
-        ),
-        responsive: ['md']
-      },
-      {
-        title: 'Status',
-        key: 'status',
-        width: screens.xs ? 90 : 130,
-        render: (_, record) => {
-          const config = getDebtorStatusConfig(record);
-          return (
-            <Space>
-              <Switch
-                size="small"
-                checked={record.isActive}
-                onChange={(checked) => handleToggleStatus(record.id, !checked)}
-              />
-              {screens.xs ? (
-                <Badge status={config.badge} />
-              ) : (
-                <Badge status={config.badge} text={config.label} />
-              )}
-            </Space>
-          );
-        }
-      },
-      {
-        title: 'Actions',
-        key: 'actions',
-        width: screens.xs ? 100 : 150,
-        fixed: screens.xs ? 'right' : false,
-        render: (_, record) => (
-          <Space size="small">
-            <Tooltip title="View Details">
-              <Button 
-                icon={<EyeOutlined />} 
-                size="small"
-                onClick={() => handleViewDetails(record)}
-              />
-            </Tooltip>
-            <Tooltip title="Edit Debtor">
-              <Button 
-                icon={<EditOutlined />} 
-                size="small"
-                type="primary"
-                onClick={() => handleEditDebtor(record)}
-              />
-            </Tooltip>
-            <Popconfirm
-              title="Delete Debtor"
-              description="Are you sure you want to delete this debtor? This action cannot be undone."
-              onConfirm={() => handleDeleteDebtor(record.id)}
-              okText="Yes"
-              cancelText="No"
-              okType="danger"
-            >
-              <Tooltip title="Delete">
-                <Button 
-                  icon={<DeleteOutlined />} 
-                  size="small"
-                  danger
-                  disabled={record.totalDebt > 0}
-                />
-              </Tooltip>
-            </Popconfirm>
-          </Space>
-        )
+        );
       }
-    ];
-
-    return baseColumns;
-  }, [screens, getDebtorStatusConfig, handleEditDebtor, handleViewDetails, handleToggleStatus, handleDeleteDebtor]);
-
-  // Format debtors for display
-  const formattedDebtors = useMemo(() => 
-    debtors.map(debtor => ({
-      ...debtor,
-      key: debtor.id
-    })), 
-    [debtors]
-  );
-
-  // Statistics calculations
-  const stats = useMemo(() => {
-    const total = pagination.totalCount;
-    const active = debtors.filter(d => d.isActive).length;
-    const inactive = debtors.filter(d => !d.isActive).length;
-    const withDebt = debtors.filter(d => d.totalDebt > 0).length;
-    const totalOutstanding = debtors.reduce((sum, debtor) => sum + debtor.totalDebt, 0);
-
-    return { total, active, inactive, withDebt, totalOutstanding };
-  }, [debtors, pagination.totalCount]);
-
-  // Debt distribution analysis
-  const debtDistribution = useMemo(() => {
-    return {
-      noDebt: debtors.filter(d => d.totalDebt === 0).length,
-      lowDebt: debtors.filter(d => d.totalDebt > 0 && d.totalDebt <= 5000).length,
-      mediumDebt: debtors.filter(d => d.totalDebt > 5000 && d.totalDebt <= 10000).length,
-      highDebt: debtors.filter(d => d.totalDebt > 10000).length
-    };
-  }, [debtors]);
-
-  // Export functionality
-  const handleExportDebtors = useCallback(() => {
-    debtorService.downloadDebtorsCSV(debtors, `debtors_export_${new Date().toISOString().split('T')[0]}.csv`);
-    message.success('Debtors exported successfully');
-  }, [debtors]);
-
-  // Debtor Details Modal
-  const DebtorDetailsModal = ({ debtor, visible, onClose }) => {
-    if (!debtor) return null;
-
-    const statusConfig = getDebtorStatusConfig(debtor);
-
-    return (
-      <Modal
-        title={`Debtor Details - ${debtor.name}`}
-        open={visible}
-        onCancel={onClose}
-        footer={[
-          <Button key="close" onClick={onClose}>
-            Close
-          </Button>,
-          <Button 
-            key="edit" 
-            type="primary" 
-            icon={<EditOutlined />}
-            onClick={() => {
-              onClose();
-              handleEditDebtor(debtor);
+    },
+    {
+      title: 'Transactions',
+      key: 'transactions',
+      width: 120,
+      align: 'center',
+      render: (_, record) => {
+        const transactionCount = getTransactionCount(record);
+        return (
+          <Badge 
+            count={transactionCount} 
+            showZero 
+            size="small"
+            style={{ 
+              backgroundColor: transactionCount > 0 ? '#1890ff' : '#d9d9d9' 
             }}
           >
-            Edit Debtor
-          </Button>
-        ]}
-        width={screens.xs ? '90%' : 700}
-      >
-        <div className="space-y-4">
-          {/* Basic Information */}
-          <Card size="small" title="Basic Information">
-            <Descriptions column={screens.xs ? 1 : 2} size="small">
-              <Descriptions.Item label="Debtor Name">
-                <Text strong>{debtor.name}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Contact Person">
-                {debtor.contactPerson || 'N/A'}
-              </Descriptions.Item>
-              <Descriptions.Item label="Phone">
-                <Space>
-                  <PhoneOutlined />
-                  {debtor.phone}
-                </Space>
-              </Descriptions.Item>
-              <Descriptions.Item label="Email">
-                <Space>
-                  <MailOutlined />
-                  {debtor.email || 'N/A'}
-                </Space>
-              </Descriptions.Item>
-              <Descriptions.Item label="Status">
-                <Badge status={statusConfig.badge} text={statusConfig.label} />
-              </Descriptions.Item>
-              <Descriptions.Item label="Active">
-                {debtor.isActive ? (
-                  <Tag icon={<CheckCircleOutlined />} color="green">Active</Tag>
-                ) : (
-                  <Tag icon={<CloseCircleOutlined />} color="red">Inactive</Tag>
-                )}
-              </Descriptions.Item>
-            </Descriptions>
-          </Card>
+            <Button 
+              type="link" 
+              size="small"
+              style={{ 
+                width: 24, 
+                height: 24,
+                padding: 0,
+                minWidth: 'auto'
+              }}
+            />
+          </Badge>
+        );
+      }
+    },
+    {
+      title: 'Stations',
+      dataIndex: 'stationCount',
+      key: 'stationCount',
+      width: 100,
+      align: 'center',
+      render: (count) => (
+        <Tag color={count > 0 ? 'blue' : 'default'}>
+          {count || 0} station{count !== 1 ? 's' : ''}
+        </Tag>
+      )
+    },
+    {
+      title: 'Status',
+      key: 'status',
+      width: 120,
+      align: 'center',
+      render: (_, record) => {
+        const formatted = formatDebtor(record);
+        return (
+          <Space direction="vertical" size={4}>
+            <Tag color={formatted.statusColor}>
+              {formatted.statusDisplay}
+            </Tag>
+            {record.isBlacklisted && (
+              <Tag color="error">Blacklisted</Tag>
+            )}
+          </Space>
+        );
+      }
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 200,
+      align: 'center',
+      render: (_, record) => {
+        const formatted = formatDebtor(record);
+        const transactionCount = getTransactionCount(record);
+        
+        return (
+          <Space>
+            {/* VIEW TRANSACTIONS BUTTON - ALWAYS CLICKABLE */}
+            <Tooltip title={transactionCount > 0 ? "View Transactions" : "View Transactions (No transactions yet)"}>
+              <Button
+                type="link"
+                icon={<TransactionOutlined />}
+                onClick={() => handleViewTransactions(record)}
+                style={{ 
+                  color: transactionCount > 0 ? '#1890ff' : '#8c8c8c',
+                  cursor: 'pointer'
+                }}
+                size="small"
+              >
+                {transactionCount > 0 && transactionCount}
+              </Button>
+            </Tooltip>
 
-          {/* Financial Summary */}
-          <Card size="small" title="Financial Summary">
-            <Row gutter={16}>
-              <Col xs={12} sm={8}>
-                <Statistic
-                  title="Total Debt"
-                  value={debtor.totalDebt}
-                  formatter={value => debtorService.formatCurrency(value)}
-                  valueStyle={{ 
-                    color: debtor.totalDebt > 0 ? '#cf1322' : '#52c41a',
-                    fontSize: screens.xs ? '14px' : '16px'
-                  }}
-                  prefix={<DollarOutlined />}
-                />
-              </Col>
-              <Col xs={12} sm={8}>
-                <Statistic
-                  title="Stations"
-                  value={debtor.totalStations || debtor.stationAccounts?.length || 0}
-                  valueStyle={{ color: '#1890ff', fontSize: screens.xs ? '14px' : '16px' }}
-                  prefix={<ShopOutlined />}
-                />
-              </Col>
-              <Col xs={24} sm={8}>
-                <Statistic
-                  title="Outstanding"
-                  value={debtor.totalOutstandingTransactions || 0}
-                  valueStyle={{ color: '#faad14', fontSize: screens.xs ? '14px' : '16px' }}
-                />
-              </Col>
-            </Row>
-          </Card>
+            <Tooltip title="View Details">
+              <Button
+                type="link"
+                icon={<EyeOutlined />}
+                onClick={() => handleViewDetails(record)}
+                size="small"
+              />
+            </Tooltip>
 
-          {/* Station Accounts */}
-          {(debtor.stationAccounts && debtor.stationAccounts.length > 0) && (
-            <Card size="small" title="Station Accounts">
-              <Space direction="vertical" style={{ width: '100%' }}>
-                {debtor.stationAccounts.map((account, index) => (
-                  <Card key={account.id || index} size="small" type="inner">
-                    <Descriptions column={1} size="small">
-                      <Descriptions.Item label="Station">
-                        {account.station?.name || 'N/A'}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Account Balance">
-                        <Text type={account.balance > 0 ? "danger" : "success"}>
-                          {debtorService.formatCurrency(account.balance || 0)}
-                        </Text>
-                      </Descriptions.Item>
-                    </Descriptions>
-                  </Card>
-                ))}
-              </Space>
-            </Card>
-          )}
+            <Tooltip title="Edit Debtor">
+              <Button
+                type="link"
+                icon={<EditOutlined />}
+                onClick={() => handleEdit(record)}
+                disabled={updating}
+                size="small"
+              />
+            </Tooltip>
+          </Space>
+        );
+      }
+    }
+  ];
 
-          {/* Additional Information */}
-          <Card size="small" title="Additional Information">
-            <Descriptions column={1} size="small">
-              <Descriptions.Item label="Created">
-                {new Date(debtor.createdAt).toLocaleDateString()}
-              </Descriptions.Item>
-              <Descriptions.Item label="Last Updated">
-                {new Date(debtor.updatedAt).toLocaleDateString()}
-              </Descriptions.Item>
-              <Descriptions.Item label="Company ID">
-                <Text code>{debtor.companyId}</Text>
-              </Descriptions.Item>
-            </Descriptions>
-          </Card>
+  // Transactions Modal Content with Table
+  const TransactionsModalContent = () => {
+    const totals = calculateTotals();
+
+    if (transactionsLoading) {
+      return (
+        <div style={{ textAlign: 'center', padding: '40px' }}>
+          <Spin size="large" />
+          <div style={{ marginTop: 16 }}>Loading transactions...</div>
         </div>
-      </Modal>
+      );
+    }
+
+    if (transactions.length === 0) {
+      return (
+        <Empty
+          description="No transactions found for this debtor"
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        >
+          <Button type="primary" onClick={() => loadDebtorTransactions(selectedDebtor.id)}>
+            Try Again
+          </Button>
+        </Empty>
+      );
+    }
+
+    return (
+      <div>
+        {/* Summary Cards */}
+        <Row gutter={16} style={{ marginBottom: 16 }}>
+          <Col span={8}>
+            <Card size="small">
+              <Statistic
+                title="Total Debit"
+                value={totals.totalDebit}
+                valueStyle={{ color: '#ff4d4f' }}
+                prefix={<DollarOutlined />}
+                formatter={value => formatCurrency(value)}
+              />
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card size="small">
+              <Statistic
+                title="Total Credit"
+                value={totals.totalCredit}
+                valueStyle={{ color: '#52c41a' }}
+                prefix={<DollarOutlined />}
+                formatter={value => formatCurrency(value)}
+              />
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card size="small">
+              <Statistic
+                title="Net Amount"
+                value={totals.netAmount}
+                valueStyle={{ color: totals.netAmount >= 0 ? '#52c41a' : '#ff4d4f' }}
+                prefix={<DollarOutlined />}
+                formatter={value => formatCurrency(value)}
+              />
+            </Card>
+          </Col>
+        </Row>
+
+        {/* Transactions Table */}
+        <div ref={tableRef}>
+          <Table
+            columns={transactionColumns}
+            dataSource={transactions}
+            rowKey="id"
+            size="small"
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total, range) => 
+                `${range[0]}-${range[1]} of ${total} transactions`
+            }}
+            scroll={{ x: 800 }}
+            summary={() => (
+              <Table.Summary>
+                <Table.Summary.Row style={{ background: '#fafafa' }}>
+                  <Table.Summary.Cell index={0} colSpan={2}>
+                    <Text strong>TOTALS</Text>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={2}>
+                    <Space direction="vertical" size={0}>
+                      <Text type="danger" strong>Debit: {formatCurrency(totals.totalDebit)}</Text>
+                      <Text type="success" strong>Credit: {formatCurrency(totals.totalCredit)}</Text>
+                      <Text strong>Net: {formatCurrency(totals.netAmount)}</Text>
+                    </Space>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={3} colSpan={5}>
+                    <Text type="secondary">
+                      {transactions.length} transaction{transactions.length !== 1 ? 's' : ''} total
+                    </Text>
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+              </Table.Summary>
+            )}
+          />
+        </div>
+      </div>
     );
   };
 
-  // Empty state component
-  const EmptyState = () => (
-    <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-      <UserOutlined style={{ fontSize: '48px', color: '#d9d9d9', marginBottom: '16px' }} />
-      <div style={{ color: '#8c8c8c', fontSize: '16px', marginBottom: '8px' }}>
-        No debtors found
-      </div>
-      <div style={{ color: '#bfbfbf', fontSize: '14px', marginBottom: '24px' }}>
-        {filters.search || filters.status ? 
-          'Try adjusting your filters to see more results' : 
-          'Get started by creating your first debtor'
-        }
-      </div>
-      {!(filters.search || filters.status) && (
-        <Button 
-          type="primary" 
-          icon={<UserAddOutlined />}
-          onClick={() => setShowCreateDebtorModal(true)}
-          size="large"
-        >
-          Create First Debtor
-        </Button>
-      )}
-    </div>
-  );
-
-  if (!currentCompany) {
-    return (
-      <Alert
-        message="No Company Context"
-        description="Please ensure you are logged into a company account."
-        type="warning"
-        showIcon
-      />
-    );
-  }
-
   return (
-    <div className="space-y-4">
-      {/* Header with Actions */}
-      <Card>
-        <Row gutter={[16, 16]} align="middle">
-          <Col xs={24} md={12}>
-            <Space direction="vertical" size={0}>
-              <Title level={2} style={{ margin: 0, fontSize: screens.xs ? '20px' : '24px' }}>
-                Debtor Management
-              </Title>
-              <Text type="secondary" style={{ fontSize: screens.xs ? '12px' : '14px' }}>
-                Manage your debtors and track their financial status
-              </Text>
-            </Space>
-          </Col>
-          <Col xs={24} md={12}>
-            <Row gutter={[8, 8]} justify={screens.md ? "end" : "start"}>
-              <Col xs={12} sm={8}>
-                <Button
-                  icon={<ReloadOutlined />}
-                  onClick={fetchDebtors}
-                  loading={loading}
-                  block={screens.xs}
-                >
-                  {screens.sm && 'Refresh'}
-                </Button>
-              </Col>
-              <Col xs={12} sm={8}>
-                <Button
-                  onClick={handleExportDebtors}
-                  disabled={debtors.length === 0}
-                  block={screens.xs}
-                >
-                  Export CSV
-                </Button>
-              </Col>
-              <Col xs={24} sm={8}>
-                <Button
-                  type="primary"
-                  icon={<UserAddOutlined />}
-                  onClick={() => setShowCreateDebtorModal(true)}
-                  block
-                  size={screens.xs ? "middle" : "large"}
-                >
-                  Add Debtor
-                </Button>
-              </Col>
-            </Row>
-          </Col>
-        </Row>
-      </Card>
-
+    <div>
       {/* Statistics Cards */}
-      <Row gutter={[16, 16]}>
+      <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col xs={12} sm={6}>
-          <Card size="small" loading={loading}>
+          <Card size="small">
             <Statistic
               title="Total Debtors"
               value={stats.total}
-              valueStyle={{ color: '#1890ff' }}
               prefix={<UserOutlined />}
             />
           </Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card size="small" loading={loading}>
+          <Card size="small">
             <Statistic
               title="Active"
               value={stats.active}
               valueStyle={{ color: '#52c41a' }}
-              prefix={<CheckCircleOutlined />}
+              prefix={<UserOutlined />}
             />
           </Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card size="small" loading={loading}>
+          <Card size="small">
             <Statistic
-              title="With Debt"
-              value={stats.withDebt}
-              valueStyle={{ color: '#faad14' }}
-              prefix={<ExclamationCircleOutlined />}
+              title="Transactions"
+              value={stats.totalTransactions}
+              valueStyle={{ color: '#1890ff' }}
+              prefix={<TransactionOutlined />}
             />
           </Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card size="small" loading={loading}>
+          <Card size="small">
             <Statistic
-              title="Total Outstanding"
-              value={debtorService.formatCurrency(stats.totalOutstanding)}
-              valueStyle={{ color: '#cf1322' }}
+              title="Total Debt"
+              value={stats.totalDebt}
+              precision={2}
               prefix={<DollarOutlined />}
+              formatter={value => `KES ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
             />
           </Card>
         </Col>
       </Row>
 
-      {/* Debt Distribution */}
-      <Card title="Debt Distribution" size="small">
-        <Row gutter={[8, 8]}>
-          <Col xs={12} sm={6}>
-            <Card 
-              size="small" 
-              style={{ borderLeft: '4px solid #52c41a' }}
-              bodyStyle={{ padding: '12px' }}
-            >
-              <Statistic
-                title="No Debt"
-                value={debtDistribution.noDebt}
-                valueStyle={{ color: '#52c41a', fontSize: screens.xs ? '12px' : '14px' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card 
-              size="small" 
-              style={{ borderLeft: '4px solid #1890ff' }}
-              bodyStyle={{ padding: '12px' }}
-            >
-              <Statistic
-                title="Low Debt"
-                value={debtDistribution.lowDebt}
-                valueStyle={{ color: '#1890ff', fontSize: screens.xs ? '12px' : '14px' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card 
-              size="small" 
-              style={{ borderLeft: '4px solid #faad14' }}
-              bodyStyle={{ padding: '12px' }}
-            >
-              <Statistic
-                title="Medium Debt"
-                value={debtDistribution.mediumDebt}
-                valueStyle={{ color: '#faad14', fontSize: screens.xs ? '12px' : '14px' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card 
-              size="small" 
-              style={{ borderLeft: '4px solid #cf1322' }}
-              bodyStyle={{ padding: '12px' }}
-            >
-              <Statistic
-                title="High Debt"
-                value={debtDistribution.highDebt}
-                valueStyle={{ color: '#cf1322', fontSize: screens.xs ? '12px' : '14px' }}
-              />
-            </Card>
-          </Col>
-        </Row>
-      </Card>
-
       {/* Filters */}
-      <Card size="small">
-        <Row gutter={[8, 8]} align="middle">
-          <Col xs={24} sm={12} md={6}>
-            <Input
-              placeholder="Search by name, phone, email..."
-              value={filters.search}
-              onChange={(e) => handleFilterChange({ search: e.target.value })}
-              prefix={<SearchOutlined />}
-              size="large"
+      <Card size="small" style={{ marginBottom: 16 }}>
+        <Row gutter={16} align="middle">
+          <Col xs={24} md={6}>
+            <Search
+              placeholder="Search debtors..."
+              allowClear
+              onSearch={handleSearch}
+              style={{ width: '100%' }}
             />
           </Col>
-          <Col xs={12} sm={6} md={4}>
+          <Col xs={12} md={4}>
             <Select
+              placeholder="Category"
+              allowClear
               style={{ width: '100%' }}
+              onChange={(value) => handleFilterChange('categoryId', value)}
+            >
+              {categories.map(category => (
+                <Option key={category.id} value={category.id}>
+                  <Space>
+                    <div
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        backgroundColor: category.color || '#666666'
+                      }}
+                    />
+                    {category.name}
+                  </Space>
+                </Option>
+              ))}
+            </Select>
+          </Col>
+          <Col xs={12} md={3}>
+            <Select
               placeholder="Status"
-              value={filters.status}
-              onChange={(value) => handleFilterChange({ status: value })}
               allowClear
-              size="large"
-            >
-              <Option value="active">Active</Option>
-              <Option value="inactive">Inactive</Option>
-              <Option value="with_debt">With Debt</Option>
-              <Option value="no_debt">No Debt</Option>
-            </Select>
-          </Col>
-          <Col xs={12} sm={6} md={4}>
-            <Select
               style={{ width: '100%' }}
-              placeholder="Debt Range"
-              value={filters.debtRange}
-              onChange={(value) => handleFilterChange({ debtRange: value })}
-              allowClear
-              size="large"
+              onChange={(value) => handleFilterChange('isActive', value)}
             >
-              <Option value="no_debt">No Debt</Option>
-              <Option value="low">Low (≤ 5K)</Option>
-              <Option value="medium">Medium (5K-10K)</Option>
-              <Option value="high">High (>10K)</Option>
+              <Option value={true}>Active</Option>
+              <Option value={false}>Inactive</Option>
             </Select>
           </Col>
-          <Col xs={24} sm={12} md={10}>
+          <Col xs={12} md={3}>
+            <Select
+              placeholder="Blacklist"
+              allowClear
+              style={{ width: '100%' }}
+              onChange={(value) => handleFilterChange('isBlacklisted', value)}
+            >
+              <Option value={true}>Blacklisted</Option>
+              <Option value={false}>Clear</Option>
+            </Select>
+          </Col>
+          <Col xs={12} md={3}>
+            <Select
+              placeholder="Credit Limit"
+              allowClear
+              style={{ width: '100%' }}
+              onChange={(value) => handleFilterChange('hasCreditLimit', value)}
+            >
+              <Option value={true}>Has Limit</Option>
+              <Option value={false}>No Limit</Option>
+            </Select>
+          </Col>
+          <Col xs={24} md={5}>
             <Space>
-              <Button 
-                icon={<SearchOutlined />}
-                onClick={fetchDebtors}
-                loading={loading}
+              <Button
                 type="primary"
-                size="large"
-                block={screens.xs}
+                icon={<PlusOutlined />}
+                onClick={onShowCreateModal}
               >
-                {screens.sm && 'Search'}
+                New Debtor
               </Button>
-              <Button 
-                icon={<FilterOutlined />}
-                onClick={() => {
-                  handleFilterChange({
-                    search: '',
-                    status: '',
-                    debtRange: '',
-                    page: 1
-                  });
-                }}
-                size="large"
-                block={screens.xs}
+              <Button
+                icon={<ReloadOutlined />}
+                onClick={loadDebtors}
+                loading={loading}
               >
-                {screens.sm && 'Reset'}
+                Refresh
               </Button>
             </Space>
           </Col>
@@ -804,80 +897,115 @@ const DebtorManagement = () => {
       <Card>
         <Table
           columns={columns}
-          dataSource={formattedDebtors}
-          loading={loading}
+          dataSource={debtors}
           rowKey="id"
+          loading={loading}
           pagination={{
-            current: pagination.page,
-            pageSize: pagination.limit,
-            total: pagination.totalCount,
+            current: pagination.page || 1,
+            pageSize: pagination.limit || 10,
+            total: pagination.total || 0,
             showSizeChanger: true,
             showQuickJumper: true,
             showTotal: (total, range) => 
-              `Showing ${range[0]}-${range[1]} of ${total} debtors`,
-            size: screens.xs ? 'small' : 'default',
-            pageSizeOptions: ['10', '20', '50', '100']
+              `${range[0]}-${range[1]} of ${total} debtors`
           }}
           onChange={handleTableChange}
-          scroll={{ x: screens.xs ? 800 : 1200 }}
-          locale={{ emptyText: <EmptyState /> }}
-          size={screens.xs ? 'small' : 'middle'}
+          locale={{
+            emptyText: (
+              <Empty
+                description="No debtors found"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              >
+                <Button 
+                  type="primary" 
+                  onClick={onShowCreateModal}
+                >
+                  Create First Debtor
+                </Button>
+              </Empty>
+            )
+          }}
         />
       </Card>
 
       {/* Modals */}
-      <CreateDebtorModal
-        visible={showCreateDebtorModal}
-        onClose={() => setShowCreateDebtorModal(false)}
-        onSuccess={() => {
-          setShowCreateDebtorModal(false);
-          fetchDebtors();
-          fetchStatistics();
-          message.success('Debtor created successfully');
-        }}
-      />
+      {selectedDebtor && (
+        <>
+          <UpdateDebtorModal
+            visible={showUpdateModal}
+            debtor={selectedDebtor}
+            categories={categories}
+            onClose={() => {
+              setShowUpdateModal(false);
+              setSelectedDebtor(null);
+            }}
+            onSuccess={handleUpdateSuccess}
+          />
 
-      <EditDebtorModal
-        visible={showEditDebtorModal}
-        onClose={() => {
-          setShowEditDebtorModal(false);
-          setSelectedDebtor(null);
-        }}
-        onSuccess={() => {
-          setShowEditDebtorModal(false);
-          setSelectedDebtor(null);
-          fetchDebtors();
-          fetchStatistics();
-          message.success('Debtor updated successfully');
-        }}
-        debtor={selectedDebtor}
-      />
+          <DebtorDetailModal
+            visible={showDetailModal}
+            debtor={selectedDebtor}
+            onClose={() => {
+              setShowDetailModal(false);
+              setSelectedDebtor(null);
+            }}
+          />
 
-      {/* Debtor Details Modal */}
-      {debtorDetails && (
-        <DebtorDetailsModal
-          debtor={debtorDetails}
-          visible={showDetailsModal}
-          onClose={() => {
-            setShowDetailsModal(false);
-            setDebtorDetails(null);
-          }}
-        />
+          {/* Transactions Modal */}
+          <Modal
+            title={
+              <Space>
+                <TransactionOutlined />
+                Transactions for {selectedDebtor?.name}
+                <Tag color="blue">
+                  Station: {state.currentStation?.name || 'N/A'}
+                </Tag>
+              </Space>
+            }
+            open={showTransactionsModal}
+            onCancel={() => {
+              setShowTransactionsModal(false);
+              setSelectedDebtor(null);
+              setTransactions([]);
+            }}
+            width={1200}
+            style={{ top: 20 }}
+            footer={[
+              <Button 
+                key="download-pdf"
+                icon={<DownloadOutlined />}
+                onClick={downloadPDF}
+                disabled={transactions.length === 0}
+              >
+                Download PDF
+              </Button>,
+              <Button 
+                key="download-excel"
+                icon={<DownloadOutlined />}
+                onClick={downloadExcel}
+                disabled={transactions.length === 0}
+              >
+                Download Excel
+              </Button>,
+              <Button 
+                key="close" 
+                icon={<CloseOutlined />}
+                onClick={() => {
+                  setShowTransactionsModal(false);
+                  setSelectedDebtor(null);
+                  setTransactions([]);
+                }}
+              >
+                Close
+              </Button>
+            ]}
+          >
+            <TransactionsModalContent />
+          </Modal>
+        </>
       )}
-
-            {/* Modals */}
-            {/* <CreateDebtorModal
-              visible={showCreateDebtorModal}
-              onClose={() => setShowCreateDebtorModal(false)}
-              onSuccess={() => {
-                setShowCreateDebtorModal(false);
-                fetchDebts();
-                fetchStatistics();
-                message.success('Debtor created successfully');
-              }}
-            /> */}
     </div>
   );
 };
 
-export default DebtorManagement;
+export default DebtorsManagement;

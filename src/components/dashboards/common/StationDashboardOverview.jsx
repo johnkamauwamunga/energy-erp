@@ -40,7 +40,7 @@ import { purchaseService } from '../../../services/purchaseService/purchaseServi
 import { assetService } from '../../../services/assetService/assetService';
 import { fuelOffloadService } from '../../../services/offloadService/offloadService';
 import { useApp } from '../../../context/AppContext';
-import { useShiftAssets } from './shift/shiftClose/hooks/useShiftAssets';
+//  import { useShiftAssets } from './shift/shiftClose/hooks/useShiftAssets';
 
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -63,14 +63,14 @@ const StationDashboardOverview = () => {
   const currentStation = state?.currentStation?.name;
 
   // Use shift hook
-  const {
-    currentShift,
-    loading: shiftLoading
-  } = useShiftAssets(stationId);
+  // const {
+  //   currentShift,
+  //   loading: shiftLoading
+  // } = useShiftAssets(stationId);
 
-  console.log("current shift ",currentShift)
-  const shiftId = currentShift?.id;
-  const shiftNumber = currentShift?.shiftNumber
+  // console.log("current shift ",currentShift)
+  const shiftId = "hey hey hey"
+  const shiftNumber = "John"
 
   // Helper function to safely get string value
   const getSafeString = (value, defaultValue = 'N/A') => {
@@ -330,13 +330,13 @@ const StationDashboardOverview = () => {
 
   // Current Shift Card with color coding
   const renderShiftCard = () => {
-    if (shiftLoading) {
-      return (
-        <Card size="small">
-          <Skeleton active paragraph={{ rows: 1 }} />
-        </Card>
-      );
-    }
+    // if (shiftLoading) {
+    //   return (
+    //     <Card size="small">
+    //       <Skeleton active paragraph={{ rows: 1 }} />
+    //     </Card>
+    //   );
+    // }
 
     const shiftStatus = shiftId ? 'OPEN' : 'NO_SHIFT';
     const statusConfig = {
@@ -369,7 +369,7 @@ const StationDashboardOverview = () => {
         }}
       >
         <Space size="middle" style={{ width: '100%', justifyContent: 'space-between' }}>
-          <Space>
+          {/* <Space>
             <ClockCircleOutlined style={{ fontSize: '20px', color: config.textColor }} />
             <div>
               <Text strong style={{ color: config.textColor }}>Current Shift</Text>
@@ -385,7 +385,7 @@ const StationDashboardOverview = () => {
                 <Text style={{ color: config.textColor }}>No shift currently active</Text>
               )}
             </div>
-          </Space>
+          </Space> */}
           <Badge 
             status={config.badge} 
             text={config.label} 

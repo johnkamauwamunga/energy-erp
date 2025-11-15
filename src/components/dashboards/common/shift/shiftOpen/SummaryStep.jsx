@@ -1,557 +1,566 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Badge, Table, Alert, Button } from '../../../../ui';
-import { CheckCircle, AlertCircle, Package, Zap, Fuel, User, Play, DollarSign, Gauge, Thermometer, Droplets } from 'lucide-react';
+import React, { useState } from 'react';
+import { 
+  Card, 
+  Table, 
+  Descriptions, 
+  Tag, 
+  Space, 
+  Alert, 
+  Row, 
+  Col,
+  Statistic,
+  Divider,
+  Button,
+  notification
+} from 'antd';
+import { 
+  Users, 
+  Gauge, 
+  Fuel, 
+  UserCheck, 
+  MapPin,
+  CheckCircle,
+  AlertTriangle,
+  Play
+} from 'lucide-react';
+import { shiftService } from '../../../../../services/shiftService/shiftService';
 
-const SummaryStep = ({ data, shiftId, onFinalCreate }) => {
+const SummaryStep = ({ 
+  wizardData,
+  onPrevStep,
+  canOpenShift,
+  onSuccess
+}) => {
+  const [submissionError, setSubmissionError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [creating, setCreating] = useState(false);
-  const [createSuccess, setCreateSuccess] = useState(false);
-  const [assetsData, setAssetsData] = useState({ islands: [], tanks: [] });
 
-  // Load assets data from localStorage
-  useEffect(() => {
-    const loadAssetsData = () => {
-      setLoading(true);
-      try {
-        console.log('📊 Summary Data:', data);
-        
-        // Load assets from localStorage (set by AssetsConfigurationStep)
-        const savedAssets = localStorage.getItem('currentStationAssets');
-        if (savedAssets) {
-          const parsedAssets = JSON.parse(savedAssets);
-          setAssetsData(parsedAssets);
-          console.log('🏝️ Loaded assets:', parsedAssets);
-        }
+  console.log('📋 SummaryStep received wizardData:', wizardData);
 
-      } catch (err) {
-        console.error('❌ Error loading data:', err);
-        setError('Failed to load configuration data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadAssetsData();
-  }, [data]);
-
-  // Get attendant name from data.attendants
-  const getAttendantName = (attendantId) => {
-    if (!attendantId) return 'Unknown Attendant';
+  // Helper function to safely format numbers
+  const formatNumber = (value, decimals = 3) => {
+    if (value === null || value === undefined || value === '') return '0.000';
     
-    if (data.attendants && Array.isArray(data.attendants)) {
-      const attendant = data.attendants.find(a => a.id === attendantId);
-      if (attendant) {
-        return `${attendant.firstName} ${attendant.lastName}`.trim();
-      }
-    }
+    // Convert to number if it's a string
+    const numValue = typeof value === 'string' ? parseFloat(value) : value;
     
-    return `Attendant ${attendantId?.substring(0, 8)}`;
+    if (isNaN(numValue)) return '0.000';
+    
+    return numValue.toFixed(decimals);
   };
 
-  // Get supervisor name
-  const getSupervisorName = () => {
-    if (data.supervisorId) {
-      return getAttendantName(data.supervisorId);
-    }
-    return "Shift Supervisor";
+  // Helper function to safely format currency
+  const formatCurrency = (value, decimals = 2) => {
+    if (value === null || value === undefined || value === '') return '0.00';
+    
+    // Convert to number if it's a string
+    const numValue = typeof value === 'string' ? parseFloat(value) : value;
+    
+    if (isNaN(numValue)) return '0.00';
+    
+    return numValue.toFixed(decimals);
   };
 
-  // Get island name from assets data
-  const getIslandName = (islandId) => {
-    const island = assetsData.islands.find(i => i.islandId === islandId);
-    return island ? island.islandName : `Island ${islandId?.substring(0, 8)}`;
-  };
+  if (!wizardData.shiftInfo.shiftId) {
+    return (
+      <Alert
+        message="No Shift Created"
+        description="Please go back to Step 1 and create a shift first."
+        type="warning"
+        showIcon
+      />
+    );
+  }
 
-  // Get pump details including name and product
-  const getPumpDetails = (pumpId) => {
-    for (let island of assetsData.islands) {
-      const pump = island.pumps?.find(p => p.pumpId === pumpId);
-      if (pump) {
-        return {
-          name: pump.pumpName,
-          product: pump.productName || 'No Product',
-          tank: pump.tank?.tankName
-        };
-      }
-    }
-    return { name: `Pump ${pumpId?.substring(0, 8)}`, product: 'Unknown', tank: null };
-  };
-
-  // Get tank details including name and product
-  const getTankDetails = (tankId) => {
-    const tank = assetsData.tanks.find(t => t.tankId === tankId);
-    if (tank) {
-      return {
-        name: tank.tankName,
-        product: tank.productName,
-        capacity: tank.capacity,
-        currentVolume: tank.currentVolume
-      };
-    }
-    return { name: `Tank ${tankId?.substring(0, 8)}`, product: 'Unknown', capacity: 0, currentVolume: 0 };
-  };
-
-  // Handle final shift creation
-  const handleFinalCreate = async () => {
-    if (!shiftId) {
-      setError('No shift ID available');
-      return;
-    }
-
-    setCreating(true);
-    setError(null);
-
+  const handleStartShift = async () => {
     try {
-      console.log('🎯 Finalizing shift creation with ID:', shiftId);
-      
-      if (onFinalCreate) {
-        await onFinalCreate(shiftId, data);
+      setLoading(true);
+      setSubmissionError(null);
+      console.log('🎯 Starting shift opening process...');
+
+      // Validate all required data
+      if (!canOpenShift) {
+        throw new Error('Please complete all steps before starting shift');
       }
+
+      // Harmonize all data into the final payload
+      const openShiftPayload = {
+        recordedById: wizardData.personnel.supervisorId,
+        
+        // Personnel data
+        islandAssignments: wizardData.personnel.islandAssignments.map(assignment => ({
+          attendantId: assignment.attendantId,
+          islandId: assignment.islandId,
+          assignmentType: assignment.assignmentType || 'PRIMARY'
+        })),
+        
+        // Pump readings data - ensure numbers
+        pumpReadings: wizardData.readings.pumpReadings.map(reading => ({
+          pumpId: reading.pumpId,
+          electricMeter: parseFloat(reading.electricMeter) || 0,
+          manualMeter: parseFloat(reading.manualMeter) || 0,
+          cashMeter: parseFloat(reading.cashMeter) || 0,
+          unitPrice: parseFloat(reading.unitPrice) || 0,
+          readingType: 'OPENING',
+          source: reading.source || 'MANUAL_ENTRY'
+        })),
+        
+        // Tank readings data - ensure numbers
+        tankReadings: wizardData.readings.tankReadings.map(reading => ({
+          tankId: reading.tankId,
+          volume: parseFloat(reading.volume) || 0,
+          temperature: parseFloat(reading.temperature) || 25,
+          waterLevel: parseFloat(reading.waterLevel) || 0,
+          dipValue: parseFloat(reading.dipValue) || 0,
+          readingType: 'OPENING',
+          source: reading.source || 'MANUAL_ENTRY'
+        }))
+      };
+
+      console.log('📤 Final harmonized payload for shift opening:', openShiftPayload);
+
+      // Call shiftService directly
+      const result = await shiftService.openShift(wizardData.shiftInfo.shiftId, openShiftPayload);
       
-      setCreateSuccess(true);
+      console.log('✅ Shift opened successfully:', result);
+
+      notification.success({
+        message: 'Shift Started Successfully',
+        description: `Shift ${wizardData.shiftInfo.shiftNumber} is now open and ready for operations.`
+      });
+
+      onSuccess?.(result);
       
-      // Clear localStorage after successful creation
-      setTimeout(() => {
-        localStorage.removeItem('currentShiftId');
-        localStorage.removeItem('currentShiftAttendants');
-        localStorage.removeItem('currentShiftNumber');
-        localStorage.removeItem('currentShiftStartTime');
-        localStorage.removeItem('currentShiftStation');
-        localStorage.removeItem('currentStationAssets');
-      }, 2000);
-      
-    } catch (err) {
-      console.error('❌ Failed to finalize shift:', err);
-      setError(err.message || 'Failed to create shift');
+    } catch (error) {
+      console.error('❌ Failed to open shift:', error);
+      setSubmissionError(error.message || 'Failed to start shift');
+      notification.error({
+        message: 'Failed to Start Shift',
+        description: error.message || 'Please check all data and try again'
+      });
     } finally {
-      setCreating(false);
+      setLoading(false);
     }
   };
 
-  // Group island assignments by island
-  const assignmentsByIsland = data.islandAssignments.reduce((acc, assignment) => {
-    if (!acc[assignment.islandId]) {
-      acc[assignment.islandId] = [];
+  const personnelColumns = [
+    {
+      title: 'Role',
+      dataIndex: 'role',
+      key: 'role',
+      render: (role) => (
+        <Tag color={role === 'Supervisor' ? 'blue' : 'green'}>
+          {role}
+        </Tag>
+      )
+    },
+    {
+      title: 'Name',
+      key: 'name',
+      render: (_, record) => `${record.firstName} ${record.lastName}`
+    },
+    {
+      title: 'Email',
+      dataIndex: 'email',
+      key: 'email'
+    },
+    {
+      title: 'Assigned Islands',
+      key: 'islands',
+      render: (_, record) => {
+        if (record.role === 'Supervisor') {
+          return <Tag color="blue">All Islands</Tag>;
+        }
+        
+        const assignedIslands = wizardData.personnel.islandAssignments
+          .filter(assignment => assignment.attendantId === record.id)
+          .map(assignment => {
+            const island = wizardData.personnel.topologyIslands?.find(i => i.id === assignment.islandId);
+            return island ? island.name : `Island ${assignment.islandId}`;
+          });
+        
+        return (
+          <Space wrap>
+            {assignedIslands.map((island, index) => (
+              <Tag key={index} color="green">
+                {island}
+              </Tag>
+            ))}
+            {assignedIslands.length === 0 && (
+              <Tag color="orange">No islands assigned</Tag>
+            )}
+          </Space>
+        );
+      }
     }
-    acc[assignment.islandId].push(assignment);
-    return acc;
-  }, {});
+  ];
 
-  // Calculate completion statistics
-  const completionStats = {
-    islands: new Set(data.islandAssignments.map(a => a.islandId)).size,
-    pumps: data.pumpReadings.length,
-    tanks: data.tankReadings.length,
-    attendants: new Set(data.islandAssignments.map(a => a.attendantId)).size
-  };
+  const pumpColumns = [
+    {
+      title: 'Pump',
+      dataIndex: 'name',
+      key: 'name',
+      render: (text, record) => (
+        <Space>
+          <Gauge size={14} />
+          {text}
+        </Space>
+      )
+    },
+    {
+      title: 'Product',
+      key: 'product',
+      render: (_, record) => record.product?.name || 'No Product'
+    },
+    {
+      title: 'Electric Meter',
+      key: 'electricMeter',
+      render: (_, record) => {
+        const reading = wizardData.readings.pumpReadings?.find(r => r.pumpId === record.id);
+        return formatNumber(reading?.electricMeter);
+      }
+    },
+    {
+      title: 'Manual Meter',
+      key: 'manualMeter',
+      render: (_, record) => {
+        const reading = wizardData.readings.pumpReadings?.find(r => r.pumpId === record.id);
+        return formatNumber(reading?.manualMeter);
+      }
+    },
+    {
+      title: 'Cash Meter',
+      key: 'cashMeter',
+      render: (_, record) => {
+        const reading = wizardData.readings.pumpReadings?.find(r => r.pumpId === record.id);
+        return formatNumber(reading?.cashMeter);
+      }
+    },
+    {
+      title: 'Unit Price',
+      key: 'unitPrice',
+      render: (_, record) => {
+        const reading = wizardData.readings.pumpReadings?.find(r => r.pumpId === record.id);
+        return formatCurrency(reading?.unitPrice);
+      }
+    }
+  ];
 
-  const isConfigurationComplete = completionStats.pumps > 0 && completionStats.tanks > 0;
+  const tankColumns = [
+    {
+      title: 'Tank',
+      dataIndex: 'name',
+      key: 'name',
+      render: (text) => (
+        <Space>
+          <Fuel size={14} />
+          {text}
+        </Space>
+      )
+    },
+    {
+      title: 'Product',
+      key: 'product',
+      render: (_, record) => record.product?.name || 'No Product'
+    },
+    {
+      title: 'Volume (L)',
+      key: 'volume',
+      render: (_, record) => {
+        const reading = wizardData.readings.tankReadings?.find(r => r.tankId === record.id);
+        return formatNumber(reading?.volume);
+      }
+    },
+    {
+      title: 'Temperature (°C)',
+      key: 'temperature',
+      render: (_, record) => {
+        const reading = wizardData.readings.tankReadings?.find(r => r.tankId === record.id);
+        return formatNumber(reading?.temperature, 1);
+      }
+    },
+    {
+      title: 'Water Level',
+      key: 'waterLevel',
+      render: (_, record) => {
+        const reading = wizardData.readings.tankReadings?.find(r => r.tankId === record.id);
+        return formatNumber(reading?.waterLevel, 2);
+      }
+    },
+    {
+      title: 'Dip Value',
+      key: 'dipValue',
+      render: (_, record) => {
+        const reading = wizardData.readings.tankReadings?.find(r => r.tankId === record.id);
+        return formatNumber(reading?.dipValue, 2);
+      }
+    },
+    {
+      title: 'Capacity (L)',
+      dataIndex: 'capacity',
+      key: 'capacity',
+      render: (capacity) => capacity?.toLocaleString() || '0'
+    }
+  ];
+
+  // Prepare personnel data for table
+  const personnelData = [
+    // Supervisor
+    ...(wizardData.personnel.supervisorId ? [{
+      id: wizardData.personnel.supervisorId,
+      role: 'Supervisor',
+      firstName: 'Supervisor', // You might want to fetch actual name
+      lastName: 'User',
+      email: 'supervisor@station.com'
+    }] : []),
+    // Attendants
+    ...(wizardData.personnel.attendants || []).map(attendant => ({
+      ...attendant,
+      role: 'Attendant'
+    }))
+  ];
+
+  // Check if all required data is present
+  const hasAllRequiredData = canOpenShift;
+
+  // Debug: Check the actual data types in pumpReadings
+  console.log('🔍 Pump readings data types:', wizardData.readings.pumpReadings?.map(reading => ({
+    pumpId: reading.pumpId,
+    electricMeter: { value: reading.electricMeter, type: typeof reading.electricMeter },
+    manualMeter: { value: reading.manualMeter, type: typeof reading.manualMeter },
+    cashMeter: { value: reading.cashMeter, type: typeof reading.cashMeter },
+    unitPrice: { value: reading.unitPrice, type: typeof reading.unitPrice }
+  })));
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="text-center">
-        <h2 className="text-2xl font-bold text-gray-900">Shift Configuration Summary</h2>
-        <p className="text-gray-600 mt-2">Review all configurations before starting the shift</p>
-      </div>
-
-      {/* Status Alert */}
-      {createSuccess ? (
-        <Alert variant="success" className="text-sm">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="w-5 h-5" />
-            <div>
-              <p className="font-semibold">Shift Ready to Start!</p>
-              <p>All configurations have been saved successfully. The shift is now active.</p>
-            </div>
-          </div>
-        </Alert>
-      ) : isConfigurationComplete ? (
-        <Alert variant="success" className="text-sm">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="w-5 h-5" />
-            <div>
-              <p className="font-semibold">Configuration Complete</p>
-              <p>All required configurations have been set. Ready to start the shift.</p>
-            </div>
-          </div>
-        </Alert>
-      ) : (
-        <Alert variant="warning" className="text-sm">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-5 h-5" />
-            <div>
-              <p className="font-semibold">Configuration Incomplete</p>
-              <p>Some required configurations are missing. Please complete all sections.</p>
-            </div>
-          </div>
-        </Alert>
+    <div style={{ padding: '0 16px' }}>
+      {/* Error Display */}
+      {submissionError && (
+        <Alert
+          message="Failed to Start Shift"
+          description={submissionError}
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
       )}
 
-      {/* Basic Information */}
-      <Card className="p-6">
-        <h3 className="font-semibold text-lg mb-4">Shift Information</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="text-center p-4 bg-blue-50 rounded-lg">
-            <div className="text-2xl font-bold text-blue-600">{data.shiftNumber}</div>
-            <div className="text-sm text-gray-600">Shift Number</div>
-          </div>
-          <div className="text-center p-4 bg-green-50 rounded-lg">
-            <div className="text-lg font-bold text-green-600">
-              {new Date(data.startTime).toLocaleDateString()}
-            </div>
-            <div className="text-sm text-gray-600">Start Date</div>
-          </div>
-          <div className="text-center p-4 bg-purple-50 rounded-lg">
-            <div className="text-lg font-bold text-purple-600">
-              {new Date(data.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-            </div>
-            <div className="text-sm text-gray-600">Start Time</div>
-          </div>
-          <div className="text-center p-4 bg-orange-50 rounded-lg">
-            <div className="text-lg font-bold text-orange-600 truncate">
-              {getSupervisorName()}
-            </div>
-            <div className="text-sm text-gray-600">Supervisor</div>
-          </div>
-        </div>
-        {shiftId && (
-          <div className="mt-4 p-3 bg-gray-50 rounded border">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="font-semibold">Shift ID:</span>
-              <code className="bg-gray-100 px-2 py-1 rounded text-xs">{shiftId}</code>
-            </div>
-          </div>
-        )}
+      {/* Summary Header */}
+      <Alert
+        message={hasAllRequiredData ? "Shift Ready to Start" : "Incomplete Configuration"}
+        description={
+          hasAllRequiredData 
+            ? "Review all the information below before starting the shift. All data will be submitted when you click 'Start Shift'."
+            : "Please go back and complete all required steps before starting the shift."
+        }
+        type={hasAllRequiredData ? "success" : "warning"}
+        showIcon
+        style={{ marginBottom: 24 }}
+      />
+
+      {/* Quick Stats */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col span={4}>
+          <Card size="small">
+            <Statistic
+              title="Supervisor"
+              value={wizardData.personnel.supervisorId ? 1 : 0}
+              prefix={<UserCheck size={16} />}
+              valueStyle={{ color: wizardData.personnel.supervisorId ? '#3f8600' : '#cf1322' }}
+            />
+          </Card>
+        </Col>
+        <Col span={4}>
+          <Card size="small">
+            <Statistic
+              title="Attendants"
+              value={wizardData.personnel.attendants?.length || 0}
+              prefix={<Users size={16} />}
+              valueStyle={{ color: (wizardData.personnel.attendants?.length || 0) > 0 ? '#3f8600' : '#cf1322' }}
+            />
+          </Card>
+        </Col>
+        <Col span={4}>
+          <Card size="small">
+            <Statistic
+              title="Island Assignments"
+              value={wizardData.personnel.islandAssignments?.length || 0}
+              prefix={<MapPin size={16} />}
+              valueStyle={{ color: (wizardData.personnel.islandAssignments?.length || 0) > 0 ? '#3f8600' : '#cf1322' }}
+            />
+          </Card>
+        </Col>
+        <Col span={4}>
+          <Card size="small">
+            <Statistic
+              title="Pumps Ready"
+              value={wizardData.readings.pumpReadings?.length || 0}
+              prefix={<Gauge size={16} />}
+              valueStyle={{ color: (wizardData.readings.pumpReadings?.length || 0) > 0 ? '#3f8600' : '#cf1322' }}
+            />
+          </Card>
+        </Col>
+        <Col span={4}>
+          <Card size="small">
+            <Statistic
+              title="Tanks Ready"
+              value={wizardData.readings.tankReadings?.length || 0}
+              prefix={<Fuel size={16} />}
+              valueStyle={{ color: (wizardData.readings.tankReadings?.length || 0) > 0 ? '#3f8600' : '#cf1322' }}
+            />
+          </Card>
+        </Col>
+        <Col span={4}>
+          <Card size="small">
+            <Statistic
+              title="Total Assets"
+              value={(wizardData.readings.allPumps?.length || 0) + (wizardData.readings.allTanks?.length || 0)}
+              valueStyle={{ color: '#1890ff' }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Shift Information */}
+      <Card title="Shift Information" size="small" style={{ marginBottom: 16 }}>
+        <Descriptions size="small" column={2}>
+          <Descriptions.Item label="Shift ID">
+            <Tag color="blue">{wizardData.shiftInfo.shiftId}</Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="Shift Number">
+            <Tag color="green">{wizardData.shiftInfo.shiftNumber || 'N/A'}</Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="Station ID">
+            <Tag>{wizardData.shiftInfo.stationId}</Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="Status">
+            <Tag color="orange">Pending Start</Tag>
+          </Descriptions.Item>
+        </Descriptions>
       </Card>
 
-      {/* Island Assignments */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-lg flex items-center gap-2">
-            <Package className="w-5 h-5 text-blue-600" />
-            Island Assignments
-          </h3>
-          <Badge variant={completionStats.islands > 0 ? "success" : "warning"}>
-            {completionStats.islands} Islands Configured
-          </Badge>
-        </div>
+      {/* Personnel Summary */}
+      <Card 
+        title={
+          <Space>
+            <Users size={16} />
+            Personnel Summary
+          </Space>
+        } 
+        size="small" 
+        style={{ marginBottom: 16 }}
+      >
+        <Table
+          columns={personnelColumns}
+          dataSource={personnelData}
+          pagination={false}
+          size="small"
+          rowKey="id"
+          locale={{ emptyText: 'No personnel assigned' }}
+        />
+      </Card>
 
-        {Object.keys(assignmentsByIsland).length === 0 ? (
-          <Alert variant="warning" className="text-sm">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" />
-              <span>No attendants assigned to islands</span>
-            </div>
-          </Alert>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {Object.entries(assignmentsByIsland).map(([islandId, assignments]) => (
-              <div key={islandId} className="border rounded-lg p-4">
-                <h4 className="font-semibold text-blue-700 mb-3">{getIslandName(islandId)}</h4>
-                <div className="space-y-2">
-                  {assignments.map((assignment, index) => (
-                    <div key={index} className="flex items-center justify-between p-2 bg-green-50 rounded">
-                      <div className="flex items-center gap-2">
-                        <User className="w-4 h-4 text-green-600" />
-                        <span className="font-medium">{getAttendantName(assignment.attendantId)}</span>
-                      </div>
-                      <Badge variant="success" size="sm">
-                        {assignment.assignmentType}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
+      <Row gutter={[16, 16]}>
+        {/* Pump Readings Summary */}
+        <Col span={12}>
+          <Card 
+            title={
+              <Space>
+                <Gauge size={16} />
+                Pump Meter Readings
+                <Tag>{wizardData.readings.pumpReadings?.length || 0} pumps</Tag>
+              </Space>
+            } 
+            size="small"
+          >
+            <Table
+              columns={pumpColumns}
+              dataSource={wizardData.readings.allPumps || []}
+              pagination={false}
+              size="small"
+              rowKey="id"
+              locale={{ emptyText: 'No pump readings configured' }}
+            />
+          </Card>
+        </Col>
+
+        {/* Tank Readings Summary */}
+        <Col span={12}>
+          <Card 
+            title={
+              <Space>
+                <Fuel size={16} />
+                Tank Volume Readings
+                <Tag>{wizardData.readings.tankReadings?.length || 0} tanks</Tag>
+              </Space>
+            } 
+            size="small"
+          >
+            <Table
+              columns={tankColumns}
+              dataSource={wizardData.readings.allTanks || []}
+              pagination={false}
+              size="small"
+              rowKey="id"
+              locale={{ emptyText: 'No tank readings configured' }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Action Buttons */}
+      <Divider />
+      <div style={{ textAlign: 'center', padding: '16px 0' }}>
+        <Space>
+          <Button 
+            size="large" 
+            onClick={onPrevStep}
+            disabled={loading}
+          >
+            Back to Readings
+          </Button>
+          <Button 
+            type="primary" 
+            size="large"
+            icon={<Play size={16} />}
+            onClick={handleStartShift}
+            loading={loading}
+            disabled={!hasAllRequiredData}
+          >
+            Start Shift
+          </Button>
+        </Space>
+      </div>
+
+      {/* Debug Information */}
+      {process.env.NODE_ENV === 'development' && (
+        <Alert
+          message="Debug Information"
+          description={
+            <div style={{ fontSize: '12px', fontFamily: 'monospace' }}>
+              <div><strong>Shift ID:</strong> {wizardData.shiftInfo.shiftId || 'None'}</div>
+              <div><strong>Supervisor:</strong> {wizardData.personnel.supervisorId || 'None'}</div>
+              <div><strong>Attendants:</strong> {wizardData.personnel.attendants?.length || 0}</div>
+              <div><strong>Island Assignments:</strong> {wizardData.personnel.islandAssignments?.length || 0}</div>
+              <div><strong>Pump Readings:</strong> {wizardData.readings.pumpReadings?.length || 0}</div>
+              <div><strong>Tank Readings:</strong> {wizardData.readings.tankReadings?.length || 0}</div>
+              <div><strong>All Pumps:</strong> {wizardData.readings.allPumps?.length || 0}</div>
+              <div><strong>All Tanks:</strong> {wizardData.readings.allTanks?.length || 0}</div>
+              <div><strong>Can Open Shift:</strong> {canOpenShift?.toString() || 'false'}</div>
+              <div><strong>Data Types Sample:</strong> 
+                {wizardData.readings.pumpReadings?.slice(0, 1).map((reading, index) => (
+                  <div key={index}>
+                    Pump {reading.pumpId}: 
+                    electricMeter(type: {typeof reading.electricMeter}), 
+                    manualMeter(type: {typeof reading.manualMeter})
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {/* Pump Readings */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-lg flex items-center gap-2">
-            <Zap className="w-5 h-5 text-green-600" />
-            Pump Meter Readings
-          </h3>
-          <Badge variant={completionStats.pumps > 0 ? "success" : "warning"}>
-            {completionStats.pumps} Pumps Configured
-          </Badge>
-        </div>
-
-        {data.pumpReadings.length === 0 ? (
-          <Alert variant="warning" className="text-sm">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" />
-              <span>No pump readings configured</span>
             </div>
-          </Alert>
-        ) : (
-          <div className="space-y-6">
-            {data.pumpReadings.map((reading, index) => {
-              const pumpDetails = getPumpDetails(reading.pumpId);
-              
-              return (
-                <div key={index} className="border rounded-lg p-6 bg-white">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h4 className="font-semibold text-lg text-gray-900">{pumpDetails.name}</h4>
-                      <p className="text-gray-600">{pumpDetails.product}</p>
-                      {pumpDetails.tank && (
-                        <p className="text-sm text-blue-600 mt-1">
-                          Connected to: {pumpDetails.tank}
-                        </p>
-                      )}
-                    </div>
-                    <Badge variant="success">Completed</Badge>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Electric Meter */}
-                    <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
-                      <div className="flex items-center justify-center gap-2 mb-2">
-                        <Zap className="w-4 h-4 text-blue-600" />
-                        <span className="font-semibold text-blue-900">Electric Meter</span>
-                      </div>
-                      <div className="text-2xl font-bold text-blue-700">
-                        {reading.electricMeter.toLocaleString()}
-                      </div>
-                      <div className="text-sm text-blue-600 mt-1">Current Reading</div>
-                    </div>
-
-                    {/* Manual Meter */}
-                    <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
-                      <div className="flex items-center justify-center gap-2 mb-2">
-                        <Gauge className="w-4 h-4 text-green-600" />
-                        <span className="font-semibold text-green-900">Manual Meter</span>
-                      </div>
-                      <div className="text-2xl font-bold text-green-700">
-                        {reading.manualMeter.toLocaleString()}
-                      </div>
-                      <div className="text-sm text-green-600 mt-1">Current Reading</div>
-                    </div>
-
-                    {/* Cash Meter */}
-                    <div className="text-center p-4 bg-purple-50 rounded-lg border border-purple-200">
-                      <div className="flex items-center justify-center gap-2 mb-2">
-                        <DollarSign className="w-4 h-4 text-purple-600" />
-                        <span className="font-semibold text-purple-900">Cash Meter</span>
-                      </div>
-                      <div className="text-2xl font-bold text-purple-700">
-                        KSh {reading.cashMeter.toLocaleString()}
-                      </div>
-                      <div className="text-sm text-purple-600 mt-1">Sales Amount</div>
-                    </div>
-                  </div>
-
-                  {/* Additional Pump Information */}
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div className="flex justify-between items-center py-2 border-b">
-                      <span className="text-gray-600">Unit Price:</span>
-                      <span className="font-semibold">KSh {reading.unitPrice?.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between items-center py-2 border-b">
-                      <span className="text-gray-600">Liters Dispensed:</span>
-                      <span className="font-semibold">{reading.litersDispensed?.toLocaleString()} L</span>
-                    </div>
-                    <div className="flex justify-between items-center py-2 border-b">
-                      <span className="text-gray-600">Sales Value:</span>
-                      <span className="font-semibold">KSh {reading.salesValue?.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between items-center py-2 border-b">
-                      <span className="text-gray-600">Pump ID:</span>
-                      <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                        {reading.pumpId.substring(0, 8)}...
-                      </code>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
-
-      {/* Tank Readings */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-lg flex items-center gap-2">
-            <Fuel className="w-5 h-5 text-orange-600" />
-            Tank Dip Readings
-          </h3>
-          <Badge variant={completionStats.tanks > 0 ? "success" : "warning"}>
-            {completionStats.tanks} Tanks Configured
-          </Badge>
-        </div>
-
-        {data.tankReadings.length === 0 ? (
-          <Alert variant="warning" className="text-sm">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" />
-              <span>No tank readings configured</span>
-            </div>
-          </Alert>
-        ) : (
-          <div className="space-y-6">
-            {data.tankReadings.map((reading, index) => {
-              const tankDetails = getTankDetails(reading.tankId);
-              
-              return (
-                <div key={index} className="border rounded-lg p-6 bg-white">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h4 className="font-semibold text-lg text-gray-900">{tankDetails.name}</h4>
-                      <p className="text-gray-600">{tankDetails.product}</p>
-                    </div>
-                    <Badge variant="success">Recorded</Badge>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Left Column - Readings */}
-                    <div className="space-y-4">
-                      <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
-                        <div className="flex items-center justify-center gap-2 mb-2">
-                          <Gauge className="w-4 h-4 text-blue-600" />
-                          <span className="font-semibold text-blue-900">Dip Value</span>
-                        </div>
-                        <div className="text-2xl font-bold text-blue-700">
-                          {reading.dipValue} m
-                        </div>
-                        <div className="text-sm text-blue-600 mt-1">Current Measurement</div>
-                      </div>
-
-                      <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
-                        <div className="flex items-center justify-center gap-2 mb-2">
-                          <Droplets className="w-4 h-4 text-green-600" />
-                          <span className="font-semibold text-green-900">Volume</span>
-                        </div>
-                        <div className="text-2xl font-bold text-green-700">
-                          {reading.volume.toLocaleString()} L
-                        </div>
-                        <div className="text-sm text-green-600 mt-1">Current Volume</div>
-                      </div>
-                    </div>
-
-                    {/* Right Column - Tank Information */}
-                    <div className="bg-gray-50 p-4 rounded-lg border">
-                      <h5 className="font-semibold text-sm mb-3">Tank Information</h5>
-                      <div className="space-y-3 text-sm">
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-gray-600">Product:</span>
-                          <span className="font-semibold">{tankDetails.product}</span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-gray-600">Total Capacity:</span>
-                          <span className="font-semibold">{tankDetails.capacity.toLocaleString()} L</span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-gray-600">Previous Volume:</span>
-                          <span className="font-semibold">{tankDetails.currentVolume.toLocaleString()} L</span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-gray-600">Available Space:</span>
-                          <span className="font-semibold text-green-600">
-                            {(tankDetails.capacity - tankDetails.currentVolume).toLocaleString()} L
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-gray-600">Temperature:</span>
-                          <span className="font-semibold">{reading.temperature}°C</span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-gray-600">Water Level:</span>
-                          <span className="font-semibold">{reading.waterLevel} m</span>
-                        </div>
-                        <div className="flex justify-between items-center py-2">
-                          <span className="text-gray-600">Density:</span>
-                          <span className="font-semibold">{reading.density}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
-
-      {/* Progress Summary */}
-      <Card className="p-6 bg-gradient-to-r from-blue-50 to-purple-50 border">
-        <h3 className="font-semibold text-lg mb-4 text-center">Configuration Progress</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="text-center p-4 bg-white rounded-lg border">
-            <div className="text-2xl font-bold text-blue-600">{completionStats.islands}</div>
-            <div className="text-sm text-gray-600">Islands</div>
-            <Badge variant={completionStats.islands > 0 ? "success" : "warning"} size="sm" className="mt-1">
-              {completionStats.islands > 0 ? 'Configured' : 'Pending'}
-            </Badge>
-          </div>
-          <div className="text-center p-4 bg-white rounded-lg border">
-            <div className="text-2xl font-bold text-green-600">{completionStats.pumps}</div>
-            <div className="text-sm text-gray-600">Pumps</div>
-            <Badge variant={completionStats.pumps > 0 ? "success" : "warning"} size="sm" className="mt-1">
-              {completionStats.pumps > 0 ? 'Recorded' : 'Pending'}
-            </Badge>
-          </div>
-          <div className="text-center p-4 bg-white rounded-lg border">
-            <div className="text-2xl font-bold text-orange-600">{completionStats.tanks}</div>
-            <div className="text-sm text-gray-600">Tanks</div>
-            <Badge variant={completionStats.tanks > 0 ? "success" : "warning"} size="sm" className="mt-1">
-              {completionStats.tanks > 0 ? 'Recorded' : 'Pending'}
-            </Badge>
-          </div>
-          <div className="text-center p-4 bg-white rounded-lg border">
-            <div className="text-2xl font-bold text-purple-600">{completionStats.attendants}</div>
-            <div className="text-sm text-gray-600">Attendants</div>
-            <Badge variant={completionStats.attendants > 0 ? "success" : "warning"} size="sm" className="mt-1">
-              {completionStats.attendants > 0 ? 'Assigned' : 'Pending'}
-            </Badge>
-          </div>
-        </div>
-      </Card>
-
-      {/* Final Action */}
-      <Card className="p-6 bg-gradient-to-r from-green-50 to-blue-50 border-green-200">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="text-center lg:text-left">
-            <h3 className="font-semibold text-lg text-gray-900">Ready to Start Shift</h3>
-            <p className="text-gray-600 mt-1">
-              {isConfigurationComplete 
-                ? "All configurations are complete. You can now start the shift."
-                : "Some configurations are missing. Please complete all sections before starting."
-              }
-            </p>
-          </div>
-          
-          <div className="flex flex-col gap-2">
-            <Button
-              onClick={handleFinalCreate}
-              disabled={creating || !isConfigurationComplete || createSuccess}
-              loading={creating}
-              icon={createSuccess ? CheckCircle : Play}
-              size="lg"
-              variant={createSuccess ? "success" : "cosmic"}
-              className="whitespace-nowrap"
-            >
-              {creating ? 'Starting Shift...' : 
-               createSuccess ? 'Shift Started Successfully' : 'Start Shift Now'}
-            </Button>
-            
-            <div className="text-xs text-gray-500 text-center">
-              Shift ID: {shiftId?.substring(0, 8)}...
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* Error Message */}
-      {error && (
-        <Alert variant="error" className="text-sm">
-          {error}
-        </Alert>
+          }
+          type="info"
+          showIcon
+          style={{ marginTop: 16 }}
+        />
       )}
     </div>
   );

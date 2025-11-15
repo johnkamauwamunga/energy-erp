@@ -3,7 +3,8 @@ import { useApp, useAppDispatch } from '../../../context/AppContext';
 import { logout } from '../../../context/AppContext/actions';
 import { 
   BarChart3, Activity, Clock, Users, FileText, 
-  Flame, X, Menu, MapPin, DollarSign, Truck, Building2, Fuel, LogOut, User, Settings
+  Flame, X, Menu, MapPin, DollarSign, Truck, Building2, Fuel, LogOut, User, Settings,CoinsIcon,BookAIcon,
+  Users2Icon
 } from 'lucide-react';
 import { Button } from '../../ui';
 import DashboardOverview from '../../../components/dashboards/common/CompanyOverview';
@@ -17,8 +18,14 @@ import ShiftManagement from '../common/shift/ShiftManagement';
 import AnalyticsDemo from '../common/analytics/AnalyticsDemo';
 import OffloadMagement from '../common/offload-test/OffloadManagement';
 import FuelTankManagement from './products/fuelTankManagement/FuelTankManagement';
-import DebtorManagement from '../common/debtors/DebtorManagement';
+import DebtorManagementTabs from '../common/debtors/DebtorManagementTabs';
 import StationDebug from './StationDebug';
+import AssetTopologyDebug from './AssetTopologyDebug';
+import SimpleIslandPumpTest from './SimpleIslandPumpTest';
+import TankReconciliationManagement from '../common/wetstock-reconcilliation/TankReconciliation';
+import ExpenseManagement from '../common/expenses/ExpenseManagement';
+import AccountsManagement from '../common/accounts/AccountManagement';
+
 
 const StationManagerDashboard = () => {
   const { state } = useApp();
@@ -43,10 +50,14 @@ const StationManagerDashboard = () => {
     { id: 'assets', label: 'Assets', icon: Building2 },
     { id: "fuel_tanks", label: "Fuel Tanks", icon: Fuel },
     { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
+     { id: 'expenses', label: 'Expenses', icon: CoinsIcon },
+    { id: 'accounts', label: 'Accounts', icon: BookAIcon },
     { id: 'sales', label: 'Sales', icon: DollarSign },
-    { id: 'debtor', label: 'Debtors', icon: DollarSign },
+    { id: 'debtor', label: 'Debtors', icon: Users2Icon },
     { id: 'reports', label: 'Reports', icon: FileText },
+    { id: 'wet_stock', label: 'Wet Stock', icon: Fuel},
     { id: 'activity', label: 'Activity Logs', icon: Activity }
+  
   ];
 
   const renderContent = () => {
@@ -63,14 +74,20 @@ const StationManagerDashboard = () => {
         return <ShiftManagement />;
       case 'offloads':
         return <OffloadMagement />;
+      case 'expenses':
+         return <ExpenseManagement />;
+      case 'accounts':
+         return <AccountsManagement />;
       case 'sales':
         return <SalesManagement />;
       case 'debtor':
-        return <DebtorManagement />;
+        return <DebtorManagementTabs />;
       case 'reports':
         return <StationDebug />;
       case 'activity':
-        return <PlaceholderComponent title="Activity Logs" icon={Activity} />;
+        return <SimpleIslandPumpTest />;
+      case 'wet_stock':
+        return <TankReconciliationManagement />;
       default:
         return <PlaceholderComponent title="Station Dashboard" icon={BarChart3} />;
     }

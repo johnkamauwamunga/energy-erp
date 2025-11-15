@@ -27,7 +27,7 @@ const SupervisorDashboard = React.lazy(() => import('./components/dashboards/Sup
 const ServiceStationManagement = React.lazy(() => import('./components/features/stations/ServiceStationManagement'));
 const FuelManagement = React.lazy(() => import('./components/features/fuel/FuelManagement'));
 const StaffManagement = React.lazy(() => import('./components/features/staff/StaffManagement'));
-const ShiftManagement = React.lazy(() => import('./components/features/shifts/ShiftsManagement'));
+const ShiftManagement = React.lazy(() => import('./components/dashboards/common/shift/ShiftManagement'));
 const ReportsCenter = React.lazy(() => import('./components/features/reports/ReportCenter'));
 
 // Layout wrapper for protected routes

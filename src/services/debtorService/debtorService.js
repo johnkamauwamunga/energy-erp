@@ -1,1069 +1,991 @@
 import { apiService } from '../apiService';
 
-// Simple logging utility
-const logger = {
-  debug: (...args) => console.log('🔍 [DebtorService]', ...args),
-  info: (...args) => console.log('ℹ️ [DebtorService]', ...args),
-  warn: (...args) => console.warn('⚠️ [DebtorService]', ...args),
-  error: (...args) => console.error('❌ [DebtorService]', ...args)
-};
-
-// Response handler utility
-const handleResponse = (response, operation) => {
-  if (response.data) {
-    logger.debug(`${operation} successful`);
-    return response.data;
+class DebtorService {
+  constructor() {
+    this.logger = {
+      debug: (...args) => console.log('🔍 [DebtorService]', ...args),
+      info: (...args) => console.log('ℹ️ [DebtorService]', ...args),
+      warn: (...args) => console.warn('⚠️ [DebtorService]', ...args),
+      error: (...args) => console.error('❌ [DebtorService]', ...args)
+    };
+    
+    this.cache = new Map();
+    this.CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   }
-  
-  logger.warn(`Unexpected response structure for ${operation}:`, response);
-  throw new Error('Invalid response format from server');
-};
 
-// Error handler utility
-const handleError = (error, operation, defaultMessage) => {
-  logger.error(`Error during ${operation}:`, error);
-  
-  if (error.response) {
-    const { status, data } = error.response;
-    
-    if (status === 401) {
-      localStorage.removeItem('accessToken');
-      window.location.href = '/login';
-      throw new Error('Authentication failed. Please login again.');
+  // =====================
+  // CORE UTILITIES
+  // =====================
+
+  debugRequest = (method, url, data) => {
+    this.logger.debug(`➡️ ${method} ${url}`, data || '');
+  };
+
+  debugResponse = (method, url, response) => {
+    this.logger.debug(`⬅️ ${method} ${url} Response:`, response.data);
+  };
+
+  handleResponse = (response, operation) => {
+    if (response.data?.success) {
+      this.logger.debug(`${operation} successful`);
+      return response.data.data;
     }
     
-    if (status === 403) {
-      throw new Error('You do not have permission to perform this action');
+    if (response.data) {
+      this.logger.debug(`${operation} successful (direct data)`);
+      return response.data;
     }
     
-    if (status === 404) {
-      throw new Error('Requested resource not found');
+    this.logger.warn(`Unexpected response structure for ${operation}`);
+    throw new Error('Invalid response format from server');
+  };
+
+  handleError = (error, operation, defaultMessage) => {
+    this.logger.error(`${operation} failed:`, error);
+
+    // Network errors
+    if (error.code === 'ECONNABORTED') {
+      throw new Error('Request timeout. Please try again.');
     }
     
-    if (status === 400 && data.errors) {
-      const errorMessages = data.errors.map(err => err.message).join(', ');
+    if (error.request) {
+      throw new Error('Network error. Please check your connection.');
+    }
+
+    // HTTP errors
+    if (error.response) {
+      const { status, data } = error.response;
+      
+      switch (status) {
+        case 401:
+          localStorage.removeItem('accessToken');
+          window.location.href = '/login';
+          throw new Error('Authentication failed. Please login again.');
+        
+        case 403:
+          throw new Error('You do not have permission to perform this action.');
+        
+        case 404:
+          throw new Error('Requested resource not found.');
+        
+        case 400:
+          return this.handleValidationError(data);
+        
+        default:
+          if (data?.message) throw new Error(data.message);
+      }
+    }
+
+    throw new Error(defaultMessage || 'An unexpected error occurred');
+  };
+
+  handleValidationError = (data) => {
+    if (data.message) throw new Error(data.message);
+    if (data.errors) {
+      const errorMessages = Array.isArray(data.errors) 
+        ? data.errors.map(err => err.message || err).join(', ')
+        : JSON.stringify(data.errors);
       throw new Error(`Validation failed: ${errorMessages}`);
     }
-    
-    if (data && data.message) {
-      throw new Error(data.message);
-    }
-  } else if (error.request) {
-    throw new Error('Network error. Please check your connection and try again.');
-  }
-  
-  throw new Error(defaultMessage || 'An unexpected error occurred');
-};
+    throw new Error('Validation failed');
+  };
 
-export const debtorService = {
+  buildQueryParams = (filters) => {
+    const params = new URLSearchParams();
+    Object.keys(filters).forEach(key => {
+      if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+        params.append(key, filters[key]);
+      }
+    });
+    return params.toString();
+  };
+
   // =====================
-  // DEBTOR CRUD OPERATIONS
+  // CACHE MANAGEMENT
   // =====================
-  
-  createDebtor: async (debtorData) => {
-    logger.info('Creating debtor:', debtorData);
+
+  getCached = (key) => {
+    const cached = this.cache.get(key);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      this.logger.debug(`Cache hit: ${key}`);
+      return cached.data;
+    }
+    this.cache.delete(key);
+    return null;
+  };
+
+  setCached = (key, data) => {
+    this.cache.set(key, { data, timestamp: Date.now() });
+  };
+
+  clearCache = (pattern = null) => {
+    if (pattern) {
+      for (const key of this.cache.keys()) {
+        if (key.includes(pattern)) this.cache.delete(key);
+      }
+    } else {
+      this.cache.clear();
+    }
+  };
+
+  // =====================
+  // DEBTOR CATEGORY MANAGEMENT
+  // =====================
+
+  createDebtorCategory = async (categoryData) => {
+    this.logger.info('Creating debtor category:', categoryData);
+    this.debugRequest('POST', '/debtor-categories', categoryData);
+    
+    try {
+      const response = await apiService.post('/debtor-categories', categoryData);
+      this.debugResponse('POST', '/debtor-categories', response);
+      this.clearCache('debtor-categories');
+      return this.handleResponse(response, 'Debtor category creation');
+    } catch (error) {
+      throw this.handleError(error, 'Debtor category creation', 'Failed to create debtor category');
+    }
+  };
+
+  updateDebtorCategory = async (categoryId, updateData) => {
+    this.logger.info(`Updating debtor category ${categoryId}:`, updateData);
+    this.debugRequest('PATCH', `/debtor-categories/${categoryId}`, updateData);
+    
+    try {
+      const response = await apiService.patch(`/debtor-categories/${categoryId}`, updateData);
+      this.debugResponse('PATCH', `/debtor-categories/${categoryId}`, response);
+      this.clearCache('debtor-categories');
+      return this.handleResponse(response, 'Debtor category update');
+    } catch (error) {
+      throw this.handleError(error, 'Debtor category update', 'Failed to update debtor category');
+    }
+  };
+
+  getDebtorCategories = async (filters = {}, forceRefresh = false) => {
+    this.logger.info('Fetching debtor categories:', filters);
+    
+    const cacheKey = `debtor-categories-${JSON.stringify(filters)}`;
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    try {
+      const query = this.buildQueryParams(filters);
+      const url = query ? `/debtor-categories?${query}` : '/debtor-categories';
+      
+      this.debugRequest('GET', url);
+      const response = await apiService.get(url);
+      this.debugResponse('GET', url, response);
+      
+      const data = this.handleResponse(response, 'Debtor categories fetch');
+      this.setCached(cacheKey, data);
+      return data;
+    } catch (error) {
+      throw this.handleError(error, 'Debtor categories fetch', 'Failed to fetch debtor categories');
+    }
+  };
+
+  getDebtorCategoryById = async (categoryId) => {
+    this.logger.info(`Fetching debtor category: ${categoryId}`);
+    
+    const cacheKey = `debtor-category-${categoryId}`;
+    const cached = this.getCached(cacheKey);
+    if (cached) return cached;
+
+    try {
+      this.debugRequest('GET', `/debtor-categories/${categoryId}`);
+      const response = await apiService.get(`/debtor-categories/${categoryId}`);
+      this.debugResponse('GET', `/debtor-categories/${categoryId}`, response);
+      
+      const data = this.handleResponse(response, 'Debtor category fetch');
+      this.setCached(cacheKey, data);
+      return data;
+    } catch (error) {
+      throw this.handleError(error, 'Debtor category fetch', 'Failed to fetch debtor category');
+    }
+  };
+
+  deleteDebtorCategory = async (categoryId) => {
+    this.logger.info(`Deleting debtor category: ${categoryId}`);
+    this.debugRequest('DELETE', `/debtor-categories/${categoryId}`);
+    
+    try {
+      const response = await apiService.delete(`/debtor-categories/${categoryId}`);
+      this.debugResponse('DELETE', `/debtor-categories/${categoryId}`, response);
+      this.clearCache('debtor-categories');
+      return this.handleResponse(response, 'Debtor category deletion');
+    } catch (error) {
+      throw this.handleError(error, 'Debtor category deletion', 'Failed to delete debtor category');
+    }
+  };
+
+  getActiveDebtorCategories = async (forceRefresh = false) => {
+    this.logger.info('Fetching active debtor categories');
+    
+    const cacheKey = 'active-debtor-categories';
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    try {
+      this.debugRequest('GET', '/debtor-categories/active');
+      const response = await apiService.get('/debtor-categories/active');
+      this.debugResponse('GET', '/debtor-categories/active', response);
+      
+      const data = this.handleResponse(response, 'Active debtor categories fetch');
+      this.setCached(cacheKey, data);
+      return data;
+    } catch (error) {
+      throw this.handleError(error, 'Active debtor categories fetch', 'Failed to fetch active debtor categories');
+    }
+  };
+
+  initializeSystemCategories = async () => {
+    this.logger.info('Initializing system debtor categories');
+    this.debugRequest('POST', '/debtor-categories/initialize/system');
+    
+    try {
+      const response = await apiService.post('/debtor-categories/initialize/system');
+      this.debugResponse('POST', '/debtor-categories/initialize/system', response);
+      this.clearCache('debtor-categories');
+      return this.handleResponse(response, 'System categories initialization');
+    } catch (error) {
+      throw this.handleError(error, 'System categories initialization', 'Failed to initialize system categories');
+    }
+  };
+
+  // =====================
+  // DEBTOR MANAGEMENT
+  // =====================
+
+  createDebtor = async (debtorData) => {
+    this.logger.info('Creating debtor:', debtorData);
+    this.debugRequest('POST', '/debtors', debtorData);
     
     try {
       const response = await apiService.post('/debtors', debtorData);
-      return handleResponse(response, 'creating debtor');
+      this.debugResponse('POST', '/debtors', response);
+      this.clearCache('debtors');
+      this.clearCache('debtor-statistics');
+      return this.handleResponse(response, 'Debtor creation');
     } catch (error) {
-      throw handleError(error, 'creating debtor', 'Failed to create debtor');
+      throw this.handleError(error, 'Debtor creation', 'Failed to create debtor');
     }
-  },
+  };
 
-  getDebtors: async (filters = {}) => {
-    logger.info('Fetching debtors with filters:', filters);
-    
-    try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          params.append(key, filters[key]);
-        }
-      });
-      
-      const url = params.toString() ? `/debtors?${params.toString()}` : '/debtors';
-      const response = await apiService.get(url);
-      console.log("the debtors are ",response)
-      return handleResponse(response, 'fetching debtors');
-    } catch (error) {
-      throw handleError(error, 'fetching debtors', 'Failed to fetch debtors');
-    }
-  },
-
-  getDebtorById: async (debtorId) => {
-    logger.info(`Fetching debtor: ${debtorId}`);
-    
-    try {
-      const response = await apiService.get(`/debtors/${debtorId}`);
-      return handleResponse(response, 'fetching debtor');
-    } catch (error) {
-      throw handleError(error, 'fetching debtor', 'Failed to fetch debtor');
-    }
-  },
-
-  updateDebtor: async (debtorId, updateData) => {
-    logger.info(`Updating debtor ${debtorId}:`, updateData);
+  updateDebtor = async (debtorId, updateData) => {
+    this.logger.info(`Updating debtor ${debtorId}:`, updateData);
+    this.debugRequest('PATCH', `/debtors/${debtorId}`, updateData);
     
     try {
       const response = await apiService.patch(`/debtors/${debtorId}`, updateData);
-      return handleResponse(response, 'updating debtor');
+      this.debugResponse('PATCH', `/debtors/${debtorId}`, response);
+      this.clearCache('debtors');
+      this.clearCache('debtor-statistics');
+      return this.handleResponse(response, 'Debtor update');
     } catch (error) {
-      throw handleError(error, 'updating debtor', 'Failed to update debtor');
+      throw this.handleError(error, 'Debtor update', 'Failed to update debtor');
     }
-  },
+  };
 
-  searchDebtors: async (searchTerm) => {
-    logger.info(`Searching debtors: ${searchTerm}`);
+  getDebtors = async (filters = {}, forceRefresh = false) => {
+    this.logger.info('Fetching debtors:', filters);
+    
+    const cacheKey = `debtors-${JSON.stringify(filters)}`;
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    try {
+      const query = this.buildQueryParams(filters);
+      const url = query ? `/debtors?${query}` : '/debtors';
+      
+      console.log("the debtor on debtor service ",url)
+      this.debugRequest('GET', url);
+      const response = await apiService.get(url);
+      this.debugResponse('GET', url, response);
+      
+      const data = this.handleResponse(response, 'Debtors fetch');
+      this.setCached(cacheKey, data);
+      return data;
+    } catch (error) {
+      throw this.handleError(error, 'Debtors fetch', 'Failed to fetch debtors');
+    }
+  };
+
+  getDebtorById = async (debtorId) => {
+    this.logger.info(`Fetching debtor: ${debtorId}`);
+    
+    const cacheKey = `debtor-${debtorId}`;
+    const cached = this.getCached(cacheKey);
+    if (cached) return cached;
+
+    try {
+      this.debugRequest('GET', `/debtors/${debtorId}`);
+      const response = await apiService.get(`/debtors/${debtorId}`);
+      this.debugResponse('GET', `/debtors/${debtorId}`, response);
+      
+      const data = this.handleResponse(response, 'Debtor fetch');
+      this.setCached(cacheKey, data);
+      return data;
+    } catch (error) {
+      throw this.handleError(error, 'Debtor fetch', 'Failed to fetch debtor');
+    }
+  };
+
+  deleteDebtor = async (debtorId) => {
+    this.logger.info(`Deleting debtor: ${debtorId}`);
+    this.debugRequest('DELETE', `/debtors/${debtorId}`);
     
     try {
-      if (!searchTerm || searchTerm.length < 2) {
-        return { data: [] };
-      }
-      
-      const response = await apiService.get(`/debtors/search?search=${encodeURIComponent(searchTerm)}`);
-      return handleResponse(response, 'searching debtors');
+      const response = await apiService.delete(`/debtors/${debtorId}`);
+      this.debugResponse('DELETE', `/debtors/${debtorId}`, response);
+      this.clearCache('debtors');
+      this.clearCache('debtor-statistics');
+      return this.handleResponse(response, 'Debtor deletion');
     } catch (error) {
-      throw handleError(error, 'searching debtors', 'Failed to search debtors');
+      throw this.handleError(error, 'Debtor deletion', 'Failed to delete debtor');
     }
-  },
+  };
+
+  searchDebtors = async (searchTerm, limit = 10) => {
+    this.logger.info(`Searching debtors: "${searchTerm}"`);
+    
+    if (!searchTerm || searchTerm.length < 2) {
+      return [];
+    }
+
+    try {
+      this.debugRequest('GET', `/debtors/search?search=${searchTerm}&limit=${limit}`);
+      const response = await apiService.get(`/debtors/search?search=${searchTerm}&limit=${limit}`);
+      this.debugResponse('GET', `/debtors/search`, response);
+      
+      return this.handleResponse(response, 'Debtor search');
+    } catch (error) {
+      throw this.handleError(error, 'Debtor search', 'Failed to search debtors');
+    }
+  };
+
+  getDebtorsByCategory = async (categoryId, isActive = true) => {
+    this.logger.info(`Fetching debtors by category: ${categoryId}`);
+    
+    try {
+      const query = this.buildQueryParams({ isActive });
+      const url = query ? `/debtors/category/${categoryId}?${query}` : `/debtors/category/${categoryId}`;
+      
+      this.debugRequest('GET', url);
+      const response = await apiService.get(url);
+      this.debugResponse('GET', url, response);
+      
+      return this.handleResponse(response, 'Debtors by category fetch');
+    } catch (error) {
+      throw this.handleError(error, 'Debtors by category fetch', 'Failed to fetch debtors by category');
+    }
+  };
+
+  checkCreditLimit = async (debtorId, additionalAmount = 0) => {
+    this.logger.info(`Checking credit limit for debtor: ${debtorId}`);
+    
+    try {
+      const query = this.buildQueryParams({ additionalAmount });
+      const url = `/debtors/${debtorId}/credit-limit?${query}`;
+      
+      this.debugRequest('GET', url);
+      const response = await apiService.get(url);
+      this.debugResponse('GET', url, response);
+      
+      return this.handleResponse(response, 'Credit limit check');
+    } catch (error) {
+      throw this.handleError(error, 'Credit limit check', 'Failed to check credit limit');
+    }
+  };
 
   // =====================
   // DEBT OPERATIONS
   // =====================
 
-  recordFuelDebt: async (debtData) => {
-    logger.info('Recording fuel debt:', debtData);
+  recordFuelDebt = async (debtData) => {
+    this.logger.info('Recording fuel debt:', debtData);
+    this.debugRequest('POST', '/debtors/record-fuel-debt', debtData);
     
     try {
       const response = await apiService.post('/debtors/record-fuel-debt', debtData);
-      return handleResponse(response, 'recording fuel debt');
+      this.debugResponse('POST', '/debtors/record-fuel-debt', response);
+      this.clearCache('debtors');
+      this.clearCache('debtor-statistics');
+      this.clearCache('station-debtors');
+      return this.handleResponse(response, 'Fuel debt recording');
     } catch (error) {
-      throw handleError(error, 'recording fuel debt', 'Failed to record fuel debt');
+      throw this.handleError(error, 'Fuel debt recording', 'Failed to record fuel debt');
     }
-  },
+  };
 
-  recordDebtPayment: async (paymentData) => {
-    logger.info('Recording debt payment:', paymentData);
+  recordDebtPayment = async (paymentData) => {
+    this.logger.info('Recording debt payment:', paymentData);
+    this.debugRequest('POST', '/debtors/record-payment', paymentData);
     
     try {
       const response = await apiService.post('/debtors/record-payment', paymentData);
-      return handleResponse(response, 'recording debt payment');
+      this.debugResponse('POST', '/debtors/record-payment', response);
+      this.clearCache('debtors');
+      this.clearCache('debtor-statistics');
+      this.clearCache('station-debtors');
+      this.clearCache('debtor-transactions');
+      return this.handleResponse(response, 'Debt payment recording');
     } catch (error) {
-      throw handleError(error, 'recording debt payment', 'Failed to record debt payment');
+      throw this.handleError(error, 'Debt payment recording', 'Failed to record debt payment');
     }
-  },
+  };
 
-  writeOffDebt: async (writeOffData) => {
-    logger.info('Writing off debt:', writeOffData);
+  writeOffDebt = async (writeOffData) => {
+    this.logger.info('Writing off debt:', writeOffData);
+    this.debugRequest('POST', '/debtors/write-off', writeOffData);
     
     try {
       const response = await apiService.post('/debtors/write-off', writeOffData);
-      return handleResponse(response, 'writing off debt');
+      this.debugResponse('POST', '/debtors/write-off', response);
+      this.clearCache('debtors');
+      this.clearCache('debtor-statistics');
+      this.clearCache('station-debtors');
+      this.clearCache('debtor-transactions');
+      return this.handleResponse(response, 'Debt write-off');
     } catch (error) {
-      throw handleError(error, 'writing off debt', 'Failed to write off debt');
+      throw this.handleError(error, 'Debt write-off', 'Failed to write off debt');
     }
-  },
+  };
 
   // =====================
   // STATION DEBT OPERATIONS
   // =====================
 
-  getStationDebtors: async (stationId) => {
-    logger.info(`Fetching station debtors for station: ${stationId}`);
+  getStationDebtors = async (stationId) => {
+    this.logger.info(`Fetching station debtors: ${stationId}`);
     
+    const cacheKey = `station-debtors-${stationId}`;
+    const cached = this.getCached(cacheKey);
+    if (cached) return cached;
+
     try {
+      this.debugRequest('GET', `/debtors/station/${stationId}`);
       const response = await apiService.get(`/debtors/station/${stationId}`);
-      return handleResponse(response, 'fetching station debtors');
+      this.debugResponse('GET', `/debtors/station/${stationId}`, response);
+      
+      const data = this.handleResponse(response, 'Station debtors fetch');
+      this.setCached(cacheKey, data);
+      return data;
     } catch (error) {
-      throw handleError(error, 'fetching station debtors', 'Failed to fetch station debtors');
+      throw this.handleError(error, 'Station debtors fetch', 'Failed to fetch station debtors');
     }
-  },
+  };
 
   // =====================
   // TRANSACTION HISTORY
   // =====================
 
-  getDebtorTransactions: async (debtorId, filters = {}) => {
-    logger.info(`Fetching transactions for debtor ${debtorId}:`, filters);
+  getDebtorTransactions = async (debtorId, filters = {}, forceRefresh = false) => {
+    this.logger.info(`Fetching transactions for debtor: ${debtorId}`, filters);
     
+    const cacheKey = `debtor-transactions-${debtorId}-${JSON.stringify(filters)}`;
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
     try {
-      const params = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          params.append(key, filters[key]);
-        }
-      });
+      const query = this.buildQueryParams(filters);
+      const url = query ? `/debtors/${debtorId}/transactions?${query}` : `/debtors/${debtorId}/transactions`;
       
-      const url = `/debtors/${debtorId}/transactions?${params.toString()}`;
+      this.debugRequest('GET', url);
       const response = await apiService.get(url);
-      return handleResponse(response, 'fetching debtor transactions');
+      this.debugResponse('GET', url, response);
+      
+      const data = this.handleResponse(response, 'Debtor transactions fetch');
+      this.setCached(cacheKey, data);
+      return data;
     } catch (error) {
-      throw handleError(error, 'fetching debtor transactions', 'Failed to fetch debtor transactions');
+      throw this.handleError(error, 'Debtor transactions fetch', 'Failed to fetch debtor transactions');
     }
-  },
+  };
 
   // =====================
-  // REPORTS & ANALYTICS
+  // STATISTICS AND REPORTS
   // =====================
 
-  getDebtorStatistics: async (stationId = null) => {
-    logger.info('Fetching debtor statistics', stationId ? `for station: ${stationId}` : '');
+  getDebtorStatistics = async (stationId = null, forceRefresh = false) => {
+    this.logger.info('Fetching debtor statistics');
     
-    try {
-      const url = stationId ? `/debtors/reports/statistics?stationId=${stationId}` : '/debtors/reports/statistics';
-      const response = await apiService.get(url);
-      return handleResponse(response, 'fetching debtor statistics');
-    } catch (error) {
-      throw handleError(error, 'fetching debtor statistics', 'Failed to fetch debtor statistics');
+    const cacheKey = stationId ? `debtor-statistics-${stationId}` : 'debtor-statistics';
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
     }
-  },
+
+    try {
+      const query = stationId ? this.buildQueryParams({ stationId }) : '';
+      const url = query ? `/debtors/reports/statistics?${query}` : '/debtors/reports/statistics';
+      
+      this.debugRequest('GET', url);
+      const response = await apiService.get(url);
+      this.debugResponse('GET', url, response);
+      
+      const data = this.handleResponse(response, 'Debtor statistics fetch');
+      this.setCached(cacheKey, data);
+      return data;
+    } catch (error) {
+      throw this.handleError(error, 'Debtor statistics fetch', 'Failed to fetch debtor statistics');
+    }
+  };
 
   // =====================
   // VALIDATION UTILITIES
   // =====================
 
-  validateCreateDebtor: (debtorData) => {
+  validateDebtorCategory = (categoryData) => {
     const errors = [];
-
-    if (!debtorData.name?.trim()) {
-      errors.push('Debtor name is required');
-    }
-
-    if (!debtorData.phone?.trim()) {
-      errors.push('Phone number is required');
-    }
-
-    if (debtorData.name && debtorData.name.length > 200) {
-      errors.push('Debtor name cannot exceed 200 characters');
-    }
-
-    if (debtorData.phone && debtorData.phone.length > 20) {
-      errors.push('Phone number cannot exceed 20 characters');
-    }
-
-    if (debtorData.contactPerson && debtorData.contactPerson.length > 100) {
-      errors.push('Contact person name cannot exceed 100 characters');
-    }
-
-    if (debtorData.email && !this.isValidEmail(debtorData.email)) {
-      errors.push('Invalid email address format');
-    }
-
+    if (!categoryData.name?.trim()) errors.push('Category name is required');
+    if (categoryData.name && categoryData.name.length < 1) errors.push('Category name must be at least 1 character');
+    if (categoryData.name && categoryData.name.length > 100) errors.push('Category name cannot exceed 100 characters');
+    if (categoryData.color && !/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(categoryData.color)) errors.push('Color must be a valid hex color');
+    if (categoryData.icon && !/^[a-z-]+$/.test(categoryData.icon)) errors.push('Icon can only contain lowercase letters and hyphens');
     return errors;
-  },
+  };
 
-  validateFuelDebt: (debtData) => {
+  validateDebtor = (debtorData) => {
     const errors = [];
-
-    if (!debtData.debtorPhone?.trim()) {
-      errors.push('Debtor phone is required');
-    }
-
-    if (!debtData.debtorName?.trim()) {
-      errors.push('Debtor name is required');
-    }
-
-    if (!debtData.stationId) {
-      errors.push('Station selection is required');
-    }
-
-    if (!debtData.shiftId) {
-      errors.push('Shift reference is required');
-    }
-
-    if (!debtData.amount || debtData.amount <= 0) {
-      errors.push('Valid amount is required');
-    }
-
-    if (debtData.amount > 1000000) {
-      errors.push('Amount cannot exceed 1,000,000');
-    }
-
-    if (!debtData.vehiclePlate?.trim()) {
-      errors.push('Vehicle plate is required');
-    }
-
-    // Validate UUID format
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (debtData.stationId && !uuidRegex.test(debtData.stationId)) {
-      errors.push('Invalid station ID format');
-    }
-
-    if (debtData.shiftId && !uuidRegex.test(debtData.shiftId)) {
-      errors.push('Invalid shift ID format');
-    }
-
+    if (!debtorData.name?.trim()) errors.push('Debtor name is required');
+    if (debtorData.name && debtorData.name.length < 1) errors.push('Debtor name must be at least 1 character');
+    if (debtorData.name && debtorData.name.length > 200) errors.push('Debtor name cannot exceed 200 characters');
+    if (!debtorData.categoryId) errors.push('Category is required');
+    if (debtorData.code && !/^[A-Z0-9-_]+$/.test(debtorData.code)) errors.push('Code can only contain uppercase letters, numbers, hyphens and underscores');
+    if (debtorData.phone && !/^\+?[\d\s-()]+$/.test(debtorData.phone)) errors.push('Invalid phone number format');
+    if (debtorData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(debtorData.email)) errors.push('Invalid email address');
+    if (debtorData.creditLimit && debtorData.creditLimit < 0) errors.push('Credit limit cannot be negative');
+    if (debtorData.paymentTerms && debtorData.paymentTerms < 0) errors.push('Payment terms cannot be negative');
+    if (debtorData.paymentTerms && debtorData.paymentTerms > 365) errors.push('Payment terms cannot exceed 365 days');
     return errors;
-  },
+  };
 
-  validateDebtPayment: (paymentData) => {
+  validateFuelDebt = (debtData) => {
     const errors = [];
-
-    if (!paymentData.stationDebtorAccountId) {
-      errors.push('Debtor account selection is required');
-    }
-
-    if (!paymentData.amount || paymentData.amount <= 0) {
-      errors.push('Valid payment amount is required');
-    }
-
-    if (paymentData.amount > 1000000) {
-      errors.push('Payment amount cannot exceed 1,000,000');
-    }
-
-    if (!paymentData.paymentMethod) {
-      errors.push('Payment method is required');
-    }
-
-    // Validate UUID format
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (paymentData.stationDebtorAccountId && !uuidRegex.test(paymentData.stationDebtorAccountId)) {
-      errors.push('Invalid debtor account ID format');
-    }
-
+    if (!debtData.debtorPhone?.trim()) errors.push('Debtor phone is required');
+    if (!debtData.debtorName?.trim()) errors.push('Debtor name is required');
+    if (!debtData.stationId) errors.push('Station is required');
+    if (!debtData.shiftId) errors.push('Shift is required');
+    if (!debtData.amount || debtData.amount <= 0) errors.push('Amount must be positive');
+    if (debtData.amount && debtData.amount > 1000000) errors.push('Amount cannot exceed 1,000,000');
+    if (!debtData.vehiclePlate?.trim()) errors.push('Vehicle plate is required');
     return errors;
-  },
+  };
 
-  validateWriteOff: (writeOffData) => {
+  validateDebtPayment = (paymentData) => {
     const errors = [];
-
-    if (!writeOffData.stationDebtorAccountId) {
-      errors.push('Debtor account selection is required');
-    }
-
-    if (!writeOffData.amount || writeOffData.amount <= 0) {
-      errors.push('Valid write-off amount is required');
-    }
-
-    if (writeOffData.amount > 1000000) {
-      errors.push('Write-off amount cannot exceed 1,000,000');
-    }
-
-    if (!writeOffData.reason?.trim()) {
-      errors.push('Write-off reason is required');
-    }
-
-    // Validate UUID format
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (writeOffData.stationDebtorAccountId && !uuidRegex.test(writeOffData.stationDebtorAccountId)) {
-      errors.push('Invalid debtor account ID format');
-    }
-
+    if (!paymentData.stationDebtorAccountId) errors.push('Station debtor account is required');
+    if (!paymentData.amount || paymentData.amount <= 0) errors.push('Amount must be positive');
+    if (paymentData.amount && paymentData.amount > 1000000) errors.push('Amount cannot exceed 1,000,000');
+    if (!paymentData.paymentMethod) errors.push('Payment method is required');
     return errors;
-  },
+  };
 
-  isValidEmail: (email) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  },
+  validateDebtWriteOff = (writeOffData) => {
+    const errors = [];
+    if (!writeOffData.stationDebtorAccountId) errors.push('Station debtor account is required');
+    if (!writeOffData.amount || writeOffData.amount <= 0) errors.push('Amount must be positive');
+    if (writeOffData.amount && writeOffData.amount > 1000000) errors.push('Amount cannot exceed 1,000,000');
+    if (!writeOffData.reason?.trim()) errors.push('Write-off reason is required');
+    return errors;
+  };
 
   // =====================
-  // DATA TRANSFORMATION UTILITIES
+  // UTILITY METHODS
   // =====================
 
-  formatDebtorForDisplay: (debtor) => {
-    if (!debtor) return null;
+  formatDebtorCategory = (category) => {
+    if (!category) return null;
     
-    const totalDebt = debtor.totalDebt || debtor.stationAccounts?.reduce((sum, account) => sum + account.currentDebt, 0) || 0;
-    const statusColor = totalDebt > 0 ? 'warning' : 'success';
+    return {
+      ...category,
+      displayName: category.name,
+      debtorCountDisplay: category.debtorCount ? `${category.debtorCount} debtor${category.debtorCount !== 1 ? 's' : ''}` : 'No debtors',
+      statusDisplay: category.isActive ? 'Active' : 'Inactive',
+      statusColor: category.isActive ? 'success' : 'error',
+      systemDisplay: category.isSystem ? 'System' : 'Custom',
+      systemColor: category.isSystem ? 'primary' : 'default',
+      settingsDisplay: this.getCategorySettingsDisplay(category)
+    };
+  };
+
+  getCategorySettingsDisplay = (category) => {
+    const settings = [];
+    if (category.isPaymentProcessor) settings.push('Payment Processor');
+    if (category.requiresApproval) settings.push('Requires Approval');
+    if (category.hasCreditLimit) settings.push('Credit Limit');
+    return settings.length > 0 ? settings.join(', ') : 'No special settings';
+  };
+
+  formatDebtor = (debtor) => {
+    if (!debtor) return null;
     
     return {
       ...debtor,
-      displayName: debtor.name || 'Unknown Debtor',
-      phoneDisplay: debtor.phone || 'No Phone',
-      contactInfo: debtor.contactPerson || 'No Contact',
-      emailDisplay: debtor.email || 'No Email',
-      totalDebt: this.formatCurrency(totalDebt),
-      totalStations: debtor.totalStations || debtor.stationAccounts?.length || 0,
-      status: totalDebt > 0 ? 'Owes Money' : 'Paid Up',
-      statusColor: statusColor,
-      lastActivity: this.getLastActivityDate(debtor),
-      isActive: debtor.isActive !== false
+      displayName: debtor.name,
+      categoryDisplay: debtor.category ? `${debtor.category.name}${debtor.category.color ? ` (${debtor.category.color})` : ''}` : 'No Category',
+      totalDebtDisplay: new Intl.NumberFormat('en-KE', {
+        style: 'currency',
+        currency: 'KES'
+      }).format(debtor.totalDebt || 0),
+      stationCountDisplay: debtor.stationCount ? `${debtor.stationCount} station${debtor.stationCount !== 1 ? 's' : ''}` : 'No stations',
+      statusDisplay: debtor.isActive ? 'Active' : 'Inactive',
+      statusColor: debtor.isActive ? 'success' : 'error',
+      blacklistedDisplay: debtor.isBlacklisted ? 'Blacklisted' : 'Clear',
+      blacklistedColor: debtor.isBlacklisted ? 'error' : 'success',
+      creditLimitDisplay: debtor.creditLimit 
+        ? new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(debtor.creditLimit)
+        : 'No limit',
+      creditUtilization: debtor.creditLimit && debtor.totalDebt 
+        ? (debtor.totalDebt / debtor.creditLimit * 100).toFixed(1) + '%'
+        : 'N/A'
     };
-  },
+  };
 
-  formatStationDebtorForDisplay: (stationDebtor) => {
-    if (!stationDebtor) return null;
-    
-    const currentDate = new Date();
-    const overdueAmount = stationDebtor.transactions
-      ?.filter(t => t.dueDate && new Date(t.dueDate) < currentDate)
-      ?.reduce((sum, t) => sum + t.amount, 0) || 0;
-    
-    return {
-      ...stationDebtor,
-      debtorName: stationDebtor.debtor?.name || 'Unknown Debtor',
-      stationName: stationDebtor.station?.name || 'Unknown Station',
-      balanceDisplay: this.formatCurrency(stationDebtor.currentDebt),
-      overdueDisplay: this.formatCurrency(overdueAmount),
-      status: stationDebtor.currentDebt > 0 ? 'Active' : 'Settled',
-      statusColor: stationDebtor.currentDebt > 0 ? 
-        (overdueAmount > 0 ? 'error' : 'warning') : 'success',
-      lastTransaction: stationDebtor.lastTransaction ? 
-        new Date(stationDebtor.lastTransaction).toLocaleDateString() : 'Never'
-    };
-  },
-
-  formatTransactionForDisplay: (transaction) => {
+  formatDebtorTransaction = (transaction) => {
     if (!transaction) return null;
-    
-    const isPayment = transaction.type === 'PAYMENT_RECEIVED';
-    const isWriteOff = transaction.type === 'DEBT_WRITE_OFF';
-    const amountColor = isPayment || isWriteOff ? 'success' : 'error';
-    const amountPrefix = isPayment || isWriteOff ? '-' : '+';
-    
-    const daysOverdue = transaction.dueDate ? this.calculateDaysOverdue(transaction.dueDate) : 0;
     
     return {
       ...transaction,
-      debtorName: transaction.stationDebtorAccount?.debtor?.name || 'Unknown Debtor',
-      stationName: transaction.stationDebtorAccount?.station?.name || 'Unknown Station',
-      amountDisplay: `${amountPrefix}${this.formatCurrency(Math.abs(transaction.amount))}`,
-      amountColor: amountColor,
-      debtAfterDisplay: this.formatCurrency(transaction.debtAfter),
-      typeDisplay: this.formatTransactionType(transaction.type),
-      statusDisplay: this.formatTransactionStatus(transaction.status),
-      statusColor: this.getStatusColor(transaction.status),
-      dueDateDisplay: transaction.dueDate ? new Date(transaction.dueDate).toLocaleDateString() : 'N/A',
-      transactionDateDisplay: new Date(transaction.transactionDate).toLocaleDateString(),
-      daysOverdue: daysOverdue,
-      isOverdue: daysOverdue > 0,
-      vehicleInfo: transaction.vehiclePlate ? 
-        `${transaction.vehiclePlate}${transaction.vehicleModel ? ` (${transaction.vehicleModel})` : ''}` : 'N/A'
+      amountDisplay: new Intl.NumberFormat('en-KE', {
+        style: 'currency',
+        currency: transaction.currency || 'KES'
+      }).format(transaction.amount || 0),
+      typeDisplay: this.getTransactionTypeDisplay(transaction.type),
+      typeColor: this.getTransactionTypeColor(transaction.type),
+      statusDisplay: this.getTransactionStatusDisplay(transaction.status),
+      statusColor: this.getTransactionStatusColor(transaction.status),
+      stationDisplay: transaction.stationDebtorAccount?.station?.name || 'Unknown Station',
+      dueDateDisplay: transaction.dueDate ? new Date(transaction.dueDate).toLocaleDateString() : 'Not set',
+      isOverdue: transaction.dueDate && new Date(transaction.dueDate) < new Date() && transaction.status === 'OUTSTANDING'
     };
-  },
+  };
 
-  formatCurrency: (amount) => {
-    return new Intl.NumberFormat('en-KE', {
-      style: 'currency',
-      currency: 'KES',
-      minimumFractionDigits: 2
-    }).format(amount);
-  },
-
-  formatTransactionType: (type) => {
+  getTransactionTypeDisplay = (type) => {
     const typeMap = {
-      'DEBT_INCURRED': 'Fuel Debt',
-      'PAYMENT_RECEIVED': 'Payment Received',
+      'DEBIT': 'Debt Incurred',
+      'CREDIT': 'Payment Received',
       'DEBT_WRITE_OFF': 'Write Off',
-      'CREDIT_ADJUSTMENT': 'Credit Adjustment'
+      'PAYMENT_RECEIVED': 'Payment Received'
     };
-    
     return typeMap[type] || type;
-  },
+  };
 
-  formatTransactionStatus: (status) => {
+  getTransactionTypeColor = (type) => {
+    const colorMap = {
+      'DEBIT': 'error',
+      'CREDIT': 'success',
+      'DEBT_WRITE_OFF': 'warning',
+      'PAYMENT_RECEIVED': 'success'
+    };
+    return colorMap[type] || 'default';
+  };
+
+  getTransactionStatusDisplay = (status) => {
     const statusMap = {
       'PENDING': 'Pending',
       'OUTSTANDING': 'Outstanding',
-      'PARTIAL': 'Partial',
       'SETTLED': 'Settled',
       'OVERDUE': 'Overdue',
       'CANCELLED': 'Cancelled'
     };
-    
     return statusMap[status] || status;
-  },
+  };
 
-  getStatusColor: (status) => {
+  getTransactionStatusColor = (status) => {
     const colorMap = {
-      'SETTLED': 'success',
-      'PARTIAL': 'warning',
-      'OUTSTANDING': 'info',
       'PENDING': 'warning',
+      'OUTSTANDING': 'info',
+      'SETTLED': 'success',
       'OVERDUE': 'error',
       'CANCELLED': 'default'
     };
-    
     return colorMap[status] || 'default';
-  },
+  };
 
-  calculateDaysOverdue: (dueDate) => {
-    const today = new Date();
-    const due = new Date(dueDate);
-    const diffTime = today - due;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return Math.max(0, diffDays);
-  },
-
-  getLastActivityDate: (debtor) => {
-    if (!debtor.stationAccounts) return 'Never';
-    
-    let lastDate = null;
-    debtor.stationAccounts.forEach(account => {
-      if (account.transactions && account.transactions.length > 0) {
-        const lastTransaction = account.transactions[0].transactionDate;
-        if (!lastDate || new Date(lastTransaction) > new Date(lastDate)) {
-          lastDate = lastTransaction;
-        }
-      }
-    });
-    
-    return lastDate ? new Date(lastDate).toLocaleDateString() : 'Never';
-  },
-
-  // =====================
-  // FILTER UTILITIES
-  // =====================
-
-  buildDebtorFilters: (filters) => {
-    const cleanFilters = {};
-    
-    Object.keys(filters).forEach(key => {
-      if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-        cleanFilters[key] = filters[key];
-      }
-    });
-
-    return cleanFilters;
-  },
-
-  filterDebtorsByStatus: (debtors, status) => {
-    if (!Array.isArray(debtors)) return [];
-    
-    switch (status) {
-      case 'active':
-        return debtors.filter(debtor => debtor.isActive !== false);
-      case 'inactive':
-        return debtors.filter(debtor => debtor.isActive === false);
-      case 'with-debt':
-        return debtors.filter(debtor => (debtor.totalDebt || 0) > 0);
-      case 'no-debt':
-        return debtors.filter(debtor => (debtor.totalDebt || 0) === 0);
-      case 'overdue':
-        // This would require more detailed data about individual transactions
-        return debtors.filter(debtor => (debtor.totalDebt || 0) > 0);
-      default:
-        return debtors;
-    }
-  },
-
-  filterTransactionsByType: (transactions, type) => {
-    if (!Array.isArray(transactions)) return [];
-    if (!type) return transactions;
-    
-    return transactions.filter(transaction => transaction.type === type);
-  },
-
-  filterTransactionsByStatus: (transactions, status) => {
-    if (!Array.isArray(transactions)) return [];
-    if (!status) return transactions;
-    
-    return transactions.filter(transaction => transaction.status === status);
-  },
-
-  // =====================
-  // SEARCH UTILITIES
-  // =====================
-
-  searchDebtorsLocal: (debtors, searchTerm) => {
-    if (!Array.isArray(debtors)) return [];
-    if (!searchTerm) return debtors;
-    
-    const term = searchTerm.toLowerCase();
-    
-    return debtors.filter(debtor => 
-      debtor.name?.toLowerCase().includes(term) ||
-      debtor.phone?.toLowerCase().includes(term) ||
-      debtor.contactPerson?.toLowerCase().includes(term) ||
-      debtor.email?.toLowerCase().includes(term)
-    );
-  },
-
-  searchTransactions: (transactions, searchTerm) => {
-    if (!Array.isArray(transactions)) return [];
-    if (!searchTerm) return transactions;
-    
-    const term = searchTerm.toLowerCase();
-    
-    return transactions.filter(transaction => 
-      transaction.stationDebtorAccount?.debtor?.name?.toLowerCase().includes(term) ||
-      transaction.vehiclePlate?.toLowerCase().includes(term) ||
-      transaction.vehicleModel?.toLowerCase().includes(term) ||
-      transaction.description?.toLowerCase().includes(term) ||
-      transaction.referenceNumber?.toLowerCase().includes(term)
-    );
-  },
-
-  // =====================
-  // SORTING UTILITIES
-  // =====================
-
-  sortDebtors: (debtors, sortBy, sortOrder = 'asc') => {
-    if (!Array.isArray(debtors)) return [];
-    
-    return [...debtors].sort((a, b) => {
-      let aValue, bValue;
-      
-      switch (sortBy) {
-        case 'name':
-          aValue = a.name || '';
-          bValue = b.name || '';
-          break;
-        case 'phone':
-          aValue = a.phone || '';
-          bValue = b.phone || '';
-          break;
-        case 'totalDebt':
-          aValue = a.totalDebt || 0;
-          bValue = b.totalDebt || 0;
-          break;
-        case 'totalStations':
-          aValue = a.totalStations || 0;
-          bValue = b.totalStations || 0;
-          break;
-        case 'status':
-          aValue = (a.totalDebt || 0) > 0 ? 'Owes Money' : 'Paid Up';
-          bValue = (b.totalDebt || 0) > 0 ? 'Owes Money' : 'Paid Up';
-          break;
-        case 'lastActivity':
-          aValue = this.getLastActivityTimestamp(a);
-          bValue = this.getLastActivityTimestamp(b);
-          break;
-        default:
-          aValue = a.name || '';
-          bValue = b.name || '';
-      }
-      
-      if (sortOrder === 'desc') {
-        [aValue, bValue] = [bValue, aValue];
-      }
-      
-      if (typeof aValue === 'string') {
-        return aValue.localeCompare(bValue);
-      }
-      
-      return aValue - bValue;
-    });
-  },
-
-  sortTransactions: (transactions, sortBy, sortOrder = 'desc') => {
-    if (!Array.isArray(transactions)) return [];
-    
-    return [...transactions].sort((a, b) => {
-      let aValue, bValue;
-      
-      switch (sortBy) {
-        case 'date':
-          aValue = new Date(a.transactionDate);
-          bValue = new Date(b.transactionDate);
-          break;
-        case 'dueDate':
-          aValue = new Date(a.dueDate || 0);
-          bValue = new Date(b.dueDate || 0);
-          break;
-        case 'amount':
-          aValue = Math.abs(a.amount);
-          bValue = Math.abs(b.amount);
-          break;
-        case 'debtor':
-          aValue = a.stationDebtorAccount?.debtor?.name || '';
-          bValue = b.stationDebtorAccount?.debtor?.name || '';
-          break;
-        case 'type':
-          aValue = a.type;
-          bValue = b.type;
-          break;
-        case 'status':
-          aValue = a.status;
-          bValue = b.status;
-          break;
-        case 'vehicle':
-          aValue = a.vehiclePlate || '';
-          bValue = b.vehiclePlate || '';
-          break;
-        default:
-          aValue = new Date(a.transactionDate);
-          bValue = new Date(b.transactionDate);
-      }
-      
-      if (sortOrder === 'desc') {
-        [aValue, bValue] = [bValue, aValue];
-      }
-      
-      if (typeof aValue === 'string') {
-        return aValue.localeCompare(bValue);
-      }
-      
-      return aValue - bValue;
-    });
-  },
-
-  getLastActivityTimestamp: (debtor) => {
-    if (!debtor.stationAccounts) return 0;
-    
-    let lastTimestamp = 0;
-    debtor.stationAccounts.forEach(account => {
-      if (account.transactions && account.transactions.length > 0) {
-        const lastTransaction = new Date(account.transactions[0].transactionDate).getTime();
-        if (lastTransaction > lastTimestamp) {
-          lastTimestamp = lastTransaction;
-        }
-      }
-    });
-    
-    return lastTimestamp;
-  },
-
-  // Add these methods to your existing debtorService.js
-
-// Get debt transactions with advanced filtering
-getDebtTransactions: async (filters = {}) => {
-  logger.info('Fetching debt transactions with filters:', filters);
-  
-  try {
-    const params = new URLSearchParams();
-    Object.keys(filters).forEach(key => {
-      if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-        params.append(key, filters[key]);
-      }
-    });
-    
-    const url = params.toString() ? `/debtor-transactions/debts?${params.toString()}` : '/debtor-transactions/debts';
-    const response = await apiService.get(url);
-    return handleResponse(response, 'fetching debt transactions');
-  } catch (error) {
-    throw handleError(error, 'fetching debt transactions', 'Failed to fetch debt transactions');
-  }
-},
-
-// Get payment transactions with advanced filtering
-getPaymentTransactions: async (filters = {}) => {
-  logger.info('Fetching payment transactions with filters:', filters);
-  
-  try {
-    const params = new URLSearchParams();
-    Object.keys(filters).forEach(key => {
-      if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-        params.append(key, filters[key]);
-      }
-    });
-    
-    const url = params.toString() ? `/debtor-transactions/payments?${params.toString()}` : '/debtor-transactions/payments';
-    const response = await apiService.get(url);
-    return handleResponse(response, 'fetching payment transactions');
-  } catch (error) {
-    throw handleError(error, 'fetching payment transactions', 'Failed to fetch payment transactions');
-  }
-},
-
-// Get payment statistics
-getPaymentStatistics: async () => {
-  logger.info('Fetching payment statistics');
-  
-  try {
-    const response = await apiService.get('/debtor-transactions/payments/statistics');
-    return handleResponse(response, 'fetching payment statistics');
-  } catch (error) {
-    throw handleError(error, 'fetching payment statistics', 'Failed to fetch payment statistics');
-  }
-},
-
-  // =====================
-  // DATA MAPPING UTILITIES
-  // =====================
-
-  mapDebtorToForm: (debtor) => {
-    if (!debtor) return null;
+  formatStationDebtors = (stationDebtors) => {
+    if (!stationDebtors) return null;
     
     return {
-      id: debtor.id,
-      name: debtor.name,
-      phone: debtor.phone,
-      contactPerson: debtor.contactPerson,
-      email: debtor.email,
-      isActive: debtor.isActive !== false
+      ...stationDebtors,
+      totalDebtDisplay: new Intl.NumberFormat('en-KE', {
+        style: 'currency',
+        currency: 'KES'
+      }).format(stationDebtors.totalDebt || 0),
+      debtorCountDisplay: `${stationDebtors.debtorCount} debtor${stationDebtors.debtorCount !== 1 ? 's' : ''}`,
+      agingDisplay: this.formatAgingAnalysis(stationDebtors.aging)
     };
-  },
+  };
 
-  mapFormToCreateDebtor: (formData) => {
+  formatAgingAnalysis = (aging) => {
+    if (!aging) return 'No data';
+    
+    const parts = [];
+    if (aging.current > 0) parts.push(`Current: ${new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(aging.current)}`);
+    if (aging['1-30'] > 0) parts.push(`1-30: ${new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(aging['1-30'])}`);
+    if (aging['31-60'] > 0) parts.push(`31-60: ${new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(aging['31-60'])}`);
+    if (aging['61-90'] > 0) parts.push(`61-90: ${new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(aging['61-90'])}`);
+    if (aging['90+'] > 0) parts.push(`90+: ${new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(aging['90+'])}`);
+    
+    return parts.length > 0 ? parts.join(', ') : 'All cleared';
+  };
+
+  getDefaultDebtorCategoryData = () => {
     return {
-      name: formData.name.trim(),
-      phone: formData.phone.trim(),
-      contactPerson: formData.contactPerson?.trim() || null,
-      email: formData.email?.trim() || null
+      name: '',
+      description: '',
+      color: '#666666',
+      icon: '',
+      isPaymentProcessor: false,
+      requiresApproval: false,
+      hasCreditLimit: false,
+      isActive: true
     };
-  },
+  };
 
-  mapFormToUpdateDebtor: (formData) => {
-    const updateData = {};
-    
-    if (formData.name !== undefined) updateData.name = formData.name.trim();
-    if (formData.contactPerson !== undefined) updateData.contactPerson = formData.contactPerson?.trim() || null;
-    if (formData.email !== undefined) updateData.email = formData.email?.trim() || null;
-    if (formData.isActive !== undefined) updateData.isActive = formData.isActive;
-    
-    return updateData;
-  },
-
-  mapFormToFuelDebt: (formData) => {
+  getDefaultDebtorData = () => {
     return {
-      debtorPhone: formData.debtorPhone.trim(),
-      debtorName: formData.debtorName.trim(),
-      stationId: formData.stationId,
-      shiftId: formData.shiftId,
-      amount: parseFloat(formData.amount),
-      vehiclePlate: formData.vehiclePlate.trim(),
-      vehicleModel: formData.vehicleModel?.trim() || null,
-      description: formData.description?.trim() || `Fuel for ${formData.vehiclePlate}`,
-      transactionDate: formData.transactionDate
+      name: '',
+      categoryId: '',
+      code: '',
+      contactPerson: '',
+      phone: '',
+      email: '',
+      address: '',
+      creditLimit: null,
+      paymentTerms: null,
+      taxNumber: '',
+      isActive: true,
+      isBlacklisted: false
     };
-  },
+  };
 
-  mapFormToDebtPayment: (formData) => {
+  getDefaultFuelDebtData = () => {
     return {
-      stationDebtorAccountId: formData.stationDebtorAccountId,
-      amount: parseFloat(formData.amount),
-      paymentMethod: formData.paymentMethod,
-      referenceNumber: formData.referenceNumber?.trim() || null,
-      notes: formData.notes?.trim() || null,
-      transactionDate: formData.transactionDate
+      debtorPhone: '',
+      debtorName: '',
+      stationId: '',
+      shiftId: '',
+      amount: 0,
+      vehiclePlate: '',
+      vehicleModel: '',
+      description: 'Fuel purchase on credit',
+      transactionDate: new Date().toISOString()
     };
-  },
+  };
 
-  mapFormToWriteOff: (formData) => {
+  getDefaultDebtPaymentData = () => {
     return {
-      stationDebtorAccountId: formData.stationDebtorAccountId,
-      amount: parseFloat(formData.amount),
-      reason: formData.reason.trim(),
-      notes: formData.notes?.trim() || null
+      stationDebtorAccountId: '',
+      amount: 0,
+      paymentMethod: 'CASH',
+      referenceNumber: '',
+      notes: '',
+      transactionDate: new Date().toISOString()
     };
-  },
+  };
 
-  // =====================
-  // STATISTICS AND ANALYTICS
-  // =====================
-
-  calculateDebtorStatistics: (debtors) => {
-    if (!Array.isArray(debtors)) return null;
-    
-    const activeDebtors = debtors.filter(debtor => debtor.isActive !== false);
-    const debtorsWithBalance = debtors.filter(debtor => (debtor.totalDebt || 0) > 0);
-    
-    const totalDebt = debtors.reduce((sum, debtor) => sum + (debtor.totalDebt || 0), 0);
-    const averageDebt = debtors.length > 0 ? totalDebt / debtors.length : 0;
-    
+  getDefaultDebtWriteOffData = () => {
     return {
-      totalDebtors: debtors.length,
-      activeDebtors: activeDebtors.length,
-      debtorsWithBalance: debtorsWithBalance.length,
-      totalDebt: this.formatCurrency(totalDebt),
-      averageDebt: this.formatCurrency(averageDebt),
-      settlementRate: debtors.length > 0 ? 
-        ((debtors.length - debtorsWithBalance.length) / debtors.length * 100).toFixed(1) + '%' : '0%'
+      stationDebtorAccountId: '',
+      amount: 0,
+      reason: '',
+      notes: ''
     };
-  },
-
-  calculateAgingSummary: (agingData) => {
-    if (!agingData) return null;
-    
-    const total = agingData.current + agingData['1-30'] + agingData['31-60'] + agingData['61-90'] + agingData['90+'];
-    const overdue = agingData['1-30'] + agingData['31-60'] + agingData['61-90'] + agingData['90+'];
-    
-    return {
-      ...agingData,
-      total: this.formatCurrency(total),
-      overdue: this.formatCurrency(overdue),
-      overduePercentage: total > 0 ? ((overdue / total) * 100).toFixed(1) + '%' : '0%',
-      currentDisplay: this.formatCurrency(agingData.current),
-      '1-30Display': this.formatCurrency(agingData['1-30']),
-      '31-60Display': this.formatCurrency(agingData['31-60']),
-      '61-90Display': this.formatCurrency(agingData['61-90']),
-      '90+Display': this.formatCurrency(agingData['90+'])
-    };
-  },
-
-  // =====================
-  // EXPORT/IMPORT UTILITIES
-  // =====================
-
-  exportDebtorsToCSV: (debtors) => {
-    if (!debtors || !debtors.length) return '';
-    
-    const headers = ['Debtor Name', 'Phone', 'Contact Person', 'Email', 'Total Debt', 'Stations', 'Status', 'Last Activity'];
-    const rows = debtors.map(debtor => [
-      debtor.name || 'N/A',
-      debtor.phone || 'N/A',
-      debtor.contactPerson || 'N/A',
-      debtor.email || 'N/A',
-      this.formatCurrency(debtor.totalDebt || 0),
-      debtor.totalStations || '0',
-      (debtor.totalDebt || 0) > 0 ? 'Owes Money' : 'Paid Up',
-      this.getLastActivityDate(debtor)
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n');
-
-    return csvContent;
-  },
-
-  exportTransactionsToCSV: (transactions) => {
-    if (!transactions || !transactions.length) return '';
-    
-    const headers = ['Date', 'Debtor', 'Station', 'Type', 'Vehicle', 'Amount', 'Balance After', 'Status', 'Due Date', 'Description'];
-    const rows = transactions.map(transaction => [
-      new Date(transaction.transactionDate).toLocaleDateString(),
-      transaction.stationDebtorAccount?.debtor?.name || 'N/A',
-      transaction.stationDebtorAccount?.station?.name || 'N/A',
-      this.formatTransactionType(transaction.type),
-      transaction.vehiclePlate ? 
-        `${transaction.vehiclePlate}${transaction.vehicleModel ? ` (${transaction.vehicleModel})` : ''}` : 'N/A',
-      this.formatCurrency(transaction.amount),
-      this.formatCurrency(transaction.debtAfter),
-      this.formatTransactionStatus(transaction.status),
-      transaction.dueDate ? new Date(transaction.dueDate).toLocaleDateString() : 'N/A',
-      transaction.description || 'N/A'
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n');
-
-    return csvContent;
-  },
-
-  downloadDebtorsCSV: (debtors, filename = 'debtors.csv') => {
-    const csvContent = this.exportDebtorsToCSV(debtors);
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
-    window.URL.revokeObjectURL(url);
-  },
-
-  downloadTransactionsCSV: (transactions, filename = 'debtor_transactions.csv') => {
-    const csvContent = this.exportTransactionsToCSV(transactions);
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
-    window.URL.revokeObjectURL(url);
-  },
-
-  // =====================
-  // CACHE AND STATE MANAGEMENT HELPERS
-  // =====================
-
-  generateDebtorKey: (debtor) => {
-    return `${debtor.id}-${debtor.totalDebt || 0}`;
-  },
-
-  generateTransactionKey: (transaction) => {
-    return `${transaction.id}-${transaction.updatedAt}`;
-  },
-
-  findDebtorById: (debtors, debtorId) => {
-    return debtors.find(debtor => debtor.id === debtorId);
-  },
-
-  findTransactionsByDebtor: (transactions, debtorId) => {
-    return transactions.filter(transaction => 
-      transaction.stationDebtorAccount?.debtorId === debtorId
-    );
-  },
-
-  findTransactionsByStation: (transactions, stationId) => {
-    return transactions.filter(transaction => 
-      transaction.stationDebtorAccount?.stationId === stationId
-    );
-  },
-
-  findTransactionsByType: (transactions, type) => {
-    return transactions.filter(transaction => transaction.type === type);
-  },
+  };
 
   // =====================
   // BATCH OPERATIONS
   // =====================
 
-  bulkRecordPayments: async (payments) => {
-    logger.info('Bulk recording debt payments:', payments);
+  batchCreateDebtors = async (debtorsData) => {
+    this.logger.info(`Batch creating ${debtorsData.length} debtors`);
     
     try {
-      const results = [];
+      const promises = debtorsData.map(debtorData => 
+        this.createDebtor(debtorData)
+      );
       
-      for (const payment of payments) {
-        try {
-          const result = await this.recordDebtPayment(payment);
-          results.push({ success: true, data: result, payment });
-        } catch (error) {
-          results.push({ 
-            success: false, 
-            error: error.message,
-            payment 
-          });
-        }
-      }
+      const results = await Promise.allSettled(promises);
       
-      logger.info('Bulk payment recording completed', {
-        total: payments.length,
-        successful: results.filter(r => r.success).length,
-        failed: results.filter(r => !r.success).length
-      });
+      const successful = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+      const failed = results.filter(r => r.status === 'rejected').map(r => r.reason);
       
-      return this.processBulkResults(results);
+      return {
+        successful,
+        failed,
+        total: debtorsData.length,
+        successCount: successful.length,
+        failureCount: failed.length
+      };
     } catch (error) {
-      throw handleError(error, 'bulk recording payments', 'Failed to process bulk payments');
+      throw this.handleError(error, 'Batch debtor creation', 'Failed to batch create debtors');
     }
-  },
+  };
 
-  processBulkResults: (results) => {
-    const successful = results.filter(result => result.success);
-    const failed = results.filter(result => !result.success);
+  // =====================
+  // SEARCH OPERATIONS
+  // =====================
+
+  searchDebtorEntities = async (searchTerm) => {
+    this.logger.info(`Searching debtor entities for: "${searchTerm}"`);
     
-    return {
-      total: results.length,
-      successful: successful.length,
-      failed: failed.length,
-      successRate: results.length > 0 ? (successful.length / results.length * 100).toFixed(1) + '%' : '0%',
-      details: {
-        successful: successful.map(s => s.data),
-        failed: failed.map(f => ({
-          payment: f.payment,
-          error: f.error
+    try {
+      const [categories, debtors] = await Promise.all([
+        this.getDebtorCategories({ search: searchTerm }),
+        this.searchDebtors(searchTerm)
+      ]);
+
+      return {
+        categories: categories?.categories || categories || [],
+        debtors: debtors || [],
+        searchTerm,
+        totalResults: (categories?.categories?.length || categories?.length || 0) + (debtors?.length || 0)
+      };
+    } catch (error) {
+      throw this.handleError(error, 'Debtor entities search', 'Failed to search debtor entities');
+    }
+  };
+
+  // =====================
+  // ANALYTICS
+  // =====================
+
+  getDebtorAnalytics = async (forceRefresh = false) => {
+    this.logger.info('Fetching debtor analytics');
+    
+    const cacheKey = 'debtor-analytics';
+    
+    if (!forceRefresh) {
+      const cached = this.getCached(cacheKey);
+      if (cached) return cached;
+    }
+
+    try {
+      const [statistics, categories, recentTransactions] = await Promise.all([
+        this.getDebtorStatistics(null, true),
+        this.getDebtorCategories({}, true),
+        this.getDebtors({}, true).then(debtors => {
+          // Get recent transactions for top debtors
+          const topDebtors = (debtors?.debtors || debtors || []).slice(0, 5);
+          return Promise.all(
+            topDebtors.map(debtor => 
+              this.getDebtorTransactions(debtor.id, { limit: 5 }, true)
+            )
+          );
+        })
+      ]);
+
+      const analytics = {
+        summary: statistics?.summary || {},
+        topDebtors: statistics?.topDebtors || [],
+        recentTransactions: recentTransactions.flatMap(t => t?.transactions || t || []).slice(0, 10),
+        categoryDistribution: {},
+        statusDistribution: {
+          active: 0,
+          inactive: 0,
+          blacklisted: 0
+        }
+      };
+
+      // Process categories data
+      const categoriesList = categories?.categories || categories || [];
+      categoriesList.forEach(category => {
+        analytics.categoryDistribution[category.name] = category.debtorCount || 0;
+      });
+
+      // Process debtors data for status distribution
+      const debtorsList = statistics?.topDebtors || [];
+      debtorsList.forEach(debtor => {
+        if (debtor.isBlacklisted) {
+          analytics.statusDistribution.blacklisted++;
+        } else if (debtor.isActive) {
+          analytics.statusDistribution.active++;
+        } else {
+          analytics.statusDistribution.inactive++;
+        }
+      });
+
+      this.setCached(cacheKey, analytics);
+      return analytics;
+    } catch (error) {
+      throw this.handleError(error, 'Debtor analytics fetch', 'Failed to fetch debtor analytics');
+    }
+  };
+
+  // =====================
+  // EXPORT/IMPORT
+  // =====================
+
+  exportDebtors = async (format = 'json') => {
+    this.logger.info(`Exporting debtors in ${format} format`);
+    
+    try {
+      const debtors = await this.getDebtors({}, true);
+      
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        totalDebtors: debtors?.debtors?.length || debtors?.length || 0,
+        debtors: (debtors?.debtors || debtors || []).map(debtor => ({
+          id: debtor.id,
+          name: debtor.name,
+          code: debtor.code,
+          category: debtor.category?.name,
+          contactPerson: debtor.contactPerson,
+          phone: debtor.phone,
+          email: debtor.email,
+          creditLimit: debtor.creditLimit,
+          currentDebt: debtor.totalDebt || 0,
+          paymentTerms: debtor.paymentTerms,
+          isActive: debtor.isActive,
+          isBlacklisted: debtor.isBlacklisted,
+          createdAt: debtor.createdAt
         }))
+      };
+
+      if (format === 'csv') {
+        // Convert to CSV format
+        const headers = ['Name', 'Code', 'Category', 'Contact Person', 'Phone', 'Email', 'Credit Limit', 'Current Debt', 'Payment Terms', 'Status', 'Blacklisted'];
+        const csvRows = [headers.join(',')];
+        
+        exportData.debtors.forEach(debtor => {
+          const row = [
+            `"${debtor.name}"`,
+            `"${debtor.code || ''}"`,
+            `"${debtor.category || ''}"`,
+            `"${debtor.contactPerson || ''}"`,
+            `"${debtor.phone || ''}"`,
+            `"${debtor.email || ''}"`,
+            debtor.creditLimit || 0,
+            debtor.currentDebt || 0,
+            debtor.paymentTerms || '',
+            debtor.isActive ? 'Active' : 'Inactive',
+            debtor.isBlacklisted ? 'Yes' : 'No'
+          ];
+          csvRows.push(row.join(','));
+        });
+
+        return csvRows.join('\n');
       }
-    };
-  },
 
-  // =====================
-  // QUICK DEBT OPERATIONS
-  // =====================
+      return exportData;
+    } catch (error) {
+      throw this.handleError(error, 'Debtors export', 'Failed to export debtors');
+    }
+  };
+}
 
-  quickRecordFuelDebt: async (debtorPhone, debtorName, stationId, shiftId, amount, vehiclePlate) => {
-    const debtData = {
-      debtorPhone: debtorPhone.trim(),
-      debtorName: debtorName.trim(),
-      stationId,
-      shiftId,
-      amount: parseFloat(amount),
-      vehiclePlate: vehiclePlate.trim(),
-      description: `Quick fuel debt for ${vehiclePlate}`
-    };
-
-    return await this.recordFuelDebt(debtData);
-  },
-
-  quickRecordPayment: async (stationDebtorAccountId, amount, paymentMethod = 'CASH') => {
-    const paymentData = {
-      stationDebtorAccountId,
-      amount: parseFloat(amount),
-      paymentMethod,
-      description: `Quick payment recorded`
-    };
-
-    return await this.recordDebtPayment(paymentData);
-  }
-};
-
-// Default export for convenience
+export const debtorService = new DebtorService();
 export default debtorService;
