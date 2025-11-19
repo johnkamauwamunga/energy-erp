@@ -1,5 +1,5 @@
 // SummaryModal.jsx
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Modal,
@@ -31,10 +31,19 @@ import {
   Zap,
   Droplets,
   ArrowLeft,
-  AlertCircle
+  AlertCircle,
+  Printer,
+  FileDown,
+  Wallet,
+  User,
+  Building,
+  CreditCard
 } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 import { shiftService } from '../../../../../services/shiftService/shiftService';
+import { bankingService } from '../../../../../services/bankingService/bankingService';
 import { useApp } from '../../../../../context/AppContext';
 
 const { Title, Text } = Typography;
@@ -43,7 +52,7 @@ const { Title, Text } = Typography;
 const ResponseModal = ({
   visible,
   onClose,
-  type, // 'success' or 'error'
+  type,
   shiftData,
   error,
   onBackToShifts,
@@ -141,15 +150,22 @@ const SummaryModal = ({
   const [submitting, setSubmitting] = useState(false);
   const [responseModalVisible, setResponseModalVisible] = useState(false);
   const [responseData, setResponseData] = useState(null);
-  const [responseType, setResponseType] = useState('success'); // 'success' or 'error'
+  const [responseType, setResponseType] = useState('success');
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [newWalletBalance, setNewWalletBalance] = useState(0);
+
+  const printRef = useRef();
 
   // Safe data extraction
   const islands = islandSalesData?.islands || [];
   const overallStats = islandSalesData?.overallStats || {};
   const apiPayload = islandSalesData?.apiPayload || {};
   const shiftId = islandSalesData?.shiftId;
+  const shiftNumber = islandSalesData?.shiftNumber;
   const pumpReadings = islandSalesData?.pumpReadings || [];
   const tankReadings = islandSalesData?.tankReadings || [];
+  const stateStationId = state.currentStation?.id;
+  const currentUser = state.currentUser;
 
   // Calculate totals for reconciliation table
   const reconciliationData = useMemo(() => {
@@ -167,18 +183,26 @@ const SummaryModal = ({
         return acc;
       }, {});
 
+      // Calculate variance correctly: Expected - Collected
+      const totalSales = island.totalActualSales || 0;
+      const receipts = island.receipts || 0;
+      const expenses = island.expenses || 0;
+      const collected = cashAmount; // Cash drops = collected amount
+      const expected = totalSales + receipts - expenses;
+      const variance = expected - collected;
+
       return {
         key: index,
         islandName: island.islandName,
         attendants: island.attendants?.map(a => `${a.firstName} ${a.lastName}`).join(', ') || 'No attendants',
-        totalSales: island.totalActualSales || 0,
-        receipts: island.receipts || 0,
-        expenses: island.expenses || 0,
-        cashDrops: cashAmount,
-        variance: island.totalDifference || 0,
+        totalSales: totalSales,
+        receipts: receipts,
+        expenses: expenses,
+        cashDrops: collected,
+        variance: variance,
         debtCollections: debtByDebtor,
-        totalExpected: island.totalExpected || 0,
-        totalCollected: island.totalCollection || 0,
+        totalExpected: expected,
+        totalCollected: collected,
         isComplete: island.isComplete || false
       };
     });
@@ -194,6 +218,12 @@ const SummaryModal = ({
     const totalExpected = reconciliationData.reduce((sum, row) => sum + row.totalExpected, 0);
     const totalCollected = reconciliationData.reduce((sum, row) => sum + row.totalCollected, 0);
 
+    // Calculate total debts (all non-cash collections)
+    const totalDebts = reconciliationData.reduce((sum, row) => {
+      const rowDebts = Object.values(row.debtCollections || {}).reduce((debtSum, amount) => debtSum + amount, 0);
+      return sum + rowDebts;
+    }, 0);
+
     return {
       totalCashDrops,
       totalSales,
@@ -201,9 +231,68 @@ const SummaryModal = ({
       totalExpenses,
       totalVariance,
       totalExpected,
-      totalCollected
+      totalCollected,
+      totalDebts
     };
   }, [reconciliationData]);
+
+  // Calculate totals for wallet calculation
+  const walletCalculationTotals = useMemo(() => {
+    const totalCashDrops = reconciliationData.reduce((sum, row) => sum + row.cashDrops, 0);
+    const totalExpenses = reconciliationData.reduce((sum, row) => sum + row.expenses, 0);
+    
+    return {
+      totalCashDrops,
+      totalExpenses
+    };
+  }, [reconciliationData]);
+
+  // Fetch wallet balance
+  useEffect(() => {
+    const fetchWallet = async () => {
+      try {
+        const walletData = await bankingService.getStationWallet(stateStationId);
+        console.log("the wallet balance ", walletData);
+        const balance = walletData?.currentBalance || 0;
+        setWalletBalance(balance);
+        
+        // Calculate new balance: current balance + actual collection
+        const actualCollection = overallTotals.totalSales + overallTotals.totalReceipts - overallTotals.totalExpenses;
+        setNewWalletBalance(balance + actualCollection);
+      } catch (error) {
+        console.error('Error fetching wallet balance:', error);
+        setWalletBalance(0);
+        setNewWalletBalance(0);
+      }
+    };
+    
+    if (stateStationId) {
+      fetchWallet();
+    }
+  }, [stateStationId, overallTotals]);
+
+  // Cash Reconciliation Breakdown - FIXED CALCULATION
+  const cashReconciliation = useMemo(() => {
+    const totalSales = overallTotals.totalSales;
+    const totalDebts = overallTotals.totalDebts;
+    const totalReceipts = overallTotals.totalReceipts;
+    const totalExpenses = overallTotals.totalExpenses;
+    const totalDrops = overallTotals.totalCashDrops;
+    
+    // Actual Collection = Total Sales + Receipts - Expenses
+    const actualCollection = totalSales + totalReceipts - totalExpenses;
+    
+    return {
+      totalSales,
+      totalDebts,
+      totalReceipts,
+      totalExpenses,
+      totalDrops,
+      actualCollection,
+      walletBalance,
+      newWalletBalance: walletBalance + actualCollection
+    };
+  }, [overallTotals, walletBalance]);
 
   // Get all unique debtor names for columns
   const debtColumns = useMemo(() => {
@@ -228,149 +317,16 @@ const SummaryModal = ({
     }));
   }, [reconciliationData]);
 
-  // Pump Readings Columns
-  const pumpReadingsColumns = [
-    {
-      title: 'PUMP',
-      dataIndex: 'pumpId',
-      key: 'pumpId',
-      width: 120,
-      render: (pumpId, record) => (
-        <Space>
-          <Zap size={14} color="#faad14" />
-          <Text strong>{record.pumpName || pumpId?.slice(0, 8)}...</Text>
-        </Space>
-      ),
-    },
-    {
-      title: 'ELECTRIC METER',
-      dataIndex: 'electricMeter',
-      key: 'electricMeter',
-      width: 120,
-      align: 'right',
-      render: (value) => (
-        <Text strong style={{ color: '#1890ff' }}>
-          {parseFloat(value || 0).toFixed(3)}
-        </Text>
-      ),
-    },
-    {
-      title: 'MANUAL METER',
-      dataIndex: 'manualMeter',
-      key: 'manualMeter',
-      width: 120,
-      align: 'right',
-      render: (value) => (
-        <Text style={{ color: '#52c41a' }}>
-          {parseFloat(value || 0).toFixed(3)}
-        </Text>
-      ),
-    },
-    {
-      title: 'CASH METER',
-      dataIndex: 'cashMeter',
-      key: 'cashMeter',
-      width: 120,
-      align: 'right',
-      render: (value) => (
-        <Text style={{ color: '#fa8c16' }}>
-          {parseFloat(value || 0).toFixed(3)}
-        </Text>
-      ),
-    },
-    {
-      title: 'LITERS DISPENSED',
-      dataIndex: 'litersDispensed',
-      key: 'litersDispensed',
-      width: 120,
-      align: 'right',
-      render: (value) => (
-        <Text strong style={{ color: '#722ed1' }}>
-          {parseFloat(value || 0).toFixed(1)} L
-        </Text>
-      ),
-    },
-    {
-      title: 'SALES VALUE',
-      dataIndex: 'salesValue',
-      key: 'salesValue',
-      width: 120,
-      align: 'right',
-      render: (value) => (
-        <Text strong style={{ color: '#52c41a' }}>
-          KES {parseFloat(value || 0).toFixed(2)}
-        </Text>
-      ),
-    },
-  ];
-
-  // Tank Readings Columns
-  const tankReadingsColumns = [
-    {
-      title: 'TANK',
-      dataIndex: 'tankId',
-      key: 'tankId',
-      width: 120,
-      render: (tankId, record) => (
-        <Space>
-          <Droplets size={14} color="#1890ff" />
-          <Text strong>{record.tankName || tankId?.slice(0, 8)}...</Text>
-        </Space>
-      ),
-    },
-    {
-      title: 'DIP VALUE',
-      dataIndex: 'dipValue',
-      key: 'dipValue',
-      width: 100,
-      align: 'right',
-      render: (value) => (
-        <Text strong style={{ color: '#1890ff' }}>
-          {parseFloat(value || 0).toFixed(2)} m
-        </Text>
-      ),
-    },
-    {
-      title: 'VOLUME',
-      dataIndex: 'volume',
-      key: 'volume',
-      width: 120,
-      align: 'right',
-      render: (value) => (
-        <Text style={{ color: '#52c41a' }}>
-          {parseFloat(value || 0).toFixed(1)} L
-        </Text>
-      ),
-    },
-    {
-      title: 'TEMPERATURE',
-      dataIndex: 'temperature',
-      key: 'temperature',
-      width: 120,
-      align: 'right',
-      render: (value) => (
-        <Text style={{ color: '#fa541c' }}>
-          {parseFloat(value || 28.5).toFixed(1)} °C
-        </Text>
-      ),
-    },
-  ];
-
-  // Reconciliation Table Columns
-  const reconciliationColumns = [
+  // Main Reconciliation Table Columns - Clean Financial Style
+  const financialColumns = [
     {
       title: 'ISLAND',
       dataIndex: 'islandName',
       key: 'islandName',
       width: 120,
       fixed: 'left',
-      render: (name, record) => (
-        <Space direction="vertical" size={2}>
-          <Text strong>🏝️ {name}</Text>
-          {record.isComplete && (
-            <Tag color="green" size="small">Complete</Tag>
-          )}
-        </Space>
+      render: (name) => (
+        <Text strong>{name}</Text>
       ),
     },
     {
@@ -379,13 +335,7 @@ const SummaryModal = ({
       key: 'attendants',
       width: 150,
       render: (attendants) => (
-        <Space direction="vertical" size={2}>
-          {attendants.split(', ').map((attendant, idx) => (
-            <Text key={idx} style={{ fontSize: '12px' }}>
-              👤 {attendant}
-            </Text>
-          ))}
-        </Space>
+        <Text>{attendants}</Text>
       ),
     },
     {
@@ -395,7 +345,7 @@ const SummaryModal = ({
       width: 120,
       align: 'right',
       render: (amount) => (
-        <Text strong style={{ color: '#1890ff' }}>
+        <Text strong>
           KES {amount?.toFixed(2) || '0.00'}
         </Text>
       ),
@@ -408,7 +358,7 @@ const SummaryModal = ({
       width: 100,
       align: 'right',
       render: (amount) => (
-        <Text style={{ color: '#52c41a' }}>
+        <Text>
           KES {amount?.toFixed(2) || '0.00'}
         </Text>
       ),
@@ -420,7 +370,7 @@ const SummaryModal = ({
       width: 100,
       align: 'right',
       render: (amount) => (
-        <Text style={{ color: '#fa541c' }}>
+        <Text>
           KES {amount?.toFixed(2) || '0.00'}
         </Text>
       ),
@@ -432,7 +382,7 @@ const SummaryModal = ({
       width: 120,
       align: 'right',
       render: (amount) => (
-        <Text strong style={{ color: '#722ed1' }}>
+        <Text strong>
           KES {amount?.toFixed(2) || '0.00'}
         </Text>
       ),
@@ -441,20 +391,14 @@ const SummaryModal = ({
       title: 'VARIANCE',
       dataIndex: 'variance',
       key: 'variance',
-      width: 140,
+      width: 120,
       align: 'right',
       render: (variance) => {
         const isPositive = variance >= 0;
         return (
-          <Space>
-            {isPositive ? <TrendingUp size={14} color="#52c41a" /> : <TrendingDown size={14} color="#fa541c" />}
-            <Text strong style={{ color: isPositive ? '#52c41a' : '#fa541c' }}>
-              KES {Math.abs(variance || 0).toFixed(2)}
-            </Text>
-            <Tag color={isPositive ? 'green' : 'red'} size="small">
-              {isPositive ? 'Over' : 'Short'}
-            </Tag>
-          </Space>
+          <Text strong style={{ color: isPositive ? '#52c41a' : '#fa541c' }}>
+            {isPositive ? '+' : ''}KES {variance?.toFixed(2) || '0.00'}
+          </Text>
         );
       },
     },
@@ -516,169 +460,89 @@ const SummaryModal = ({
   const handleBackToShiftManagement = () => {
     setResponseModalVisible(false);
     onClose();
-    navigate('/');
+    navigate('/station-manager/dashboard');
   };
 
   // Handle back to sales step (for errors)
   const handleBackToSalesStep = () => {
     setResponseModalVisible(false);
     onClose();
-    // This will naturally fall back since the summary modal closes
-    // and the parent component (IslandSalesStep) remains open
   };
 
-  // Download payload as JSON
-  const handleDownloadPayload = () => {
-    const dataStr = JSON.stringify(apiPayload, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
+  // Download as PDF
+  const handleDownloadPDF = async () => {
+    const element = printRef.current;
+    const canvas = await html2canvas(element);
+    const data = canvas.toDataURL('image/png');
+
+    const pdf = new jsPDF();
+    const imgProperties = pdf.getImageProperties(data);
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (imgProperties.height * pdfWidth) / imgProperties.width;
+
+    pdf.addImage(data, 'PNG', 0, 0, pdfWidth, pdfHeight);
+    pdf.save(`shift-reconciliation-${shiftNumber}.pdf`);
+    message.success('PDF downloaded successfully');
+  };
+
+  // Download as Excel (CSV)
+  const handleDownloadExcel = () => {
+    const headers = ['Island', 'Attendants', 'Total Sales', 'Receipts', 'Expenses', 'Cash Drops', 'Variance'];
+    const csvData = reconciliationData.map(row => [
+      row.islandName,
+      row.attendants,
+      row.totalSales,
+      row.receipts,
+      row.expenses,
+      row.cashDrops,
+      row.variance
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...csvData.map(row => row.join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `shift-${shiftId}-payload.json`;
+    link.download = `shift-reconciliation-${shiftNumber}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    message.success('Payload downloaded successfully');
+    message.success('Excel (CSV) downloaded successfully');
   };
 
-  // Tabs configuration
-  const tabItems = [
-    {
-      key: 'reconciliation',
-      label: (
-        <Space>
-          <Calculator size={16} />
-          <Text strong>Reconciliation</Text>
-        </Space>
-      ),
-      children: (
-        <div style={{ maxHeight: '400px', overflow: 'auto' }}>
-          <Table
-            columns={reconciliationColumns}
-            dataSource={reconciliationData}
-            pagination={false}
-            size="small"
-            scroll={{ x: 1200 }}
-            style={{ fontSize: '12px' }}
-            summary={() => (
-              <Table.Summary>
-                <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
-                  <Table.Summary.Cell index={0} colSpan={2}>
-                    <Text strong>GRAND TOTALS</Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={1} align="right">
-                    <Text strong style={{ color: '#1890ff' }}>
-                      KES {overallTotals.totalSales.toFixed(2)}
-                    </Text>
-                  </Table.Summary.Cell>
-                  
-                  {debtColumns.map((column, index) => {
-                    const debtorTotal = reconciliationData.reduce((sum, row) => 
-                      sum + (row.debtCollections[column.title] || 0), 0
-                    );
-                    return (
-                      <Table.Summary.Cell key={index} index={index + 2} align="right">
-                        {debtorTotal > 0 && (
-                          <Text strong style={{ color: '#faad14' }}>
-                            KES {debtorTotal.toFixed(2)}
-                          </Text>
-                        )}
-                      </Table.Summary.Cell>
-                    );
-                  })}
-                  
-                  <Table.Summary.Cell index={debtColumns.length + 2} align="right">
-                    <Text strong style={{ color: '#52c41a' }}>
-                      KES {overallTotals.totalReceipts.toFixed(2)}
-                    </Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={debtColumns.length + 3} align="right">
-                    <Text strong style={{ color: '#fa541c' }}>
-                      KES {overallTotals.totalExpenses.toFixed(2)}
-                    </Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={debtColumns.length + 4} align="right">
-                    <Text strong style={{ color: '#722ed1' }}>
-                      KES {overallTotals.totalCashDrops.toFixed(2)}
-                    </Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={debtColumns.length + 5} align="right">
-                    <Tag color={overallTotals.totalVariance >= 0 ? 'green' : 'red'}>
-                      {overallTotals.totalVariance >= 0 ? '▲' : '▼'} KES {Math.abs(overallTotals.totalVariance).toFixed(2)}
-                    </Tag>
-                  </Table.Summary.Cell>
-                </Table.Summary.Row>
-              </Table.Summary>
-            )}
-          />
-        </div>
-      )
-    },
-    {
-      key: 'pumpReadings',
-      label: (
-        <Space>
-          <Zap size={16} />
-          <Text strong>Pumps ({pumpReadings.length})</Text>
-        </Space>
-      ),
-      children: (
-        <div style={{ maxHeight: '400px', overflow: 'auto' }}>
-          <Table
-            columns={pumpReadingsColumns}
-            dataSource={pumpReadings.map((reading, index) => ({ ...reading, key: index }))}
-            pagination={false}
-            size="small"
-            scroll={{ x: 800 }}
-            style={{ fontSize: '12px' }}
-          />
-        </div>
-      )
-    },
-    {
-      key: 'tankReadings',
-      label: (
-        <Space>
-          <Droplets size={16} />
-          <Text strong>Tanks ({tankReadings.length})</Text>
-        </Space>
-      ),
-      children: (
-        <div style={{ maxHeight: '400px', overflow: 'auto' }}>
-          <Table
-            columns={tankReadingsColumns}
-            dataSource={tankReadings.map((reading, index) => ({ ...reading, key: index }))}
-            pagination={false}
-            size="small"
-            scroll={{ x: 600 }}
-            style={{ fontSize: '12px' }}
-          />
-        </div>
-      )
-    },
-    {
-      key: 'payload',
-      label: (
-        <Space>
-          <FileText size={16} />
-          <Text strong>API Payload</Text>
-        </Space>
-      ),
-      children: (
-        <div style={{ maxHeight: '400px', overflow: 'auto' }}>
-          <pre style={{ 
-            backgroundColor: '#f5f5f5', 
-            padding: '16px', 
-            borderRadius: '6px',
-            fontSize: '11px'
-          }}>
-            {JSON.stringify(apiPayload, null, 2)}
-          </pre>
-        </div>
-      )
-    }
-  ];
+  // Print function
+  const handlePrint = () => {
+    const printContent = printRef.current;
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Shift Reconciliation - ${shiftNumber}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; color: #000; }
+            .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+            .document-info { display: flex; justify-content: space-between; margin-bottom: 20px; }
+            .table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+            .table th, .table td { border: 1px solid #000; padding: 8px; text-align: left; }
+            .table th { background-color: #f0f0f0; font-weight: bold; }
+            .summary { margin-top: 20px; padding: 15px; border: 1px solid #000; }
+            .text-right { text-align: right; }
+            .total-row { font-weight: bold; background-color: #f9f9f9; }
+          </style>
+        </head>
+        <body>
+          ${printContent.innerHTML}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  };
 
   return (
     <>
@@ -686,7 +550,7 @@ const SummaryModal = ({
         title={
           <Space>
             <FileText size={20} />
-            <Title level={4} style={{ margin: 0 }}>Shift Closing Summary</Title>
+            <Title level={4} style={{ margin: 0 }}>Shift Reconciliation Report</Title>
           </Space>
         }
         open={visible}
@@ -696,138 +560,232 @@ const SummaryModal = ({
         footer={null}
         closeIcon={<X size={18} />}
       >
-        <div style={{ padding: '8px 0' }}>
-          {/* Overall Statistics */}
-          <Row gutter={[8, 8]} style={{ marginBottom: 16 }}>
-            <Col span={3}>
-              <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
-                <Statistic
-                  title="Islands"
-                  value={islands.length}
-                  valueStyle={{ fontSize: '14px', fontWeight: 'bold', color: '#1890ff' }}
-                />
-              </Card>
+        <div ref={printRef} style={{ padding: '8px 0', color: '#000' }}>
+          {/* Document Header */}
+          <div style={{ textAlign: 'center', marginBottom: 20, borderBottom: '2px solid #000', paddingBottom: 10 }}>
+            <Title level={2} style={{ margin: 0, color: '#000' }}>SHIFT RECONCILIATION REPORT</Title>
+            <Text strong style={{ fontSize: '16px', color: '#000' }}>Daily Operations Summary</Text>
+          </div>
+
+          {/* Document Information */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20, padding: '15px', backgroundColor: '#f9f9f9', border: '1px solid #ddd' }}>
+            <div>
+              <Space direction="vertical" size={2}>
+                <Space>
+                  <Building size={14} />
+                  <Text strong>Station:</Text>
+                  <Text>{state?.currentStation?.name || 'N/A'}</Text>
+                </Space>
+                <Space>
+                  <FileText size={14} />
+                  <Text strong>Shift code# </Text>
+                  <Text>{shiftNumber || 'N/A'}</Text>
+                </Space>
+              </Space>
+            </div>
+            <div>
+              <Space direction="vertical" size={2}>
+                <Space>
+                  <User size={14} />
+                  <Text strong>Reconciled By:</Text>
+                  <Text>{currentUser?.firstName} {currentUser?.lastName}</Text>
+                </Space>
+                <Space>
+                  <Text strong>Date:</Text>
+                  <Text>{new Date().toLocaleDateString()}</Text>
+                </Space>
+              </Space>
+            </div>
+          </div>
+
+          {/* Main Reconciliation Table */}
+          <Card 
+            title={
+              <Text strong style={{ fontSize: '16px', color: '#000' }}>
+                ISLAND RECONCILIATION SUMMARY
+              </Text>
+            }
+            bodyStyle={{ padding: 0 }}
+            style={{ marginBottom: 20 }}
+          >
+            <Table
+              columns={financialColumns}
+              dataSource={reconciliationData}
+              pagination={false}
+              size="middle"
+              scroll={{ x: 1200 }}
+              style={{ color: '#000' }}
+              summary={() => (
+                <Table.Summary>
+                  <Table.Summary.Row style={{ background: '#f0f0f0', fontWeight: 'bold' }}>
+                    <Table.Summary.Cell index={0} colSpan={2}>
+                      <Text strong>TOTAL</Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={1} align="right">
+                      <Text strong>KES {overallTotals.totalSales.toFixed(2)}</Text>
+                    </Table.Summary.Cell>
+                    
+                    {debtColumns.map((column, index) => {
+                      const debtorTotal = reconciliationData.reduce((sum, row) => 
+                        sum + (row.debtCollections[column.title] || 0), 0
+                      );
+                      return (
+                        <Table.Summary.Cell key={index} index={index + 2} align="right">
+                          {debtorTotal > 0 && (
+                            <Text strong>KES {debtorTotal.toFixed(2)}</Text>
+                          )}
+                        </Table.Summary.Cell>
+                      );
+                    })}
+                    
+                    <Table.Summary.Cell index={debtColumns.length + 2} align="right">
+                      <Text strong>KES {overallTotals.totalReceipts.toFixed(2)}</Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={debtColumns.length + 3} align="right">
+                      <Text strong>KES {overallTotals.totalExpenses.toFixed(2)}</Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={debtColumns.length + 4} align="right">
+                      <Text strong>KES {overallTotals.totalCashDrops.toFixed(2)}</Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={debtColumns.length + 5} align="right">
+                      <Text strong style={{ color: overallTotals.totalVariance >= 0 ? '#52c41a' : '#fa541c' }}>
+                        {overallTotals.totalVariance >= 0 ? '+' : ''}KES {Math.abs(overallTotals.totalVariance).toFixed(2)}
+                      </Text>
+                    </Table.Summary.Cell>
+                  </Table.Summary.Row>
+                </Table.Summary>
+              )}
+            />
+          </Card>
+
+          {/* Financial Summary Section - FIXED CALCULATION */}
+          <Row gutter={[16, 16]}>
+            <Col span={16}>
+              {/* Additional data tables can go here if needed */}
             </Col>
-            <Col span={3}>
-              <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
-                <Statistic
-                  title="Pumps"
-                  value={pumpReadings.length}
-                  valueStyle={{ fontSize: '14px', fontWeight: 'bold', color: '#faad14' }}
-                />
-              </Card>
-            </Col>
-            <Col span={3}>
-              <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
-                <Statistic
-                  title="Total Sales"
-                  value={overallTotals.totalSales}
-                  precision={0}
-                  prefix="KES"
-                  valueStyle={{ fontSize: '14px', fontWeight: 'bold', color: '#52c41a' }}
-                />
-              </Card>
-            </Col>
-            <Col span={3}>
-              <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
-                <Statistic
-                  title="Cash Drops"
-                  value={overallTotals.totalCashDrops}
-                  precision={0}
-                  prefix="KES"
-                  valueStyle={{ fontSize: '14px', fontWeight: 'bold', color: '#722ed1' }}
-                />
-              </Card>
-            </Col>
-            <Col span={3}>
-              <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
-                <Statistic
-                  title="Variance"
-                  value={overallTotals.totalVariance}
-                  precision={0}
-                  prefix="KES"
-                  valueStyle={{ 
-                    fontSize: '14px', 
-                    fontWeight: 'bold',
-                    color: overallTotals.totalVariance >= 0 ? '#52c41a' : '#fa541c' 
-                  }}
-                />
-              </Card>
-            </Col>
-            <Col span={3}>
-              <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
-                <Statistic
-                  title="Expected"
-                  value={overallTotals.totalExpected}
-                  precision={0}
-                  prefix="KES"
-                  valueStyle={{ fontSize: '14px', fontWeight: 'bold', color: '#1890ff' }}
-                />
-              </Card>
-            </Col>
-            <Col span={3}>
-              <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
-                <Statistic
-                  title="Collected"
-                  value={overallTotals.totalCollected}
-                  precision={0}
-                  prefix="KES"
-                  valueStyle={{ fontSize: '14px', fontWeight: 'bold', color: '#faad14' }}
-                />
-              </Card>
-            </Col>
-            <Col span={3}>
+            <Col span={8}>
               <Card 
-                size="small" 
-                bodyStyle={{ 
-                  padding: '8px', 
-                  textAlign: 'center',
-                  backgroundColor: islands.length > 0 ? '#f6ffed' : '#fff7e6'
-                }}
+                title={
+                  <Text strong style={{ fontSize: '16px', color: '#000' }}>
+                    FINANCIAL SUMMARY
+                  </Text>
+                }
+                bodyStyle={{ padding: '16px' }}
+                style={{ border: '1px solid #000' }}
               >
-                <Statistic
-                  title="Status"
-                  value={islands.length > 0 ? "READY" : "NO DATA"}
-                  valueStyle={{ 
-                    fontSize: '14px', 
-                    fontWeight: 'bold',
-                    color: islands.length > 0 ? '#52c41a' : '#faad14' 
-                  }}
-                />
+                <table style={{ width: '100%', borderCollapse: 'collapse', color: '#000' }}>
+                  <tbody>
+                    <tr>
+                      <td style={{ padding: '8px 0' }}>
+                        <Text strong>Total Sales:</Text>
+                      </td>
+                      <td style={{ padding: '8px 0', textAlign: 'right' }}>
+                        <Text strong>KES {cashReconciliation.totalSales.toFixed(2)}</Text>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={{ padding: '8px 0', borderBottom: '1px solid #000' }}>
+                        <Space>
+                          <CreditCard size={12} />
+                          <Text>Total Debts (Lipa na Mpesa):</Text>
+                        </Space>
+                      </td>
+                      <td style={{ padding: '8px 0', borderBottom: '1px solid #000', textAlign: 'right' }}>
+                        <Text>KES {cashReconciliation.totalDebts.toFixed(2)}</Text>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={{ padding: '8px 0', borderBottom: '1px solid #000' }}>
+                        <Text>Total Receipts:</Text>
+                      </td>
+                      <td style={{ padding: '8px 0', borderBottom: '1px solid #000', textAlign: 'right' }}>
+                        <Text>KES {cashReconciliation.totalReceipts.toFixed(2)}</Text>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={{ padding: '8px 0', borderBottom: '2px solid #000' }}>
+                        <Text strong>Sub Total:</Text>
+                      </td>
+                      <td style={{ padding: '8px 0', borderBottom: '2px solid #000', textAlign: 'right' }}>
+                        <Text strong>
+                          KES {(cashReconciliation.totalSales + cashReconciliation.totalReceipts).toFixed(2)}
+                        </Text>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={{ padding: '8px 0', borderBottom: '1px solid #000' }}>
+                        <Text>Total Expenses:</Text>
+                      </td>
+                      <td style={{ padding: '8px 0', borderBottom: '1px solid #000', textAlign: 'right' }}>
+                        <Text>KES {cashReconciliation.totalExpenses.toFixed(2)}</Text>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={{ padding: '8px 0', borderBottom: '2px solid #1890ff' }}>
+                        <Text strong>Actual Collection:</Text>
+                      </td>
+                      <td style={{ padding: '8px 0', borderBottom: '2px solid #1890ff', textAlign: 'right' }}>
+                        <Text strong style={{ color: '#1890ff' }}>
+                          KES {cashReconciliation.actualCollection.toFixed(2)}
+                        </Text>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={{ padding: '12px 0 8px 0' }}>
+                        <Text>Cash Drops:</Text>
+                      </td>
+                      <td style={{ padding: '12px 0 8px 0', textAlign: 'right' }}>
+                        <Text>KES {cashReconciliation.totalDrops.toFixed(2)}</Text>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={{ padding: '8px 0' }}>
+                        <Text>Station Wallet (Before):</Text>
+                      </td>
+                      <td style={{ padding: '8px 0', textAlign: 'right' }}>
+                        <Text>KES {cashReconciliation.walletBalance.toFixed(2)}</Text>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style={{ padding: '8px 0', borderTop: '2px solid #52c41a' }}>
+                        <Text strong>New Wallet Balance:</Text>
+                      </td>
+                      <td style={{ padding: '8px 0', borderTop: '2px solid #52c41a', textAlign: 'right' }}>
+                        <Text strong style={{ fontSize: '18px', color: '#52c41a' }}>
+                          KES {cashReconciliation.newWalletBalance.toFixed(2)}
+                        </Text>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                
+                <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f5f5f5', border: '1px solid #ddd' }}>
+                  <Text type="secondary" style={{ fontSize: '12px', color: '#000' }}>
+                    <strong>Calculation:</strong> Actual Collection = Total Sales + Receipts - Expenses<br/>
+                    <strong>New Balance:</strong> Station Wallet + Actual Collection
+                  </Text>
+                </div>
               </Card>
             </Col>
           </Row>
 
-          <Divider />
-
-          {/* Tabs for All Data */}
-          <Card bodyStyle={{ padding: '12px' }}>
-            <Tabs 
-              activeKey={activeTab}
-              onChange={setActiveTab}
-              items={tabItems}
-              size="small"
-            />
-          </Card>
-
           {/* Reconciliation Notes */}
           <Card 
-            title="📝 Reconciliation Notes"
-            style={{ marginTop: 16 }}
-            size="small"
+            title="RECONCILIATION NOTES"
+            style={{ marginTop: 20 }}
+            bodyStyle={{ padding: '16px' }}
           >
-            <Space direction="vertical" style={{ width: '100%' }} size="small">
-              <Input.TextArea
-                rows={3}
-                placeholder="Add any notes about the shift closing, variances, or special circumstances..."
-                value={reconciliationNotes}
-                onChange={(e) => setReconciliationNotes(e.target.value)}
-                maxLength={500}
-              />
-              <Text type="secondary" style={{ fontSize: '11px' }}>
-                {reconciliationNotes.length}/500 characters
-              </Text>
-            </Space>
+            <Input.TextArea
+              rows={3}
+              placeholder="Enter reconciliation notes, variances explanation, or special circumstances..."
+              value={reconciliationNotes}
+              onChange={(e) => setReconciliationNotes(e.target.value)}
+              maxLength={500}
+              style={{ border: '1px solid #000' }}
+            />
+            <Text type="secondary" style={{ fontSize: '11px', color: '#000', display: 'block', marginTop: 8 }}>
+              {reconciliationNotes.length}/500 characters
+            </Text>
           </Card>
 
           {/* Action Buttons */}
@@ -836,15 +794,30 @@ const SummaryModal = ({
             justifyContent: 'space-between', 
             marginTop: 20,
             paddingTop: 16,
-            borderTop: '1px solid #f0f0f0'
+            borderTop: '2px solid #000'
           }}>
             <Space>
               <Button 
-                icon={<Download size={14} />}
-                onClick={handleDownloadPayload}
+                icon={<FileDown size={14} />}
+                onClick={handleDownloadPDF}
+                size="middle"
+                type="primary"
+              >
+                Download PDF
+              </Button>
+              <Button 
+                icon={<FileText size={14} />}
+                onClick={handleDownloadExcel}
                 size="middle"
               >
-                Download Payload
+                Download Excel
+              </Button>
+              <Button 
+                icon={<Printer size={14} />}
+                onClick={handlePrint}
+                size="middle"
+              >
+                Print Report
               </Button>
               
               <Button 
@@ -863,12 +836,12 @@ const SummaryModal = ({
               onClick={handleSubmitShift}
               loading={submitting}
               disabled={!reconciliationNotes.trim() || !shiftId}
-              style={{ fontWeight: 'bold' }}
+              style={{ fontWeight: 'bold', backgroundColor: '#1890ff' }}
               size="middle"
             >
               <Space size={4}>
                 <CheckCircle size={14} />
-                Submit Shift Closing
+                Submit Shift Report
               </Space>
             </Button>
           </div>
@@ -876,22 +849,20 @@ const SummaryModal = ({
           {/* Submission Warnings */}
           {!reconciliationNotes.trim() && (
             <Alert
-              message="Add Reconciliation Notes"
-              description="Please add reconciliation notes before submitting the shift closing."
+              message="Reconciliation Notes Required"
+              description="Please add reconciliation notes before submitting the shift report."
               type="warning"
               showIcon
-              size="small"
               style={{ marginTop: 12 }}
             />
           )}
 
           {!shiftId && (
             <Alert
-              message="Missing Shift ID"
-              description="Unable to submit shift without a valid shift ID."
+              message="Missing Shift Information"
+              description="Unable to submit shift report without valid shift data."
               type="error"
               showIcon
-              size="small"
               style={{ marginTop: 12 }}
             />
           )}

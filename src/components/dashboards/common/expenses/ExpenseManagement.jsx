@@ -16,6 +16,7 @@ import {
   Statistic,
   Tooltip,
   DatePicker,
+  InputNumber,
   Badge,
   Typography
 } from 'antd';
@@ -34,12 +35,13 @@ import {
 } from '@ant-design/icons';
 import { expenseService } from '../../../../services/expenseService/expenseService';
 import { useApp } from '../../../../context/AppContext';
+import CreateExpenseModal from './CreateExpenseModal';
 
 const { Option } = Select;
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
 
-const ExpenseManagement = ({ onShowCreateModal }) => {
+const ExpenseManagement = () => {
   const { state } = useApp();
   const userStationId = state.currentStation?.id;
   const userRole = state.currentUser?.role;
@@ -64,22 +66,37 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
   const [editForm] = Form.useForm();
   const [viewModalVisible, setViewModalVisible] = useState(false);
   const [viewingExpense, setViewingExpense] = useState(null);
+  const [createModalVisible, setCreateModalVisible] = useState(false);
 
-  // Load expenses
+  // Load expenses - FIXED: Use getExpensesByStation instead
   const loadExpenses = async () => {
+    if (!userStationId) {
+      message.warning('Please select a station first');
+      return;
+    }
+
     setLoading(true);
     try {
-      const result = await expenseService.getExpenses({
-        ...filters,
-        stationId: userStationId,
+      // Use getExpensesByStation which automatically filters by station
+      const result = await expenseService.getExpenses();
+      
+      console.log("management data ",result)
+      // Handle the backend response structure { success, data, pagination }
+      const expensesData = result || [];
+      const paginationData = result.pagination || {
+        total: result.total || 0,
         page: pagination.page,
         limit: pagination.limit
-      });
+      };
       
-      setExpenses(result.expenses || result || []);
+      setExpenses(expensesData);
+
+
       setPagination(prev => ({
         ...prev,
-        total: result.pagination?.total || result.total || 0
+        total: paginationData.total,
+        page: paginationData.page || pagination.page,
+        limit: paginationData.limit || pagination.limit
       }));
     } catch (error) {
       message.error('Failed to load expenses');
@@ -90,10 +107,27 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
   };
 
   useEffect(() => {
-    loadExpenses();
+    if (userStationId) {
+      loadExpenses();
+    }
   }, [filters, pagination.page, pagination.limit, userStationId]);
 
-  // Handle actions
+  // Handle create modal
+  const handleShowCreateModal = () => {
+    setCreateModalVisible(true);
+  };
+
+  const handleCreateSuccess = () => {
+    setCreateModalVisible(false);
+    message.success('Expense created successfully');
+    loadExpenses();
+  };
+
+  const handleCreateCancel = () => {
+    setCreateModalVisible(false);
+  };
+
+  // Handle edit
   const handleEdit = (expense) => {
     setEditingExpense(expense);
     editForm.setFieldsValue({
@@ -107,54 +141,88 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
   };
 
   const handleEditSubmit = async (values) => {
+    setLoading(true);
     try {
-      await expenseService.updateExpense(editingExpense.id, values);
-      message.success('Expense updated successfully');
-      setEditModalVisible(false);
-      setEditingExpense(null);
-      loadExpenses();
+      const result = await expenseService.updateExpense(editingExpense.id, values);
+      if (result.success) {
+        message.success('Expense updated successfully');
+        setEditModalVisible(false);
+        setEditingExpense(null);
+        loadExpenses();
+      } else {
+        message.error(result.message || 'Failed to update expense');
+      }
     } catch (error) {
       message.error(error.message || 'Failed to update expense');
+    } finally {
+      setLoading(false);
     }
   };
 
+  // Handle delete
   const handleDelete = async (expenseId) => {
     try {
-      await expenseService.deleteExpense(expenseId);
-      message.success('Expense deleted successfully');
-      loadExpenses();
+      const result = await expenseService.deleteExpense(expenseId);
+      if (result.success) {
+        message.success('Expense deleted successfully');
+        loadExpenses();
+      } else {
+        message.error(result.message || 'Failed to delete expense');
+      }
     } catch (error) {
       message.error(error.message || 'Failed to delete expense');
     }
   };
 
+  // Handle approve
   const handleApprove = async (expenseId) => {
     try {
-      await expenseService.approveExpense(expenseId);
-      message.success('Expense approved successfully');
-      loadExpenses();
+      const result = await expenseService.approveExpense(expenseId);
+      if (result.success) {
+        message.success('Expense approved successfully');
+        loadExpenses();
+      } else {
+        message.error(result.message || 'Failed to approve expense');
+      }
     } catch (error) {
       message.error(error.message || 'Failed to approve expense');
     }
   };
 
+  // Handle reject
   const handleReject = async (expenseId) => {
     try {
-      await expenseService.rejectExpense(expenseId, 'Rejected by manager');
-      message.success('Expense rejected successfully');
-      loadExpenses();
+      const result = await expenseService.rejectExpense(expenseId, 'Rejected by manager');
+      if (result.success) {
+        message.success('Expense rejected successfully');
+        loadExpenses();
+      } else {
+        message.error(result.message || 'Failed to reject expense');
+      }
     } catch (error) {
       message.error(error.message || 'Failed to reject expense');
     }
   };
 
+  // Handle view
   const handleView = (expense) => {
     setViewingExpense(expense);
     setViewModalVisible(true);
   };
 
-  // Columns
+  // Table columns - FIXED: Added proper dataIndex and key for all columns
   const columns = [
+    {
+      title: 'Expense #',
+      dataIndex: 'expenseNumber',
+      key: 'expenseNumber',
+      width: 120,
+      render: (expenseNumber) => (
+        <Text strong style={{ fontSize: '12px' }}>
+          {expenseNumber}
+        </Text>
+      )
+    },
     {
       title: 'Expense Details',
       dataIndex: 'title',
@@ -182,7 +250,7 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
       dataIndex: 'amount',
       key: 'amount',
       width: 120,
-      render: (amount, record) => (
+      render: (amount) => (
         <Text strong style={{ color: '#cf1322', fontSize: '14px' }}>
           {expenseService.formatCurrency(amount)}
         </Text>
@@ -255,6 +323,7 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
       title: 'Actions',
       key: 'actions',
       width: 200,
+      fixed: 'right',
       render: (_, record) => (
         <Space size="small">
           <Tooltip title="View Details">
@@ -327,12 +396,27 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
     const total = expenses.length;
     const pending = expenses.filter(e => e.status === 'PENDING_APPROVAL').length;
     const approved = expenses.filter(e => e.status === 'APPROVED').length;
-    const totalAmount = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const rejected = expenses.filter(e => e.status === 'REJECTED').length;
+    const draft = expenses.filter(e => e.status === 'DRAFT').length;
+    
+    const totalAmount = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
     const pendingAmount = expenses
       .filter(e => e.status === 'PENDING_APPROVAL')
-      .reduce((sum, expense) => sum + expense.amount, 0);
+      .reduce((sum, expense) => sum + (expense.amount || 0), 0);
+    const approvedAmount = expenses
+      .filter(e => e.status === 'APPROVED')
+      .reduce((sum, expense) => sum + (expense.amount || 0), 0);
     
-    return { total, pending, approved, totalAmount, pendingAmount };
+    return { 
+      total, 
+      pending, 
+      approved, 
+      rejected,
+      draft,
+      totalAmount, 
+      pendingAmount,
+      approvedAmount 
+    };
   }, [expenses]);
 
   // Handle date range change
@@ -356,6 +440,33 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
     });
   };
 
+  // Handle table pagination change
+  const handleTableChange = (page, pageSize) => {
+    setPagination(prev => ({ 
+      ...prev, 
+      page: page || prev.page, 
+      limit: pageSize || prev.limit 
+    }));
+  };
+
+  // Handle search input
+  const handleSearch = (value) => {
+    setFilters(prev => ({ ...prev, search: value }));
+  };
+
+  if (!userStationId) {
+    return (
+      <Card>
+        <div style={{ textAlign: 'center', padding: '40px' }}>
+          <DollarOutlined style={{ fontSize: '48px', color: '#ccc', marginBottom: '16px' }} />
+          <Text type="secondary">
+            Please select a station to view expenses
+          </Text>
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -367,7 +478,7 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
                 <DollarOutlined /> Expense Management
               </h2>
               <p style={{ margin: 0, color: '#666' }}>
-                Track and manage station expenses
+                Track and manage station expenses for {state.currentStation?.name}
               </p>
             </Space>
           </Col>
@@ -386,7 +497,7 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
                 <Button
                   type="primary"
                   icon={<PlusOutlined />}
-                  onClick={onShowCreateModal}
+                  onClick={handleShowCreateModal}
                 >
                   New Expense
                 </Button>
@@ -398,7 +509,7 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
 
       {/* Statistics */}
       <Row gutter={[16, 16]}>
-        <Col xs={12} md={4}>
+        <Col xs={12} sm={6} md={4}>
           <Card size="small">
             <Statistic
               title="Total Expenses"
@@ -407,7 +518,7 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
             />
           </Card>
         </Col>
-        <Col xs={12} md={4}>
+        <Col xs={12} sm={6} md={4}>
           <Card size="small">
             <Statistic
               title="Pending Approval"
@@ -416,7 +527,7 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
             />
           </Card>
         </Col>
-        <Col xs={12} md={4}>
+        <Col xs={12} sm={6} md={4}>
           <Card size="small">
             <Statistic
               title="Approved"
@@ -425,7 +536,16 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
             />
           </Card>
         </Col>
-        <Col xs={12} md={6}>
+        <Col xs={12} sm={6} md={4}>
+          <Card size="small">
+            <Statistic
+              title="Rejected"
+              value={stats.rejected}
+              valueStyle={{ color: '#ff4d4f' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6} md={6}>
           <Card size="small">
             <Statistic
               title="Total Amount"
@@ -436,7 +556,7 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
             />
           </Card>
         </Col>
-        <Col xs={12} md={6}>
+        <Col xs={12} sm={6} md={6}>
           <Card size="small">
             <Statistic
               title="Pending Amount"
@@ -456,8 +576,9 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
             <Input
               placeholder="Search expenses..."
               value={filters.search}
-              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+              onChange={(e) => handleSearch(e.target.value)}
               prefix={<SearchOutlined />}
+              allowClear
             />
           </Col>
           <Col xs={12} sm={8} md={4}>
@@ -540,10 +661,9 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
             showQuickJumper: true,
             showTotal: (total, range) => 
               `Showing ${range[0]}-${range[1]} of ${total} expenses`,
-            onChange: (page, pageSize) => {
-              setPagination(prev => ({ ...prev, page, limit: pageSize }));
-            }
+            onChange: handleTableChange
           }}
+          scroll={{ x: 1200 }}
         />
       </Card>
 
@@ -664,9 +784,9 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
           <div>
             <Row gutter={[16, 16]}>
               <Col span={12}>
-                <Text strong>Title:</Text>
+                <Text strong>Expense Number:</Text>
                 <br />
-                {viewingExpense.title}
+                <Text code>{viewingExpense.expenseNumber}</Text>
               </Col>
               <Col span={12}>
                 <Text strong>Amount:</Text>
@@ -674,6 +794,11 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
                 <Text style={{ color: '#cf1322', fontSize: '16px', fontWeight: 'bold' }}>
                   {expenseService.formatCurrency(viewingExpense.amount)}
                 </Text>
+              </Col>
+              <Col span={12}>
+                <Text strong>Title:</Text>
+                <br />
+                {viewingExpense.title}
               </Col>
               <Col span={12}>
                 <Text strong>Category:</Text>
@@ -700,6 +825,11 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
                 <Text strong>Date:</Text>
                 <br />
                 {expenseService.formatDate(viewingExpense.expenseDate)}
+              </Col>
+              <Col span={12}>
+                <Text strong>Created:</Text>
+                <br />
+                {expenseService.formatDate(viewingExpense.createdAt)}
               </Col>
               {viewingExpense.description && (
                 <Col span={24}>
@@ -738,6 +868,13 @@ const ExpenseManagement = ({ onShowCreateModal }) => {
           </div>
         )}
       </Modal>
+
+      {/* Create Expense Modal */}
+      <CreateExpenseModal
+        visible={createModalVisible}
+        onClose={handleCreateCancel}
+        onSuccess={handleCreateSuccess}
+      />
     </div>
   );
 };

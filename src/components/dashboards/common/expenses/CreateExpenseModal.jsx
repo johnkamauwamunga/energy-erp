@@ -19,7 +19,6 @@ import {
   DollarOutlined, 
   FileTextOutlined,
   UserOutlined,
-  MapPinOutlined,
   ClockCircleOutlined,
   CheckOutlined,
   CloseOutlined 
@@ -48,6 +47,7 @@ const CreateExpenseModal = ({ visible, onClose, onSuccess }) => {
       loadCurrentShiftData();
       form.resetFields();
       setError('');
+      setSelectedAttendant(null);
     }
   }, [visible, userStationId, form]);
 
@@ -134,6 +134,7 @@ const CreateExpenseModal = ({ visible, onClose, onSuccess }) => {
       console.log("📦 Submitting expense:", expenseData);
       await expenseService.createExpense(expenseData);
       
+      message.success('Expense created successfully');
       onSuccess();
       form.resetFields();
       setSelectedAttendant(null);
@@ -404,7 +405,7 @@ const CreateExpenseModal = ({ visible, onClose, onSuccess }) => {
                     {islands.map(island => (
                       <Option key={island.id} value={island.id}>
                         <Space>
-                          <MapPinOutlined />
+                          <CheckOutlined />
                           {island.name} ({island.code})
                         </Space>
                       </Option>

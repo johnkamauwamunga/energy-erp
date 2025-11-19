@@ -236,7 +236,7 @@ const SummaryStep = ({
           .filter(assignment => assignment.attendantId === record.id)
           .map(assignment => {
             const island = wizardData.personnel.topologyIslands?.find(i => i.id === assignment.islandId);
-            return island ? island.name : `Island ${assignment.islandId}`;
+            return island ? island.name : `Assigned to Island`;
           });
         
         return (
@@ -512,21 +512,21 @@ const SummaryStep = ({
         </Space>
       } size="small" style={{ marginBottom: 16 }}>
         <Descriptions size="small" column={2} bordered>
-          <Descriptions.Item label="Shift ID" span={1}>
+          {/* <Descriptions.Item label="Shift ID" span={1}>
             <Tag color="blue">{wizardData.shiftInfo.shiftId}</Tag>
-          </Descriptions.Item>
+          </Descriptions.Item> */}
           <Descriptions.Item label="Shift Number" span={1}>
             <Tag color="green">{wizardData.shiftInfo.shiftNumber || 'N/A'}</Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="Station ID" span={1}>
+          {/* <Descriptions.Item label="Station ID" span={1}>
             <Tag>{wizardData.shiftInfo.stationId}</Tag>
-          </Descriptions.Item>
+          </Descriptions.Item> */}
           <Descriptions.Item label="Status" span={1}>
             <Tag color="orange">Pending Start</Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="Supervisor ID" span={2}>
+          {/* <Descriptions.Item label="Supervisor ID" span={2}>
             <code>{wizardData.personnel.supervisorId || 'Not Set'}</code>
-          </Descriptions.Item>
+          </Descriptions.Item> */}
         </Descriptions>
       </Card>
 
@@ -646,7 +646,7 @@ const SummaryStep = ({
 
       {/* Action Buttons */}
       <Divider />
-      <div style={{ textAlign: 'center', padding: '16px 0' }}>
+      {/* <div style={{ textAlign: 'center', padding: '16px 0' }}>
         <Space>
           <Button 
             size="large" 
@@ -667,34 +667,34 @@ const SummaryStep = ({
             {isSubmitting ? 'Starting...' : 'Start Shift'}
           </Button>
         </Space>
-      </div>
+      </div> */}
 
       {/* Debug Information */}
-      {process.env.NODE_ENV === 'development' && (
-        <Alert
-          message="Debug Information"
-          description={
-            <div style={{ fontSize: '12px', fontFamily: 'monospace' }}>
-              <div><strong>Shift ID:</strong> {wizardData.shiftInfo.shiftId || 'None'}</div>
-              <div><strong>Supervisor:</strong> {wizardData.personnel.supervisorId || 'None'}</div>
-              <div><strong>Attendants:</strong> {wizardData.personnel.attendants?.length || 0}</div>
-              <div><strong>Island Assignments:</strong> {wizardData.personnel.islandAssignments?.length || 0}</div>
-              <div><strong>Pump Readings:</strong> {wizardData.readings.pumpReadings?.length || 0}</div>
-              <div><strong>Tank Readings:</strong> {wizardData.readings.tankReadings?.length || 0}</div>
-              <div><strong>All Pumps:</strong> {wizardData.readings.allPumps?.length || 0}</div>
-              <div><strong>All Tanks:</strong> {wizardData.readings.allTanks?.length || 0}</div>
-              <div><strong>Can Open Shift:</strong> {canOpenShift?.toString() || 'false'}</div>
-              <div><strong>Payload Sample:</strong> 
-                Pump: {wizardData.readings.pumpReadings?.[0]?.pumpId} - 
-                Electric: {wizardData.readings.pumpReadings?.[0]?.electricMeter} (type: {typeof wizardData.readings.pumpReadings?.[0]?.electricMeter})
-              </div>
-            </div>
-          }
-          type="info"
-          showIcon
-          style={{ marginTop: 16 }}
-        />
-      )}
+      {/* {process.env.NODE_ENV === 'development' && (
+        // <Alert
+        //   message="Debug Information"
+        //   description={
+        //     <div style={{ fontSize: '12px', fontFamily: 'monospace' }}>
+        //       <div><strong>Shift ID:</strong> {wizardData.shiftInfo.shiftId || 'None'}</div>
+        //       <div><strong>Supervisor:</strong> {wizardData.personnel.supervisorId || 'None'}</div>
+        //       <div><strong>Attendants:</strong> {wizardData.personnel.attendants?.length || 0}</div>
+        //       <div><strong>Island Assignments:</strong> {wizardData.personnel.islandAssignments?.length || 0}</div>
+        //       <div><strong>Pump Readings:</strong> {wizardData.readings.pumpReadings?.length || 0}</div>
+        //       <div><strong>Tank Readings:</strong> {wizardData.readings.tankReadings?.length || 0}</div>
+        //       <div><strong>All Pumps:</strong> {wizardData.readings.allPumps?.length || 0}</div>
+        //       <div><strong>All Tanks:</strong> {wizardData.readings.allTanks?.length || 0}</div>
+        //       <div><strong>Can Open Shift:</strong> {canOpenShift?.toString() || 'false'}</div>
+        //       <div><strong>Payload Sample:</strong> 
+        //         Pump: {wizardData.readings.pumpReadings?.[0]?.pumpId} - 
+        //         Electric: {wizardData.readings.pumpReadings?.[0]?.electricMeter} (type: {typeof wizardData.readings.pumpReadings?.[0]?.electricMeter})
+        //       </div>
+        //     </div>
+        //   }
+        //   type="info"
+        //   showIcon
+        //   style={{ marginTop: 16 }}
+        // />
+      )} */}
     </div>
   );
 };

@@ -13,7 +13,7 @@ class ExpenseService {
 
   handleResponse = (response) => {
     if (response.data?.success) {
-      return response.data.data;
+      return response.data;
     }
     return response.data;
   };
@@ -32,7 +32,12 @@ class ExpenseService {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
-        params.append(key, value);
+        // Convert numbers to strings for URL params
+        if (typeof value === 'number') {
+          params.append(key, value.toString());
+        } else {
+          params.append(key, value);
+        }
       }
     });
     return params.toString();
@@ -56,14 +61,20 @@ class ExpenseService {
   getExpenses = async (filters = {}) => {
     const cacheKey = `expenses-${JSON.stringify(filters)}`;
     const cached = this.cache.get(cacheKey);
-    if (cached) return cached;
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      return cached.data;
+    }
 
     try {
       const query = this.buildQuery(filters);
       const url = query ? `/expenses?${query}` : '/expenses';
       const response = await apiService.get(url);
+
+      console.log("this is the expenses ",response);
       const data = this.handleResponse(response);
-      this.cache.set(cacheKey, data);
+      
+      // Store with timestamp for cache cleanup
+      this.cache.set(cacheKey, { data, timestamp: Date.now() });
       return data;
     } catch (error) {
       throw this.handleError(error, 'Failed to fetch expenses');
@@ -73,23 +84,86 @@ class ExpenseService {
   getExpenseById = async (expenseId) => {
     const cacheKey = `expense-${expenseId}`;
     const cached = this.cache.get(cacheKey);
-    if (cached) return cached;
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      return cached.data;
+    }
 
     try {
       const response = await apiService.get(`/expenses/${expenseId}`);
       const data = this.handleResponse(response);
-      this.cache.set(cacheKey, data);
+      this.cache.set(cacheKey, { data, timestamp: Date.now() });
       return data;
     } catch (error) {
       throw this.handleError(error, 'Failed to fetch expense');
     }
   };
 
+  // =====================
+// COMBINED CLIENT-SIDE FILTERING
+// =====================
+
+
+
+    getExpensesByShiftAndIsland = async (shiftId, islandId, filters = {}) => {
+  const cacheKey = `expenses-shift-${shiftId}-island-${islandId}-${JSON.stringify(filters)}`;
+  const cached = this.cache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+    return cached.data;
+  }
+
+  try {
+    let expenses = [];
+    let totalCount = 0;
+
+
+    // Strategy 1: Get shift expenses and filter by island
+    const shiftExpenses = await this.getExpensesByShift(shiftId, { ...filters, limit: 100 });
+
+   // console.log("the shift expense data ",shiftExpenses);
+    expenses = shiftExpenses.filter(expense => expense.island?.id === islandId);
+      // console.log("the shift expense filtered by island ",expenses);
+    totalCount = expenses.length;
+
+    // If no results, try Strategy 2: Get island expenses and filter by shift
+    if (expenses.length === 0) {
+      const islandExpenses = await this.getExpensesByIsland(islandId, { ...filters, limit: 1000 });
+      expenses = islandExpenses.filter(expense => expense.shiftId === shiftId);
+      totalCount = expenses.length;
+    }
+
+    // Apply pagination client-side
+    const page = parseInt(filters.page) || 1;
+    const limit = parseInt(filters.limit) || 20;
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    
+    const paginatedExpenses = expenses.slice(startIndex, endIndex);
+
+    const result = {
+      success: true,
+      data: paginatedExpenses,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        pages: Math.ceil(totalCount / limit)
+      }
+    };
+
+    this.cache.set(cacheKey, { data: result, timestamp: Date.now() });
+    return result;
+
+  } catch (error) {
+    throw this.handleError(error, 'Failed to fetch expenses by shift and island');
+  }
+};
+
   updateExpense = async (expenseId, updateData) => {
     try {
       const response = await apiService.put(`/expenses/${expenseId}`, updateData);
       this.clearCache('expenses');
       this.clearCache('expense-summary');
+      this.cache.delete(`expense-${expenseId}`);
       return this.handleResponse(response);
     } catch (error) {
       throw this.handleError(error, 'Failed to update expense');
@@ -101,6 +175,7 @@ class ExpenseService {
       const response = await apiService.delete(`/expenses/${expenseId}`);
       this.clearCache('expenses');
       this.clearCache('expense-summary');
+      this.cache.delete(`expense-${expenseId}`);
       return this.handleResponse(response);
     } catch (error) {
       throw this.handleError(error, 'Failed to delete expense');
@@ -112,6 +187,7 @@ class ExpenseService {
       const response = await apiService.patch(`/expenses/${expenseId}/approve`);
       this.clearCache('expenses');
       this.clearCache('expense-summary');
+      this.cache.delete(`expense-${expenseId}`);
       return this.handleResponse(response);
     } catch (error) {
       throw this.handleError(error, 'Failed to approve expense');
@@ -123,9 +199,75 @@ class ExpenseService {
       const response = await apiService.patch(`/expenses/${expenseId}/reject`, { reason });
       this.clearCache('expenses');
       this.clearCache('expense-summary');
+      this.cache.delete(`expense-${expenseId}`);
       return this.handleResponse(response);
     } catch (error) {
       throw this.handleError(error, 'Failed to reject expense');
+    }
+  };
+
+  // =====================
+  // FILTERED EXPENSE QUERIES
+  // =====================
+
+  getExpensesByStation = async (stationId, filters = {}) => {
+    return this.getExpenses({ ...filters, stationId });
+  };
+
+  getExpensesByShift = async (shiftId, filters = {}) => {
+    const cacheKey = `expenses-shift-${shiftId}-${JSON.stringify(filters)}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      return cached.data;
+    }
+
+    try {
+      const query = this.buildQuery(filters);
+      const url = query ? `/expenses/shift/${shiftId}?${query}` : `/expenses/shift/${shiftId}`;
+      const response = await apiService.get(url);
+      const data = this.handleResponse(response);
+      this.cache.set(cacheKey, { data, timestamp: Date.now() });
+      return data;
+    } catch (error) {
+      throw this.handleError(error, 'Failed to fetch shift expenses');
+    }
+  };
+
+  getExpensesByIsland = async (islandId, filters = {}) => {
+    const cacheKey = `expenses-island-${islandId}-${JSON.stringify(filters)}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      return cached.data;
+    }
+
+    try {
+      const query = this.buildQuery(filters);
+      const url = query ? `/expenses/island/${islandId}?${query}` : `/expenses/island/${islandId}`;
+      const response = await apiService.get(url);
+      const data = this.handleResponse(response);
+      this.cache.set(cacheKey, { data, timestamp: Date.now() });
+      return data;
+    } catch (error) {
+      throw this.handleError(error, 'Failed to fetch island expenses');
+    }
+  };
+
+  getExpensesByPaymentSource = async (paymentSource, filters = {}) => {
+    const cacheKey = `expenses-payment-${paymentSource}-${JSON.stringify(filters)}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      return cached.data;
+    }
+
+    try {
+      const query = this.buildQuery(filters);
+      const url = query ? `/expenses/payment-source/${paymentSource}?${query}` : `/expenses/payment-source/${paymentSource}`;
+      const response = await apiService.get(url);
+      const data = this.handleResponse(response);
+      this.cache.set(cacheKey, { data, timestamp: Date.now() });
+      return data;
+    } catch (error) {
+      throw this.handleError(error, 'Failed to fetch payment source expenses');
     }
   };
 
@@ -136,58 +278,19 @@ class ExpenseService {
   getExpenseSummary = async (filters = {}) => {
     const cacheKey = `expense-summary-${JSON.stringify(filters)}`;
     const cached = this.cache.get(cacheKey);
-    if (cached) return cached;
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      return cached.data;
+    }
 
     try {
       const query = this.buildQuery(filters);
       const url = query ? `/expenses/analytics/summary?${query}` : '/expenses/analytics/summary';
       const response = await apiService.get(url);
       const data = this.handleResponse(response);
-      this.cache.set(cacheKey, data);
+      this.cache.set(cacheKey, { data, timestamp: Date.now() });
       return data;
     } catch (error) {
       throw this.handleError(error, 'Failed to fetch expense summary');
-    }
-  };
-
-  getExpenseStats = async (period = 'monthly') => {
-    const cacheKey = `expense-stats-${period}`;
-    const cached = this.cache.get(cacheKey);
-    if (cached) return cached;
-
-    try {
-      const response = await apiService.get(`/expenses/analytics/stats?period=${period}`);
-      const data = this.handleResponse(response);
-      this.cache.set(cacheKey, data);
-      return data;
-    } catch (error) {
-      throw this.handleError(error, 'Failed to fetch expense statistics');
-    }
-  };
-
-  // =====================
-  // BULK OPERATIONS
-  // =====================
-
-  bulkApproveExpenses = async (expenseIds) => {
-    try {
-      const response = await apiService.post('/expenses/bulk/approve', { expenseIds });
-      this.clearCache('expenses');
-      this.clearCache('expense-summary');
-      return this.handleResponse(response);
-    } catch (error) {
-      throw this.handleError(error, 'Failed to bulk approve expenses');
-    }
-  };
-
-  bulkDeleteExpenses = async (expenseIds) => {
-    try {
-      const response = await apiService.post('/expenses/bulk/delete', { expenseIds });
-      this.clearCache('expenses');
-      this.clearCache('expense-summary');
-      return this.handleResponse(response);
-    } catch (error) {
-      throw this.handleError(error, 'Failed to bulk delete expenses');
     }
   };
 
@@ -213,10 +316,22 @@ class ExpenseService {
   };
 
   formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('en-KE', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'
+    });
+  };
+
+  formatDateTime = (dateString) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleString('en-KE', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
     });
   };
 
@@ -242,6 +357,10 @@ class ExpenseService {
       errors.push('Description cannot exceed 1000 characters');
     }
 
+    if (!expenseData.stationId) {
+      errors.push('Station ID is required');
+    }
+
     return errors;
   };
 
@@ -256,18 +375,24 @@ class ExpenseService {
       ...expense,
       amountDisplay: this.formatCurrency(expense.amount),
       expenseDateDisplay: this.formatDate(expense.expenseDate),
-      createdAtDisplay: this.formatDate(expense.createdAt),
+      createdAtDisplay: this.formatDateTime(expense.createdAt),
+      updatedAtDisplay: this.formatDateTime(expense.updatedAt),
+      approvedAtDisplay: expense.approvedAt ? this.formatDateTime(expense.approvedAt) : 'N/A',
       statusDisplay: this.getStatusDisplay(expense.status),
       statusColor: this.getStatusColor(expense.status),
       categoryDisplay: this.getCategoryDisplay(expense.category),
       paymentSourceDisplay: this.getPaymentSourceDisplay(expense.paymentSource),
       stationDisplay: expense.station?.name || 'Unknown Station',
-      islandDisplay: expense.island ? `Island ${expense.island.code}` : 'N/A',
+      islandDisplay: expense.island ? `${expense.island.name} (${expense.island.code})` : 'N/A',
       shiftDisplay: expense.shift ? `Shift ${expense.shift.shiftNumber}` : 'N/A',
       recordedByDisplay: expense.recordedBy ? 
         `${expense.recordedBy.firstName} ${expense.recordedBy.lastName}` : 'Unknown User',
       approvedByDisplay: expense.approvedBy ? 
-        `${expense.approvedBy.firstName} ${expense.approvedBy.lastName}` : 'N/A'
+        `${expense.approvedBy.firstName} ${expense.approvedBy.lastName}` : 'N/A',
+      expenseNumberDisplay: expense.expenseNumber || 'N/A',
+      // Add formatted wallet transaction info
+      walletTransactionDisplay: expense.walletTransaction ? 
+        `${this.formatCurrency(expense.walletTransaction.amount)} - ${expense.walletTransaction.description}` : 'N/A'
     };
   };
 
@@ -276,9 +401,7 @@ class ExpenseService {
       DRAFT: 'Draft',
       PENDING_APPROVAL: 'Pending Approval',
       APPROVED: 'Approved',
-      REJECTED: 'Rejected',
-      PAID: 'Paid',
-      CANCELLED: 'Cancelled'
+      REJECTED: 'Rejected'
     };
     return statusMap[status] || status;
   };
@@ -286,27 +409,22 @@ class ExpenseService {
   getStatusColor = (status) => {
     const colorMap = {
       DRAFT: 'default',
-      PENDING_APPROVAL: 'warning',
-      APPROVED: 'success',
-      REJECTED: 'error',
-      PAID: 'success',
-      CANCELLED: 'error'
+      PENDING_APPROVAL: 'orange',
+      APPROVED: 'green',
+      REJECTED: 'red'
     };
     return colorMap[status] || 'default';
   };
 
   getCategoryDisplay = (category) => {
     const categoryMap = {
-      CLEANING_SUPPLIES: 'Cleaning Supplies',
+      FUEL: 'Fuel',
       MAINTENANCE: 'Maintenance',
       UTILITIES: 'Utilities',
+      SALARIES: 'Salaries',
       OFFICE_SUPPLIES: 'Office Supplies',
-      SECURITY_SERVICES: 'Security Services',
-      FUEL_EQUIPMENT: 'Fuel Equipment',
-      STAFF_WELFARE: 'Staff Welfare',
+      TRANSPORT: 'Transport',
       MARKETING: 'Marketing',
-      INSURANCE: 'Insurance',
-      LICENSES_PERMITS: 'Licenses & Permits',
       OTHER: 'Other'
     };
     return categoryMap[category] || category;
@@ -315,10 +433,9 @@ class ExpenseService {
   getPaymentSourceDisplay = (paymentSource) => {
     const sourceMap = {
       STATION_WALLET: 'Station Wallet',
-      PETTY_CASH: 'Petty Cash',
       ISLAND_COLLECTION: 'Island Collection',
-      BANK_ACCOUNT: 'Bank Account',
-      MIXED: 'Mixed Sources'
+      CASH: 'Cash',
+      BANK_TRANSFER: 'Bank Transfer'
     };
     return sourceMap[paymentSource] || paymentSource;
   };
@@ -329,16 +446,13 @@ class ExpenseService {
 
   getCategoryOptions = () => {
     return [
-      { value: 'CLEANING_SUPPLIES', label: 'Cleaning Supplies' },
+      { value: 'FUEL', label: 'Fuel' },
       { value: 'MAINTENANCE', label: 'Maintenance' },
       { value: 'UTILITIES', label: 'Utilities' },
+      { value: 'SALARIES', label: 'Salaries' },
       { value: 'OFFICE_SUPPLIES', label: 'Office Supplies' },
-      { value: 'SECURITY_SERVICES', label: 'Security Services' },
-      { value: 'FUEL_EQUIPMENT', label: 'Fuel Equipment' },
-      { value: 'STAFF_WELFARE', label: 'Staff Welfare' },
+      { value: 'TRANSPORT', label: 'Transport' },
       { value: 'MARKETING', label: 'Marketing' },
-      { value: 'INSURANCE', label: 'Insurance' },
-      { value: 'LICENSES_PERMITS', label: 'Licenses & Permits' },
       { value: 'OTHER', label: 'Other' }
     ];
   };
@@ -348,19 +462,16 @@ class ExpenseService {
       { value: 'DRAFT', label: 'Draft' },
       { value: 'PENDING_APPROVAL', label: 'Pending Approval' },
       { value: 'APPROVED', label: 'Approved' },
-      { value: 'REJECTED', label: 'Rejected' },
-      { value: 'PAID', label: 'Paid' },
-      { value: 'CANCELLED', label: 'Cancelled' }
+      { value: 'REJECTED', label: 'Rejected' }
     ];
   };
 
   getPaymentSourceOptions = () => {
     return [
       { value: 'STATION_WALLET', label: 'Station Wallet' },
-      { value: 'PETTY_CASH', label: 'Petty Cash' },
       { value: 'ISLAND_COLLECTION', label: 'Island Collection' },
-      { value: 'BANK_ACCOUNT', label: 'Bank Account' },
-      { value: 'MIXED', label: 'Mixed Sources' }
+      { value: 'CASH', label: 'Cash' },
+      { value: 'BANK_TRANSFER', label: 'Bank Transfer' }
     ];
   };
 
@@ -377,8 +488,8 @@ class ExpenseService {
       paymentSource: 'STATION_WALLET',
       expenseDate: new Date().toISOString(),
       stationId: '',
-      islandId: '',
-      shiftId: ''
+      islandId: null,
+      shiftId: null
     };
   };
 
@@ -390,38 +501,35 @@ class ExpenseService {
       paymentSource: '',
       startDate: '',
       endDate: '',
+      search: '',
       page: 1,
-      limit: 20
+      limit: 10
     };
   };
 
   // =====================
-  // EXPORT UTILITIES
+  // USAGE EXAMPLES
   // =====================
 
-  exportExpenses = async (filters = {}, format = 'csv') => {
-    try {
-      const query = this.buildQuery({ ...filters, format });
-      const response = await apiService.get(`/expenses/export?${query}`, {
-        responseType: 'blob'
-      });
-      
-      const blob = new Blob([response.data], { 
-        type: format === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-      });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `expenses-${new Date().toISOString().split('T')[0]}.${format}`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      
-      return true;
-    } catch (error) {
-      throw this.handleError(error, 'Failed to export expenses');
-    }
+  getPendingExpenses = async (stationId) => {
+    return this.getExpensesByStation(stationId, { status: 'PENDING_APPROVAL' });
+  };
+
+  getApprovedExpenses = async (stationId) => {
+    return this.getExpensesByStation(stationId, { status: 'APPROVED' });
+  };
+
+  getWalletExpenses = async (stationId) => {
+    return this.getExpensesByStation(stationId, { paymentSource: 'STATION_WALLET' });
+  };
+
+  getRecentExpenses = async (stationId, days = 7) => {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    return this.getExpensesByStation(stationId, { 
+      startDate: startDate.toISOString(),
+      endDate: new Date().toISOString()
+    });
   };
 
   // =====================
@@ -443,7 +551,23 @@ class ExpenseService {
     this.clearCache('expenses');
     this.clearCache('expense-summary');
   };
+
+  // Auto-clean expired cache entries
+  startCacheCleanup = () => {
+    setInterval(() => {
+      const now = Date.now();
+      for (const [key, value] of this.cache.entries()) {
+        if (now - value.timestamp > this.CACHE_TTL) {
+          this.cache.delete(key);
+        }
+      }
+    }, 60000); // Check every minute
+  };
 }
 
-export const expenseService = new ExpenseService();
+// Initialize cache cleanup
+const expenseService = new ExpenseService();
+expenseService.startCacheCleanup();
+
+export { expenseService };
 export default expenseService;
