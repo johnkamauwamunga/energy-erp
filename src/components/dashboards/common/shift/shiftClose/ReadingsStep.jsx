@@ -213,17 +213,36 @@ const ReadingsStep = ({
     });
 
     // Transform tank readings (unchanged)
-    const transformedTanks = (openShiftData.dipReadings || []).map(dipReading => ({
-      id: dipReading.tankId,
-      tankId: dipReading.tankId,
-      name: dipReading.tank?.asset?.name || `Tank ${dipReading.tankId.slice(0, 8)}`,
-      product: dipReading.tank?.product || { name: 'Fuel' },
-      capacity: dipReading.tank?.capacity || 10000,
-      openingVolume: dipReading.volume || 0,
-      openingDipValue: dipReading.dipValue || 0,
-      closingVolume: '',
-      closingDipValue: 2.5,
-    }));
+    // const transformedTanks = (openShiftData.dipReadings || []).map(dipReading => ({
+    //   id: dipReading.tankId,
+    //   tankId: dipReading.tankId,
+    //   name: dipReading.tank?.asset?.name || `Tank ${dipReading.tankId.slice(0, 8)}`,
+    //   product: dipReading.tank?.product || { name: 'Fuel' },
+    //   capacity: dipReading.tank?.capacity || 10000,
+    //   openingVolume: dipReading.volume || 0,
+    //   openingDipValue: dipReading.dipValue || 0,
+    //   closingVolume: '',
+    //   closingDipValue: 2.5,
+    // }));
+
+    // In ReadingsStep.jsx - Update the tank transformation
+const transformedTanks = (openShiftData.dipReadings || []).map(dipReading => ({
+  id: dipReading.tankId,
+  tankId: dipReading.tankId,
+  name: dipReading.tank?.asset?.name || `Tank ${dipReading.tankId.slice(0, 8)}`,
+  product: dipReading.tank?.product || { name: 'Fuel' },
+  capacity: dipReading.tank?.capacity || 10000,
+  
+  // Opening readings
+  openingVolume: dipReading.volume || 0,
+  openingDipValue: dipReading.dipValue || 0,
+  openingCurrentVolume: dipReading.currentVolume || dipReading.volume || 0, // ✅ Use currentVolume if available
+  
+  // Closing readings (to be entered)
+  closingVolume: '',
+  closingDipValue: 2.5,
+  closingCurrentVolume: '' // ✅ This will be calculated or entered
+}));
 
     setPumps(transformedPumps);
     setTanks(transformedTanks);
@@ -247,137 +266,6 @@ const ReadingsStep = ({
 };
  
 
-// const loadOpenShiftData = async () => {
-//   if (!currentStationId) return;
-  
-//   setLoading(true);
-//   try {
-//     console.log('🔄 Loading open shift data with product information...');
-
-//     // Load ALL data in parallel
-//     const [openShiftData, mapping, topologyData] = await Promise.all([
-//       shiftService.getOpenShift(currentStationId),
-//       islandPumpMappingService.getIslandPumpMapping(currentStationId),
-//       assetTopologyService.getIslandsWithPumpsAndTanks(currentStationId)
-//     ]);
-
-//     console.log('📋 Open shift data:', openShiftData);
-//     console.log('🗺️ Island mapping:', mapping);
-//     console.log('⛽ Topology with products:', topologyData);
-
-//     if (!openShiftData) {
-//       message.error('No open shift found for this station');
-//       return;
-//     }
-
-//     setShiftData(openShiftData);
-//     setIslandMapping(mapping);
-
-//     // Create a map of pumps with their product information from topology
-//     const pumpProductMap = new Map();
-//     const topologyIslands = topologyData.data?.islands || topologyData.islands || [];
-    
-//     console.log('🔍 Analyzing topology islands structure...');
-//     topologyIslands.forEach((island, islandIndex) => {
-//       console.log(`Island ${islandIndex}:`, island);
-//       if (island.pumps && Array.isArray(island.pumps)) {
-//         island.pumps.forEach((pump, pumpIndex) => {
-//           console.log(`Pump ${pumpIndex} in island:`, pump);
-//           if (pump.product) {
-//             // Use pump.id (not pump.pumpId) as the key
-//             pumpProductMap.set(pump.id, {
-//               productId: pump.product.id,
-//               product: pump.product,
-//               unitPrice: pump.product.baseCostPrice || pump.product.minSellingPrice || 0
-//             });
-//             console.log(`✅ Added product mapping for pump ${pump.id}:`, pump.product.name);
-//           } else {
-//             console.log(`❌ Pump ${pump.id} has no product`);
-//           }
-//         });
-//       }
-//     });
-
-//     console.log('🧮 Final pump product map:', Array.from(pumpProductMap.entries()));
-
-//     // Transform pump readings - NOW WITH PRODUCT INFO
-//     const transformedPumps = (openShiftData.meterReadings || []).map(meterReading => {
-//       console.log(`Processing pump ${meterReading.pumpId}:`, meterReading);
-      
-//       // Get product info from our map - use meterReading.pumpId to lookup
-//       const productInfo = pumpProductMap.get(meterReading.pumpId);
-//       console.log(`Product info for ${meterReading.pumpId}:`, productInfo);
-
-//       // Find which island this pump belongs to
-//       let pumpIslandId = null;
-//       let pumpIslandName = 'Unassigned';
-      
-//       for (const [islandId, pumpIds] of Object.entries(mapping)) {
-//         if (pumpIds.includes(meterReading.pumpId)) {
-//           pumpIslandId = islandId;
-//           const islandAssignment = openShiftData.shiftIslandAttendant?.find(
-//             assignment => assignment.islandId === islandId
-//           );
-//           pumpIslandName = islandAssignment?.island?.code || `Island ${islandId.slice(0, 8)}`;
-//           break;
-//         }
-//       }
-
-//       // Use product info from topology, fallback to shift data
-//       const finalProductInfo = productInfo || {
-//         productId: meterReading.pump?.product?.id,
-//         product: meterReading.pump?.product || { name: 'Fuel' },
-//         unitPrice: meterReading.unitPrice || 0
-//       };
-
-//       console.log(`🎯 Final product info for ${meterReading.pumpId}:`, finalProductInfo);
-
-//       return {
-//         id: meterReading.pumpId,
-//         pumpId: meterReading.pumpId,
-//         productId: finalProductInfo.productId,
-//         name: meterReading.pump?.asset?.name || `Pump ${meterReading.pumpId.slice(0, 8)}`,
-//         product: finalProductInfo.product,
-//         openingElectricMeter: meterReading.electricMeter || 0,
-//         openingManualMeter: meterReading.manualMeter || 0,
-//         openingCashMeter: meterReading.cashMeter || 0,
-//         unitPrice: finalProductInfo.unitPrice,
-//         closingElectricMeter: '',
-//         closingManualMeter: '',
-//         closingCashMeter: '',
-//         islandId: pumpIslandId,
-//         islandName: pumpIslandName
-//       };
-//     });
-
-//     // Transform tank readings (unchanged)
-//     const transformedTanks = (openShiftData.dipReadings || []).map(dipReading => ({
-//       id: dipReading.tankId,
-//       tankId: dipReading.tankId,
-//       name: dipReading.tank?.asset?.name || `Tank ${dipReading.tankId.slice(0, 8)}`,
-//       product: dipReading.tank?.product || { name: 'Fuel' },
-//       capacity: dipReading.tank?.capacity || 10000,
-//       openingVolume: dipReading.volume || 0,
-//       openingDipValue: dipReading.dipValue || 0,
-//       closingVolume: '',
-//       closingDipValue: 2.5,
-//     }));
-
-//     setPumps(transformedPumps);
-//     setTanks(transformedTanks);
-//     setAutoFilled(true);
-    
-//     console.log('✅ Final transformed pumps WITH PRODUCTS:', transformedPumps);
-//     console.log(`✅ Loaded ${transformedPumps.length} pumps and ${transformedTanks.length} tanks`);
-    
-//   } catch (error) {
-//     console.error('❌ Error loading open shift readings:', error);
-//     message.error('Failed to load open shift readings');
-//   } finally {
-//     setLoading(false);
-//   }
-// };
-
 const handlePumpReadingChange = (pumpId, field, value) => {
     const updatedPumps = pumps.map(pump => 
       pump.id === pumpId ? { ...pump, [field]: value } : pump
@@ -385,12 +273,42 @@ const handlePumpReadingChange = (pumpId, field, value) => {
     setPumps(updatedPumps);
   };
 
-  const handleTankReadingChange = (tankId, field, value) => {
-    const updatedTanks = tanks.map(tank => 
-      tank.id === tankId ? { ...tank, [field]: value } : tank
-    );
-    setTanks(updatedTanks);
-  };
+  // const handleTankReadingChange = (tankId, field, value) => {
+  //   const updatedTanks = tanks.map(tank => 
+  //     tank.id === tankId ? { ...tank, [field]: value } : tank
+  //   );
+  //   setTanks(updatedTanks);
+  // };
+
+  // In ReadingsStep.jsx - Update handleTankReadingChange
+const handleTankReadingChange = (tankId, field, value) => {
+  const updatedTanks = tanks.map(tank => {
+    if (tank.id === tankId) {
+      const updatedTank = { ...tank, [field]: value };
+      
+      // ✅ AUTO-CALCULATE currentVolume when closingVolume is entered
+      if (field === 'closingVolume' && value) {
+        const openingVolume = parseFloat(tank.openingCurrentVolume) || parseFloat(tank.openingVolume) || 0;
+        const closingVolume = parseFloat(value) || 0;
+        
+        // Current Volume = Closing Volume (for inventory update)
+        updatedTank.closingCurrentVolume = closingVolume;
+        
+        console.log(`📊 Tank ${tankId} volume calculation:`, {
+          opening: openingVolume,
+          closing: closingVolume,
+          reduction: openingVolume - closingVolume,
+          currentVolume: closingVolume
+        });
+      }
+      
+      return updatedTank;
+    }
+    return tank;
+  });
+  
+  setTanks(updatedTanks);
+};
 
   // Calculate statistics with CORRECT sales calculation
   const pumpStats = useMemo(() => {
@@ -440,7 +358,7 @@ const handlePumpReadingChange = (pumpId, field, value) => {
   const allReadingsComplete = pumpStats.completed === pumpStats.total && 
                               tankStats.completed === tankStats.total;
 
-                              const handleProceedToIslandSales = () => {
+   const handleProceedToIslandSales = () => {
   // Prepare pump readings for API payload
   const pumpReadingsPayload = pumps.map(pump => {
     const openingElectric = parseFloat(pump.openingElectricMeter) || 0;
@@ -465,15 +383,31 @@ const handlePumpReadingChange = (pumpId, field, value) => {
     };
   });
 
-  // Prepare tank readings for API payload
-  const tankReadingsPayload = tanks.map(tank => ({
-    tankId: tank.tankId,
-    dipValue: tank.closingDipValue,
-    volume: parseFloat(tank.closingVolume) || 0,
-    temperature: 28.5, // Default values
-    waterLevel: 0.1,
-    density: 0.85
-  }));
+  // // Prepare tank readings for API payload
+  // const tankReadingsPayload = tanks.map(tank => ({
+  //   tankId: tank.tankId,
+  //   dipValue: tank.closingDipValue,
+  //   volume: parseFloat(tank.closingVolume) || 0,
+  //   temperature: 28.5, // Default values
+  //   waterLevel: 0.1,
+  //   density: 0.85
+  // }));
+
+    // Prepare tank readings for API payload WITH currentVolume
+  const tankReadingsPayload = tanks.map(tank => {
+    const closingVolume = parseFloat(tank.closingVolume) || 0;
+    const currentVolume = parseFloat(tank.closingCurrentVolume) || closingVolume;
+    
+    return {
+      tankId: tank.tankId,
+      dipValue: tank.closingDipValue,
+      volume: closingVolume,           // Dip-calculated volume
+      currentVolume: currentVolume,    // ✅ ACTUAL current volume for inventory
+      temperature: 28.5,
+      waterLevel: 0.1,
+      density: 0.85
+    };
+  });
 
   // 🎯 CRITICAL: Prepare structured data for IslandSalesStep WITH ATTENDANTS
   const islandSalesData = {
@@ -840,30 +774,42 @@ const handlePumpReadingChange = (pumpId, field, value) => {
     },
   ];
 
-  // Tank Columns (unchanged)
-  const tankColumns = [
-    {
-      title: 'TANK DETAILS',
-      key: 'tank',
-      width: 180,
-      render: (_, tank) => (
-        <Space size={6} direction="vertical">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Droplets size={16} color="#1890ff" />
-            <Text strong style={{ fontSize: '13px' }}>{tank.name}</Text>
-          </div>
-          <Text type="secondary" style={{ fontSize: '11px' }}>
-            {tank.product?.name || 'Fuel'} • {tank.capacity?.toLocaleString()}L
+const tankColumns = [
+  {
+    title: 'TANK DETAILS',
+    key: 'tank',
+    width: 180,
+    render: (_, tank) => (
+      <Space size={6} direction="vertical">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Droplets size={16} color="#1890ff" />
+          <Text strong style={{ fontSize: '13px' }}>{tank.name}</Text>
+        </div>
+        <Text type="secondary" style={{ fontSize: '11px' }}>
+          {tank.product?.name || 'Fuel'} • {tank.capacity?.toLocaleString()}L
+        </Text>
+        {/* Show current volume if available */}
+        {tank.openingCurrentVolume && (
+          <Text type="secondary" style={{ fontSize: '10px', color: '#52c41a' }}>
+            📊 Current: {parseFloat(tank.openingCurrentVolume).toFixed(1)}L
           </Text>
-        </Space>
-      ),
-    },
-    {
-      title: 'VOLUME (LITERS)',
-      key: 'volume',
-      width: 180,
-      render: (_, tank) => (
+        )}
+      </Space>
+    ),
+  },
+  {
+    title: 'VOLUME CALCULATIONS',
+    key: 'volume',
+    width: 220,
+    render: (_, tank) => {
+      const openingVolume = parseFloat(tank.openingCurrentVolume || tank.openingVolume) || 0;
+      const closingVolume = parseFloat(tank.closingVolume) || 0;
+      const currentVolume = parseFloat(tank.closingCurrentVolume) || closingVolume;
+      const volumeReduction = openingVolume - currentVolume;
+      
+      return (
         <Space size={8} direction="vertical" style={{ width: '100%' }}>
+          {/* Opening Volume */}
           <div style={{ 
             padding: '6px 8px', 
             backgroundColor: '#e6f7ff', 
@@ -871,14 +817,16 @@ const handlePumpReadingChange = (pumpId, field, value) => {
             textAlign: 'center'
           }}>
             <Text strong style={{ fontSize: '13px', color: '#1890ff' }}>
-              {parseFloat(tank.openingVolume).toFixed(3)}
+              {openingVolume.toFixed(1)}
             </Text>
             <div style={{ fontSize: '10px', color: '#666', marginTop: 2 }}>OPENING VOLUME</div>
           </div>
+          
+          {/* Closing Volume Input */}
           <Input
             size="middle"
             type="number"
-            step="0.001"
+            step="0.1"
             value={tank.closingVolume}
             onChange={(e) => handleTankReadingChange(tank.id, 'closingVolume', e.target.value)}
             placeholder="Enter closing volume"
@@ -889,56 +837,176 @@ const handlePumpReadingChange = (pumpId, field, value) => {
               textAlign: 'center'
             }}
           />
+          
+          {/* Current Volume Display (Auto-calculated) */}
+          {tank.closingVolume && (
+            <div style={{ 
+              padding: '6px 8px', 
+              backgroundColor: '#f6ffed', 
+              borderRadius: '4px',
+              textAlign: 'center',
+              border: '1px solid #b7eb8f'
+            }}>
+              <Text strong style={{ fontSize: '12px', color: '#52c41a' }}>
+                📍 Current: {currentVolume.toFixed(1)}L
+              </Text>
+              <div style={{ fontSize: '9px', color: '#666', marginTop: 2 }}>
+                🔻 Reduction: {volumeReduction.toFixed(1)}L
+              </div>
+            </div>
+          )}
         </Space>
-      ),
+      );
     },
-    {
-      title: 'DIP VALUE (METER)',
-      key: 'dip',
-      width: 180,
-      render: (_, tank) => (
+  },
+  {
+    title: 'CURRENT VOLUME',
+    key: 'currentVolume',
+    width: 150,
+    render: (_, tank) => {
+      const closingVolume = parseFloat(tank.closingVolume) || 0;
+      const currentVolume = parseFloat(tank.closingCurrentVolume) || closingVolume;
+      
+      return (
         <Space size={8} direction="vertical" style={{ width: '100%' }}>
-          <div style={{ 
-            padding: '6px 8px', 
-            backgroundColor: '#f6ffed', 
-            borderRadius: '4px',
-            textAlign: 'center'
-          }}>
-            <Text strong style={{ fontSize: '13px', color: '#52c41a' }}>
-              {parseFloat(tank.openingDipValue).toFixed(3)}
-            </Text>
-            <div style={{ fontSize: '10px', color: '#666', marginTop: 2 }}>OPENING DIP</div>
-          </div>
-          <div style={{ 
-            padding: '8px', 
-            backgroundColor: '#f9f0ff', 
-            borderRadius: '4px',
-            textAlign: 'center',
-            border: '1px dashed #d3adf7'
-          }}>
-            <Text strong style={{ fontSize: '13px', color: '#722ed1' }}>
-              {tank.closingDipValue}
-            </Text>
-            <div style={{ fontSize: '10px', color: '#666', marginTop: 2 }}>CLOSING DIP (AUTO)</div>
-          </div>
+          <Input
+            size="middle"
+            type="number"
+            step="0.1"
+            value={tank.closingCurrentVolume}
+            onChange={(e) => handleTankReadingChange(tank.id, 'closingCurrentVolume', e.target.value)}
+            placeholder="Current volume"
+            style={{ 
+              width: '100%', 
+              fontSize: '13px',
+              fontWeight: 'bold',
+              textAlign: 'center',
+              border: '2px solid #722ed1'
+            }}
+          />
+          
+          {tank.closingCurrentVolume && tank.closingVolume && (
+            <div style={{ 
+              padding: '4px 6px', 
+              backgroundColor: '#f9f0ff', 
+              borderRadius: '4px',
+              textAlign: 'center'
+            }}>
+              <Text style={{ fontSize: '10px', color: '#722ed1' }}>
+                {currentVolume !== closingVolume ? '📝 Manual' : '🔄 Auto'}
+              </Text>
+            </div>
+          )}
         </Space>
-      ),
+      );
     },
-    {
-      title: 'STATUS',
-      key: 'status',
-      width: 100,
-      render: (_, tank) => (
-        <div style={{ textAlign: 'center' }}>
+  },
+  {
+    title: 'DIP VALUE (METER)',
+    key: 'dip',
+    width: 180,
+    render: (_, tank) => (
+      <Space size={8} direction="vertical" style={{ width: '100%' }}>
+        {/* Opening Dip */}
+        <div style={{ 
+          padding: '6px 8px', 
+          backgroundColor: '#f6ffed', 
+          borderRadius: '4px',
+          textAlign: 'center'
+        }}>
+          <Text strong style={{ fontSize: '13px', color: '#52c41a' }}>
+            {parseFloat(tank.openingDipValue).toFixed(3)}
+          </Text>
+          <div style={{ fontSize: '10px', color: '#666', marginTop: 2 }}>OPENING DIP</div>
+        </div>
+        
+        {/* Closing Dip (Auto) */}
+        <div style={{ 
+          padding: '8px', 
+          backgroundColor: '#f9f0ff', 
+          borderRadius: '4px',
+          textAlign: 'center',
+          border: '1px dashed #d3adf7'
+        }}>
+          <Text strong style={{ fontSize: '13px', color: '#722ed1' }}>
+            {tank.closingDipValue}
+          </Text>
+          <div style={{ fontSize: '10px', color: '#666', marginTop: 2 }}>CLOSING DIP (AUTO)</div>
+        </div>
+      </Space>
+    ),
+  },
+  {
+    title: 'VOLUME SUMMARY',
+    key: 'summary',
+    width: 140,
+    render: (_, tank) => {
+      const openingVolume = parseFloat(tank.openingCurrentVolume || tank.openingVolume) || 0;
+      const closingVolume = parseFloat(tank.closingVolume) || 0;
+      const currentVolume = parseFloat(tank.closingCurrentVolume) || closingVolume;
+      const volumeReduction = openingVolume - currentVolume;
+      const reductionPercentage = openingVolume > 0 ? (volumeReduction / openingVolume) * 100 : 0;
+      
+      return (
+        <div style={{ textAlign: 'center', padding: '8px' }}>
           {tank.closingVolume ? (
-            <Badge status="success" text="Complete" />
+            <Space direction="vertical" size={2}>
+              <Text strong style={{ fontSize: '12px', color: '#1890ff' }}>
+                {currentVolume.toFixed(0)}L
+              </Text>
+              <Text style={{ fontSize: '10px', color: volumeReduction > 0 ? '#fa541c' : '#52c41a' }}>
+                🔻 {volumeReduction.toFixed(0)}L
+              </Text>
+              <Text style={{ fontSize: '9px', color: '#666' }}>
+                {reductionPercentage.toFixed(1)}%
+              </Text>
+            </Space>
           ) : (
-            <Badge status="processing" text="Pending" />
+            <Text type="secondary" style={{ fontSize: '11px' }}>
+              Enter closing volume
+            </Text>
           )}
         </div>
-      ),
+      );
     },
-  ];
+  },
+  {
+    title: 'STATUS',
+    key: 'status',
+    width: 100,
+    render: (_, tank) => {
+      const hasClosingVolume = !!tank.closingVolume;
+      const hasCurrentVolume = !!tank.closingCurrentVolume;
+      
+      let status = 'processing';
+      let statusText = 'Pending';
+      let color = '#faad14';
+      
+      if (hasClosingVolume && hasCurrentVolume) {
+        status = 'success';
+        statusText = 'Complete';
+        color = '#52c41a';
+      } else if (hasClosingVolume && !hasCurrentVolume) {
+        status = 'warning';
+        statusText = 'Needs Current Vol';
+        color = '#fa8c16';
+      }
+      
+      return (
+        <div style={{ textAlign: 'center' }}>
+          <Badge 
+            status={status} 
+            text={
+              <Text strong style={{ fontSize: '11px', color }}>
+                {statusText}
+              </Text>
+            } 
+          />
+        </div>
+      );
+    },
+  },
+];
 
   return (
     <div style={{ padding: '16px' }}>

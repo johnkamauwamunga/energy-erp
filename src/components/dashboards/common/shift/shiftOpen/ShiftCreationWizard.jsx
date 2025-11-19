@@ -271,19 +271,22 @@ const handleOpenShift = useCallback(async () => {
         />
       )
     },
-    {
-      title: 'Readings',
-      icon: <Gauge size={16} />,
-      description: 'Record opening readings',
-      content: (
-        <ReadingsStep 
-          stationId={stationId}
-          readingsData={wizardData.readings}
-          shiftInfo={wizardData.shiftInfo}
-          onUpdateReadings={updateReadings}
-        />
-      )
-    },
+{
+  title: 'Readings',
+  icon: <Gauge size={16} />,
+  description: 'Record opening readings',
+  content: (
+    <ReadingsStep 
+      stationId={stationId}
+      shiftId={wizardData.shiftInfo.shiftId} // ✅ CRITICAL
+      shiftInfo={wizardData.shiftInfo}
+      readingsData={wizardData.readings}
+      personnelData={wizardData.personnel} // ✅ ADD PERSONNEL DATA
+      onUpdateReadings={updateReadings}
+      readingType="START" // ✅ SPECIFY READING TYPE
+    />
+  )
+},
     {
       title: 'Summary',
       icon: <FileText size={16} />,

@@ -547,7 +547,7 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
                           value={item.unitCost}
                           onChange={(e) => updateItem(index, 'unitCost', e.target.value)}
                           placeholder="0.00"
-                          prefix="$"
+                          prefix="Ksh"
                         />
                       </Form.Item>
                     </Col>
@@ -595,7 +595,7 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
                           <div style={{ textAlign: 'center' }}>
                             <Text type="secondary">Gross Amount</Text>
                             <div style={{ fontWeight: 'bold', fontSize: '16px' }}>
-                              ${calculateItemTotals(item).grossAmount.toLocaleString(undefined, {
+                              Ksh {calculateItemTotals(item).grossAmount.toLocaleString(undefined, {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2
                               })}
@@ -606,7 +606,7 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
                           <div style={{ textAlign: 'center' }}>
                             <Text type="secondary">Tax Amount</Text>
                             <div style={{ fontWeight: 'bold', fontSize: '16px' }}>
-                              ${calculateItemTotals(item).taxAmount.toLocaleString(undefined, {
+                              Ksh {calculateItemTotals(item).taxAmount.toLocaleString(undefined, {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2
                               })}
@@ -617,7 +617,7 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
                           <div style={{ textAlign: 'center' }}>
                             <Text type="secondary">Net Amount</Text>
                             <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#52c41a' }}>
-                              ${calculateItemTotals(item).netAmount.toLocaleString(undefined, {
+                              Ksh {calculateItemTotals(item).netAmount.toLocaleString(undefined, {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2
                               })}
@@ -650,7 +650,7 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
                   value={totals.grossAmount}
                   precision={2}
                   valueStyle={{ color: '#52c41a' }}
-                  prefix="$"
+                  prefix="Ksh"
                 />
               </Col>
               <Col span={6}>
@@ -659,7 +659,7 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
                   value={totals.totalTaxAmount}
                   precision={2}
                   valueStyle={{ color: '#fa8c16' }}
-                  prefix="$"
+                  prefix="Ksh"
                 />
               </Col>
               <Col span={6}>
@@ -668,7 +668,7 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
                   value={totals.netPayable}
                   precision={2}
                   valueStyle={{ color: '#722ed1' }}
-                  prefix="$"
+                  prefix="Ksh"
                 />
               </Col>
             </Row>

@@ -38,7 +38,7 @@ import { userService } from '../../../services/userService/userService';
 import { debtorService } from '../../../services/debtorService/debtorService';
 import { purchaseService } from '../../../services/purchaseService/purchaseService';
 import { assetService } from '../../../services/assetService/assetService';
-import { fuelOffloadService } from '../../../services/offloadService/offloadService';
+import { OffloadService as fuelOffloadService } from '../../../services/offloadService/offloadService';
 import { useApp } from '../../../context/AppContext';
 //  import { useShiftAssets } from './shift/shiftClose/hooks/useShiftAssets';
 

@@ -1,23 +1,62 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Fuel, Package, Layers, Plus, Eye, Edit, Trash2, Search, 
-  RefreshCw, AlertCircle, Filter, X, Download, Upload, 
-  ChevronDown, ArrowUpDown, SlidersHorizontal 
-} from 'lucide-react';
-import { Button, Input, Select1 as Select, Dialog, ConfirmDialog, Tabs, Card, Badge } from '../../../ui';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Card,
+  Table,
+  Button,
+  Tag,
+  Space,
+  Input,
+  Select,
+  Modal,
+  Form,
+  Row,
+  Col,
+  Statistic,
+  message,
+  Alert,
+  Tabs,
+  Badge,
+  Avatar,
+  Grid,
+  Dropdown,
+  Menu,
+  Typography,
+  Divider,
+  Tooltip,
+  Empty,
+  Spin
+} from 'antd';
+import {
+  PlusOutlined,
+  EyeOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  SearchOutlined,
+  FilterOutlined,
+  ReloadOutlined,
+  ExclamationCircleOutlined,
+  MoreOutlined,
+  DatabaseOutlined,
+  AppstoreOutlined,
+  ContainerOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined
+} from '@ant-design/icons';
 import { useApp } from '../../../../context/AppContext';
 import CreateFuelModal from './create/CreateFuelModal';
-// import EditFuelModal from './edit/EditFuelModal';
 import { fuelService } from '../../../../services/fuelService/fuelService';
+
+const { Title, Text } = Typography;
+const { TabPane } = Tabs;
+const { Option } = Select;
+const { Search } = Input;
+const { useBreakpoint } = Grid;
+const { confirm } = Modal;
 
 const FuelManagement = () => {
   const { state } = useApp();
   const [activeTab, setActiveTab] = useState('products');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
-  const [deletingItem, setDeletingItem] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -27,19 +66,35 @@ const FuelManagement = () => {
   const [categories, setCategories] = useState([]);
   const [subTypes, setSubTypes] = useState([]);
 
-  // Filter states - simplified
+  // Filter states
   const [filters, setFilters] = useState({
     search: '',
     category: '',
     subType: '',
-    sortBy: 'name',
-    sortOrder: 'asc'
+    sortBy: 'name-asc'
   });
 
+  const screens = useBreakpoint();
+
   const tabs = [
-    { id: 'products', label: 'Products', icon: Fuel, count: products.length },
-    { id: 'subtypes', label: 'Sub Types', icon: Package, count: subTypes.length },
-    { id: 'categories', label: 'Categories', icon: Layers, count: categories.length }
+    { 
+      key: 'products', 
+      label: 'Products', 
+      icon: <DatabaseOutlined />,
+      count: products.length 
+    },
+    { 
+      key: 'subtypes', 
+      label: 'Sub Types', 
+      icon: <ContainerOutlined />,
+      count: subTypes.length 
+    },
+    { 
+      key: 'categories', 
+      label: 'Categories', 
+      icon: <AppstoreOutlined />,
+      count: categories.length 
+    }
   ];
 
   // Sort options
@@ -84,6 +139,7 @@ const FuelManagement = () => {
     } catch (error) {
       console.error('Failed to load data:', error);
       setError(error.message || 'Failed to load data');
+      message.error('Failed to load data');
     } finally {
       setLoading(false);
     }
@@ -98,9 +154,9 @@ const FuelManagement = () => {
     let data = [];
     
     switch (activeTab) {
-      case 'products': data = products; break;
-      case 'subtypes': data = subTypes; break;
-      case 'categories': data = categories; break;
+      case 'products': data = [...products]; break;
+      case 'subtypes': data = [...subTypes]; break;
+      case 'categories': data = [...categories]; break;
       default: data = [];
     }
 
@@ -158,8 +214,7 @@ const FuelManagement = () => {
       search: '',
       category: '',
       subType: '',
-      sortBy: 'name-asc',
-      sortOrder: 'asc'
+      sortBy: 'name-asc'
     });
   };
 
@@ -167,152 +222,251 @@ const FuelManagement = () => {
     setIsCreateModalOpen(true);
   };
 
-  const openEditModal = (item) => {
-    setEditingItem(item);
-    setIsEditModalOpen(true);
+  const handleEdit = (item) => {
+    message.info('Edit functionality to be implemented');
   };
 
-  const openDeleteDialog = (item) => {
-    setDeletingItem(item);
-    setIsDeleteDialogOpen(true);
+  const handleDelete = (item) => {
+    confirm({
+      title: `Delete ${getItemTypeLabel()}`,
+      content: `Are you sure you want to delete "${item.name}"? This action cannot be undone.`,
+      okText: 'Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          await fuelService.deleteFuelProduct(item.id);
+          message.success(`${getItemTypeLabel()} deleted successfully`);
+          loadData();
+        } catch (error) {
+          message.error(error.message || `Failed to delete ${getItemTypeLabel()}`);
+        }
+      }
+    });
   };
 
   const handleFuelCreated = () => {
     loadData();
     setIsCreateModalOpen(false);
-    setSuccess('Fuel product created successfully!');
-    setTimeout(() => setSuccess(''), 3000);
+    message.success('Fuel item created successfully');
   };
 
-  const handleFuelUpdated = () => {
-    loadData();
-    setIsEditModalOpen(false);
-    setSuccess('Fuel product updated successfully!');
-    setTimeout(() => setSuccess(''), 3000);
-  };
-
-  const handleDelete = async () => {
-    if (!deletingItem) return;
-
-    try {
-      await fuelService.deleteFuelProduct(deletingItem.id);
-      loadData();
-      setSuccess('Fuel product deleted successfully!');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (error) {
-      setError(error.message || 'Failed to delete fuel product');
-    } finally {
-      setIsDeleteDialogOpen(false);
-      setDeletingItem(null);
-    }
-  };
-
-  const getItemType = () => {
+  const getItemTypeLabel = () => {
     switch (activeTab) {
-      case 'products': return 'product';
-      case 'subtypes': return 'subtype';
-      case 'categories': return 'category';
-      default: return 'item';
+      case 'products': return 'Product';
+      case 'subtypes': return 'Sub Type';
+      case 'categories': return 'Category';
+      default: return 'Item';
     }
   };
 
-  const formatProductData = (product) => ({
-    ...product,
-    parentName: product.fuelSubType?.name || 'No Sub Type',
-    code: product.fuelCode,
-    specifications: [
-      product.density && `${product.density} kg/L`,
-      product.octaneRating && `RON ${product.octaneRating}`,
-      product.sulfurContent && `${product.sulfurContent}ppm S`
-    ].filter(Boolean).join(' • ') || 'No specs',
-    categoryName: product.fuelSubType?.category?.name || 'N/A'
-  });
+  const getItemIcon = () => {
+    switch (activeTab) {
+      case 'products': return <DatabaseOutlined />;
+      case 'subtypes': return <ContainerOutlined />;
+      case 'categories': return <AppstoreOutlined />;
+      default: return <DatabaseOutlined />;
+    }
+  };
 
-  const formatSubTypeData = (subType) => ({
-    ...subType,
-    parentName: subType.category?.name || 'No Category',
-    code: subType.code,
-    specifications: subType.specification || 'No specification'
-  });
+  const getItemColor = () => {
+    switch (activeTab) {
+      case 'products': return 'orange';
+      case 'subtypes': return 'green';
+      case 'categories': return 'blue';
+      default: return 'default';
+    }
+  };
 
-  const formatCategoryData = (category) => ({
-    ...category,
-    parentName: '-',
-    code: category.code,
-    specifications: category.defaultColor ? `Color: ${category.defaultColor}` : 'No specs'
-  });
-
+  // Format data for display
   const formatItemData = (item) => {
     switch (activeTab) {
-      case 'products': return formatProductData(item);
-      case 'subtypes': return formatSubTypeData(item);
-      case 'categories': return formatCategoryData(item);
-      default: return item;
+      case 'products':
+        return {
+          ...item,
+          parentName: item.fuelSubType?.name || 'No Sub Type',
+          code: item.fuelCode,
+          specifications: [
+            item.density && `${item.density} kg/L`,
+            item.octaneRating && `RON ${item.octaneRating}`,
+            item.sulfurContent && `${item.sulfurContent}ppm S`
+          ].filter(Boolean).join(' • ') || 'No specs',
+          categoryName: item.fuelSubType?.category?.name || 'N/A'
+        };
+      case 'subtypes':
+        return {
+          ...item,
+          parentName: item.category?.name || 'No Category',
+          code: item.code,
+          specifications: item.specification || 'No specification'
+        };
+      case 'categories':
+        return {
+          ...item,
+          parentName: '-',
+          code: item.code,
+          specifications: item.defaultColor ? `Color: ${item.defaultColor}` : 'No specs'
+        };
+      default:
+        return item;
     }
   };
 
-  const getTypeColor = (type) => {
-    const colors = {
-      product: 'orange',
-      subtype: 'green', 
-      category: 'blue'
-    };
-    return colors[type] || 'gray';
-  };
+  // Table columns for desktop
+  const columns = [
+    {
+      title: 'Details',
+      dataIndex: 'name',
+      key: 'name',
+      render: (name, record) => {
+        const formattedItem = formatItemData(record);
+        return (
+          <Space>
+            <Avatar 
+              size="small" 
+              style={{ backgroundColor: getItemColor() === 'orange' ? '#fa8c16' : getItemColor() === 'green' ? '#52c41a' : '#1890ff' }}
+              icon={getItemIcon()}
+            />
+            <div>
+              <div style={{ fontWeight: 500 }}>{formattedItem.name}</div>
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                ID: {record.id?.substring(0, 8)}...
+              </Text>
+            </div>
+          </Space>
+        );
+      }
+    },
+    {
+      title: 'Code',
+      dataIndex: 'code',
+      key: 'code',
+      render: (code, record) => {
+        const formattedItem = formatItemData(record);
+        return (
+          <Tag color="blue" style={{ fontFamily: 'monospace' }}>
+            {formattedItem.code}
+          </Tag>
+        );
+      },
+      responsive: ['md'],
+    },
+    {
+      title: 'Parent',
+      key: 'parent',
+      render: (_, record) => {
+        const formattedItem = formatItemData(record);
+        return (
+          <Text>{formattedItem.parentName}</Text>
+        );
+      },
+      responsive: ['lg'],
+    },
+    {
+      title: 'Specifications',
+      key: 'specifications',
+      render: (_, record) => {
+        const formattedItem = formatItemData(record);
+        return (
+          <Text type="secondary" style={{ fontSize: '12px' }}>
+            {formattedItem.specifications}
+          </Text>
+        );
+      },
+      responsive: ['lg'],
+    },
+    {
+      title: 'Status',
+      key: 'status',
+      render: () => <Tag color="green">Active</Tag>,
+      responsive: ['sm'],
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_, record) => (
+        <Dropdown
+          menu={{
+            items: [
+              {
+                key: 'view',
+                label: 'View Details',
+                icon: <EyeOutlined />,
+              },
+              {
+                key: 'edit',
+                label: 'Edit',
+                icon: <EditOutlined />,
+                onClick: () => handleEdit(record)
+              },
+              {
+                key: 'delete',
+                label: 'Delete',
+                icon: <DeleteOutlined />,
+                danger: true,
+                onClick: () => handleDelete(record)
+              }
+            ]
+          }}
+          trigger={['click']}
+        >
+          <Button type="text" icon={<MoreOutlined />} />
+        </Dropdown>
+      )
+    }
+  ];
 
-  const getTypeIcon = (type) => {
-    const icons = {
-      product: Fuel,
-      subtype: Package,
-      category: Layers
-    };
-    return icons[type] || Layers;
-  };
-
-  const LoadingState = () => (
-    <div className="flex justify-center items-center h-64">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-        <p className="mt-4 text-gray-600">Loading {activeTab}...</p>
-      </div>
-    </div>
-  );
-
-  const ErrorState = () => (
-    <div className="flex justify-center items-center h-64">
-      <div className="text-center">
-        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 mb-2">Failed to load {activeTab}</h3>
-        <p className="text-gray-600 mb-4">{error}</p>
-        <Button onClick={loadData} icon={RefreshCw}>
-          Try Again
-        </Button>
-      </div>
-    </div>
-  );
-
-  const EmptyState = () => {
-    const currentTab = tabs.find(t => t.id === activeTab);
-    const Icon = currentTab?.icon || Layers;
+  // Mobile card view
+  const renderMobileCard = (item) => {
+    const formattedItem = formatItemData(item);
     
     return (
-      <div className="text-center py-12">
-        <Icon className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-        <p className="text-lg font-medium text-gray-900 mb-2">No {activeTab} found</p>
-        <p className="text-sm text-gray-600 mb-4">
-          {filters.search || filters.category || filters.subType
-            ? 'Try adjusting your search filters'
-            : `Get started by creating your first ${activeTab.slice(0, -1)}`
-          }
-        </p>
-        <Button
-          variant="cosmic"
-          onClick={openCreateModal}
-          icon={Plus}
-        >
-          Create {activeTab.slice(0, -1)}
-        </Button>
-      </div>
+      <Card 
+        key={item.id} 
+        size="small" 
+        style={{ marginBottom: 12 }}
+        actions={[
+          <Tooltip title="View Details">
+            <EyeOutlined />
+          </Tooltip>,
+          <Tooltip title="Edit">
+            <EditOutlined onClick={() => handleEdit(item)} />
+          </Tooltip>,
+          <Tooltip title="Delete">
+            <DeleteOutlined onClick={() => handleDelete(item)} />
+          </Tooltip>,
+        ]}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Space direction="vertical" size="small" style={{ flex: 1 }}>
+            <Space>
+              <Avatar 
+                size="small" 
+                style={{ backgroundColor: getItemColor() === 'orange' ? '#fa8c16' : getItemColor() === 'green' ? '#52c41a' : '#1890ff' }}
+                icon={getItemIcon()}
+              />
+              <div>
+                <Text strong>{formattedItem.name}</Text>
+                <div style={{ marginTop: 4 }}>
+                  <Tag color="blue" size="small" style={{ fontFamily: 'monospace' }}>
+                    {formattedItem.code}
+                  </Tag>
+                  <Tag color="green" size="small">Active</Tag>
+                </div>
+              </div>
+            </Space>
+            
+            <Space direction="vertical" size={0}>
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                Parent: {formattedItem.parentName}
+              </Text>
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                {formattedItem.specifications}
+              </Text>
+            </Space>
+          </Space>
+        </div>
+      </Card>
     );
   };
 
@@ -320,307 +474,196 @@ const FuelManagement = () => {
   const hasActiveFilters = filters.search || filters.category || filters.subType;
 
   return (
-    <div className="p-6 space-y-6">
+    <div style={{ padding: screens.xs ? 16 : 24 }}>
       {/* Header */}
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Fuel Management</h1>
-          <p className="text-gray-600 mt-1">
+      <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
+        <Col>
+          <Title level={2} style={{ margin: 0 }}>Fuel Management</Title>
+          <Text type="secondary">
             Manage fuel products, subtypes, and categories for {state.currentUser?.company?.name}
-          </p>
-        </div>
-        
-        <Button 
-          onClick={openCreateModal}
-          icon={Plus}
-          variant="cosmic"
-        >
-          Add Product
-        </Button>
-      </div>
+          </Text>
+        </Col>
+        <Col>
+          <Button 
+            type="primary" 
+            icon={<PlusOutlined />}
+            onClick={openCreateModal}
+            size={screens.xs ? 'middle' : 'large'}
+          >
+            {screens.xs ? 'Add' : 'Add Product'}
+          </Button>
+        </Col>
+      </Row>
 
       {/* Alerts */}
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-center">
-          <AlertCircle className="w-5 h-5 text-red-500 mr-3 flex-shrink-0" />
-          <div className="flex-1">
-            <p className="text-red-800 font-medium">Error</p>
-            <p className="text-red-700 text-sm">{error}</p>
-          </div>
-          <Button onClick={loadData} size="sm" variant="secondary" className="ml-4">
-            <RefreshCw className="w-4 h-4 mr-1" />
-            Retry
-          </Button>
-        </div>
-      )}
-
-      {success && (
-        <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-center">
-          <div className="flex-1 text-green-800">{success}</div>
-          <X 
-            className="w-4 h-4 cursor-pointer text-green-600 hover:text-green-800" 
-            onClick={() => setSuccess('')} 
-          />
-        </div>
-      )}
-
-      {/* Compact Filters */}
-      <Card className="p-4">
-        <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
-          {/* Search */}
-          <div className="flex-1 w-full lg:w-auto">
-            <div className="relative">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-              <Input
-                type="text"
-                placeholder={`Search ${activeTab}...`}
-                value={filters.search}
-                onChange={(e) => handleFilterChange('search', e.target.value)}
-                className="pl-10 pr-4 py-2 text-sm"
-              />
-            </div>
-          </div>
-
-          {/* Category Filter */}
-          {activeTab !== 'categories' && (
-            <Select
-              value={filters.category}
-              onChange={(event) => handleFilterChange('category', event.target.value)}
-              options={[
-                { value: '', label: 'All Categories' },
-                ...categories.map(cat => ({ value: cat.id, label: cat.name }))
-              ]}
-              className="w-full lg:w-48"
-              size="sm"
-            />
-          )}
-
-          {/* SubType Filter */}
-          {activeTab === 'products' && (
-            <Select
-              value={filters.subType}
-              onChange={(event) => handleFilterChange('subType', event.target.value)}
-              options={[
-                { value: '', label: 'All Sub Types' },
-                ...subTypes.map(st => ({ value: st.id, label: st.name }))
-              ]}
-              className="w-full lg:w-48"
-              size="sm"
-            />
-          )}
-
-          {/* Sort */}
-          <Select
-            value={filters.sortBy}
-            onChange={(event) => handleFilterChange('sortBy', event.target.value)}
-            options={sortOptions[activeTab] || []}
-            className="w-full lg:w-48"
-            size="sm"
-            icon={ArrowUpDown}
-          />
-
-          {/* Filter Actions */}
-          <div className="flex gap-2 w-full lg:w-auto">
-            {hasActiveFilters && (
-              <Button 
-                onClick={clearFilters}
-                icon={X}
-                variant="secondary"
-                size="sm"
-                className="flex-1 lg:flex-none"
-              >
-                Clear
-              </Button>
-            )}
-            <Button 
-              onClick={loadData}
-              icon={RefreshCw}
-              variant="outline"
-              size="sm"
-              className="flex-1 lg:flex-none"
-            >
-              Refresh
+        <Alert
+          message="Error"
+          description={error}
+          type="error"
+          showIcon
+          closable
+          action={
+            <Button size="small" onClick={loadData}>
+              <ReloadOutlined /> Retry
             </Button>
-          </div>
-        </div>
+          }
+          style={{ marginBottom: 16 }}
+        />
+      )}
+
+      {/* Filters */}
+      <Card style={{ marginBottom: 24 }}>
+        <Row gutter={[16, 16]} align="middle">
+          <Col xs={24} sm={12} md={6}>
+            <Search
+              placeholder={`Search ${activeTab}...`}
+              value={filters.search}
+              onChange={(e) => handleFilterChange('search', e.target.value)}
+              allowClear
+              enterButton={<SearchOutlined />}
+            />
+          </Col>
+
+          {activeTab !== 'categories' && (
+            <Col xs={12} sm={6} md={4}>
+              <Select
+                placeholder="Category"
+                value={filters.category}
+                onChange={(value) => handleFilterChange('category', value)}
+                style={{ width: '100%' }}
+                allowClear
+              >
+                {categories.map(cat => (
+                  <Option key={cat.id} value={cat.id}>{cat.name}</Option>
+                ))}
+              </Select>
+            </Col>
+          )}
+
+          {activeTab === 'products' && (
+            <Col xs={12} sm={6} md={4}>
+              <Select
+                placeholder="Sub Type"
+                value={filters.subType}
+                onChange={(value) => handleFilterChange('subType', value)}
+                style={{ width: '100%' }}
+                allowClear
+              >
+                {subTypes.map(st => (
+                  <Option key={st.id} value={st.id}>{st.name}</Option>
+                ))}
+              </Select>
+            </Col>
+          )}
+
+          <Col xs={12} sm={6} md={4}>
+            <Select
+              placeholder="Sort By"
+              value={filters.sortBy}
+              onChange={(value) => handleFilterChange('sortBy', value)}
+              style={{ width: '100%' }}
+            >
+              {(sortOptions[activeTab] || []).map(option => (
+                <Option key={option.value} value={option.value}>
+                  {option.label}
+                </Option>
+              ))}
+            </Select>
+          </Col>
+
+          <Col xs={12} sm={6} md={3}>
+            <Button 
+              icon={<ReloadOutlined />}
+              onClick={loadData}
+              style={{ width: '100%' }}
+            >
+              {screens.xs ? '' : 'Refresh'}
+            </Button>
+          </Col>
+
+          {hasActiveFilters && (
+            <Col xs={24} sm={6} md={3}>
+              <Button 
+                icon={<FilterOutlined />}
+                onClick={clearFilters}
+                style={{ width: '100%' }}
+              >
+                Clear Filters
+              </Button>
+            </Col>
+          )}
+        </Row>
       </Card>
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="flex space-x-8">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              className={`pb-3 px-1 border-b-2 font-medium text-sm flex items-center transition-colors ${
-                activeTab === tab.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              <tab.icon className="w-4 h-4 mr-2" />
-              <span>{tab.label}</span>
-              <Badge variant="secondary" className="ml-2">
-                {tab.count}
-              </Badge>
-            </button>
-          ))}
-        </nav>
-      </div>
+      {/* Main Content */}
+      <Card>
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          type={screens.xs ? "card" : "line"}
+          items={tabs.map(tab => ({
+            key: tab.key,
+            label: (
+              <span>
+                {tab.icon}
+                {!screens.xs && ` ${tab.label}`}
+                <Badge 
+                  count={tab.count} 
+                  style={{ marginLeft: 8 }} 
+                  size="small"
+                />
+              </span>
+            )
+          }))}
+        />
 
-      {/* Data Table */}
-      <Card className="overflow-hidden">
-        {loading && filteredData.length === 0 ? (
-          <LoadingState />
-        ) : error && filteredData.length === 0 ? (
-          <ErrorState />
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 200 }}>
+            <Spin size="large" />
+          </div>
         ) : filteredData.length === 0 ? (
-          <EmptyState />
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              hasActiveFilters 
+                ? 'No items match your search criteria' 
+                : `No ${activeTab} found`
+            }
+          >
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+              Create {getItemTypeLabel()}
+            </Button>
+          </Empty>
+        ) : screens.xs ? (
+          // Mobile Card View
+          <div style={{ marginTop: 16 }}>
+            {filteredData.map(renderMobileCard)}
+          </div>
         ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-900 uppercase text-xs tracking-wider">
-                      Details
-                    </th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-900 uppercase text-xs tracking-wider">
-                      Code
-                    </th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-900 uppercase text-xs tracking-wider">
-                      Parent
-                    </th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-900 uppercase text-xs tracking-wider">
-                      Specifications
-                    </th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-900 uppercase text-xs tracking-wider">
-                      Status
-                    </th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-900 uppercase text-xs tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {filteredData.map((item) => {
-                    const formattedItem = formatItemData(item);
-                    const typeColor = getTypeColor(getItemType());
-                    const TypeIcon = getTypeIcon(getItemType());
-
-                    return (
-                      <tr key={item.id} className="hover:bg-gray-50 transition-colors group">
-                        <td className="py-4 px-6">
-                          <div className="flex items-center space-x-3">
-                            <div className={`p-2 rounded-lg bg-${typeColor}-100 text-${typeColor}-600`}>
-                              <TypeIcon className="w-4 h-4" />
-                            </div>
-                            <div>
-                              <div className="font-medium text-gray-900 group-hover:text-blue-600 transition-colors">
-                                {formattedItem.name}
-                              </div>
-                              <div className="text-xs text-gray-500 mt-1">
-                                ID: {item.id.substring(0, 8)}...
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-4 px-6">
-                          <code className="text-sm font-mono text-gray-900 bg-gray-100 px-2 py-1 rounded border">
-                            {formattedItem.code}
-                          </code>
-                        </td>
-                        <td className="py-4 px-6">
-                          <div className="text-sm text-gray-900 font-medium">
-                            {formattedItem.parentName}
-                          </div>
-                        </td>
-                        <td className="py-4 px-6">
-                          <div className="text-sm text-gray-600 max-w-xs">
-                            {formattedItem.specifications}
-                          </div>
-                        </td>
-                        <td className="py-4 px-6">
-                          <Badge variant="success" className="bg-green-100 text-green-800">
-                            Active
-                          </Badge>
-                        </td>
-                        <td className="py-4 px-6">
-                          <div className="flex space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button 
-                              size="sm" 
-                              variant="ghost" 
-                              icon={Eye}
-                              onClick={() => openEditModal(item)}
-                              className="text-gray-500 hover:text-gray-700"
-                            />
-                            <Button 
-                              size="sm" 
-                              variant="ghost" 
-                              icon={Edit}
-                              onClick={() => openEditModal(item)}
-                              className="text-gray-500 hover:text-blue-600"
-                            />
-                            <Button 
-                              size="sm" 
-                              variant="ghost" 
-                              icon={Trash2}
-                              onClick={() => openDeleteDialog(item)}
-                              className="text-gray-500 hover:text-red-600"
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Summary Footer */}
-            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
-              <div className="text-sm text-gray-600">
-                Showing {filteredData.length} of {filteredData.length} {activeTab}
-                {hasActiveFilters && ' (filtered)'}
-              </div>
-              <div className="flex items-center space-x-4">
-                <Button 
-                  onClick={openCreateModal}
-                  icon={Plus}
-                  variant="outline"
-                  size="sm"
-                >
-                  Add New
-                </Button>
-              </div>
-            </div>
-          </>
+          // Desktop Table View
+          <Table
+            columns={columns}
+            dataSource={filteredData}
+            rowKey="id"
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total, range) => 
+                `${range[0]}-${range[1]} of ${total} items`
+            }}
+            scroll={{ x: 800 }}
+          />
         )}
       </Card>
 
-      {/* Modals */}
+      {/* Create Modal */}
       <CreateFuelModal 
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onFuelCreated={handleFuelCreated}
         companyId={state.currentUser?.companyId}
-      />
-
-      {/* <EditFuelModal 
-        isOpen={isEditModalOpen}
-        onClose={() => setIsEditModalOpen(false)}
-        item={editingItem}
-        onFuelUpdated={handleFuelUpdated}
-      /> */}
-
-      <ConfirmDialog
-        isOpen={isDeleteDialogOpen}
-        onClose={() => setIsDeleteDialogOpen(false)}
-        onConfirm={handleDelete}
-        title={`Delete ${getItemType()}`}
-        message={`Are you sure you want to delete "${deletingItem?.name}"? This action cannot be undone.`}
-        confirmText="Delete"
-        confirmVariant="danger"
       />
     </div>
   );

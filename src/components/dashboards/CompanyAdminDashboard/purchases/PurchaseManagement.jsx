@@ -202,7 +202,7 @@ const PurchaseManagement = () => {
   };
 
   const formatCurrency = (amount) => {
-    return `$${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `Ksh ${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const handleViewDetails = async (purchase) => {
@@ -397,7 +397,7 @@ const PurchaseManagement = () => {
               title="Total Spent"
               value={stats.totalSpent}
               precision={2}
-              prefix="$"
+              prefix="Ksh"
               valueStyle={{ color: '#52c41a' }}
             />
           </Card>
@@ -408,7 +408,7 @@ const PurchaseManagement = () => {
               title="Total Tax"
               value={stats.totalTax}
               precision={2}
-              prefix="$"
+              prefix="Ksh"
               valueStyle={{ color: '#722ed1' }}
             />
           </Card>
@@ -419,7 +419,7 @@ const PurchaseManagement = () => {
               title="Total Discount"
               value={stats.totalDiscount}
               precision={2}
-              prefix="$"
+              prefix="Ksh"
               valueStyle={{ color: '#fa8c16' }}
             />
           </Card>

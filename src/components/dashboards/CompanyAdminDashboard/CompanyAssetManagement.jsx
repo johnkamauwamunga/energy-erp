@@ -1,10 +1,53 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Plus, Eye, Edit, Fuel, Zap, Package, Link, RefreshCw, AlertCircle, Trash2, Search, Filter } from 'lucide-react';
-import { Button, Input, Select } from '../../../components/ui';
+import {
+  Card,
+  Table,
+  Button,
+  Tag,
+  Space,
+  Input,
+  Select,
+  Modal,
+  Row,
+  Col,
+  Typography,
+  Divider,
+  Alert,
+  Tabs,
+  Statistic,
+  Grid,
+  Dropdown,
+  Menu,
+  Tooltip,
+  Empty,
+  Spin
+} from 'antd';
+import {
+  PlusOutlined,
+  EyeOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  SearchOutlined,
+  FilterOutlined,
+  ReloadOutlined,
+  ExclamationCircleOutlined,
+  DatabaseOutlined,
+  ThunderboltOutlined,
+  ShopOutlined,
+  BuildOutlined,
+  LinkOutlined,
+  MoreOutlined
+} from '@ant-design/icons';
 import { useApp } from '../../../context/AppContext';
 import CreateAssetModal from './CreateAssetModal';
 import AssetAttachmentsTab from '../../features/assets/AssetAttachmentsTab';
 import { assetService } from '../../../services/assetService/assetService';
+
+const { Title, Text } = Typography;
+const { TabPane } = Tabs;
+const { Option } = Select;
+const { useBreakpoint } = Grid;
+const { confirm } = Modal;
 
 const CompanyAssetManagement = () => {
   const { state, dispatch } = useApp();
@@ -17,46 +60,16 @@ const CompanyAssetManagement = () => {
   const [retryCount, setRetryCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const screens = useBreakpoint();
 
-  const tabs = [
-    { id: 'all', label: 'All Assets', icon: Package },
-    { id: 'STORAGE_TANK', label: 'Tanks', icon: Fuel },
-    { id: 'FUEL_PUMP', label: 'Pumps', icon: Zap },
-    { id: 'ISLAND', label: 'Islands', icon: Package },
-    { id: 'WAREHOUSE', label: 'Warehouses', icon: Building2 },
-    { id: 'attachments', label: 'Attachments', icon: Link }
+  const assetTypes = [
+    { key: 'STORAGE_TANK', label: 'Tanks', icon: DatabaseOutlined, color: 'blue' },
+    { key: 'FUEL_PUMP', label: 'Pumps', icon: ThunderboltOutlined, color: 'orange' },
+    { key: 'ISLAND', label: 'Islands', icon: ShopOutlined, color: 'green' },
+    { key: 'WAREHOUSE', label: 'Warehouses', icon: BuildOutlined, color: 'purple' },
   ];
 
-  // Get assets based on tab selection
-  const getFilteredAssets = () => {
-    if (!assets || !Array.isArray(assets)) return [];
-    
-    let filtered = assets;
-    
-    // Filter by tab
-    if (activeTab !== 'all') {
-      filtered = filtered.filter(asset => asset.type === activeTab);
-    }
-    
-    // Filter by search query
-    if (searchQuery) {
-      filtered = filtered.filter(asset => 
-        asset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        asset.id.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-    
-    // Filter by status
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(asset => asset.status === statusFilter);
-    }
-    
-    return filtered;
-  };
-
-  const filteredAssets = getFilteredAssets();
-
-  // Load assets from backend based on user role
+  // Load assets from backend
   const loadAssetsFromBackend = async () => {
     try {
       setLoading(true);
@@ -65,18 +78,14 @@ const CompanyAssetManagement = () => {
       const currentUser = state.currentUser;
       let assetsData;
       
-      // Choose the right API endpoint based on user role
       if (currentUser.role === 'SUPER_ADMIN') {
         assetsData = await assetService.getAssets();
       } else if (currentUser.role === 'COMPANY_ADMIN' || currentUser.role === 'COMPANY_MANAGER') {
-        // Make sure companyId exists
         if (!currentUser.companyId) {
           throw new Error('Company ID not found for user');
         }
         assetsData = await assetService.getCompanyAssets(currentUser.companyId);
-        console.log("Company admin sees ",currentUser.companyId);
       } else if (currentUser.role === 'STATION_MANAGER' || currentUser.role === 'SUPERVISOR') {
-        // Make sure stationId exists
         if (!currentUser.stationId) {
           throw new Error('Station ID not found for user');
         }
@@ -85,10 +94,7 @@ const CompanyAssetManagement = () => {
         assetsData = await assetService.getAssets();
       }
       
-      // Set the local assets state
       setAssets(assetsData || []);
-      
-      // Also update the global state if needed
       dispatch({ type: 'SET_ASSETS', payload: assetsData || [] });
     } catch (error) {
       console.error('Failed to load assets:', error);
@@ -99,24 +105,20 @@ const CompanyAssetManagement = () => {
     }
   };
 
-  // Load assets on component mount and when retryCount changes
   useEffect(() => {
     loadAssetsFromBackend();
   }, [retryCount]);
 
   const openCreateModal = (type) => {
-    // Check if user has permission to create assets
     if (!canCreateAssets()) {
       setError('You do not have permission to create assets');
       return;
     }
-    
     setAssetType(type);
     setIsCreateModalOpen(true);
   };
 
   const handleAssetCreated = () => {
-    // Refresh assets after creating a new one
     loadAssetsFromBackend();
   };
 
@@ -124,292 +126,416 @@ const CompanyAssetManagement = () => {
     setRetryCount(prev => prev + 1);
   };
 
-  const getStatusBadgeClass = (status) => {
-    switch (status) {
-      case 'ASSIGNED': return 'bg-green-100 text-green-800';
-      case 'OPERATIONAL': return 'bg-blue-100 text-blue-800';
-      case 'MAINTENANCE': return 'bg-yellow-100 text-yellow-800';
-      case 'DECOMMISSIONED': return 'bg-red-100 text-red-800';
-      case 'REGISTERED': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
+  const getStatusConfig = (status) => {
+    const statusConfig = {
+      'ASSIGNED': { color: 'green', text: 'Assigned' },
+      'OPERATIONAL': { color: 'blue', text: 'Operational' },
+      'MAINTENANCE': { color: 'orange', text: 'Maintenance' },
+      'DECOMMISSIONED': { color: 'red', text: 'Decommissioned' },
+      'REGISTERED': { color: 'default', text: 'Registered' }
+    };
+    return statusConfig[status] || { color: 'default', text: status };
   };
 
   const getAssetIcon = (type) => {
-    switch (type) {
-      case 'STORAGE_TANK': return <Fuel className="w-5 h-5 text-blue-500" />;
-      case 'FUEL_PUMP': return <Zap className="w-5 h-5 text-yellow-500" />;
-      case 'ISLAND': return <Package className="w-5 h-5 text-green-500" />;
-      case 'WAREHOUSE': return <Building2 className="w-5 h-5 text-purple-500" />;
-      default: return <Package className="w-5 h-5 text-gray-500" />;
-    }
+    const assetType = assetTypes.find(t => t.key === type);
+    return assetType ? React.createElement(assetType.icon, { 
+      style: { color: assetType.color } 
+    }) : <DatabaseOutlined />;
   };
 
-  // Safe count function for assets
-  const getAssetCount = (tabId) => {
+  const getAssetCount = (tabKey) => {
     if (!assets || !Array.isArray(assets)) return 0;
-    
-    if (tabId === 'all') return assets.length;
-    return assets.filter(a => a.type === tabId).length;
+    if (tabKey === 'all') return assets.length;
+    return assets.filter(a => a.type === tabKey).length;
   };
 
-  // Check if user can create assets
   const canCreateAssets = () => {
     return ['SUPER_ADMIN', 'COMPANY_ADMIN', 'COMPANY_MANAGER'].includes(state.currentUser.role);
   };
 
-  const handleDeleteAsset = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this asset?')) return;
-    
-    try {
-      await assetService.deleteAsset(id);
-      // Refresh the assets list
-      loadAssetsFromBackend();
-    } catch (error) {
-      setError(error.message || 'Failed to delete asset');
-    }
+  const handleDeleteAsset = (asset) => {
+    confirm({
+      title: 'Are you sure you want to delete this asset?',
+      icon: <ExclamationCircleOutlined />,
+      content: `This will permanently delete ${asset.name} (${asset.type.replace('_', ' ')}).`,
+      okText: 'Yes, Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          await assetService.deleteAsset(asset.id);
+          loadAssetsFromBackend();
+        } catch (error) {
+          setError(error.message || 'Failed to delete asset');
+        }
+      },
+    });
   };
+
+  // Filter assets based on search and filters
+  const filteredAssets = assets.filter(asset => {
+    const matchesSearch = !searchQuery || 
+      asset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      asset.id.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesStatus = statusFilter === 'all' || asset.status === statusFilter;
+    const matchesTab = activeTab === 'all' || asset.type === activeTab;
+    
+    return matchesSearch && matchesStatus && matchesTab;
+  });
+
+  // Table columns
+  const columns = [
+    {
+      title: 'Asset',
+      dataIndex: 'name',
+      key: 'name',
+      render: (name, record) => (
+        <Space>
+          {getAssetIcon(record.type)}
+          <div>
+            <div style={{ fontWeight: 500 }}>{name}</div>
+          </div>
+        </Space>
+      ),
+    },
+    {
+      title: 'Type',
+      dataIndex: 'type',
+      key: 'type',
+      render: (type) => (
+        <Tag color="blue">
+          {type.replace('_', ' ')}
+        </Tag>
+      ),
+      responsive: ['md'],
+    },
+    {
+      title: 'Capacity',
+      dataIndex: 'tank',
+      key: 'capacity',
+      render: (tank) => (
+        <Text>
+          {tank?.capacity ? `${tank.capacity} L` : 'N/A'}
+        </Text>
+      ),
+      responsive: ['lg'],
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status) => {
+        const config = getStatusConfig(status);
+        return <Tag color={config.color}>{config.text}</Tag>;
+      },
+    },
+    {
+      title: 'Station',
+      dataIndex: 'station',
+      key: 'station',
+      render: (station, record) => (
+        <Text>
+          {station ? station.name : record.stationId ? 'Unknown Station' : 'Unassigned'}
+        </Text>
+      ),
+      responsive: ['lg'],
+    },
+    {
+      title: 'Company',
+      dataIndex: 'companyId',
+      key: 'company',
+      render: (companyId) => (
+        <Text>
+          {state.currentUser.role === 'SUPER_ADMIN' && companyId 
+            ? `Company ${companyId.substring(0, 8)}...` 
+            : '-'}
+        </Text>
+      ),
+      responsive: ['xl'],
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_, record) => (
+        <Space size="small">
+          <Tooltip title="View">
+            <Button type="text" icon={<EyeOutlined />} size="small" />
+          </Tooltip>
+          <Tooltip title="Edit">
+            <Button type="text" icon={<EditOutlined />} size="small" />
+          </Tooltip>
+          <Tooltip title="Delete">
+            <Button 
+              type="text" 
+              icon={<DeleteOutlined />} 
+              size="small" 
+              danger
+              onClick={() => handleDeleteAsset(record)}
+            />
+          </Tooltip>
+        </Space>
+      ),
+    },
+  ];
+
+  // Mobile card view
+  const renderMobileCard = (asset) => (
+    <Card key={asset.id} size="small" style={{ marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <Space direction="vertical" size="small" style={{ flex: 1 }}>
+          <Space>
+            {getAssetIcon(asset.type)}
+            <div>
+              <Text strong>{asset.name}</Text>
+              <div>
+                <Tag size="small" color="blue">
+                  {asset.type.replace('_', ' ')}
+                </Tag>
+                <Tag size="small" color={getStatusConfig(asset.status).color}>
+                  {getStatusConfig(asset.status).text}
+                </Tag>
+              </div>
+            </div>
+          </Space>
+          <Text type="secondary" style={{ fontSize: '12px' }}>
+            ID: {asset.id.substring(0, 8)}...
+          </Text>
+          {asset.tank?.capacity && (
+            <Text>Capacity: {asset.tank.capacity} L</Text>
+          )}
+          <Text>
+            Station: {asset.station ? asset.station.name : 'Unassigned'}
+          </Text>
+        </Space>
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'view', label: 'View', icon: <EyeOutlined /> },
+              { key: 'edit', label: 'Edit', icon: <EditOutlined /> },
+              { key: 'delete', label: 'Delete', icon: <DeleteOutlined />, danger: true },
+            ],
+            onClick: ({ key }) => {
+              if (key === 'delete') handleDeleteAsset(asset);
+            }
+          }}
+          trigger={['click']}
+        >
+          <Button type="text" icon={<MoreOutlined />} />
+        </Dropdown>
+      </div>
+    </Card>
+  );
 
   if (loading) {
     return (
-      <div className="p-6 flex justify-center items-center h-64">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading assets...</p>
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 400 }}>
+        <Spin size="large" />
       </div>
     );
   }
 
   if (error && assets.length === 0) {
     return (
-      <div className="p-6 flex justify-center items-center h-64">
-        <div className="text-center">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Failed to load assets</h3>
-          <p className="text-gray-600 mb-4">{error}</p>
-          <Button onClick={handleRetry} icon={RefreshCw}>
-            Try Again
-          </Button>
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 400, flexDirection: 'column' }}>
+        <ExclamationCircleOutlined style={{ fontSize: 48, color: '#ff4d4f', marginBottom: 16 }} />
+        <Title level={4}>Failed to load assets</Title>
+        <Text type="secondary" style={{ marginBottom: 16 }}>{error}</Text>
+        <Button type="primary" icon={<ReloadOutlined />} onClick={handleRetry}>
+          Try Again
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h3 className="text-2xl font-bold text-gray-900 mb-2">Assets Management</h3>
-          <p className="text-gray-600">
+    <div style={{ padding: screens.xs ? 16 : 24 }}>
+      {/* Header Section */}
+      <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
+        <Col>
+          <Title level={2} style={{ margin: 0 }}>Assets Management</Title>
+          <Text type="secondary">
             {state.currentUser.role === 'SUPER_ADMIN' 
               ? 'All assets across all companies' 
               : state.currentUser.role === 'COMPANY_ADMIN' || state.currentUser.role === 'COMPANY_MANAGER' 
                 ? 'Your company assets' 
                 : 'Assets assigned to your station'
             }
-          </p>
-        </div>
+          </Text>
+        </Col>
         {canCreateAssets() && (
-          <div className="flex space-x-3">
-            <Button 
-              onClick={() => openCreateModal('STORAGE_TANK')} 
-              icon={Fuel} 
-              variant="cosmic"
-              size="sm"
+          <Col>
+            <Dropdown
+              menu={{
+                items: assetTypes.map(type => ({
+                  key: type.key,
+                  label: `Add ${type.label}`,
+                  icon: React.createElement(type.icon),
+                })),
+                onClick: ({ key }) => openCreateModal(key)
+              }}
+              trigger={['click']}
             >
-              Add Tank
-            </Button>
-            <Button 
-              onClick={() => openCreateModal('FUEL_PUMP')} 
-              icon={Zap} 
-              variant="cosmic"
-              size="sm"
-            >
-              Add Pump
-            </Button>
-            <Button 
-              onClick={() => openCreateModal('ISLAND')} 
-              icon={Package} 
-              variant="cosmic"
-              size="sm"
-            >
-              Add Island
-            </Button>
-            <Button 
-              onClick={() => openCreateModal('WAREHOUSE')} 
-              icon={Building2} 
-              variant="cosmic"
-              size="sm"
-            >
-              Add Warehouse
-            </Button>
-          </div>
+              <Button type="primary" icon={<PlusOutlined />} size={screens.xs ? 'middle' : 'large'}>
+                {screens.xs ? 'Add' : 'Add Asset'}
+              </Button>
+            </Dropdown>
+          </Col>
         )}
-      </div>
+      </Row>
 
       {error && (
-        <div className="mb-6 p-4 bg-yellow-100 text-yellow-700 rounded-lg flex items-center">
-          <AlertCircle className="w-5 h-5 mr-2" />
-          {error}
-          <Button onClick={handleRetry} size="sm" variant="secondary" className="ml-auto">
-            <RefreshCw className="w-4 h-4 mr-1" />
-            Retry
-          </Button>
-        </div>
+        <Alert
+          message="Error"
+          description={error}
+          type="warning"
+          showIcon
+          closable
+          action={
+            <Button size="small" type="text" onClick={handleRetry}>
+              <ReloadOutlined /> Retry
+            </Button>
+          }
+          style={{ marginBottom: 16 }}
+        />
       )}
+
+      {/* Stats Overview */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        {assetTypes.map(type => (
+          <Col xs={12} sm={6} key={type.key}>
+            <Card size="small">
+              <Statistic
+                title={type.label}
+                value={getAssetCount(type.key)}
+                prefix={React.createElement(type.icon, { style: { color: type.color } })}
+              />
+            </Card>
+          </Col>
+        ))}
+      </Row>
 
       {/* Search and Filter Bar */}
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex space-x-4 items-center">
-          <div className="relative">
-            <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+      <Card style={{ marginBottom: 24 }}>
+        <Row gutter={[16, 16]} align="middle">
+          <Col xs={24} sm={12} md={8}>
             <Input
-              type="text"
               placeholder="Search assets..."
+              prefix={<SearchOutlined />}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 w-64"
+              allowClear
             />
-          </div>
-          <div className="flex items-center space-x-2">
-            <Filter className="w-5 h-5 text-gray-500" />
+          </Col>
+          <Col xs={12} sm={6} md={4}>
             <Select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-40"
+              onChange={setStatusFilter}
+              style={{ width: '100%' }}
+              suffixIcon={<FilterOutlined />}
             >
-              <option value="all">All Statuses</option>
-              <option value="REGISTERED">Registered</option>
-              <option value="OPERATIONAL">Operational</option>
-              <option value="MAINTENANCE">Maintenance</option>
-              <option value="DECOMMISSIONED">Decommissioned</option>
+              <Option value="all">All Status</Option>
+              <Option value="REGISTERED">Registered</Option>
+              <Option value="OPERATIONAL">Operational</Option>
+              <Option value="MAINTENANCE">Maintenance</Option>
+              <Option value="DECOMMISSIONED">Decommissioned</Option>
             </Select>
-          </div>
-        </div>
-        <Button onClick={loadAssetsFromBackend} icon={RefreshCw} variant="outline">
-          Refresh
-        </Button>
-      </div>
-
-      {/* Asset Type Tabs */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="flex space-x-8">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              className={`pb-3 px-1 border-b-2 font-medium text-sm flex items-center ${
-                activeTab === tab.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              onClick={() => setActiveTab(tab.id)}
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Button 
+              icon={<ReloadOutlined />} 
+              onClick={loadAssetsFromBackend}
+              style={{ width: '100%' }}
             >
-              <tab.icon className="w-4 h-4 mr-1" />
-              <span className="capitalize">{tab.label}</span>
-              {tab.id !== 'attachments' && (
-                <span className="ml-1">
-                  ({getAssetCount(tab.id)})
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
-      </div>
+              {screens.xs ? '' : 'Refresh'}
+            </Button>
+          </Col>
+        </Row>
+      </Card>
 
-      {/* Conditional rendering based on active tab */}
-      {activeTab === 'attachments' ? (
-        <AssetAttachmentsTab />
-      ) : (
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Name</th>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Type</th>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Capacity</th>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Status</th>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Station</th>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Company</th>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-900">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {filteredAssets && filteredAssets.length > 0 ? (
-                  filteredAssets.map(asset => (
-                    <tr key={asset.id} className="hover:bg-gray-50">
-                      <td className="py-4 px-6">
-                        <div className="flex items-center">
-                          <div className="mr-3">
-                            {getAssetIcon(asset.type)}
-                          </div>
-                          <div>
-                            <div className="font-medium text-gray-900">{asset.name}</div>
-                            <div className="text-sm text-gray-500">ID: {asset.id.substring(0, 8)}...</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-4 px-6 text-sm text-gray-500">
-                        {asset.type.replace('_', ' ')}
-                      </td>
-                      <td className="py-4 px-6 text-sm text-gray-500">
-                        {asset.tank?.capacity ? `${asset.tank.capacity} L` : 'N/A'}
-                      </td>
-                      <td className="py-4 px-6">
-                        <span className={`px-2 py-1 text-xs rounded-full ${getStatusBadgeClass(asset.status)}`}>
-                          {asset.status}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6 text-sm text-gray-500">
-                        {asset.station 
-                          ? asset.station.name 
-                          : asset.stationId 
-                            ? 'Unknown Station' 
-                            : 'Unassigned'}
-                      </td>
-                      <td className="py-4 px-6 text-sm text-gray-500">
-                        {state.currentUser.role === 'SUPER_ADMIN' && asset.companyId 
-                          ? `Company ${asset.companyId.substring(0, 8)}...` 
-                          : '-'}
-                      </td>
-                      <td className="py-4 px-6">
-                        <div className="flex space-x-2">
-                          <Button size="sm" variant="secondary" icon={Eye}>
-                            View
-                          </Button>
-                          <Button size="sm" variant="secondary" icon={Edit}>
-                            Edit
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            variant="danger" 
-                            icon={Trash2}
-                            onClick={() => handleDeleteAsset(asset.id)}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={8} className="py-8 px-6 text-center text-gray-500">
-                      {searchQuery || statusFilter !== 'all' 
-                        ? 'No assets match your search criteria.' 
-                        : `No ${activeTab === 'all' ? 'assets' : activeTab.toLowerCase()} found.`
-                      }
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+      {/* Main Content */}
+      <Card>
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          type={screens.xs ? "card" : "line"}
+          items={[
+            {
+              key: 'all',
+              label: (
+                <span>
+                  <DatabaseOutlined />
+                  {!screens.xs && ' All Assets'} ({getAssetCount('all')})
+                </span>
+              ),
+            },
+            ...assetTypes.map(type => ({
+              key: type.key,
+              label: (
+                <span>
+                  {React.createElement(type.icon)}
+                  {!screens.xs && ` ${type.label}`} ({getAssetCount(type.key)})
+                </span>
+              ),
+            })),
+            {
+              key: 'attachments',
+              label: (
+                <span>
+                  <LinkOutlined />
+                  {!screens.xs && ' Attachments'}
+                </span>
+              ),
+            }
+          ]}
+        />
+
+        {activeTab === 'attachments' ? (
+          <AssetAttachmentsTab />
+        ) : screens.xs ? (
+          <div style={{ marginTop: 16 }}>
+            {filteredAssets.length > 0 ? (
+              filteredAssets.map(renderMobileCard)
+            ) : (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  searchQuery || statusFilter !== 'all' 
+                    ? 'No assets match your search criteria' 
+                    : `No ${activeTab === 'all' ? 'assets' : 'assets found'}`
+                }
+              />
+            )}
           </div>
-        </div>
-      )}
-      
-      {/* Asset Creation Modal */}
+        ) : (
+          <Table
+            columns={columns}
+            dataSource={filteredAssets}
+            rowKey="id"
+            pagination={{ 
+              pageSize: 10,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total, range) => 
+                `${range[0]}-${range[1]} of ${total} items`
+            }}
+            locale={{
+              emptyText: (
+                <Empty
+                  description={
+                    searchQuery || statusFilter !== 'all' 
+                      ? 'No assets match your search criteria' 
+                      : `No ${activeTab === 'all' ? 'assets' : 'assets found'}`
+                  }
+                />
+              )
+            }}
+          />
+        )}
+      </Card>
+
+      {/* Create Asset Modal */}
       <CreateAssetModal 
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}

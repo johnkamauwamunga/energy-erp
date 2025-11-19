@@ -206,6 +206,81 @@ export const purchaseService = {
     }
   },
 
+  // =====================
+// STATION-SPECIFIC PURCHASE METHODS
+// =====================
+
+// Get purchases by specific station with enhanced data
+getUpdatedPurchasesByStation: async (stationId, filters = {}) => {
+  logger.info(`Fetching purchases for station: ${stationId}`, filters);
+  
+  try {
+    const params = new URLSearchParams();
+    params.append('stationId', stationId);
+    
+    // Handle array filters
+    Object.keys(filters).forEach(key => {
+      const value = filters[key];
+      if (value !== undefined && value !== null && value !== '') {
+        if (Array.isArray(value)) {
+          value.forEach(item => params.append(key, item));
+        } else {
+          params.append(key, value);
+        }
+      }
+    });
+    
+    const url = `/purchases/station/${stationId}?${params.toString()}`;
+    debugRequest('GET', url);
+    const response = await apiService.get(url);
+    debugResponse('GET', url, response);
+    
+    const result = handleResponse(response, 'fetching station purchases');
+    
+    // Enhance the response data with frontend formatting
+    if (result.purchases) {
+      result.purchases = result.purchases.map(purchase => 
+        purchaseService.formatPurchase(purchase)
+      );
+    }
+    
+    return result;
+  } catch (error) {
+    throw handleError(error, 'fetching station purchases', 'Failed to fetch station purchases');
+  }
+},
+
+// Get purchase analytics for specific station
+getPurchaseAnalyticsByStation: async (stationId, filters = {}) => {
+  logger.info(`Fetching purchase analytics for station: ${stationId}`, filters);
+  
+  try {
+    const params = new URLSearchParams();
+    
+    // Handle filters
+    Object.keys(filters).forEach(key => {
+      if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+        params.append(key, filters[key]);
+      }
+    });
+    
+    const url = params.toString() 
+      ? `/purchases/station/${stationId}/analytics?${params.toString()}`
+      : `/purchases/station/${stationId}/analytics`;
+    
+    debugRequest('GET', url);
+    const response = await apiService.get(url);
+    debugResponse('GET', url, response);
+    
+    const analytics = handleResponse(response, 'fetching station purchase analytics');
+    
+    // Enhance analytics data with frontend formatting
+    return purchaseService.formatStationAnalytics(analytics);
+  } catch (error) {
+    throw handleError(error, 'fetching station purchase analytics', 'Failed to fetch station purchase analytics');
+  }
+},
+
   deletePurchase: async (purchaseId) => {
     logger.info(`Deleting purchase: ${purchaseId}`);
     
@@ -568,6 +643,131 @@ export const purchaseService = {
       throw handleError(error, 'fetching station purchases', 'Failed to fetch station purchases');
     }
   },
+
+  // =====================
+// ANALYTICS FORMATTING
+// =====================
+
+formatStationAnalytics: (analytics) => {
+  if (!analytics) return null;
+  
+  const {
+    station,
+    summary,
+    byStatus,
+    byType,
+    topSuppliers,
+    monthlyTrend,
+    productAnalysis,
+    deliveryPerformance
+  } = analytics;
+  
+  return {
+    station: station ? {
+      ...station,
+      displayName: `${station.name} - ${station.location || 'No Location'}`
+    } : null,
+    
+    summary: summary ? {
+      ...summary,
+      totalValueDisplay: `$${(summary.totalValue || 0).toLocaleString(undefined, { 
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2 
+      })}`,
+      averagePurchaseValueDisplay: `$${(summary.averagePurchaseValue || 0).toLocaleString(undefined, { 
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2 
+      })}`,
+      formattedPeriod: summary.period || 'All Time'
+    } : null,
+    
+    byStatus: byStatus ? byStatus.map(status => ({
+      ...status,
+      statusLabel: purchaseService.getStatusLabel(status.status),
+      statusColor: purchaseService.getStatusColor(status.status),
+      countDisplay: status._count?.id?.toLocaleString() || '0',
+      valueDisplay: `$${(status._sum?.netPayable || 0).toLocaleString(undefined, { 
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2 
+      })}`
+    })) : [],
+    
+    byType: byType ? byType.map(type => ({
+      ...type,
+      typeLabel: type.type === 'FUEL' ? 'Fuel' : 
+                 type.type === 'NON_FUEL' ? 'Non-Fuel' : 'Mixed',
+      typeColor: type.type === 'FUEL' ? 'blue' : 
+                 type.type === 'NON_FUEL' ? 'green' : 'purple',
+      countDisplay: type._count?.id?.toLocaleString() || '0',
+      valueDisplay: `$${(type._sum?.netPayable || 0).toLocaleString(undefined, { 
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2 
+      })}`
+    })) : [],
+    
+    topSuppliers: topSuppliers ? topSuppliers.map(supplier => ({
+      ...supplier,
+      totalSpentDisplay: `$${(supplier.totalSpent || 0).toLocaleString(undefined, { 
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2 
+      })}`,
+      currentBalanceDisplay: supplier.currentBalance ? 
+        `$${supplier.currentBalance.toLocaleString(undefined, { 
+          minimumFractionDigits: 2, 
+          maximumFractionDigits: 2 
+        })}` : 'N/A',
+      creditUtilization: supplier.creditLimit && supplier.currentBalance ? 
+        (supplier.currentBalance / supplier.creditLimit) * 100 : null,
+      creditUtilizationDisplay: supplier.creditLimit && supplier.currentBalance ? 
+        `${((supplier.currentBalance / supplier.creditLimit) * 100).toFixed(1)}%` : 'N/A'
+    })) : [],
+    
+    monthlyTrend: monthlyTrend ? monthlyTrend.map(month => ({
+      ...month,
+      monthDisplay: new Date(month.month).toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'short' 
+      }),
+      purchaseCountDisplay: (month.purchaseCount || 0).toLocaleString(),
+      totalValueDisplay: `$${(month.totalValue || 0).toLocaleString(undefined, { 
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2 
+      })}`
+    })) : [],
+    
+    productAnalysis: productAnalysis ? productAnalysis.map(product => ({
+      ...product,
+      totalAmountDisplay: `$${(product.totalAmount || 0).toLocaleString(undefined, { 
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2 
+      })}`,
+      totalQuantityDisplay: product.unit === 'LITERS' ? 
+        `${(product.totalQuantity || 0).toLocaleString(undefined, { 
+          minimumFractionDigits: 2, 
+          maximumFractionDigits: 2 
+        })} L` : 
+        `${(product.totalQuantity || 0).toLocaleString()} units`,
+      unitPrice: product.totalQuantity > 0 ? 
+        (product.totalAmount / product.totalQuantity) : 0,
+      unitPriceDisplay: product.totalQuantity > 0 ? 
+        `$${(product.totalAmount / product.totalQuantity).toLocaleString(undefined, { 
+          minimumFractionDigits: 2, 
+          maximumFractionDigits: 2 
+        })}` : 'N/A'
+    })) : [],
+    
+    deliveryPerformance: deliveryPerformance ? {
+      ...deliveryPerformance,
+      onTimeRateDisplay: `${(deliveryPerformance.onTimeRate || 0).toFixed(1)}%`,
+      performanceStatus: (deliveryPerformance.onTimeRate || 0) >= 90 ? 'excellent' :
+                        (deliveryPerformance.onTimeRate || 0) >= 80 ? 'good' :
+                        (deliveryPerformance.onTimeRate || 0) >= 70 ? 'fair' : 'poor',
+      performanceColor: (deliveryPerformance.onTimeRate || 0) >= 90 ? 'green' :
+                       (deliveryPerformance.onTimeRate || 0) >= 80 ? 'blue' :
+                       (deliveryPerformance.onTimeRate || 0) >= 70 ? 'orange' : 'red'
+    } : null
+  };
+},
 
   // Get pending approvals
   getPendingApprovals: async (filters = {}) => {

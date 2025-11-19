@@ -83,7 +83,7 @@ const StationManagerDashboard = () => {
       case 'debtor':
         return <DebtorManagementTabs />;
       case 'reports':
-        return <StationDebug />;
+        return <AssetTopologyDebug />;
       case 'activity':
         return <SimpleIslandPumpTest />;
       case 'wet_stock':
