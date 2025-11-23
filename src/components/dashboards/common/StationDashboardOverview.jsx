@@ -415,9 +415,9 @@ const StationDashboardOverview = () => {
               {shiftId ? (
                 <Space direction="vertical" size={0}>
                   <Text>ReF#: {currentShift?.shiftNumber}</Text>
-                  <Text type="secondary" style={{ fontSize: '12px' }}>
+                  {/* <Text type="secondary" style={{ fontSize: '12px' }}>
                     Started: {currentShift.startTime ? new Date(currentShift.startTime).toLocaleString() : 'N/A'}
-                  </Text>
+                  </Text> */}
                 </Space>
               ) : (
                 <Text style={{ color: config.textColor }}>No shift currently active</Text>

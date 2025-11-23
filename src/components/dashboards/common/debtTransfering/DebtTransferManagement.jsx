@@ -11,14 +11,17 @@ import {
   Divider,
   Statistic,
   Alert,
-  Spin
+  Spin,
+  message,
+  Badge
 } from 'antd';
 import {
   SwapOutlined,
   TransactionOutlined,
   HistoryOutlined,
   BarChartOutlined,
-  ReloadOutlined
+  ReloadOutlined,
+  PlusOutlined
 } from '@ant-design/icons';
 import TransactionList from './TransactionList';
 import TransferList from './TransferList';
@@ -30,13 +33,14 @@ const { Title, Text } = Typography;
 const { TabPane } = Tabs;
 
 const DebtTransferManagement = () => {
-  const [activeTab, setActiveTab] = useState('operations');
+  const [activeTab, setActiveTab] = useState('transactions');
   const [transactions, setTransactions] = useState([]);
   const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [transactionFilters, setTransactionFilters] = useState({});
   const [transferFilters, setTransferFilters] = useState({});
   const [summary, setSummary] = useState(null);
+  const [showTransferModal, setShowTransferModal] = useState(false);
 
   // Fetch transactions
   const fetchTransactions = async (filters = {}) => {
@@ -82,10 +86,20 @@ const DebtTransferManagement = () => {
     fetchSummary();
   }, []);
 
-  const handleTransferSuccess = () => {
+  const handleTransferSuccess = (messageText = 'Operation completed successfully!') => {
+    // Show success message
+    message.success(messageText, 3); // Auto-dismiss after 3 seconds
+    
+    // Refresh data
     fetchTransactions(transactionFilters);
     fetchTransfers(transferFilters);
     fetchSummary();
+    
+    // Close modal
+    setShowTransferModal(false);
+    
+    // Optionally switch to transactions tab to show the updated list
+    setActiveTab('transactions');
   };
 
   const handleTransactionFiltersChange = (newFilters) => {
@@ -102,6 +116,7 @@ const DebtTransferManagement = () => {
     fetchTransactions(transactionFilters);
     fetchTransfers(transferFilters);
     fetchSummary();
+    message.info('Data refreshed successfully', 2);
   };
 
   return (
@@ -124,6 +139,15 @@ const DebtTransferManagement = () => {
           </Col>
           <Col xs={24} md={12}>
             <Row gutter={[8, 8]} justify="end">
+              <Col>
+                <Button
+                  icon={<PlusOutlined />}
+                  type="primary"
+                  onClick={() => setShowTransferModal(true)}
+                >
+                  New Transfer
+                </Button>
+              </Col>
               <Col>
                 <Button
                   icon={<ReloadOutlined />}
@@ -185,43 +209,22 @@ const DebtTransferManagement = () => {
           <TabPane
             tab={
               <span>
-                <TransactionOutlined />
-                Transfer Operations
-              </span>
-            }
-            key="operations"
-          >
-            <TransferForms onTransferSuccess={handleTransferSuccess} />
-          </TabPane>
-
-          <TabPane
-            tab={
-              <span>
                 <HistoryOutlined />
                 Transaction History
+                <Badge count={transactions.length} offset={[10, -5]} />
               </span>
             }
             key="transactions"
           >
-            <Card 
-              title="Debt Transactions" 
-              size="small"
-              extra={
-                <Text strong>
-                  {transactions.length} transactions
-                </Text>
-              }
-            >
-              <TransactionList
-                transactions={transactions}
-                loading={loading}
-                filters={transactionFilters}
-                onFiltersChange={handleTransactionFiltersChange}
-                onRefresh={() => fetchTransactions(transactionFilters)}
-                showFilters={true}
-                pagination={{ pageSize: 20 }}
-              />
-            </Card>
+            <TransactionList
+              transactions={transactions}
+              loading={loading}
+              filters={transactionFilters}
+              onFiltersChange={handleTransactionFiltersChange}
+              onRefresh={() => fetchTransactions(transactionFilters)}
+              showFilters={true}
+              pagination={{ pageSize: 20 }}
+            />
           </TabPane>
 
           <TabPane
@@ -229,29 +232,20 @@ const DebtTransferManagement = () => {
               <span>
                 <BarChartOutlined />
                 Transfer History
+                <Badge count={transfers.length} offset={[10, -5]} />
               </span>
             }
             key="transfers"
           >
-            <Card 
-              title="Account Transfers" 
-              size="small"
-              extra={
-                <Text strong>
-                  {transfers.length} transfers
-                </Text>
-              }
-            >
-              <TransferList
-                transfers={transfers}
-                loading={loading}
-                filters={transferFilters}
-                onFiltersChange={handleTransferFiltersChange}
-                onRefresh={() => fetchTransfers(transferFilters)}
-                showFilters={true}
-                pagination={{ pageSize: 20 }}
-              />
-            </Card>
+            <TransferList
+              transfers={transfers}
+              loading={loading}
+              filters={transferFilters}
+              onFiltersChange={handleTransferFiltersChange}
+              onRefresh={() => fetchTransfers(transferFilters)}
+              showFilters={true}
+              pagination={{ pageSize: 20 }}
+            />
           </TabPane>
 
           <TabPane
@@ -267,6 +261,13 @@ const DebtTransferManagement = () => {
           </TabPane>
         </Tabs>
       </Card>
+
+      {/* Transfer Modal */}
+      <TransferForms
+        visible={showTransferModal}
+        onClose={() => setShowTransferModal(false)}
+        onSuccess={handleTransferSuccess}
+      />
     </div>
   );
 };
