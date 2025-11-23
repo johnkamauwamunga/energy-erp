@@ -96,6 +96,7 @@ const IslandSalesStep = ({
 
 
   // Load cumulative expenses for each island in the shift
+// Load cumulative expenses for each island in the shift - FIXED VERSION
 const loadIslandExpenses = async (islands) => {
   if (!shiftId) return;
 
@@ -119,22 +120,25 @@ const loadIslandExpenses = async (islands) => {
       try {
         const result = await expenseService.getExpensesByShiftAndIsland(shiftId, island.islandId);
         console.log("the result from expense ", result.data);
+
+        console.log("the current shift is ", shiftId);
         
-        // ✅ FIXED: Use result.data directly (it's already the array of expenses)
-        const expenses = result.data || [];
+        // ✅ FIXED: Filter expenses to only include current shift expenses
+        const allExpenses = result.data || [];
+        const currentShiftExpenses = allExpenses.filter(expense => expense.shiftId === shiftId);
         
-        // ✅ FIXED: Calculate cumulative amount from the expenses array
-        const cumulativeAmount = expenses.reduce((total, expense) => total + (expense.amount || 0), 0);
+        // ✅ FIXED: Calculate cumulative amount from CURRENT SHIFT expenses only
+        const cumulativeAmount = currentShiftExpenses.reduce((total, expense) => total + (expense.amount || 0), 0);
         
-        console.log(`📊 Island ${island.islandId}: ${expenses.length} expenses, Total: KES ${cumulativeAmount}`);
+        console.log(`📊 Island ${island.islandId}: ${currentShiftExpenses.length} expenses for current shift, Total: KES ${cumulativeAmount}`);
         
         return { 
           index, 
           result: {
             ...result,
             cumulativeAmount,
-            count: expenses.length,
-            expenses: expenses
+            count: currentShiftExpenses.length,
+            expenses: currentShiftExpenses // Only current shift expenses
           }
         };
       } catch (error) {
@@ -161,7 +165,7 @@ const loadIslandExpenses = async (islands) => {
 
     setIslandExpenses(expensesData);
 
-    // Update expenses with cumulative amounts
+    // Update expenses with cumulative amounts (from current shift only)
     const updatedExpenses = { ...expenses };
     Object.entries(expensesData).forEach(([index, data]) => {
       updatedExpenses[index] = data.cumulativeAmount || 0;

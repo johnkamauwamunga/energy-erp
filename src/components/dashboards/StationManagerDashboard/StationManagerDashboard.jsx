@@ -4,7 +4,7 @@ import { logout } from '../../../context/AppContext/actions';
 import { 
   BarChart3, Activity, Clock, Users, FileText, 
   Flame, X, Menu, MapPin, DollarSign, Truck, Building2, Fuel, LogOut, User, Settings,CoinsIcon,BookAIcon,
-  Users2Icon
+  Users2Icon,HandCoinsIcon
 } from 'lucide-react';
 import { Button } from '../../ui';
 import DashboardOverview from '../../../components/dashboards/common/CompanyOverview';
@@ -25,6 +25,7 @@ import SimpleIslandPumpTest from './SimpleIslandPumpTest';
 import TankReconciliationManagement from '../common/wetstock-reconcilliation/TankReconciliation';
 import ExpenseManagement from '../common/expenses/ExpenseManagement';
 import AccountsManagement from '../common/accounts/AccountManagement';
+import DebtTransferManagement from '../common/debtTransfering/DebtTransferManagement';
 
 
 const StationManagerDashboard = () => {
@@ -54,6 +55,7 @@ const StationManagerDashboard = () => {
     { id: 'accounts', label: 'Accounts', icon: BookAIcon },
     { id: 'sales', label: 'Sales', icon: DollarSign },
     { id: 'debtor', label: 'Debtors', icon: Users2Icon },
+    {id: 'debt-transfer', label: 'Debt Transfer',icon:HandCoinsIcon},
     { id: 'reports', label: 'Reports', icon: FileText },
     { id: 'wet_stock', label: 'Wet Stock', icon: Fuel},
     { id: 'activity', label: 'Activity Logs', icon: Activity }
@@ -82,6 +84,8 @@ const StationManagerDashboard = () => {
         return <SalesManagement />;
       case 'debtor':
         return <DebtorManagementTabs />;
+        case 'debt-transfer':
+          return <DebtTransferManagement />;
       case 'reports':
         return <AssetTopologyDebug />;
       case 'activity':

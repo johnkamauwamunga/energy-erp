@@ -1,4 +1,4 @@
-import React from 'react';
+import React,{useState, useEffect} from 'react';
 import { 
   DollarSign, Building2, MapPin, Truck, 
   CheckCircle, Clock, AlertTriangle, Plus, FileText, Users
@@ -8,11 +8,15 @@ import { useApp } from '../../../context/AppContext';
 
 const CompanyOverview = () => {
   const { state } = useApp();
+  // const [checkingShift, setCheckingShift]=useState(false);
+  // const [hasOpenShift, setHasOpenShift]=useState(false);
+  // const [currentShift, setCurrentShift]=useState(null);
   
   const totalSales = state.sales.dailyAggregation?.['2024-01-25']?.companyTotal || 3052450;
   const activeStations = state.serviceStations.filter(s => s.status === 'active').length;
   const totalIslands = Object.keys(state.islands).length;
   const todayOffloads = state.fuelManagement.offloadLogs?.length || 12;
+
 
   return (
     <div className="p-6">

@@ -38,9 +38,12 @@ import { userService } from '../../../services/userService/userService';
 import { debtorService } from '../../../services/debtorService/debtorService';
 import { purchaseService } from '../../../services/purchaseService/purchaseService';
 import { assetService } from '../../../services/assetService/assetService';
+import { shiftService } from '../../../services/shiftService/shiftService';
 import { OffloadService as fuelOffloadService } from '../../../services/offloadService/offloadService';
 import { useApp } from '../../../context/AppContext';
 //  import { useShiftAssets } from './shift/shiftClose/hooks/useShiftAssets';
+
+
 
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -62,13 +65,48 @@ const StationDashboardOverview = () => {
   const stationId = state?.currentStation?.id;
   const currentStation = state?.currentStation?.name;
 
-  // Use shift hook
-  // const {
-  //   currentShift,
-  //   loading: shiftLoading
-  // } = useShiftAssets(stationId);
+    const [checkingShift, setCheckingShift]=useState(false);
+    const [hasOpenShift, setHasOpenShift]=useState(false);
+    const [currentShift, setCurrentShift]=useState(null);
+    
 
-  // console.log("current shift ",currentShift)
+    
+        useEffect(() => {
+         fetchOpenShift();
+        },[])
+      
+           const fetchOpenShift = async () => {
+              if (!stationId) {
+                setCheckingShift(false);
+                return;
+              }
+              
+              setCheckingShift(true);
+              try {
+                console.log("🔍 Calling shiftService.getOpenShift...");
+                const result = await shiftService.getOpenShift(stationId);
+                console.log("✅ Open shift check result:", result);
+                
+                if (result && result.status === "OPEN") {
+                  setHasOpenShift(true);
+                  setCurrentShift(result);
+                  console.log("🚦 Open shift found:", result.shiftNumber);
+                } else {
+                  setHasOpenShift(false);
+                  setCurrentShift(null);
+                  console.log("🚦 No open shift found");
+                }
+              } catch (error) {
+                console.error("❌ Error checking open shift:", error);
+                setHasOpenShift(false);
+                setCurrentShift(null);
+                message.error('Failed to check shift status');
+              } finally {
+                setCheckingShift(false);
+              }
+            };
+
+
   const shiftId = "hey hey hey"
   const shiftNumber = "John"
 
@@ -369,7 +407,7 @@ const StationDashboardOverview = () => {
         }}
       >
         <Space size="middle" style={{ width: '100%', justifyContent: 'space-between' }}>
-          {/* <Space>
+          <Space>
             <ClockCircleOutlined style={{ fontSize: '20px', color: config.textColor }} />
             <div>
               <Text strong style={{ color: config.textColor }}>Current Shift</Text>
@@ -385,7 +423,7 @@ const StationDashboardOverview = () => {
                 <Text style={{ color: config.textColor }}>No shift currently active</Text>
               )}
             </div>
-          </Space> */}
+          </Space>
           <Badge 
             status={config.badge} 
             text={config.label} 

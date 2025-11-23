@@ -6,77 +6,33 @@ import {
   Tag,
   Space,
   Alert,
-  Input,
   Select,
   Badge,
   Tooltip,
   Typography,
   Row,
   Col,
-  Statistic,
-  Modal,
-  Descriptions,
-  Popconfirm,
-  message,
-  Progress,
-  Grid,
-  Avatar,
-  Switch,
-  Tabs,
-  DatePicker,
-  Radio,
   Divider,
-  List,
-  Timeline,
-  Empty,
-  Collapse
+  Empty
 } from 'antd';
 import {
-  PlusOutlined,
-  SearchOutlined,
-  FilterOutlined,
-  EyeOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  BarChartOutlined,
-  ShopOutlined,
-  ProductOutlined,
-  DollarOutlined,
   ReloadOutlined,
   DownloadOutlined,
-  UserOutlined,
-  CreditCardOutlined,
-  WalletOutlined,
-  AreaChartOutlined,
-  ExclamationCircleOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  FireOutlined,
-  DashboardOutlined,
-  SafetyCertificateOutlined,
-  WarningOutlined,
-  CheckOutlined,
-  CloseOutlined,
-  LockOutlined,
-  CloseCircleOutlined
+  FilePdfOutlined,
+  EyeOutlined
 } from '@ant-design/icons';
-import { 
-  BarChart3, Activity, Clock, Users, FileText, 
-  Flame, X, Menu, MapPin, DollarSign, Truck, Building2, Fuel, LogOut, User, Settings, TrendingUp,
-  Gauge, Droplets, Thermometer, AlertTriangle
-} from 'lucide-react';
+import { Fuel, Droplets, Truck } from 'lucide-react';
 import { tankReconciliationService } from '../../../../services/tankReconciliationService/tankReconciliationService';
 import { assetService } from '../../../../services/assetService/assetService';
-
 import { useApp } from '../../../../context/AppContext';
 import dayjs from 'dayjs';
 
+// Import jsPDF for PDF export
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
+
 const { Title, Text } = Typography;
 const { Option } = Select;
-const { TabPane } = Tabs;
-const { RangePicker } = DatePicker;
-const { useBreakpoint } = Grid;
-const { Panel } = Collapse;
 
 // Role-based access configuration
 const ACCESS_LEVELS = {
@@ -90,11 +46,9 @@ const ACCESS_LEVELS = {
 
 const TankReconciliationManagement = () => {
   const { state } = useApp();
-  const screens = useBreakpoint();
-  const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [tankData, setTankData] = useState({});
-  const [wetStockData, setWetStockData] = useState({});
   const [selectedReconciliation, setSelectedReconciliation] = useState(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [shifts, setShifts] = useState([]);
@@ -148,7 +102,6 @@ const TankReconciliationManagement = () => {
       }
     });
     
-    console.log('🗺️ Pump mapping created:', Object.fromEntries(pumpMap));
     return pumpMap;
   };
 
@@ -156,18 +109,12 @@ const TankReconciliationManagement = () => {
   const fetchAssets = async () => {
     if (!currentStation) return;
     
-    console.log('🔄 📦 Starting assets fetch for mapping...');
     try {
       const assetsResponse = await assetService.getStationAssets(currentStation);
-      console.log('📦 Raw assets response:', assetsResponse);
       
       if (assetsResponse && Array.isArray(assetsResponse)) {
-        console.log(`📊 Total assets: ${assetsResponse.length}`);
-        
         // Filter only pump assets
         const pumpAssets = assetsResponse.filter(asset => asset.type === 'FUEL_PUMP');
-        console.log(`🏝️ 📊 Found PUMPS:`, pumpAssets);
-        
         const mapping = createPumpMapping(pumpAssets);
         setPumpMap(mapping);
       }
@@ -178,13 +125,9 @@ const TankReconciliationManagement = () => {
 
   // Fetch available shifts from the reconciliation data
   const fetchShifts = async () => {
-    if (!tankData.recentReconciliations) {
-      console.log('📋 No recent reconciliations available for shifts');
-      return;
-    }
+    if (!tankData.recentReconciliations) return;
     
     try {
-      // Extract unique shifts from recent reconciliations
       const uniqueShifts = [];
       const shiftMap = new Map();
       
@@ -200,7 +143,6 @@ const TankReconciliationManagement = () => {
         }
       });
       
-      console.log('📋 Available shifts extracted:', uniqueShifts);
       setShifts(uniqueShifts);
     } catch (error) {
       console.error('❌ Failed to process shifts:', error);
@@ -216,16 +158,13 @@ const TankReconciliationManagement = () => {
       let result;
       
       if (shouldFetchStationData) {
-        console.log('🏪 Fetching station tank reconciliation:', currentStation);
         result = await tankReconciliationService.getTankReconciliationInStation(currentStation, filters);
       } else if (shouldFetchCompanyData) {
-        console.log('🏢 Fetching company tank reconciliation:', currentCompany);
         result = await tankReconciliationService.getTankReconciliationInCompany(currentCompany, filters);
       } else {
         throw new Error('No access to fetch data');
       }
       
-      console.log('📦 Tank reconciliation result:', result);
       setTankData(result);
     } catch (error) {
       console.error('❌ Failed to fetch tank reconciliation data:', error);
@@ -235,49 +174,20 @@ const TankReconciliationManagement = () => {
     }
   };
 
-  // Fetch wet stock reconciliation data based on access level
-  const fetchWetStockReconciliation = async () => {
-    if (!currentCompany) return;
-    
-    setLoading(true);
-    try {
-      let result;
-      
-      if (shouldFetchStationData) {
-        result = await tankReconciliationService.getWetStockReconciliationInStation(currentStation, filters);
-      } else if (shouldFetchCompanyData) {
-        result = await tankReconciliationService.getWetStockReconciliationInCompany(currentCompany, filters);
-      } else {
-        throw new Error('No access to fetch data');
-      }
-      
-      setWetStockData(result);
-    } catch (error) {
-      console.error('❌ Failed to fetch wet stock reconciliation data:', error);
-      message.error('Failed to load wet stock reconciliation data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Fetch data based on active tab and access level
+  // Fetch data
   const fetchData = useCallback(async () => {
     if (!hasAccess()) return;
 
     setLoading(true);
     try {
-      if (activeTab === 'overview' || activeTab === 'tanks') {
-        await fetchTankReconciliation();
-      } else if (activeTab === 'wet-stock') {
-        await fetchWetStockReconciliation();
-      }
+      await fetchTankReconciliation();
     } catch (error) {
       console.error('❌ Failed to fetch data:', error);
       message.error('Failed to load data');
     } finally {
       setLoading(false);
     }
-  }, [activeTab, currentCompany, currentStation, filters, shouldFetchCompanyData, shouldFetchStationData]);
+  }, [currentCompany, currentStation, filters, shouldFetchCompanyData, shouldFetchStationData]);
 
   useEffect(() => {
     fetchData();
@@ -286,11 +196,10 @@ const TankReconciliationManagement = () => {
 
   // Process shifts when tank data changes
   useEffect(() => {
-    if (tankData.recentReconciliations && activeTab === 'tanks') {
-      console.log('🔄 Processing shifts from tank data...');
+    if (tankData.recentReconciliations) {
       fetchShifts();
     }
-  }, [tankData.recentReconciliations, activeTab]);
+  }, [tankData.recentReconciliations]);
 
   // Check if user has access to view this component
   const hasAccess = () => {
@@ -305,14 +214,9 @@ const TankReconciliationManagement = () => {
     }));
   }, []);
 
-  // Get filtered and enriched reconciliation data for detailed view
-  const getDetailedReconciliationData = useCallback(() => {
+  // Get flattened data for the restructured table
+  const getFlattenedTableData = useCallback(() => {
     if (!tankData.recentReconciliations || pumpMap.size === 0) {
-      console.log('📊 No data available:', {
-        hasReconciliations: !!tankData.recentReconciliations,
-        reconciliationsCount: tankData.recentReconciliations?.length,
-        pumpMapSize: pumpMap.size
-      });
       return [];
     }
 
@@ -321,53 +225,217 @@ const TankReconciliationManagement = () => {
     // Filter by shift if selected
     if (filters.shiftId) {
       reconciliations = reconciliations.filter(rec => rec.shiftId === filters.shiftId);
-      console.log(`🔍 Filtered to ${reconciliations.length} reconciliations for shift ${filters.shiftId}`);
     }
 
-    // Enrich with pump names and transform data
-    const enrichedData = reconciliations.map(reconciliation => {
-      console.log('🔄 Processing reconciliation:', reconciliation.id);
-      
-      const tankReconciliations = reconciliation.tankReconciliations?.map(tankRec => {
-        console.log('⛽ Processing tank reconciliation:', tankRec.id);
+    // Flatten the data - one row per tank reconciliation
+    const flattenedData = [];
+    
+    reconciliations.forEach(reconciliation => {
+      reconciliation.tankReconciliations?.forEach(tankRec => {
+        // Calculate total pump dispensed
+        const totalPumpDispensed = tankRec.connectedPumps?.reduce((sum, pump) => sum + (pump.litersDispensed || 0), 0) || 0;
         
-        const enrichedPumps = tankRec.connectedPumps?.map(pump => {
+        // Calculate variance and percentage
+        const variance = (tankRec.tankReduction || 0) - totalPumpDispensed;
+        const variancePercentage = tankRec.tankReduction > 0 ? (Math.abs(variance) / tankRec.tankReduction) * 100 : 0;
+        
+        // Get pump details
+        const pumpDetails = tankRec.connectedPumps?.map(pump => {
           const pumpInfo = pumpMap.get(pump.pumpId);
-          console.log('🔧 Mapping pump:', {
-            pumpId: pump.pumpId,
-            foundInMap: !!pumpInfo,
-            pumpName: pumpInfo?.name
-          });
-          
           return {
-            ...pump,
-            pumpName: pumpInfo ? pumpInfo.name : `Pump-${pump.pumpId?.slice(-4) || 'Unknown'}`,
-            islandCode: pumpInfo ? pumpInfo.islandCode : pump.islandCode
+            name: pumpInfo ? pumpInfo.name : `Pump-${pump.pumpId?.slice(-4) || 'Unknown'}`,
+            litersDispensed: pump.litersDispensed || 0
           };
         }) || [];
 
-        return {
-          ...tankRec,
-          pumps: enrichedPumps,
+        flattenedData.push({
+          key: `${reconciliation.id}-${tankRec.id}`,
+          shiftNumber: reconciliation.shift?.shiftNumber || 'N/A',
           tankName: tankRec.tank?.asset?.name || 'Unknown Tank',
-          productName: tankRec.tank?.product?.name || 'Unknown Product'
-        };
-      }) || [];
-
-      return {
-        ...reconciliation,
-        tankReconciliations,
-        pulledBy: currentUser?.name || 'Unknown User',
-        displayDate: dayjs(reconciliation.recordedAt).format('YYYY-MM-DD HH:mm'),
-        supervisorName: reconciliation.shift?.supervisor ? 
-          `${reconciliation.shift.supervisor.firstName} ${reconciliation.shift.supervisor.lastName}` : 
-          'Unknown Supervisor'
-      };
+          productName: tankRec.tank?.product?.name || 'Unknown Product',
+          openingVolume: tankRec.openingVolume || 0,
+          closingVolume: tankRec.closingVolume || 0,
+          tankVolumeChange: tankRec.tankReduction || 0,
+          pumps: pumpDetails,
+          totalPumpDispensed: totalPumpDispensed,
+          variance: variance,
+          variancePercentage: variancePercentage,
+          reconciliationId: reconciliation.id,
+          tankReconciliationId: tankRec.id,
+          status: reconciliation.status,
+          recordedAt: reconciliation.recordedAt,
+          supervisorName: reconciliation.shift?.supervisor ? 
+            `${reconciliation.shift.supervisor.firstName} ${reconciliation.shift.supervisor.lastName}` : 
+            'Unknown Supervisor'
+        });
+      });
     });
 
-    console.log('✅ Enriched data:', enrichedData);
-    return enrichedData;
-  }, [tankData.recentReconciliations, pumpMap, filters.shiftId, currentUser]);
+    return flattenedData;
+  }, [tankData.recentReconciliations, pumpMap, filters.shiftId]);
+
+  // Export to PDF function
+  const exportToPDF = useCallback(async () => {
+    if (!canModifyData) {
+      message.error('You do not have permission to export data');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const tableData = getFlattenedTableData();
+      
+      if (tableData.length === 0) {
+        message.warning('No data available to export');
+        return;
+      }
+
+      // Create new PDF document
+      const doc = new jsPDF();
+      
+      // Add title
+      doc.setFontSize(14);
+      doc.setTextColor(40, 40, 40);
+      doc.text('Tank Reconciliation Report', 14, 15);
+      
+      // Add subtitle with date range
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      const subtitle = `Generated on ${dayjs().format('YYYY-MM-DD HH:mm')}`;
+      if (filters.shiftId) {
+        const selectedShift = shifts.find(s => s.id === filters.shiftId);
+        doc.text(`Shift: ${selectedShift?.shiftNumber || filters.shiftId} | ${subtitle}`, 14, 22);
+      } else {
+        doc.text(subtitle, 14, 22);
+      }
+
+      // Prepare table data
+      const tableColumn = [
+        'Shift',
+        'Tank Name', 
+        'Product',
+        'Opening (L)',
+        'Closing (L)',
+        'Tank Change (L)',
+        'Pump Dispensed (L)',
+        'Variance (L)',
+        'Variance %',
+        'Status'
+      ];
+
+      const tableRows = tableData.map(item => [
+        item.shiftNumber.toString(),
+        item.tankName,
+        item.productName,
+        formatNumber(item.openingVolume),
+        formatNumber(item.closingVolume),
+        formatNumber(item.tankVolumeChange),
+        formatNumber(item.totalPumpDispensed),
+        formatNumber(Math.abs(item.variance)),
+        formatPercentage(item.variancePercentage),
+        item.status
+      ]);
+
+      // Add table to PDF
+      doc.autoTable({
+        head: [tableColumn],
+        body: tableRows,
+        startY: 30,
+        theme: 'grid',
+        styles: {
+          fontSize: 7,
+          cellPadding: 1,
+        },
+        headStyles: {
+          fillColor: [41, 128, 185],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 7
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245]
+        },
+        columnStyles: {
+          0: { cellWidth: 15 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 20 },
+          4: { cellWidth: 20 },
+          5: { cellWidth: 20 },
+          6: { cellWidth: 20 },
+          7: { cellWidth: 20 },
+          8: { cellWidth: 18 },
+          9: { cellWidth: 18 }
+        },
+        didDrawCell: (data) => {
+          // Color code variance and variance percentage cells
+          if (data.column.index === 7) { // Variance column
+            const variance = tableData[data.row.index]?.variance;
+            if (variance > 100) {
+              doc.setTextColor(255, 0, 0);
+            } else if (variance < -100) {
+              doc.setTextColor(255, 165, 0);
+            } else {
+              doc.setTextColor(0, 128, 0);
+            }
+          } else if (data.column.index === 8) { // Variance % column
+            const variancePercentage = tableData[data.row.index]?.variancePercentage;
+            if (variancePercentage > 5) {
+              doc.setTextColor(255, 0, 0);
+            } else {
+              doc.setTextColor(0, 128, 0);
+            }
+          } else {
+            doc.setTextColor(0, 0, 0);
+          }
+        },
+        didDrawPage: (data) => {
+          // Add footer
+          doc.setFontSize(7);
+          doc.setTextColor(150, 150, 150);
+          doc.text(
+            `Page ${data.pageNumber} of ${doc.internal.getNumberOfPages()}`,
+            doc.internal.pageSize.width / 2,
+            doc.internal.pageSize.height - 10,
+            { align: 'center' }
+          );
+        }
+      });
+
+      // Add summary section
+      const finalY = doc.lastAutoTable.finalY + 10;
+      if (finalY < 280) {
+        doc.setFontSize(9);
+        doc.setTextColor(40, 40, 40);
+        doc.text('Summary Statistics', 14, finalY);
+        
+        const totalVariance = tableData.reduce((sum, item) => sum + Math.abs(item.variance), 0);
+        const avgVariance = totalVariance / tableData.length;
+        const criticalItems = tableData.filter(item => Math.abs(item.variance) > 100).length;
+        const warningItems = tableData.filter(item => item.variance < -100).length;
+        
+        doc.setFontSize(7);
+        doc.text(`Total Records: ${tableData.length}`, 14, finalY + 8);
+        doc.text(`Average Variance: ${formatNumber(avgVariance)}L`, 14, finalY + 16);
+        doc.text(`Critical Variances (>100L): ${criticalItems}`, 14, finalY + 24);
+        doc.text(`Warning Variances (<-100L): ${warningItems}`, 14, finalY + 32);
+        
+        // Add generated by info
+        doc.text(`Generated by: ${currentUser?.name || 'System'}`, 14, finalY + 45);
+      }
+
+      // Save the PDF
+      const fileName = `tank-reconciliation-${filters.shiftId ? `shift-${filters.shiftId}` : 'all'}-${dayjs().format('YYYY-MM-DD')}.pdf`;
+      doc.save(fileName);
+      
+      message.success('PDF exported successfully');
+    } catch (error) {
+      console.error('❌ PDF export failed:', error);
+      message.error('Failed to export PDF');
+    } finally {
+      setExporting(false);
+    }
+  }, [getFlattenedTableData, filters.shiftId, shifts, canModifyData, currentUser]);
 
   // Show detailed reconciliation view
   const showDetailedReconciliation = (reconciliation) => {
@@ -380,7 +448,6 @@ const TankReconciliationManagement = () => {
   };
 
   // Format utilities
-  const formatCurrency = (amount) => tankReconciliationService.formatCurrency(amount);
   const formatNumber = (number) => tankReconciliationService.formatNumber(number);
   const formatPercentage = (number) => tankReconciliationService.formatPercentage(number);
 
@@ -391,1053 +458,182 @@ const TankReconciliationManagement = () => {
     return 'Limited Access';
   };
 
-  // Tab configurations
-  const getTabItems = () => {
-    const baseTabs = [
-      {
-        key: 'overview',
-        label: (
-          <span>
-            <DashboardOutlined />
-            {screens.xs ? '' : ' Overview'}
-          </span>
-        )
-      }
-    ];
+  // Main table data
+  const tableData = getFlattenedTableData();
+  const selectedShift = shifts.find(s => s.id === filters.shiftId);
 
-    if (canViewSensitiveData) {
-      baseTabs.push(
-        {
-          key: 'tanks',
-          label: (
-            <span>
-              <Fuel style={{ width: 14, height: 14 }} />
-              {screens.xs ? '' : ' Detailed View'}
-            </span>
-          )
-        },
-        {
-          key: 'wet-stock',
-          label: (
-            <span>
-              <Droplets style={{ width: 14, height: 14 }} />
-              {screens.xs ? '' : ' Wet Stock'}
-            </span>
-          )
-        }
-      );
-    }
-
-    return baseTabs;
-  };
-
-  // Overview Tab Content
-  const OverviewTab = () => {
-    const summary = tankData.summary || {};
-    const tanks = tankData.tanks || [];
-    
-    const criticalTanks = tanks.filter(tank => tank.avgVariance > 100);
-    const bestPerformingTanks = tanks.slice(0, 3);
-    
-    return (
-      <div className="space-y-4">
-        {/* Access Level Indicator */}
-        <Alert
-          message={getAccessLevelDisplay()}
-          description={`You are viewing data as ${userRole?.replace('_', ' ')}`}
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
-
-        {/* Key Metrics */}
-        <Row gutter={[16, 16]}>
-          <Col xs={12} sm={6}>
-            <Card size="small" loading={loading}>
-              <Statistic
-                title="Total Tanks"
-                value={summary.totalTanks || tanks.length}
-                valueStyle={{ color: '#1890ff' }}
-                prefix={<Fuel style={{ width: 16, height: 16 }} />}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small" loading={loading}>
-              <Statistic
-                title="Avg Variance"
-                value={summary.avgVariance || 0}
-                suffix="L"
-                valueStyle={{ color: '#faad14' }}
-                prefix={<AreaChartOutlined />}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small" loading={loading}>
-              <Statistic
-                title="Critical Tanks"
-                value={criticalTanks.length}
-                valueStyle={{ color: '#ff4d4f' }}
-                prefix={<WarningOutlined />}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small" loading={loading}>
-              <Statistic
-                title="Overall Efficiency"
-                value={summary.overallEfficiency || 0}
-                suffix="%"
-                valueStyle={{ color: '#52c41a' }}
-                prefix={<CheckCircleOutlined />}
-              />
-            </Card>
-          </Col>
-        </Row>
-
-        {/* Performance Overview */}
-        {canViewSensitiveData && (
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={12}>
-              <Card 
-                title="Critical Tanks Alert" 
-                size="small" 
-                loading={loading}
-                extra={
-                  <Tag color="red">
-                    {criticalTanks.length} Issues
-                  </Tag>
-                }
-              >
-                {criticalTanks.length > 0 ? (
-                  <List
-                    size="small"
-                    dataSource={criticalTanks.slice(0, 3)}
-                    renderItem={(tank) => (
-                      <List.Item>
-                        <List.Item.Meta
-                          avatar={<WarningOutlined style={{ color: '#ff4d4f' }} />}
-                          title={tank.tank.asset?.name}
-                          description={`Variance: ${formatNumber(tank.avgVariance)}L`}
-                        />
-                        <Tag color="red">Critical</Tag>
-                      </List.Item>
-                    )}
-                  />
-                ) : (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="No critical tanks found"
-                  />
-                )}
-              </Card>
-            </Col>
-            
-            <Col xs={24} sm={12}>
-              <Card 
-                title="Best Performing Tanks" 
-                size="small" 
-                loading={loading}
-              >
-                {bestPerformingTanks.map((tank, index) => (
-                  <div key={tank.tank?.id} className="mb-3 last:mb-0">
-                    <div className="flex justify-between items-center">
-                      <Text strong>{tank.tank.asset?.name}</Text>
-                      <Badge count={`#${index + 1}`} style={{ backgroundColor: '#52c41a' }} />
-                    </div>
-                    <div className="flex justify-between text-sm text-gray-600">
-                      <span>Variance: {formatNumber(tank.avgVariance)}L</span>
-                      <span>Efficiency: {formatPercentage(tank.efficiency)}</span>
-                    </div>
-                    <Progress 
-                      percent={Math.min((100 - (tank.avgVariance / 100)) * 100, 100)} 
-                      size="small" 
-                      showInfo={false}
-                      strokeColor="#52c41a"
-                    />
-                  </div>
-                ))}
-              </Card>
-            </Col>
-          </Row>
-        )}
-
-        {/* Recent Reconciliations */}
-        <Card title="Recent Activity" size="small" loading={loading}>
-          {canViewSensitiveData ? (
-            <Timeline pending={loading}>
-              {tankData.recentReconciliations?.slice(0, 3).map((reconciliation, index) => (
-                <Timeline.Item
-                  key={reconciliation.id}
-                  color={reconciliation.severity === 'CRITICAL' ? 'red' : 'green'}
-                  dot={reconciliation.severity === 'CRITICAL' ? <ExclamationCircleOutlined /> : <CheckCircleOutlined />}
-                >
-                  <Space direction="vertical" size={0}>
-                    <Text strong>Shift {reconciliation.shift?.shiftNumber}</Text>
-                    <Text type="secondary">
-                      Variance: {formatNumber(reconciliation.totalVariance)}L • 
-                      Status: <Tag color={tankReconciliationService.getReconciliationStatusColor(reconciliation.status)}>
-                        {tankReconciliationService.formatReconciliationStatus(reconciliation.status)}
-                      </Tag>
-                    </Text>
-                  </Space>
-                </Timeline.Item>
-              ))}
-            </Timeline>
-          ) : (
-            <Alert
-              message="Limited Access"
-              description="You have limited view access. Contact your supervisor for detailed reconciliation data."
-              type="info"
-              showIcon
-            />
+  // Columns for the compact table
+  const tableColumns = [
+    {
+      title: 'Shift',
+      dataIndex: 'shiftNumber',
+      key: 'shiftNumber',
+      width: 60,
+      render: (shiftNumber) => (
+        <Text style={{ fontSize: '11px' }}>{shiftNumber}</Text>
+      )
+    },
+    {
+      title: 'Tank',
+      dataIndex: 'tankName',
+      key: 'tankName',
+      width: 80,
+      render: (name) => (
+        <Text style={{ fontSize: '11px' }}>{name}</Text>
+      )
+    },
+    {
+      title: 'Product',
+      dataIndex: 'productName',
+      key: 'productName',
+      width: 70,
+      render: (product) => (
+          <Text style={{ fontSize: '11px' }}>  {product}</Text>
+      )
+    },
+    {
+      title: 'Readings (L)',
+      key: 'readings',
+      width: 90,
+      render: (_, record) => (
+        <div style={{ fontSize: '10px', lineHeight: '1.2' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#52c41a' }}>Open:</span>
+            <span style={{color:'#52c41a'}}>{formatNumber(record.openingVolume)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#ee3f13ffff' }}>Close:</span>
+            <span style={{ color:'#ee3f13ffff'}}>{formatNumber(record.closingVolume)}</span>
+          </div>
+        </div>
+      )
+    },
+    {
+      title: 'Tank Change (L)',
+      dataIndex: 'tankVolumeChange',
+      key: 'tankVolumeChange',
+      width: 70,
+      align: 'center',
+      render: (volume) => (
+        <Text style={{ fontSize: '11px', color: '#fa8c16' }}>
+          {formatNumber(volume)}
+        </Text>
+      )
+    },
+    {
+      title: 'Pumps (L)',
+      key: 'pumps',
+      width: 100,
+      render: (_, record) => (
+        <div style={{ fontSize: '10px', lineHeight: '1.2' }}>
+          {record.pumps.slice(0, 2).map((pump, index) => (
+            <div key={index} style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#666' }}>{pump.name.split('-')[0]}:</span>
+              <span>{formatNumber(pump.litersDispensed)}</span>
+            </div>
+          ))}
+          {record.pumps.length > 2 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#666' }}>
+              <span>+{record.pumps.length - 2} more</span>
+              <span>{formatNumber(record.totalPumpDispensed)}</span>
+            </div>
           )}
-        </Card>
-      </div>
-    );
-  };
-
-  // Detailed Reconciliation Tab with Shift Filtering
-  const DetailedReconciliationTab = () => {
-    if (!canViewSensitiveData) {
-      return (
-        <Alert
-          message="Access Denied"
-          description="You do not have permission to view detailed reconciliation data."
-          type="warning"
-          showIcon
-        />
-      );
-    }
-
-    const detailedData = getDetailedReconciliationData();
-    const selectedShift = shifts.find(s => s.id === filters.shiftId);
-
-    // Debug Info Component
-    const DebugInfo = () => (
-      <Card size="small" title="🔍 Debug Information" style={{ marginBottom: 16 }}>
-        <Descriptions size="small" column={3}>
-          <Descriptions.Item label="Reconciliations Count">
-            {tankData.recentReconciliations?.length || 0}
-          </Descriptions.Item>
-          <Descriptions.Item label="Pump Map Size">
-            {pumpMap.size}
-          </Descriptions.Item>
-          <Descriptions.Item label="Filtered Shift">
-            {filters.shiftId || 'None'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Enriched Data">
-            {detailedData.length} records
-          </Descriptions.Item>
-          <Descriptions.Item label="Available Shifts">
-            {shifts.length}
-          </Descriptions.Item>
-          <Descriptions.Item label="Loading">
-            {loading ? 'Yes' : 'No'}
-          </Descriptions.Item>
-        </Descriptions>
-      </Card>
-    );
-
-    // Main table columns for reconciliation overview
-    const reconciliationColumns = [
-      {
-        title: 'Shift',
-        dataIndex: 'shift',
-        key: 'shift',
-        width: 120,
-        render: (shift) => (
-          <Space direction="vertical" size={0}>
-            <Text strong>{shift?.shiftNumber || 'N/A'}</Text>
-            <Text type="secondary" style={{ fontSize: '11px' }}>
-              {shift?.startTime ? dayjs(shift.startTime).format('MMM DD') : 'No Date'}
-            </Text>
-          </Space>
-        )
-      },
-      {
-        title: 'ID',
-        dataIndex: 'id',
-        key: 'id',
-        width: 80,
-        render: (id) => <Text code>{id?.slice(-8)}</Text>
-      },
-      {
-        title: 'Supervisor',
-        dataIndex: 'supervisorName',
-        key: 'supervisor',
-        width: 120,
-        render: (supervisor) => (
-          <Text>{supervisor}</Text>
-        )
-      },
-      {
-        title: 'Total Variance',
-        dataIndex: 'totalVariance',
-        key: 'totalVariance',
-        width: 100,
-        render: (variance) => (
-          <Text type={variance > 100 ? 'danger' : variance === 0 ? 'secondary' : 'success'}>
-            {formatNumber(variance)}L
-          </Text>
-        )
-      },
-      {
-        title: 'Tanks',
-        dataIndex: 'tankReconciliations',
-        key: 'tankCount',
-        width: 80,
-        render: (tanks) => (
-          <Badge 
-            count={tanks?.length || 0} 
-            showZero 
-            style={{ backgroundColor: tanks?.length > 0 ? '#52c41a' : '#faad14' }}
-          />
-        )
-      },
-      {
-        title: 'Status',
-        dataIndex: 'status',
-        key: 'status',
-        width: 100,
-        render: (status) => (
-          <Tag color={tankReconciliationService.getReconciliationStatusColor(status)}>
-            {tankReconciliationService.formatReconciliationStatus(status)}
-          </Tag>
-        )
-      },
-      {
-        title: 'Pulled By',
-        dataIndex: 'pulledBy',
-        key: 'pulledBy',
-        width: 120,
-        render: (pulledBy) => (
-          <Text type="secondary">{pulledBy}</Text>
-        )
-      },
-      {
-        title: 'Actions',
-        key: 'actions',
-        width: 100,
-        render: (_, record) => (
-          <Tooltip title="View Full Details">
-            <Button 
-              icon={<EyeOutlined />} 
-              size="small"
-              onClick={() => showDetailedReconciliation(record)}
-            />
-          </Tooltip>
-        )
-      }
-    ];
-
-    return (
-      <div className="space-y-4">
-        {/* Debug Info - Remove in production */}
-        <DebugInfo />
-
-        {/* Shift Filter */}
-        <Card size="small">
-          <Row gutter={[16, 16]} align="middle">
-            <Col xs={24} sm={12} md={8}>
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <Text strong>Filter by Shift:</Text>
-                <Select
-                  style={{ width: '100%' }}
-                  value={filters.shiftId}
-                  onChange={(value) => handleFilterChange({ shiftId: value })}
-                  placeholder="Select a shift..."
-                  allowClear
-                  showSearch
-                  optionFilterProp="children"
-                >
-                  {shifts.map(shift => (
-                    <Option key={shift.id} value={shift.id}>
-                      {shift.shiftNumber} - {dayjs(shift.startTime).format('MMM DD, YYYY')}
-                    </Option>
-                  ))}
-                </Select>
-              </Space>
-            </Col>
-            <Col xs={24} sm={12} md={8}>
-              {selectedShift && (
-                <Space direction="vertical">
-                  <Text strong>Selected Shift:</Text>
-                  <Text>
-                    {selectedShift.shiftNumber} • {dayjs(selectedShift.startTime).format('MMM DD, YYYY HH:mm')}
-                  </Text>
-                </Space>
-              )}
-            </Col>
-          </Row>
-        </Card>
-
-        {/* Reconciliation Table */}
-        <Card 
-          title="Detailed Reconciliation Data"
-          extra={
-            <Space>
-              <Text type="secondary">
-                Showing {detailedData.length} reconciliation(s)
-              </Text>
-              {canModifyData && (
-                <Button 
-                  icon={<DownloadOutlined />}
-                  onClick={() => {
-                    const exportData = {
-                      reconciliations: detailedData,
-                      exportedBy: currentUser?.name,
-                      exportDate: new Date().toISOString()
-                    };
-                    tankReconciliationService.exportToCSV(exportData, 'detailed-reconciliation');
-                  }}
-                >
-                  Export
-                </Button>
-              )}
-            </Space>
-          }
-        >
-          <Table
-            columns={reconciliationColumns}
-            dataSource={detailedData}
-            loading={loading}
-            size="small"
-            pagination={{ pageSize: 10 }}
-            rowKey="id"
-            expandable={{
-              expandedRowRender: (record) => (
-                <TankReconciliationDetail record={record} />
-              ),
-              rowExpandable: (record) => record.tankReconciliations?.length > 0
-            }}
-            locale={{
-              emptyText: (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description={
-                    filters.shiftId 
-                      ? "No reconciliation data found for selected shift"
-                      : "No reconciliation data available"
-                  }
-                />
-              )
-            }}
-          />
-        </Card>
-      </div>
-    );
-  };
-
-  // Tank Reconciliation Detail Component for expanded rows
-  const TankReconciliationDetail = ({ record }) => {
-    return (
-      <div className="p-4 bg-gray-50 rounded">
-        <Title level={5} style={{ marginBottom: 16 }}>Tank Reconciliations</Title>
-        {record.tankReconciliations?.map((tankRec, index) => (
-          <Card 
-            key={tankRec.id} 
-            size="small" 
-            style={{ marginBottom: 12 }}
-            title={
-              <Space>
-                <Droplets style={{ color: '#1890ff' }} />
-                <Text strong>{tankRec.tankName}</Text>
-                <Tag color="blue">{tankRec.productName}</Tag>
-              </Space>
-            }
-          >
-            <Row gutter={[16, 16]}>
-              <Col xs={24} sm={8}>
-                <Space direction="vertical">
-                  <Text strong>Volumes:</Text>
-                  <Text>Opening: {tankRec.openingVolume}L</Text>
-                  <Text>Closing: {tankRec.closingVolume}L</Text>
-                  <Text>Reduction: {tankRec.tankReduction}L</Text>
-                </Space>
-              </Col>
-              <Col xs={24} sm={8}>
-                <Space direction="vertical">
-                  <Text strong>Dispensing:</Text>
-                  <Text>Pump Dispensed: {tankRec.totalPumpDispensed}L</Text>
-                  <Text>Variance: 
-                    <Tag color={parseFloat(tankRec.variance) > 100 ? 'red' : 'green'} style={{ marginLeft: 8 }}>
-                      {tankRec.variance}L ({formatPercentage(tankRec.variancePercentage)})
-                    </Tag>
-                  </Text>
-                </Space>
-              </Col>
-              <Col xs={24} sm={8}>
-                <Space direction="vertical">
-                  <Text strong>Pumps:</Text>
-                  {tankRec.pumps?.map((pump, pumpIndex) => (
-                    <Text key={pumpIndex}>
-                      {pump.pumpName}: {pump.litersDispensed}L
-                    </Text>
-                  ))}
-                </Space>
-              </Col>
-            </Row>
-          </Card>
-        ))}
-      </div>
-    );
-  };
-
-  // Wet Stock Tab Content
-  const WetStockTab = () => {
-    if (!canViewSensitiveData) {
-      return (
-        <Alert
-          message="Access Denied"
-          description="You do not have permission to view wet stock reconciliation data."
-          type="warning"
-          showIcon
-        />
-      );
-    }
-
-    const reconciliations = wetStockData.wetStockReconciliations || [];
-    const summary = wetStockData.summary || {};
-    
-    const wetStockColumns = [
-      {
-        title: 'Shift',
-        dataIndex: 'shift',
-        key: 'shift',
-        width: 120,
-        render: (shift) => `Shift ${shift.shiftNumber}`
-      },
-      {
-        title: 'Date',
-        dataIndex: 'shift',
-        key: 'date',
-        width: 120,
-        render: (shift) => new Date(shift.startTime).toLocaleDateString()
-      },
-      {
-        title: 'Total Variance',
-        dataIndex: 'totalVariance',
-        key: 'totalVariance',
-        width: 120,
-        render: (variance) => (
-          <Text type={variance > 100 ? 'danger' : 'success'}>
-            {formatNumber(variance)} L
-          </Text>
-        ),
-        sorter: (a, b) => a.totalVariance - b.totalVariance
-      },
-      {
-        title: 'Severity',
-        dataIndex: 'severity',
-        key: 'severity',
-        width: 100,
-        render: (severity) => (
-          <Tag color={tankReconciliationService.getSeverityColor(severity)}>
-            {tankReconciliationService.formatSeverity(severity)}
-          </Tag>
-        )
-      },
-      {
-        title: 'Status',
-        dataIndex: 'status',
-        key: 'status',
-        width: 120,
-        render: (status) => (
-          <Tag color={tankReconciliationService.getReconciliationStatusColor(status)}>
-            {tankReconciliationService.formatReconciliationStatus(status)}
-          </Tag>
-        )
-      },
-      {
-        title: 'Actions',
-        key: 'actions',
-        width: 120,
-        render: (_, record) => (
-          <Space size="small">
-            <Tooltip title="View Details">
-              <Button 
-                icon={<EyeOutlined />} 
-                size="small"
-                onClick={() => showDetailedReconciliation(record)}
-              />
-            </Tooltip>
-          </Space>
-        )
-      }
-    ];
-
-    return (
-      <div className="space-y-4">
-        {/* Wet Stock Summary Cards */}
-        <Row gutter={[16, 16]}>
-          <Col xs={12} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Total Reconciliations"
-                value={summary.totalReconciliations || reconciliations.length}
-                valueStyle={{ color: '#1890ff' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="With Discrepancies"
-                value={summary.withDiscrepancies || reconciliations.filter(r => r.severity === 'CRITICAL').length}
-                valueStyle={{ color: '#ff4d4f' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Completed"
-                value={summary.completed || reconciliations.filter(r => r.status === 'COMPLETED').length}
-                valueStyle={{ color: '#52c41a' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Avg Variance"
-                value={summary.avgVariance || reconciliations.reduce((sum, r) => sum + r.totalVariance, 0) / reconciliations.length}
-                suffix="L"
-                valueStyle={{ color: '#faad14' }}
-              />
-            </Card>
-          </Col>
-        </Row>
-
-        {/* Wet Stock Table */}
-        <Card 
-          title="Wet Stock Reconciliation"
-          extra={
-            canModifyData && (
-              <Button 
-                icon={<DownloadOutlined />}
-                onClick={() => tankReconciliationService.exportTankReconciliationToCSV(wetStockData, 'company')}
-              >
-                Export
-              </Button>
-            )
-          }
-        >
-          <Table
-            columns={wetStockColumns}
-            dataSource={reconciliations}
-            loading={loading}
-            size="small"
-            pagination={{ pageSize: 10 }}
-            rowKey={(record) => record.id}
-            locale={{
-              emptyText: (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="No wet stock reconciliation data available"
-                />
-              )
-            }}
-          />
-        </Card>
-      </div>
-    );
-  };
-
-  // Enhanced Reconciliation Detail Modal
-  const ReconciliationDetailModal = () => {
-    if (!selectedReconciliation || !canViewSensitiveData) return null;
-
-    const reconciliation = selectedReconciliation;
-    
-    // Function to get pump name from pump ID
-    const getPumpName = (pumpId) => {
-      const pumpInfo = pumpMap.get(pumpId);
-      return pumpInfo ? pumpInfo.name : `Pump-${pumpId?.slice(-4) || 'Unknown'}`;
-    };
-
-    // Function to get island code from pump ID
-    const getIslandCode = (pumpId) => {
-      const pumpInfo = pumpMap.get(pumpId);
-      return pumpInfo ? pumpInfo.islandCode : 'N/A';
-    };
-
-    return (
-      <Modal
-        title={
-          <Space>
-            <FileText />
-            Reconciliation Details - Shift {reconciliation.shift?.shiftNumber}
-          </Space>
-        }
-        open={detailModalVisible}
-        onCancel={() => setDetailModalVisible(false)}
-        width={1200}
-        footer={[
-          <Button key="close" onClick={() => setDetailModalVisible(false)}>
-            Close
-          </Button>,
-          canModifyData && (
-            <Button 
-              key="export" 
-              icon={<DownloadOutlined />}
-              onClick={() => {
-                const exportData = {
-                  reconciliation: reconciliation,
-                  exportedBy: currentUser?.name,
-                  exportDate: new Date().toISOString()
-                };
-                tankReconciliationService.exportToCSV([exportData], `reconciliation-${reconciliation.shift?.shiftNumber}`);
-              }}
-            >
-              Export
-            </Button>
-          )
-        ]}
-      >
-        <div className="space-y-6">
-          {/* Header Information */}
-          <Card size="small">
-            <Descriptions bordered column={3} size="small">
-              <Descriptions.Item label="Shift Number" span={1}>
-                <Text strong>{reconciliation.shift?.shiftNumber}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Date" span={1}>
-                {reconciliation.displayDate || dayjs(reconciliation.recordedAt).format('YYYY-MM-DD HH:mm')}
-              </Descriptions.Item>
-              <Descriptions.Item label="Supervisor" span={1}>
-                {reconciliation.supervisorName}
-              </Descriptions.Item>
-              <Descriptions.Item label="Pulled By" span={1}>
-                {reconciliation.pulledBy}
-              </Descriptions.Item>
-              <Descriptions.Item label="Total Variance" span={1}>
-                <Text type={reconciliation.totalVariance > 100 ? 'danger' : 'success'}>
-                  {formatNumber(reconciliation.totalVariance)} L
-                </Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Status" span={1}>
-                <Tag color={tankReconciliationService.getReconciliationStatusColor(reconciliation.status)}>
-                  {tankReconciliationService.formatReconciliationStatus(reconciliation.status)}
-                </Tag>
-              </Descriptions.Item>
-            </Descriptions>
-          </Card>
-
-          {/* Tank Reconciliations */}
-          <Card 
-            title={
-              <Space>
-                <Fuel style={{ width: 16, height: 16 }} />
-                Tank Reconciliations
-                <Badge count={reconciliation.tankReconciliations?.length || 0} showZero />
-              </Space>
-            }
-          >
-            <Collapse accordion>
-              {reconciliation.tankReconciliations?.map((tankRec, index) => (
-                <Panel 
-                  key={tankRec.id}
-                  header={
-                    <Space>
-                      <Text strong>{tankRec.tankName}</Text>
-                      <Tag color="blue">{tankRec.productName}</Tag>
-                      <Tag color={parseFloat(tankRec.variance) > 100 ? 'red' : 'green'}>
-                        Variance: {formatNumber(tankRec.variance)}L
-                      </Tag>
-                      <Tag color={tankRec.severity === 'CRITICAL' ? 'red' : 'green'}>
-                        {tankRec.severity}
-                      </Tag>
-                    </Space>
-                  }
-                >
-                  <div className="space-y-4">
-                    {/* Volume Information */}
-                    <Row gutter={[16, 16]}>
-                      <Col xs={24} sm={8}>
-                        <Card size="small" title="Volume Details">
-                          <Space direction="vertical" style={{ width: '100%' }}>
-                            <div className="flex justify-between">
-                              <Text>Opening Volume:</Text>
-                              <Text strong>{formatNumber(tankRec.openingVolume)} L</Text>
-                            </div>
-                            <div className="flex justify-between">
-                              <Text>Closing Volume:</Text>
-                              <Text strong>{formatNumber(tankRec.closingVolume)} L</Text>
-                            </div>
-                            <Divider style={{ margin: '8px 0' }} />
-                            <div className="flex justify-between">
-                              <Text>Tank Reduction:</Text>
-                              <Text strong type="warning">
-                                {formatNumber(tankRec.tankReduction)} L
-                              </Text>
-                            </div>
-                            <div className="flex justify-between">
-                              <Text>Adjusted Reduction:</Text>
-                              <Text strong>{formatNumber(tankRec.adjustedReduction)} L</Text>
-                            </div>
-                          </Space>
-                        </Card>
-                      </Col>
-                      
-                      <Col xs={24} sm={8}>
-                        <Card size="small" title="Dispensing Summary">
-                          <Space direction="vertical" style={{ width: '100%' }}>
-                            <div className="flex justify-between">
-                              <Text>Total Pump Dispensed:</Text>
-                              <Text strong>{formatNumber(tankRec.totalPumpDispensed)} L</Text>
-                            </div>
-                            <div className="flex justify-between">
-                              <Text>Variance:</Text>
-                              <Text strong type={parseFloat(tankRec.variance) > 100 ? 'danger' : 'success'}>
-                                {formatNumber(tankRec.variance)} L
-                              </Text>
-                            </div>
-                            <div className="flex justify-between">
-                              <Text>Variance %:</Text>
-                              <Text strong type={parseFloat(tankRec.variancePercentage) > 5 ? 'danger' : 'success'}>
-                                {formatPercentage(tankRec.variancePercentage)}
-                              </Text>
-                            </div>
-                            <div className="flex justify-between">
-                              <Text>Within Tolerance:</Text>
-                              {tankRec.isWithinTolerance ? (
-                                <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                              ) : (
-                                <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
-                              )}
-                            </div>
-                          </Space>
-                        </Card>
-                      </Col>
-                      
-                      <Col xs={24} sm={8}>
-                        <Card size="small" title="Additional Info">
-                          <Space direction="vertical" style={{ width: '100%' }}>
-                            <div className="flex justify-between">
-                              <Text>Avg Temperature:</Text>
-                              <Text strong>{tankRec.avgTemperature} °C</Text>
-                            </div>
-                            <div className="flex justify-between">
-                              <Text>Temp Correction:</Text>
-                              <Text strong>{tankRec.tempCorrectionFactor}</Text>
-                            </div>
-                            <div className="flex justify-between">
-                              <Text>Total Offloaded:</Text>
-                              <Text strong>{formatNumber(tankRec.totalOffloaded)} L</Text>
-                            </div>
-                            {tankRec.notes && (
-                              <>
-                                <Divider style={{ margin: '8px 0' }} />
-                                <Text type="secondary">Notes: {tankRec.notes}</Text>
-                              </>
-                            )}
-                          </Space>
-                        </Card>
-                      </Col>
-                    </Row>
-
-                    {/* Connected Pumps */}
-                    {tankRec.pumps && tankRec.pumps.length > 0 && (
-                      <Card 
-                        size="small" 
-                        title={
-                          <Space>
-                            <Truck style={{ width: 14, height: 14 }} />
-                            Connected Pumps
-                            <Badge count={tankRec.pumps.length} showZero />
-                          </Space>
-                        }
-                      >
-                        <Table
-                          size="small"
-                          dataSource={tankRec.pumps}
-                          pagination={false}
-                          rowKey={(record, index) => `${record.pumpId}-${index}`}
-                          columns={[
-                            {
-                              title: 'Pump Name',
-                              dataIndex: 'pumpName',
-                              key: 'pumpName',
-                              render: (name, record) => (
-                                <Space>
-                                  <Truck style={{ width: 12, height: 12 }} />
-                                  <Text>{name}</Text>
-                                </Space>
-                              )
-                            },
-                            {
-                              title: 'Island Code',
-                              dataIndex: 'islandCode',
-                              key: 'islandCode',
-                              render: (code) => <Tag>{code}</Tag>
-                            },
-                            {
-                              title: 'Pump ID',
-                              dataIndex: 'pumpId',
-                              key: 'pumpId',
-                              render: (id) => <Text code>{id?.slice(-8)}</Text>
-                            },
-                            {
-                              title: 'Liters Dispensed',
-                              dataIndex: 'litersDispensed',
-                              key: 'litersDispensed',
-                              render: (liters) => (
-                                <Text strong>{formatNumber(liters)} L</Text>
-                              )
-                            },
-                            {
-                              title: 'Contribution',
-                              key: 'contribution',
-                              render: (_, record) => {
-                                const percentage = (record.litersDispensed / tankRec.totalPumpDispensed) * 100;
-                                return (
-                                  <Progress 
-                                    percent={Math.round(percentage * 100) / 100} 
-                                    size="small" 
-                                    format={percent => `${percent}%`}
-                                  />
-                                );
-                              }
-                            }
-                          ]}
-                        />
-                      </Card>
-                    )}
-
-                    {/* Pump Summary */}
-                    {tankRec.pumps && tankRec.pumps.length > 0 && (
-                      <Row gutter={[16, 16]}>
-                        <Col xs={24} sm={12}>
-                          <Card size="small" title="Pump Performance">
-                            <List
-                              size="small"
-                              dataSource={tankRec.pumps}
-                              renderItem={(pump, index) => (
-                                <List.Item>
-                                  <List.Item.Meta
-                                    avatar={
-                                      <Avatar 
-                                        size="small" 
-                                        style={{ backgroundColor: '#1890ff' }}
-                                      >
-                                        {index + 1}
-                                      </Avatar>
-                                    }
-                                    title={pump.pumpName}
-                                    description={`${formatNumber(pump.litersDispensed)} L`}
-                                  />
-                                  <Tag color="blue">
-                                    {((pump.litersDispensed / tankRec.totalPumpDispensed) * 100).toFixed(1)}%
-                                  </Tag>
-                                </List.Item>
-                              )}
-                            />
-                          </Card>
-                        </Col>
-                        <Col xs={24} sm={12}>
-                          <Card size="small" title="Performance Metrics">
-                            <Space direction="vertical" style={{ width: '100%' }}>
-                              <div className="flex justify-between">
-                                <Text>Total Pumps:</Text>
-                                <Text strong>{tankRec.pumps.length}</Text>
-                              </div>
-                              <div className="flex justify-between">
-                                <Text>Max Dispensed:</Text>
-                                <Text strong>
-                                  {formatNumber(Math.max(...tankRec.pumps.map(p => p.litersDispensed)))} L
-                                </Text>
-                              </div>
-                              <div className="flex justify-between">
-                                <Text>Min Dispensed:</Text>
-                                <Text strong>
-                                  {formatNumber(Math.min(...tankRec.pumps.map(p => p.litersDispensed)))} L
-                                </Text>
-                              </div>
-                              <div className="flex justify-between">
-                                <Text>Avg per Pump:</Text>
-                                <Text strong>
-                                  {formatNumber(tankRec.pumps.reduce((sum, p) => sum + p.litersDispensed, 0) / tankRec.pumps.length)} L
-                                </Text>
-                              </div>
-                            </Space>
-                          </Card>
-                        </Col>
-                      </Row>
-                    )}
-                  </div>
-                </Panel>
-              ))}
-            </Collapse>
-          </Card>
-
-          {/* Summary Statistics */}
-          <Card size="small" title="Reconciliation Summary">
-            <Row gutter={[16, 16]}>
-              <Col xs={12} sm={6}>
-                <Statistic
-                  title="Total Variance"
-                  value={reconciliation.totalVariance}
-                  suffix="L"
-                  valueStyle={{ 
-                    color: reconciliation.totalVariance > 100 ? '#ff4d4f' : '#52c41a'
-                  }}
-                />
-              </Col>
-              <Col xs={12} sm={6}>
-                <Statistic
-                  title="Variance %"
-                  value={reconciliation.variancePercentage}
-                  suffix="%"
-                  valueStyle={{ 
-                    color: reconciliation.variancePercentage > 5 ? '#ff4d4f' : '#52c41a'
-                  }}
-                />
-              </Col>
-              <Col xs={12} sm={6}>
-                <Statistic
-                  title="Total Dispensed"
-                  value={reconciliation.totalPumpDispensed}
-                  suffix="L"
-                  valueStyle={{ color: '#1890ff' }}
-                />
-              </Col>
-              <Col xs={12} sm={6}>
-                <Statistic
-                  title="Tank Reduction"
-                  value={reconciliation.totalTankReduction}
-                  suffix="L"
-                  valueStyle={{ color: '#faad14' }}
-                />
-              </Col>
-            </Row>
-          </Card>
-
-          {/* Debug Information (Remove in production) */}
-          {process.env.NODE_ENV === 'development' && (
-            <Card size="small" title="🔍 Debug Information" type="inner">
-              <Descriptions size="small" column={2}>
-                <Descriptions.Item label="Pump Map Size">
-                  {pumpMap.size}
-                </Descriptions.Item>
-                <Descriptions.Item label="Tank Reconciliations">
-                  {reconciliation.tankReconciliations?.length || 0}
-                </Descriptions.Item>
-                <Descriptions.Item label="Total Pumps">
-                  {reconciliation.tankReconciliations?.reduce((sum, tr) => sum + (tr.pumps?.length || 0), 0) || 0}
-                </Descriptions.Item>
-                <Descriptions.Item label="Reconciliation ID">
-                  {reconciliation.id}
-                </Descriptions.Item>
-              </Descriptions>
-            </Card>
+          {record.pumps.length <= 2 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #f0f0f0', paddingTop: '2px', marginTop: '2px' }}>
+              <span style={{ color: '#52c41a' }}>Total:</span>
+              <span style={{color:"#52c41a"}}>{formatNumber(record.totalPumpDispensed)}</span>
+            </div>
           )}
         </div>
-      </Modal>
-    );
-  };
+      )
+    },
+    {
+      title: 'Variance (L)',
+      dataIndex: 'variance',
+      key: 'variance',
+      width: 70,
+      align: 'center',
+      render: (variance) => {
+        const absVariance = Math.abs(variance);
+        const isCritical = absVariance > 100;
+        const isWarning = variance < -100;
+        
+        let color = '#52c41a';
+        if (isCritical) color = '#ff4d4f';
+        if (isWarning) color = '#fa8c16';
+        
+        return (
+          <Tooltip title={variance > 0 ? 'Tank reduction exceeds pump dispensing' : 'Pump dispensing exceeds tank reduction'}>
+            <div style={{ 
+              fontSize: '10px', 
+              color: color,
+              padding: '2px 4px',
+              borderRadius: '2px',
+              backgroundColor: `${color}10`
+            }}>
+              {formatNumber(absVariance)}
+              {variance > 0 ? ' ↑' : ' ↓'}
+            </div>
+          </Tooltip>
+        );
+      }
+    },
+    {
+      title: 'Var %',
+      dataIndex: 'variancePercentage',
+      key: 'variancePercentage',
+      width: 60,
+      align: 'center',
+      render: (percentage) => {
+        const isCritical = percentage > 5;
+        return (
+          <Text style={{ 
+            fontSize: '10px', 
+            color: isCritical ? '#ff4d4f' : '#52c41a'
+          }}>
+            {formatPercentage(percentage)}
+          </Text>
+        );
+      }
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      width: 70,
+      render: (status) => (
+        <Tag 
+          color={tankReconciliationService.getReconciliationStatusColor(status)}
+          style={{ fontSize: '9px', margin: 0, padding: '0 4px' }}
+        >
+          {tankReconciliationService.formatReconciliationStatus(status).slice(0, 3)}
+        </Tag>
+      )
+    },
+    {
+      title: '',
+      key: 'actions',
+      width: 40,
+      render: (_, record) => (
+        <Tooltip title="View details">
+          <Button 
+            icon={<EyeOutlined />} 
+            size="small"
+            type="text"
+            style={{ fontSize: '12px', padding: '0 4px' }}
+            onClick={() => {
+              const fullRecord = tankData.recentReconciliations?.find(
+                rec => rec.id === record.reconciliationId
+              );
+              if (fullRecord) {
+                showDetailedReconciliation(fullRecord);
+              }
+            }}
+          />
+        </Tooltip>
+      )
+    }
+  ];
 
   // Main render
   if (!hasAccess()) {
@@ -1453,18 +649,22 @@ const TankReconciliationManagement = () => {
 
   return (
     <div className="tank-reconciliation-management">
-      <Card>
+      <Card 
+        size="small"
+        style={{ border: 'none' }}
+        bodyStyle={{ padding: '16px' }}
+      >
         {/* Header */}
-        <div className="flex justify-between items-center mb-6">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <div>
-            <Title level={2} style={{ margin: 0 }}>
+            <Title level={4} style={{ margin: 0, fontSize: '16px' }}>
               <Space>
-                <Fuel style={{ width: 24, height: 24 }} />
-                Tank Reconciliation Management
+                <Fuel style={{ width: 18, height: 18 }} />
+                Tank Reconciliation
               </Space>
             </Title>
-            <Text type="secondary">
-              Monitor and analyze fuel tank reconciliation across your operations
+            <Text type="secondary" style={{ fontSize: '12px' }}>
+              Detailed reconciliation view
             </Text>
           </div>
           <Space>
@@ -1472,35 +672,183 @@ const TankReconciliationManagement = () => {
               icon={<ReloadOutlined />} 
               onClick={fetchData}
               loading={loading}
+              size="small"
             >
               Refresh
             </Button>
-            {canModifyData && (
-              <Button 
-                type="primary" 
-                icon={<DownloadOutlined />}
-                onClick={() => tankReconciliationService.exportTankReconciliationToCSV(tankData, 'station')}
-              >
-                Export Data
-              </Button>
-            )}
+            <Button 
+              icon={<FilePdfOutlined />}
+              loading={exporting}
+              onClick={exportToPDF}
+              type="primary"
+              size="small"
+            >
+              PDF
+            </Button>
           </Space>
         </div>
 
-        {/* Tabs */}
-        <Tabs
-          activeKey={activeTab}
-          onChange={setActiveTab}
-          items={getTabItems()}
+        {/* Access Level Indicator */}
+        <Alert
+          message={getAccessLevelDisplay()}
+          description={`Viewing as ${userRole?.replace('_', ' ')} • ${tableData.length} records`}
+          type="info"
+          showIcon
+          style={{ marginBottom: '16px', fontSize: '12px' }}
+          size="small"
         />
 
-        {/* Tab Content */}
-        {activeTab === 'overview' && <OverviewTab />}
-        {activeTab === 'tanks' && <DetailedReconciliationTab />}
-        {activeTab === 'wet-stock' && <WetStockTab />}
+        {/* Shift Filter */}
+        <Card 
+          size="small" 
+          style={{ marginBottom: '16px', border: '1px solid #f0f0f0' }}
+          bodyStyle={{ padding: '12px' }}
+        >
+          <Row gutter={[16, 8]} align="middle">
+            <Col xs={24} sm={12} md={8}>
+              <Space direction="vertical" style={{ width: '100%' }} size="small">
+                <Text style={{ fontSize: '12px' }}>Filter by Shift:</Text>
+                <Select
+                  style={{ width: '100%' }}
+                  size="small"
+                  value={filters.shiftId}
+                  onChange={(value) => handleFilterChange({ shiftId: value })}
+                  placeholder="Select a shift..."
+                  allowClear
+                  showSearch
+                  optionFilterProp="children"
+                >
+                  {shifts.map(shift => (
+                    <Option key={shift.id} value={shift.id}>
+                      Shift {shift.shiftNumber} - {dayjs(shift.startTime).format('MMM DD, YYYY')}
+                    </Option>
+                  ))}
+                </Select>
+              </Space>
+            </Col>
+            <Col xs={24} sm={12} md={16}>
+              {selectedShift && (
+                <div style={{ fontSize: '12px' }}>
+                  <Text>Selected: Shift {selectedShift.shiftNumber} • {dayjs(selectedShift.startTime).format('MMM DD, YYYY HH:mm')}</Text>
+                </div>
+              )}
+            </Col>
+          </Row>
+        </Card>
 
-        {/* Detail Modal */}
-        <ReconciliationDetailModal />
+        {/* Main Table */}
+        <Card 
+          size="small"
+          style={{ border: '1px solid #f0f0f0' }}
+          bodyStyle={{ padding: 0 }}
+        >
+          <Table
+            columns={tableColumns}
+            dataSource={tableData}
+            loading={loading}
+            size="small"
+            scroll={{ x: 800 }}
+            pagination={{ 
+              pageSize: 15,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              size: 'small',
+              showTotal: (total, range) => (
+                <Text style={{ fontSize: '12px' }}>
+                  {range[0]}-{range[1]} of {total}
+                </Text>
+              )
+            }}
+            rowKey="key"
+            locale={{
+              emptyText: (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={
+                    filters.shiftId 
+                      ? "No data for selected shift"
+                      : "No reconciliation data"
+                  }
+                  style={{ padding: '20px' }}
+                />
+              )
+            }}
+            style={{ 
+              fontSize: '11px',
+            }}
+            components={{
+              header: {
+                cell: (props) => (
+                  <th 
+                    {...props} 
+                    style={{ 
+                      ...props.style, 
+                      fontSize: '11px', 
+                      fontWeight: '600',
+                      padding: '8px 4px',
+                      backgroundColor: '#fafafa'
+                    }} 
+                  />
+                ),
+              },
+              body: {
+                cell: (props) => (
+                  <td 
+                    {...props} 
+                    style={{ 
+                      ...props.style, 
+                      fontSize: '11px', 
+                      padding: '6px 4px',
+                      borderBottom: '1px solid #f0f0f0'
+                    }} 
+                  />
+                ),
+              },
+            }}
+          />
+        </Card>
+
+        {/* Summary Stats */}
+        {tableData.length > 0 && (
+          <Card 
+            size="small" 
+            style={{ marginTop: '16px', border: '1px solid #f0f0f0' }}
+            bodyStyle={{ padding: '12px' }}
+          >
+            <Row gutter={[16, 8]}>
+              <Col xs={12} sm={6}>
+                <div style={{ textAlign: 'center' }}>
+                  <Text style={{ fontSize: '11px', color: '#666' }}>Total Records</Text>
+                  <div style={{ fontSize: '14px', fontWeight: '500' }}>{tableData.length}</div>
+                </div>
+              </Col>
+              <Col xs={12} sm={6}>
+                <div style={{ textAlign: 'center' }}>
+                  <Text style={{ fontSize: '11px', color: '#666' }}>Avg Variance</Text>
+                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#fa8c16' }}>
+                    {formatNumber(tableData.reduce((sum, item) => sum + Math.abs(item.variance), 0) / tableData.length)}L
+                  </div>
+                </div>
+              </Col>
+              <Col xs={12} sm={6}>
+                <div style={{ textAlign: 'center' }}>
+                  <Text style={{ fontSize: '11px', color: '#666' }}>Critical</Text>
+                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#ff4d4f' }}>
+                    {tableData.filter(item => Math.abs(item.variance) > 100).length}
+                  </div>
+                </div>
+              </Col>
+              <Col xs={12} sm={6}>
+                <div style={{ textAlign: 'center' }}>
+                  <Text style={{ fontSize: '11px', color: '#666' }}>In Tolerance</Text>
+                  <div style={{ fontSize: '14px', fontWeight: '500', color: '#52c41a' }}>
+                    {tableData.filter(item => Math.abs(item.variance) <= 100).length}
+                  </div>
+                </div>
+              </Col>
+            </Row>
+          </Card>
+        )}
       </Card>
     </div>
   );
