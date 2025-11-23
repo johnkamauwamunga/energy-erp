@@ -112,16 +112,6 @@ const TransferList = ({
       width: 140
     },
     {
-      title: 'Station',
-      key: 'station',
-      render: (_, record) => (
-        <Text strong>
-          {record.station?.name || 'N/A'}
-        </Text>
-      ),
-      width: 150
-    },
-    {
       title: 'Amount',
       dataIndex: 'amount',
       key: 'amount',
@@ -141,9 +131,9 @@ const TransferList = ({
           <Text strong>
             {record.fromAccountName}
           </Text>
-          <Text type="secondary" size="small">
+          {/* <Text type="secondary" size="small">
             {record.fromAccountType?.replace(/_/g, ' ')}
-          </Text>
+          </Text> */}
         </Space>
       ),
       ellipsis: true,
@@ -157,13 +147,13 @@ const TransferList = ({
           <Text strong>
             {record.toAccountName}
           </Text>
-          <Text type="secondary" size="small">
+          {/* <Text type="secondary" size="small">
             {record.toAccountType?.replace(/_/g, ' ')}
-          </Text>
+          </Text> */}
         </Space>
       ),
       ellipsis: true,
-      width: 160
+      width: 190
     },
     {
       title: 'Category',
@@ -174,7 +164,7 @@ const TransferList = ({
           {category?.replace(/_/g, ' ')}
         </Tag>
       ),
-      width: 130,
+      width: 170,
       filters: [
         { text: 'Cash to Bank', value: 'CASH_TO_BANK' },
         { text: 'Bank to Cash', value: 'BANK_TO_CASH' },

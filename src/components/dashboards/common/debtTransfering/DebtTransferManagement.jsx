@@ -247,7 +247,7 @@ const DebtTransferManagement = () => {
               pagination={{ pageSize: 20 }}
             />
           </TabPane>
-
+{/* 
           <TabPane
             tab={
               <span>
@@ -258,7 +258,7 @@ const DebtTransferManagement = () => {
             key="analytics"
           >
             <TransferAnalytics transactions={transactions} transfers={transfers} />
-          </TabPane>
+          </TabPane> */}
         </Tabs>
       </Card>
 

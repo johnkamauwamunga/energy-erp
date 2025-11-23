@@ -22,9 +22,9 @@ import { useApp } from '../../../../context/AppContext';
 import CashSettlementForm from './modals/CashSettlementForm';
 import ElectronicTransferForm from './modals/ElectronicTransferForm';
 import BankSettlementForm from './modals/BankSettlementForm';
-import CrossStationForm from './modals/CrossStationForm';
-import ReversalForm from './modals/ReversalForm';
-import WriteOffForm from './modals/WriteOffForm';
+// import CrossStationForm from './modals/CrossStationForm';
+// import ReversalForm from './modals/ReversalForm';
+// import WriteOffForm from './modals/WriteOffForm';
 
 const { TabPane } = Tabs;
 const { Step } = Steps;
@@ -59,28 +59,28 @@ const TransferForms = ({ visible, onClose, onSuccess }) => {
       icon: <BankOutlined />,
       component: BankSettlementForm,
       description: 'Debtor pays directly to bank account'
-    },
-    {
-      key: 'cross-station',
-      label: 'Cross-Station',
-      icon: <TeamOutlined />,
-      component: CrossStationForm,
-      description: 'Pay debt across multiple stations'
-    },
-    {
-      key: 'reversal',
-      label: 'Reversal',
-      icon: <UndoOutlined />,
-      component: ReversalForm,
-      description: 'Reverse a previous settlement'
-    },
-    {
-      key: 'write-off',
-      label: 'Write-off',
-      icon: <FileTextOutlined />,
-      component: WriteOffForm,
-      description: 'Write off unrecoverable debt'
     }
+    // {
+    //   key: 'cross-station',
+    //   label: 'Cross-Station',
+    //   icon: <TeamOutlined />,
+    //   component: CrossStationForm,
+    //   description: 'Pay debt across multiple stations'
+    // },
+    // {
+    //   key: 'reversal',
+    //   label: 'Reversal',
+    //   icon: <UndoOutlined />,
+    //   component: ReversalForm,
+    //   description: 'Reverse a previous settlement'
+    // },
+    // {
+    //   key: 'write-off',
+    //   label: 'Write-off',
+    //   icon: <FileTextOutlined />,
+    //   component: WriteOffForm,
+    //   description: 'Write off unrecoverable debt'
+    // }
   ];
 
   useEffect(() => {

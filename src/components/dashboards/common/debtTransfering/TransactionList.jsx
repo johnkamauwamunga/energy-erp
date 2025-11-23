@@ -122,19 +122,8 @@ const TransactionList = ({
            'N/A'}
         </Text>
       ),
+       width: 140,
       ellipsis: true
-    },
-    {
-      title: 'Station',
-      key: 'station',
-      render: (_, record) => (
-        <Text type="secondary">
-          {record.stationDebtorAccount?.station?.name || 
-           record.station?.name || 
-           'N/A'}
-        </Text>
-      ),
-      width: 120
     },
     {
       title: 'Type',
@@ -197,17 +186,6 @@ const TransactionList = ({
       ),
       width: 120,
       sorter: (a, b) => a.newBalance - b.newBalance
-    },
-    {
-      title: 'Description',
-      dataIndex: 'description',
-      key: 'description',
-      ellipsis: true,
-      render: (text) => (
-        <Tooltip title={text}>
-          <span>{text}</span>
-        </Tooltip>
-      )
     },
     {
       title: 'Recorded By',
