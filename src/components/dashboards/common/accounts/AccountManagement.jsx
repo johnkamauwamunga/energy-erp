@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Card,
   Table,
@@ -16,12 +16,12 @@ import {
   Statistic,
   Tooltip,
   Tabs,
-  Divider,
   Descriptions,
   Switch,
   Popconfirm,
   DatePicker,
-  Alert
+  Alert,
+  Badge
 } from 'antd';
 import {
   BankOutlined,
@@ -35,7 +35,8 @@ import {
   ArrowDownOutlined,
   HistoryOutlined,
   UserOutlined,
-  ExclamationCircleOutlined
+  ExclamationCircleOutlined,
+  SyncOutlined
 } from '@ant-design/icons';
 import { bankingService } from '../../../../services/bankingService/bankingService';
 import { bankService } from '../../../../services/bankService/bankService';
@@ -70,15 +71,22 @@ const AccountsManagement = () => {
   const [depositForm] = Form.useForm();
   const [transferForm] = Form.useForm();
   const [formErrors, setFormErrors] = useState([]);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [refreshCount, setRefreshCount] = useState(0);
 
+  const refreshIntervalRef = useRef(null);
   const currentUser = state.currentUser;
  
   const isCompanyLevel = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'LINES_MANAGER'].includes(currentUser?.role);
   const isStationLevel = ['STATION_MANAGER', 'SUPERVISOR', 'ATTENDANT'].includes(currentUser?.role);
 
+  // Auto-refresh configuration
+  const REFRESH_INTERVAL = 15000; // 15 seconds
+  const QUICK_REFRESH_INTERVAL = 5000; // 5 seconds for quick updates
+
   // Load station wallet data
   const loadWalletData = async () => {
-    setLoading(true);
     try {
       let wallet;
       if (isStationLevel) {
@@ -87,19 +95,15 @@ const AccountsManagement = () => {
         wallet = await bankingService.getStationWallet(currentUser.stationId);
       }
       setWalletData(wallet);
+      return wallet;
     } catch (error) {
-      message.error('Failed to load wallet data');
       console.error('Error loading wallet:', error);
-    } finally {
-      setLoading(false);
+      throw error;
     }
   };
 
-  console.log("wallet info", walletData);
-
   // Load bank accounts
   const loadAccounts = async () => {
-    setLoading(true);
     try {
       const result = await bankService.getBankAccounts({
         ...filters,
@@ -112,11 +116,10 @@ const AccountsManagement = () => {
         ...prev,
         total: result.pagination?.total || result.total || 0
       }));
+      return result;
     } catch (error) {
-      message.error('Failed to load bank accounts');
       console.error('Error loading accounts:', error);
-    } finally {
-      setLoading(false);
+      throw error;
     }
   };
 
@@ -144,7 +147,6 @@ const AccountsManagement = () => {
 
   // Load bank transfers (bank deposits)
   const loadBankTransfers = async () => {
-    setLoading(true);
     try {
       const result = await bankingService.getBankTransactions({
         ...filters,
@@ -168,26 +170,80 @@ const AccountsManagement = () => {
         ...prev,
         total: result.pagination?.total || result.total || 0
       }));
+      return result;
     } catch (error) {
-      message.error('Failed to load bank transfers');
       console.error('Error loading transfers:', error);
+      throw error;
+    }
+  };
+
+  // Main refresh function
+  const refreshAllData = async (showMessage = false) => {
+    if (loading) return; // Prevent multiple simultaneous refreshes
+    
+    setLoading(true);
+    try {
+      const refreshPromises = [loadWalletData(), loadAccounts()];
+      
+      if (activeTab === 'transfers') {
+        refreshPromises.push(loadBankTransfers());
+      }
+
+      await Promise.all(refreshPromises);
+      
+      setLastUpdated(new Date());
+      setRefreshCount(prev => prev + 1);
+      
+      if (showMessage) {
+        message.success('Data refreshed successfully');
+      }
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      if (showMessage) {
+        message.error('Failed to refresh data');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Refresh all data
-  const refreshAllData = async () => {
-    await Promise.all([
-      loadWalletData(),
-      loadAccounts(),
-      activeTab === 'transfers' && loadBankTransfers()
-    ]);
+  // Quick refresh - only updates wallet data (faster)
+  const quickRefresh = async () => {
+    try {
+      await loadWalletData();
+      setLastUpdated(new Date());
+    } catch (error) {
+      console.error('Quick refresh failed:', error);
+    }
   };
 
+  // Setup auto-refresh intervals
   useEffect(() => {
-    loadWalletData();
-    loadAccounts();
+    if (autoRefresh) {
+      // Main refresh interval
+      refreshIntervalRef.current = setInterval(() => {
+        refreshAllData(false);
+      }, REFRESH_INTERVAL);
+
+      // Quick refresh interval for wallet data only
+      const quickRefreshInterval = setInterval(() => {
+        quickRefresh();
+      }, QUICK_REFRESH_INTERVAL);
+
+      return () => {
+        clearInterval(refreshIntervalRef.current);
+        clearInterval(quickRefreshInterval);
+      };
+    } else {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    }
+  }, [autoRefresh]);
+
+  // Initial load and reload when dependencies change
+  useEffect(() => {
+    refreshAllData(false);
   }, []);
 
   useEffect(() => {
@@ -202,7 +258,37 @@ const AccountsManagement = () => {
     }
   }, [activeTab, filters, pagination.page, pagination.limit]);
 
-  // Handle deposit creation
+  // Handle page visibility changes (refresh when tab becomes active)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && autoRefresh) {
+        // Page became visible, refresh data
+        refreshAllData(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [autoRefresh]);
+
+  // Manual refresh with visual feedback
+  const handleManualRefresh = async () => {
+    await refreshAllData(true);
+  };
+
+  // Toggle auto-refresh
+  const handleAutoRefreshToggle = (checked) => {
+    setAutoRefresh(checked);
+    if (checked) {
+      message.success('Auto-refresh enabled');
+    } else {
+      message.info('Auto-refresh disabled');
+    }
+  };
+
+  // Handle deposit creation with immediate refresh
   const handleDepositSubmit = async (values) => {
     setSubmitting(true);
     setFormErrors([]);
@@ -237,8 +323,8 @@ const AccountsManagement = () => {
       depositForm.resetFields();
       setFormErrors([]);
       
-      // Refresh all data
-      await refreshAllData();
+      // Immediate refresh after deposit - refresh ALL data
+      await refreshAllData(false);
       
     } catch (error) {
       console.error('Deposit error:', error);
@@ -291,7 +377,7 @@ const AccountsManagement = () => {
       message.success('Transfer initiated successfully');
       setTransferModalVisible(false);
       transferForm.resetFields();
-      loadBankTransfers();
+      await loadBankTransfers();
     } catch (error) {
       message.error(error.message || 'Failed to create transfer');
     }
@@ -301,14 +387,14 @@ const AccountsManagement = () => {
   const walletStats = useMemo(() => {
     if (!walletData) return null;
 
-    const todayNetFlow = (walletData.todaysInflow || 0) - (walletData.todaysOutflow || 0);
+    const latestNetFlow = (walletData.todaysInflow || 0) - (walletData.todaysOutflow || 0);
     const balanceStatus = bankingService.getWalletBalanceStatus(walletData);
 
     return {
       currentBalance: walletData.currentBalance || 0,
-      todaysInflow: walletData.todaysInflow || 0,
-      todaysOutflow: walletData.todaysOutflow || 0,
-      todayNetFlow,
+      latestInflow: walletData.todaysInflow || 0,
+      latestOutflow: walletData.todaysOutflow || 0,
+      latestNetFlow,
       balanceStatus
     };
   }, [walletData]);
@@ -317,6 +403,27 @@ const AccountsManagement = () => {
   const formattedWallet = useMemo(() => {
     return walletData ? bankingService.formatStationWallet(walletData) : null;
   }, [walletData]);
+
+  // Format last updated time
+  const lastUpdatedDisplay = useMemo(() => {
+    if (!lastUpdated) return 'Never';
+    return lastUpdated.toLocaleTimeString();
+  }, [lastUpdated]);
+
+  // Determine if transaction is negative (outflow)
+  const isNegativeTransaction = (type, amount) => {
+    // Negative transactions (outflows)
+    const negativeTypes = [
+      'EXPENSE_PAYMENT',
+      'CASH_OUT', 
+      'BANK_DEPOSIT', // Bank deposit moves money out of wallet
+      'EXPENSE',
+      'WITHDRAWAL',
+      'TRANSFER_OUT'
+    ];
+    
+    return negativeTypes.includes(type) || amount < 0;
+  };
 
   // Wallet Transactions Columns
   const walletColumns = [
@@ -337,8 +444,11 @@ const AccountsManagement = () => {
           'BANK_DEPOSIT': { color: 'blue', text: 'Bank Deposit' },
           'CASH_IN': { color: 'green', text: 'Cash In' },
           'CASH_OUT': { color: 'red', text: 'Cash Out' },
-          'EXPENSE': { color: 'orange', text: 'Expense' },
-          'ADJUSTMENT': { color: 'purple', text: 'Adjustment' }
+          'EXPENSE_PAYMENT': { color: 'red', text: 'Expense Payment' },
+          'EXPENSE': { color: 'red', text: 'Expense' },
+          'ADJUSTMENT': { color: 'purple', text: 'Adjustment' },
+          'WITHDRAWAL': { color: 'red', text: 'Withdrawal' },
+          'TRANSFER_OUT': { color: 'red', text: 'Transfer Out' }
         };
         const config = typeConfig[type] || { color: 'default', text: type };
         return <Tag color={config.color}>{config.text}</Tag>;
@@ -349,20 +459,27 @@ const AccountsManagement = () => {
       dataIndex: 'description',
       key: 'description',
       ellipsis: true,
+      width:180,
       render: (description) => description || 'No description'
     },
     {
       title: 'Amount',
       dataIndex: 'amount',
       key: 'amount',
-      render: (amount, record) => (
-        <span style={{ 
-          color: amount >= 0 ? '#52c41a' : '#ff4d4f',
-          fontWeight: 'bold'
-        }}>
-          {amount >= 0 ? '+' : '-'}{record.formattedAmount || bankingService.formatCurrency(Math.abs(amount))}
-        </span>
-      ),
+      render: (amount, record) => {
+        const isNegative = isNegativeTransaction(record.type, amount);
+        const displayAmount = Math.abs(amount);
+        
+        return (
+          <span style={{ 
+            color: isNegative ? '#ff4d4f' : '#52c41a',
+    
+          }}>
+            {isNegative ? '-' : '+'}{bankingService.formatCurrency(displayAmount)}
+          </span>
+        );
+      },
+      width:150,
       align: 'right'
     },
     {
@@ -373,13 +490,14 @@ const AccountsManagement = () => {
           {record.formattedPreviousBalance || bankingService.formatCurrency(record.previousBalance)}
         </span>
       ),
+        width:150,
       align: 'right'
     },
     {
       title: 'New Balance',
       key: 'newBalance',
       render: (_, record) => (
-        <span style={{ fontWeight: 'bold' }}>
+        <span style={{ color: 'blue'}}>
           {record.formattedNewBalance || bankingService.formatCurrency(record.newBalance)}
         </span>
       ),
@@ -506,6 +624,8 @@ const AccountsManagement = () => {
   ];
 
   const handleViewTransaction = (transaction) => {
+    const isNegative = isNegativeTransaction(transaction.type, transaction.amount);
+    
     Modal.info({
       title: 'Transaction Details',
       content: (
@@ -515,18 +635,18 @@ const AccountsManagement = () => {
           </Descriptions.Item>
           <Descriptions.Item label="Type">
             <Tag color={
-              transaction.type === 'SHIFT_CASH_IN' ? 'green' : 
-              transaction.type === 'BANK_DEPOSIT' ? 'blue' : 'default'
+              isNegative ? 'red' : 
+              transaction.type === 'BANK_DEPOSIT' ? 'blue' : 'green'
             }>
               {transaction.type}
             </Tag>
           </Descriptions.Item>
           <Descriptions.Item label="Amount">
             <span style={{ 
-              color: transaction.amount >= 0 ? '#52c41a' : '#ff4d4f',
+              color: isNegative ? '#ff4d4f' : '#52c41a',
               fontWeight: 'bold'
             }}>
-              {transaction.amount >= 0 ? '+' : '-'}{bankingService.formatCurrency(Math.abs(transaction.amount))}
+              {isNegative ? '-' : '+'}{bankingService.formatCurrency(Math.abs(transaction.amount))}
             </span>
           </Descriptions.Item>
           <Descriptions.Item label="Previous Balance">
@@ -609,7 +729,7 @@ const AccountsManagement = () => {
     try {
       // await bankingService.cancelBankTransaction(transferId);
       message.success('Transfer cancelled successfully');
-      loadBankTransfers();
+      await loadBankTransfers();
     } catch (error) {
       message.error(error.message || 'Failed to cancel transfer');
     }
@@ -624,22 +744,48 @@ const AccountsManagement = () => {
             <Space direction="vertical" size={0}>
               <h2 style={{ margin: 0, fontSize: '20px' }}>
                 <WalletOutlined /> Station Banking Management
+                {autoRefresh && (
+                  <Badge 
+                    dot 
+                    style={{ 
+                      backgroundColor: '#52c41a',
+                      marginLeft: 8
+                    }} 
+                  />
+                )}
               </h2>
               <p style={{ margin: 0, color: '#666' }}>
                 {isStationLevel ? 'Manage your station wallet and bank transfers' : 'Monitor station banking activities'}
+                {lastUpdated && (
+                  <span style={{ marginLeft: 8, fontSize: '12px', color: '#999' }}>
+                    (Updated: {lastUpdatedDisplay})
+                  </span>
+                )}
               </p>
             </Space>
           </Col>
           <Col xs={24} md={12}>
             <Row gutter={[8, 8]} justify="end">
               <Col>
-                <Button
-                  icon={<ReloadOutlined />}
-                  onClick={refreshAllData}
-                  loading={loading}
-                >
-                  Refresh
-                </Button>
+                <Space>
+                  <Tooltip title="Auto Refresh">
+                    <Switch
+                      checked={autoRefresh}
+                      onChange={handleAutoRefreshToggle}
+                      checkedChildren="Auto ON"
+                      unCheckedChildren="Auto OFF"
+                    />
+                  </Tooltip>
+                  <Tooltip title={`Refresh (${refreshCount})`}>
+                    <Button
+                      icon={<SyncOutlined spin={loading} />}
+                      onClick={handleManualRefresh}
+                      loading={loading}
+                    >
+                      Refresh
+                    </Button>
+                  </Tooltip>
+                </Space>
               </Col>
               {isStationLevel && (
                 <Col>
@@ -657,6 +803,23 @@ const AccountsManagement = () => {
           </Col>
         </Row>
       </Card>
+
+      {/* Auto-refresh Status */}
+      {autoRefresh && (
+        <Alert
+          message="Auto-refresh Enabled"
+          description="Data is automatically updated every 15 seconds. Wallet balance updates every 5 seconds."
+          type="info"
+          showIcon
+          icon={<SyncOutlined />}
+          style={{ marginBottom: 16 }}
+          action={
+            <Button size="small" onClick={() => setAutoRefresh(false)}>
+              Disable
+            </Button>
+          }
+        />
+      )}
 
       {/* Wallet Statistics */}
       {formattedWallet && (
@@ -683,8 +846,8 @@ const AccountsManagement = () => {
           <Col xs={24} sm={12} md={6}>
             <Card size="small">
               <Statistic
-                title="Today's Inflow"
-                value={walletStats.todaysInflow}
+                title="Latest Inflow"
+                value={walletStats.latestInflow}
                 formatter={value => bankingService.formatCurrency(value)}
                 valueStyle={{ color: '#52c41a' }}
                 prefix={<ArrowDownOutlined />}
@@ -694,8 +857,8 @@ const AccountsManagement = () => {
           <Col xs={24} sm={12} md={6}>
             <Card size="small">
               <Statistic
-                title="Today's Outflow"
-                value={walletStats.todaysOutflow}
+                title="Latest Outflow"
+                value={walletStats.latestOutflow}
                 formatter={value => bankingService.formatCurrency(value)}
                 valueStyle={{ color: '#ff4d4f' }}
                 prefix={<ArrowUpOutlined />}
@@ -705,13 +868,13 @@ const AccountsManagement = () => {
           <Col xs={24} sm={12} md={6}>
             <Card size="small">
               <Statistic
-                title="Net Flow Today"
-                value={walletStats.todayNetFlow}
+                title="Latest Net Flow"
+                value={walletStats.latestNetFlow}
                 formatter={value => bankingService.formatCurrency(value)}
                 valueStyle={{ 
-                  color: walletStats.todayNetFlow >= 0 ? '#52c41a' : '#ff4d4f'
+                  color: walletStats.latestNetFlow >= 0 ? '#52c41a' : '#ff4d4f'
                 }}
-                prefix={walletStats.todayNetFlow >= 0 ? <ArrowDownOutlined /> : <ArrowUpOutlined />}
+                prefix={walletStats.latestNetFlow >= 0 ? <ArrowDownOutlined /> : <ArrowUpOutlined />}
               />
             </Card>
           </Col>
@@ -750,106 +913,100 @@ const AccountsManagement = () => {
         <Tabs 
           activeKey={activeTab} 
           onChange={setActiveTab}
-          items={[
-            {
-              key: 'wallet',
-              label: (
-                <span>
-                  <WalletOutlined />
-                  Wallet Transactions ({transactions.length})
-                </span>
-              ),
-              children: (
-                <>
-                  {/* Wallet Transactions Table */}
-                  <Table
-                    columns={walletColumns}
-                    dataSource={transactions}
-                    loading={loading}
-                    rowKey="id"
-                    pagination={{
-                      current: pagination.page,
-                      pageSize: pagination.limit,
-                      total: pagination.total,
-                      showSizeChanger: true,
-                      showQuickJumper: true,
-                      showTotal: (total, range) => 
-                        `Showing ${range[0]}-${range[1]} of ${total} transactions`,
-                      onChange: (page, pageSize) => {
-                        setPagination(prev => ({ ...prev, page, limit: pageSize }));
-                      }
-                    }}
+        >
+          <TabPane 
+            tab={
+              <span>
+                <WalletOutlined />
+                Wallet Transactions ({transactions.length})
+              </span>
+            } 
+            key="wallet"
+          >
+            {/* Wallet Transactions Table */}
+            <Table
+              columns={walletColumns}
+              dataSource={transactions}
+              loading={loading}
+              rowKey="id"
+              pagination={{
+                current: pagination.page,
+                pageSize: pagination.limit,
+                total: pagination.total,
+                showSizeChanger: true,
+                showQuickJumper: true,
+                showTotal: (total, range) => 
+                  `Showing ${range[0]}-${range[1]} of ${total} transactions`,
+                onChange: (page, pageSize) => {
+                  setPagination(prev => ({ ...prev, page, limit: pageSize }));
+                }
+              }}
+            />
+          </TabPane>
+          
+          <TabPane 
+            tab={
+              <span>
+                <SwapOutlined />
+                Bank Transfers ({transfers.length})
+              </span>
+            } 
+            key="transfers"
+          >
+            {/* Filters */}
+            <Card size="small" style={{ marginBottom: 16 }}>
+              <Row gutter={[8, 8]} align="middle">
+                <Col xs={24} sm={8} md={6}>
+                  <Input
+                    placeholder="Search transfers..."
+                    value={filters.search}
+                    onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                    prefix={<SearchOutlined />}
                   />
-                </>
-              )
-            },
-            {
-              key: 'transfers',
-              label: (
-                <span>
-                  <SwapOutlined />
-                  Bank Transfers
-                </span>
-              ),
-              children: (
-                <>
-                  {/* Filters */}
-                  <Card size="small" style={{ marginBottom: 16 }}>
-                    <Row gutter={[8, 8]} align="middle">
-                      <Col xs={24} sm={8} md={6}>
-                        <Input
-                          placeholder="Search transfers..."
-                          value={filters.search}
-                          onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-                          prefix={<SearchOutlined />}
-                        />
-                      </Col>
-                      <Col xs={12} sm={8} md={4}>
-                        <Select
-                          style={{ width: '100%' }}
-                          placeholder="Status"
-                          value={filters.status}
-                          onChange={(value) => setFilters(prev => ({ ...prev, status: value }))}
-                          allowClear
-                        >
-                          <Option value="COMPLETED">Completed</Option>
-                          <Option value="PENDING">Pending</Option>
-                          <Option value="FAILED">Failed</Option>
-                        </Select>
-                      </Col>
-                      <Col xs={12} sm={8} md={6}>
-                        <RangePicker
-                          style={{ width: '100%' }}
-                          onChange={(dates) => setFilters(prev => ({ ...prev, dateRange: dates }))}
-                        />
-                      </Col>
-                    </Row>
-                  </Card>
+                </Col>
+                <Col xs={12} sm={8} md={4}>
+                  <Select
+                    style={{ width: '100%' }}
+                    placeholder="Status"
+                    value={filters.status}
+                    onChange={(value) => setFilters(prev => ({ ...prev, status: value }))}
+                    allowClear
+                  >
+                    <Option value="COMPLETED">Completed</Option>
+                    <Option value="PENDING">Pending</Option>
+                    <Option value="FAILED">Failed</Option>
+                  </Select>
+                </Col>
+                <Col xs={12} sm={8} md={6}>
+                  <RangePicker
+                    style={{ width: '100%' }}
+                    onChange={(dates) => setFilters(prev => ({ ...prev, dateRange: dates }))}
+                  />
+                </Col>
+              </Row>
+            </Card>
 
-                  {/* Transfers Table */}
-                  <Table
-                    columns={transferColumns}
-                    dataSource={transfers}
-                    loading={loading}
-                    rowKey="id"
-                    pagination={{
-                      current: pagination.page,
-                      pageSize: pagination.limit,
-                      total: pagination.total,
-                      showSizeChanger: true,
-                      showQuickJumper: true,
-                      showTotal: (total, range) => 
-                        `Showing ${range[0]}-${range[1]} of ${total} transfers`,
-                      onChange: (page, pageSize) => {
-                        setPagination(prev => ({ ...prev, page, limit: pageSize }));
-                      }
-                    }}
-                  />
-                </>
-              )
-            }
-          ]}
-        />
+            {/* Transfers Table */}
+            <Table
+              columns={transferColumns}
+              dataSource={transfers}
+              loading={loading}
+              rowKey="id"
+              pagination={{
+                current: pagination.page,
+                pageSize: pagination.limit,
+                total: pagination.total,
+                showSizeChanger: true,
+                showQuickJumper: true,
+                showTotal: (total, range) => 
+                  `Showing ${range[0]}-${range[1]} of ${total} transfers`,
+                onChange: (page, pageSize) => {
+                  setPagination(prev => ({ ...prev, page, limit: pageSize }));
+                }
+              }}
+            />
+          </TabPane>
+        </Tabs>
       </Card>
 
       {/* Bank Deposit Modal */}

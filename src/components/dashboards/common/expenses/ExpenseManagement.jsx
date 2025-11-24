@@ -31,7 +31,12 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   FileTextOutlined,
-  FilterOutlined
+  FilterOutlined,
+  ShopOutlined,
+  UserOutlined,
+  CalendarOutlined,
+  SafetyCertificateOutlined,
+  TransactionOutlined
 } from '@ant-design/icons';
 import { expenseService } from '../../../../services/expenseService/expenseService';
 import { useApp } from '../../../../context/AppContext';
@@ -68,7 +73,7 @@ const ExpenseManagement = () => {
   const [viewingExpense, setViewingExpense] = useState(null);
   const [createModalVisible, setCreateModalVisible] = useState(false);
 
-  // Load expenses - FIXED: Use getExpensesByStation instead
+  // Load expenses using getExpenses()
   const loadExpenses = async () => {
     if (!userStationId) {
       message.warning('Please select a station first');
@@ -77,30 +82,25 @@ const ExpenseManagement = () => {
 
     setLoading(true);
     try {
-      // Use getExpensesByStation which automatically filters by station
       const result = await expenseService.getExpenses();
       
-      console.log("management data ",result)
-      // Handle the backend response structure { success, data, pagination }
-      const expensesData = result || [];
-      const paginationData = result.pagination || {
-        total: result.total || 0,
-        page: pagination.page,
-        limit: pagination.limit
-      };
+      console.log("📊 Management data loaded:", result);
       
-      setExpenses(expensesData);
-
-
+      // Filter expenses by current station if needed
+      const stationExpenses = Array.isArray(result) 
+        ? result.filter(expense => expense.stationId === userStationId)
+        : [];
+      
+      setExpenses(stationExpenses);
       setPagination(prev => ({
         ...prev,
-        total: paginationData.total,
-        page: paginationData.page || pagination.page,
-        limit: paginationData.limit || pagination.limit
+        total: stationExpenses.length
       }));
+      
     } catch (error) {
       message.error('Failed to load expenses');
-      console.error('Error loading expenses:', error);
+      console.error('❌ Error loading expenses:', error);
+      setExpenses([]);
     } finally {
       setLoading(false);
     }
@@ -110,7 +110,7 @@ const ExpenseManagement = () => {
     if (userStationId) {
       loadExpenses();
     }
-  }, [filters, pagination.page, pagination.limit, userStationId]);
+  }, [userStationId]);
 
   // Handle create modal
   const handleShowCreateModal = () => {
@@ -118,9 +118,9 @@ const ExpenseManagement = () => {
   };
 
   const handleCreateSuccess = () => {
-    setCreateModalVisible(false);
-    message.success('Expense created successfully');
-    loadExpenses();
+    console.log("✅ Expense created successfully, refreshing data...");
+    loadExpenses(); // Refresh the data
+    setCreateModalVisible(false); // Close the create modal
   };
 
   const handleCreateCancel = () => {
@@ -210,13 +210,14 @@ const ExpenseManagement = () => {
     setViewModalVisible(true);
   };
 
-  // Table columns - FIXED: Added proper dataIndex and key for all columns
+  // Table columns with additional fields
   const columns = [
     {
       title: 'Expense #',
       dataIndex: 'expenseNumber',
       key: 'expenseNumber',
       width: 120,
+      fixed: 'left',
       render: (expenseNumber) => (
         <Text strong style={{ fontSize: '12px' }}>
           {expenseNumber}
@@ -254,7 +255,8 @@ const ExpenseManagement = () => {
         <Text strong style={{ color: '#cf1322', fontSize: '14px' }}>
           {expenseService.formatCurrency(amount)}
         </Text>
-      )
+      ),
+      sorter: (a, b) => a.amount - b.amount
     },
     {
       title: 'Payment Source',
@@ -268,19 +270,19 @@ const ExpenseManagement = () => {
       )
     },
     {
-      title: 'Context',
+      title: 'Shift Context',
       key: 'context',
       width: 150,
       render: (_, record) => (
         <Space direction="vertical" size={2}>
           {record.shift && (
             <Text style={{ fontSize: '11px' }}>
-              🕐 Shift: {record.shift.shiftNumber}
+              🕐 {record.shift.shiftNumber}
             </Text>
           )}
           {record.island && (
             <Text style={{ fontSize: '11px' }}>
-              🏝️ Island: {record.island.code}
+              🏝️ {record.island.code}
             </Text>
           )}
           {!record.shift && !record.island && (
@@ -296,28 +298,79 @@ const ExpenseManagement = () => {
       key: 'recordedBy',
       width: 140,
       render: (_, record) => (
-        <Text style={{ fontSize: '11px' }}>
-          👤 {record.recordedBy?.firstName} {record.recordedBy?.lastName}
-        </Text>
+        <Space direction="vertical" size={2}>
+          <Text style={{ fontSize: '11px' }}>
+            <UserOutlined /> {record.recordedBy?.firstName} {record.recordedBy?.lastName}
+          </Text>
+          <Text type="secondary" style={{ fontSize: '9px' }}>
+            {record.recordedBy?.email}
+          </Text>
+        </Space>
       )
     },
     {
-      title: 'Date',
+      title: 'Wallet Transaction',
+      key: 'walletTransaction',
+      width: 120,
+      render: (_, record) => (
+        record.walletTransaction ? (
+          <Tag color="green" icon={<TransactionOutlined />}>
+            Paid
+          </Tag>
+        ) : (
+          <Tag color="default">No Transaction</Tag>
+        )
+      )
+    },
+    {
+      title: 'Expense Date',
       dataIndex: 'expenseDate',
       key: 'expenseDate',
-      width: 120,
-      render: (date) => expenseService.formatDate(date)
+      width: 150,
+      render: (date) => (
+        <Space direction="vertical" size={1}>
+          <Text style={{ fontSize: '11px' }}>
+            <CalendarOutlined /> {expenseService.formatDate(date)}
+          </Text>
+        </Space>
+      ),
+      sorter: (a, b) => new Date(a.expenseDate) - new Date(b.expenseDate)
+    },
+    {
+      title: 'Created At',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      width: 150,
+      render: (date) => (
+        <Text type="secondary" style={{ fontSize: '10px' }}>
+          {expenseService.formatDate(date)}
+        </Text>
+      )
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
       width: 120,
-      render: (status) => (
-        <Tag color={expenseService.getStatusColor(status)}>
-          {expenseService.getStatusDisplay(status)}
-        </Tag>
-      )
+      render: (status, record) => (
+        <Space direction="vertical" size={2}>
+          <Tag color={expenseService.getStatusColor(status)}>
+            {expenseService.getStatusDisplay(status)}
+          </Tag>
+          {record.approvedBy && (
+            <Text type="secondary" style={{ fontSize: '9px' }}>
+              By: {record.approvedBy?.firstName}
+            </Text>
+          )}
+        </Space>
+      ),
+      filters: [
+        { text: 'Draft', value: 'DRAFT' },
+        { text: 'Pending Approval', value: 'PENDING_APPROVAL' },
+        { text: 'Approved', value: 'APPROVED' },
+        { text: 'Rejected', value: 'REJECTED' }
+      ],
+      onFilter: (value, record) => record.status === value
     },
     {
       title: 'Actions',
@@ -350,20 +403,34 @@ const ExpenseManagement = () => {
            record.status === 'PENDING_APPROVAL' && (
             <>
               <Tooltip title="Approve">
-                <Button 
-                  icon={<CheckCircleOutlined />} 
-                  size="small"
-                  type="primary"
-                  onClick={() => handleApprove(record.id)}
-                />
+                <Popconfirm
+                  title="Approve Expense"
+                  description="Are you sure you want to approve this expense?"
+                  onConfirm={() => handleApprove(record.id)}
+                  okText="Yes"
+                  cancelText="No"
+                >
+                  <Button 
+                    icon={<CheckCircleOutlined />} 
+                    size="small"
+                    type="primary"
+                  />
+                </Popconfirm>
               </Tooltip>
               <Tooltip title="Reject">
-                <Button 
-                  icon={<CloseCircleOutlined />} 
-                  size="small"
-                  danger
-                  onClick={() => handleReject(record.id)}
-                />
+                <Popconfirm
+                  title="Reject Expense"
+                  description="Are you sure you want to reject this expense?"
+                  onConfirm={() => handleReject(record.id)}
+                  okText="Yes"
+                  cancelText="No"
+                >
+                  <Button 
+                    icon={<CloseCircleOutlined />} 
+                    size="small"
+                    danger
+                  />
+                </Popconfirm>
               </Tooltip>
             </>
           )}
@@ -406,6 +473,9 @@ const ExpenseManagement = () => {
     const approvedAmount = expenses
       .filter(e => e.status === 'APPROVED')
       .reduce((sum, expense) => sum + (expense.amount || 0), 0);
+    const rejectedAmount = expenses
+      .filter(e => e.status === 'REJECTED')
+      .reduce((sum, expense) => sum + (expense.amount || 0), 0);
     
     return { 
       total, 
@@ -415,7 +485,8 @@ const ExpenseManagement = () => {
       draft,
       totalAmount, 
       pendingAmount,
-      approvedAmount 
+      approvedAmount,
+      rejectedAmount
     };
   }, [expenses]);
 
@@ -440,19 +511,45 @@ const ExpenseManagement = () => {
     });
   };
 
-  // Handle table pagination change
-  const handleTableChange = (page, pageSize) => {
-    setPagination(prev => ({ 
-      ...prev, 
-      page: page || prev.page, 
-      limit: pageSize || prev.limit 
-    }));
-  };
-
   // Handle search input
   const handleSearch = (value) => {
     setFilters(prev => ({ ...prev, search: value }));
   };
+
+  // Filter expenses based on filters
+  const filteredExpenses = useMemo(() => {
+    let filtered = expenses;
+
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      filtered = filtered.filter(expense => 
+        expense.title.toLowerCase().includes(searchLower) ||
+        expense.description?.toLowerCase().includes(searchLower) ||
+        expense.expenseNumber.toLowerCase().includes(searchLower)
+      );
+    }
+
+    if (filters.category) {
+      filtered = filtered.filter(expense => expense.category === filters.category);
+    }
+
+    if (filters.status) {
+      filtered = filtered.filter(expense => expense.status === filters.status);
+    }
+
+    if (filters.paymentSource) {
+      filtered = filtered.filter(expense => expense.paymentSource === filters.paymentSource);
+    }
+
+    if (filters.startDate && filters.endDate) {
+      filtered = filtered.filter(expense => {
+        const expenseDate = new Date(expense.expenseDate);
+        return expenseDate >= new Date(filters.startDate) && expenseDate <= new Date(filters.endDate);
+      });
+    }
+
+    return filtered;
+  }, [expenses, filters]);
 
   if (!userStationId) {
     return (
@@ -545,7 +642,7 @@ const ExpenseManagement = () => {
             />
           </Card>
         </Col>
-        <Col xs={12} sm={6} md={6}>
+        <Col xs={12} sm={6} md={4}>
           <Card size="small">
             <Statistic
               title="Total Amount"
@@ -556,7 +653,7 @@ const ExpenseManagement = () => {
             />
           </Card>
         </Col>
-        <Col xs={12} sm={6} md={6}>
+        <Col xs={12} sm={6} md={4}>
           <Card size="small">
             <Statistic
               title="Pending Amount"
@@ -650,20 +747,27 @@ const ExpenseManagement = () => {
       <Card>
         <Table
           columns={columns}
-          dataSource={expenses}
+          dataSource={filteredExpenses}
           loading={loading}
           rowKey="id"
           pagination={{
             current: pagination.page,
             pageSize: pagination.limit,
-            total: pagination.total,
+            total: filteredExpenses.length,
             showSizeChanger: true,
             showQuickJumper: true,
             showTotal: (total, range) => 
               `Showing ${range[0]}-${range[1]} of ${total} expenses`,
-            onChange: handleTableChange
+            onChange: (page, pageSize) => {
+              setPagination(prev => ({ 
+                ...prev, 
+                page, 
+                limit: pageSize 
+              }));
+            }
           }}
-          scroll={{ x: 1200 }}
+          scroll={{ x: 1800 }}
+          size="middle"
         />
       </Card>
 
@@ -778,94 +882,111 @@ const ExpenseManagement = () => {
             Close
           </Button>
         ]}
-        width={600}
+        width={700}
       >
         {viewingExpense && (
-          <div>
-            <Row gutter={[16, 16]}>
-              <Col span={12}>
-                <Text strong>Expense Number:</Text>
+          <Row gutter={[16, 16]}>
+            <Col span={12}>
+              <Text strong>Expense Number:</Text>
+              <br />
+              <Text code>{viewingExpense.expenseNumber}</Text>
+            </Col>
+            <Col span={12}>
+              <Text strong>Amount:</Text>
+              <br />
+              <Text style={{ color: '#cf1322', fontSize: '16px', fontWeight: 'bold' }}>
+                {expenseService.formatCurrency(viewingExpense.amount)}
+              </Text>
+            </Col>
+            <Col span={12}>
+              <Text strong>Title:</Text>
+              <br />
+              {viewingExpense.title}
+            </Col>
+            <Col span={12}>
+              <Text strong>Category:</Text>
+              <br />
+              <Tag color="blue">
+                {expenseService.getCategoryDisplay(viewingExpense.category)}
+              </Tag>
+            </Col>
+            <Col span={12}>
+              <Text strong>Payment Source:</Text>
+              <br />
+              <Tag>
+                {expenseService.getPaymentSourceDisplay(viewingExpense.paymentSource)}
+              </Tag>
+            </Col>
+            <Col span={12}>
+              <Text strong>Status:</Text>
+              <br />
+              <Tag color={expenseService.getStatusColor(viewingExpense.status)}>
+                {expenseService.getStatusDisplay(viewingExpense.status)}
+              </Tag>
+            </Col>
+            <Col span={12}>
+              <Text strong>Company:</Text>
+              <br />
+              {viewingExpense.company?.name}
+            </Col>
+            <Col span={12}>
+              <Text strong>Station:</Text>
+              <br />
+              {viewingExpense.station?.name}
+            </Col>
+            <Col span={12}>
+              <Text strong>Expense Date:</Text>
+              <br />
+              {expenseService.formatDate(viewingExpense.expenseDate)}
+            </Col>
+            <Col span={12}>
+              <Text strong>Created:</Text>
+              <br />
+              {expenseService.formatDate(viewingExpense.createdAt)}
+            </Col>
+            {viewingExpense.description && (
+              <Col span={24}>
+                <Text strong>Description:</Text>
                 <br />
-                <Text code>{viewingExpense.expenseNumber}</Text>
+                {viewingExpense.description}
               </Col>
+            )}
+            {viewingExpense.shift && (
               <Col span={12}>
-                <Text strong>Amount:</Text>
+                <Text strong>Shift:</Text>
                 <br />
-                <Text style={{ color: '#cf1322', fontSize: '16px', fontWeight: 'bold' }}>
-                  {expenseService.formatCurrency(viewingExpense.amount)}
-                </Text>
+                {viewingExpense.shift.shiftNumber}
               </Col>
+            )}
+            {viewingExpense.island && (
               <Col span={12}>
-                <Text strong>Title:</Text>
+                <Text strong>Island:</Text>
                 <br />
-                {viewingExpense.title}
+                {viewingExpense.island.name} ({viewingExpense.island.code})
               </Col>
+            )}
+            <Col span={12}>
+              <Text strong>Recorded By:</Text>
+              <br />
+              {viewingExpense.recordedBy?.firstName} {viewingExpense.recordedBy?.lastName}
+              <br />
+              <Text type="secondary">{viewingExpense.recordedBy?.email}</Text>
+            </Col>
+            {viewingExpense.approvedBy && (
               <Col span={12}>
-                <Text strong>Category:</Text>
+                <Text strong>Approved By:</Text>
                 <br />
-                <Tag color="blue">
-                  {expenseService.getCategoryDisplay(viewingExpense.category)}
-                </Tag>
+                {viewingExpense.approvedBy?.firstName} {viewingExpense.approvedBy?.lastName}
               </Col>
-              <Col span={12}>
-                <Text strong>Payment Source:</Text>
+            )}
+            {viewingExpense.walletTransaction && (
+              <Col span={24}>
+                <Text strong>Wallet Transaction:</Text>
                 <br />
-                <Tag>
-                  {expenseService.getPaymentSourceDisplay(viewingExpense.paymentSource)}
-                </Tag>
+                <Tag color="green">Transaction ID: {viewingExpense.walletTransaction.id}</Tag>
               </Col>
-              <Col span={12}>
-                <Text strong>Status:</Text>
-                <br />
-                <Tag color={expenseService.getStatusColor(viewingExpense.status)}>
-                  {expenseService.getStatusDisplay(viewingExpense.status)}
-                </Tag>
-              </Col>
-              <Col span={12}>
-                <Text strong>Date:</Text>
-                <br />
-                {expenseService.formatDate(viewingExpense.expenseDate)}
-              </Col>
-              <Col span={12}>
-                <Text strong>Created:</Text>
-                <br />
-                {expenseService.formatDate(viewingExpense.createdAt)}
-              </Col>
-              {viewingExpense.description && (
-                <Col span={24}>
-                  <Text strong>Description:</Text>
-                  <br />
-                  {viewingExpense.description}
-                </Col>
-              )}
-              {viewingExpense.shift && (
-                <Col span={12}>
-                  <Text strong>Shift:</Text>
-                  <br />
-                  {viewingExpense.shift.shiftNumber}
-                </Col>
-              )}
-              {viewingExpense.island && (
-                <Col span={12}>
-                  <Text strong>Island:</Text>
-                  <br />
-                  {viewingExpense.island.name} ({viewingExpense.island.code})
-                </Col>
-              )}
-              <Col span={12}>
-                <Text strong>Recorded By:</Text>
-                <br />
-                {viewingExpense.recordedBy?.firstName} {viewingExpense.recordedBy?.lastName}
-              </Col>
-              {viewingExpense.approvedBy && (
-                <Col span={12}>
-                  <Text strong>Approved By:</Text>
-                  <br />
-                  {viewingExpense.approvedBy?.firstName} {viewingExpense.approvedBy?.lastName}
-                </Col>
-              )}
-            </Row>
-          </div>
+            )}
+          </Row>
         )}
       </Modal>
 

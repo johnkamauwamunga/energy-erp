@@ -26,6 +26,7 @@ import TankReconciliationManagement from '../common/wetstock-reconcilliation/Tan
 import ExpenseManagement from '../common/expenses/ExpenseManagement';
 import AccountsManagement from '../common/accounts/AccountManagement';
 import DebtTransferManagement from '../common/debtTransfering/DebtTransferManagement';
+import EventLogManagement from '../common/events/EventLogManagement';
 
 
 const StationManagerDashboard = () => {
@@ -89,7 +90,7 @@ const StationManagerDashboard = () => {
       case 'reports':
         return <AssetTopologyDebug />;
       case 'activity':
-        return <SimpleIslandPumpTest />;
+        return <EventLogManagement />;
       case 'wet_stock':
         return <TankReconciliationManagement />;
       default:
