@@ -27,7 +27,7 @@ import ExpenseManagement from '../common/expenses/ExpenseManagement';
 import AccountsManagement from '../common/accounts/AccountManagement';
 import DebtTransferManagement from '../common/debtTransfering/DebtTransferManagement';
 import EventLogManagement from '../common/events/EventLogManagement';
-
+import PumpSalesManagement from '../common/enhanced-sales/PumpSalesManagement';
 
 const StationManagerDashboard = () => {
   const { state } = useApp();
@@ -82,7 +82,7 @@ const StationManagerDashboard = () => {
       case 'accounts':
          return <AccountsManagement />;
       case 'sales':
-        return <SalesManagement />;
+        return <PumpSalesManagement />;
       case 'debtor':
         return <DebtorManagementTabs />;
         case 'debt-transfer':
