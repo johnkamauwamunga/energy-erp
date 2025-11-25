@@ -94,7 +94,6 @@ class EnhancedSalesService {
   #buildQueryParams(filters = {}) {
     const params = new URLSearchParams();
     
-    // Only include defined, non-null, non-empty values
     Object.entries(filters).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
         if (Array.isArray(value)) {
@@ -141,6 +140,126 @@ class EnhancedSalesService {
     }
   }
 
+  // ==================== DATA TRANSFORMATION METHODS ====================
+
+  #transformPumpSalesData(data) {
+    if (!Array.isArray(data)) return data;
+    
+    return data.map(item => ({
+      ...item,
+      // Extract pump name from nested asset
+      pump: item.pump ? {
+        ...item.pump,
+        name: item.pump.asset?.name || item.pump.name || 'Unknown Pump',
+        label: item.pump.asset?.stationLabel || item.pump.label
+      } : null,
+      // Ensure product has proper name
+      product: item.product ? {
+        ...item.product,
+        name: item.product.name || 'Unknown Product'
+      } : null
+    }));
+  }
+
+  #transformProductPerformanceData(data) {
+    if (!Array.isArray(data)) return data;
+    
+    return data.map(item => {
+      // Handle the nested structure with 'type' property
+      if (item.type === 'product') {
+        return {
+          ...item,
+          product: item.product ? {
+            ...item.product,
+            name: item.product.name || 'Unknown Product'
+          } : null,
+          // Ensure metrics exist and are properly formatted
+          metrics: item.metrics || {
+            totalRevenue: 0,
+            totalLiters: 0,
+            averagePrice: 0,
+            pumpCount: 0,
+            shiftCount: 0
+          },
+          // Transform sales data if it exists
+          sales: Array.isArray(item.sales) ? item.sales.map(sale => ({
+            ...sale,
+            // Fix pump names in sales data too
+            pump: sale.pump ? {
+              ...sale.pump,
+              name: sale.pump.asset?.name || sale.pump.name || 'Unknown Pump'
+            } : null
+          })) : []
+        };
+      }
+      
+      // Handle regular product performance items
+      return {
+        ...item,
+        product: item.product ? {
+          ...item.product,
+          name: item.product.name || 'Unknown Product'
+        } : null,
+        metrics: item.metrics || {
+          totalRevenue: 0,
+          totalLiters: 0,
+          averagePrice: 0,
+          pumpCount: 0,
+          shiftCount: 0
+        }
+      };
+    });
+  }
+
+  #transformShiftPerformanceData(data) {
+    if (!Array.isArray(data)) return data;
+    
+    return data.map(item => {
+      // Handle the nested structure with 'type' property
+      if (item.type === 'shift') {
+        return {
+          ...item,
+          shift: item.shift ? {
+            ...item.shift,
+            shiftNumber: item.shift.shiftNumber || 'Unknown Shift'
+          } : null,
+          metrics: item.metrics || {
+            totalRevenue: 0,
+            totalLiters: 0,
+            productCount: 0,
+            pumpCount: 0,
+            averageRevenuePerPump: 0
+          },
+          // Transform sales data if it exists
+          sales: Array.isArray(item.sales) ? item.sales.map(sale => ({
+            ...sale,
+            // Fix pump names in sales data
+            pump: sale.pump ? {
+              ...sale.pump,
+              name: sale.pump.asset?.name || sale.pump.name || 'Unknown Pump'
+            } : null
+          })) : []
+        };
+      }
+      
+      // Handle regular shift performance items
+      return {
+        ...item,
+        shift: item.shift ? {
+          ...item.shift,
+          shiftNumber: item.shift.shiftNumber || 'Unknown Shift'
+        } : null,
+        metrics: item.metrics || {
+          totalRevenue: 0,
+          totalLiters: 0,
+          productCount: 0,
+          pumpCount: 0,
+          averageRevenuePerPump: 0
+        }
+      };
+    });
+  }
+
   // ==================== MAIN SALES ENDPOINTS ====================
 
   async getCalculatedPumpSales(filters = {}, forceRefresh = false) {
@@ -157,8 +276,15 @@ class EnhancedSalesService {
       const response = await apiService.get(`${this.basePath}/pump-sales?${queryParams}`);
       
       const data = this.#handleResponse(response, 'Pump sales fetch');
-      this.#setCached(cacheKey, data);
-      return data;
+      
+      // Transform the data to fix nested structures
+      const transformedData = {
+        ...data,
+        data: this.#transformPumpSalesData(data.data)
+      };
+      
+      this.#setCached(cacheKey, transformedData);
+      return transformedData;
     }).catch(error => {
       throw this.#handleError(error, 'Pump sales fetch', 'Failed to fetch pump sales data');
     });
@@ -178,8 +304,23 @@ class EnhancedSalesService {
       const response = await apiService.get(`${this.basePath}/product-performance?${queryParams}`);
       
       const data = this.#handleResponse(response, 'Product performance fetch');
-      this.#setCached(cacheKey, data);
-      return data;
+      
+      // Transform the data
+      const transformedData = {
+        ...data,
+        data: this.#transformProductPerformanceData(data.data),
+        // Ensure summary exists
+        summary: data.summary || {
+          totalProducts: data.data?.length || 0,
+          totalRevenue: this.#calculateTotalRevenue(data.data),
+          totalLiters: this.#calculateTotalLiters(data.data),
+          bestPerformingProduct: data.data?.[0] || null,
+          averageRevenuePerProduct: 0
+        }
+      };
+      
+      this.#setCached(cacheKey, transformedData);
+      return transformedData;
     }).catch(error => {
       throw this.#handleError(error, 'Product performance fetch', 'Failed to fetch product performance data');
     });
@@ -199,8 +340,23 @@ class EnhancedSalesService {
       const response = await apiService.get(`${this.basePath}/shift-performance?${queryParams}`);
       
       const data = this.#handleResponse(response, 'Shift performance fetch');
-      this.#setCached(cacheKey, data);
-      return data;
+      
+      // Transform the data
+      const transformedData = {
+        ...data,
+        data: this.#transformShiftPerformanceData(data.data),
+        // Ensure summary exists
+        summary: data.summary || {
+          totalShifts: data.data?.length || 0,
+          totalRevenue: this.#calculateTotalRevenue(data.data),
+          totalLiters: this.#calculateTotalLiters(data.data),
+          bestPerformingShift: data.data?.[0] || null,
+          averageRevenuePerShift: 0
+        }
+      };
+      
+      this.#setCached(cacheKey, transformedData);
+      return transformedData;
     }).catch(error => {
       throw this.#handleError(error, 'Shift performance fetch', 'Failed to fetch shift performance data');
     });
@@ -227,6 +383,30 @@ class EnhancedSalesService {
     });
   }
 
+  // ==================== HELPER METHODS ====================
+
+  #calculateTotalRevenue(data) {
+    if (!Array.isArray(data)) return 0;
+    
+    return data.reduce((sum, item) => {
+      if (item.type === 'product' || item.type === 'shift') {
+        return sum + (item.metrics?.totalRevenue || 0);
+      }
+      return sum + (item.metrics?.totalRevenue || item.salesData?.salesValue || 0);
+    }, 0);
+  }
+
+  #calculateTotalLiters(data) {
+    if (!Array.isArray(data)) return 0;
+    
+    return data.reduce((sum, item) => {
+      if (item.type === 'product' || item.type === 'shift') {
+        return sum + (item.metrics?.totalLiters || 0);
+      }
+      return sum + (item.metrics?.totalLiters || item.salesData?.litersDispensed || 0);
+    }, 0);
+  }
+
   // ==================== SPECIFIC ENTITY SALES ====================
 
   async getSalesByPump(pumpId, filters = {}, forceRefresh = false) {
@@ -243,8 +423,15 @@ class EnhancedSalesService {
       const response = await apiService.get(`${this.basePath}/pump/${pumpId}?${queryParams}`);
       
       const data = this.#handleResponse(response, 'Pump-specific sales fetch');
-      this.#setCached(cacheKey, data);
-      return data;
+      
+      // Transform the data
+      const transformedData = {
+        ...data,
+        data: this.#transformPumpSalesData(data.data)
+      };
+      
+      this.#setCached(cacheKey, transformedData);
+      return transformedData;
     }).catch(error => {
       throw this.#handleError(error, 'Pump-specific sales fetch', 'Failed to fetch pump sales data');
     });
@@ -264,8 +451,15 @@ class EnhancedSalesService {
       const response = await apiService.get(`${this.basePath}/shift/${shiftId}?${queryParams}`);
       
       const data = this.#handleResponse(response, 'Shift-specific sales fetch');
-      this.#setCached(cacheKey, data);
-      return data;
+      
+      // Transform the data
+      const transformedData = {
+        ...data,
+        data: this.#transformPumpSalesData(data.data)
+      };
+      
+      this.#setCached(cacheKey, transformedData);
+      return transformedData;
     }).catch(error => {
       throw this.#handleError(error, 'Shift-specific sales fetch', 'Failed to fetch shift sales data');
     });
@@ -285,8 +479,15 @@ class EnhancedSalesService {
       const response = await apiService.get(`${this.basePath}/station/${stationId}?${queryParams}`);
       
       const data = this.#handleResponse(response, 'Station-specific sales fetch');
-      this.#setCached(cacheKey, data);
-      return data;
+      
+      // Transform the data
+      const transformedData = {
+        ...data,
+        data: this.#transformPumpSalesData(data.data)
+      };
+      
+      this.#setCached(cacheKey, transformedData);
+      return transformedData;
     }).catch(error => {
       throw this.#handleError(error, 'Station-specific sales fetch', 'Failed to fetch station sales data');
     });
@@ -306,8 +507,15 @@ class EnhancedSalesService {
       const response = await apiService.get(`${this.basePath}/product/${productId}?${queryParams}`);
       
       const data = this.#handleResponse(response, 'Product-specific sales fetch');
-      this.#setCached(cacheKey, data);
-      return data;
+      
+      // Transform the data
+      const transformedData = {
+        ...data,
+        data: this.#transformPumpSalesData(data.data)
+      };
+      
+      this.#setCached(cacheKey, transformedData);
+      return transformedData;
     }).catch(error => {
       throw this.#handleError(error, 'Product-specific sales fetch', 'Failed to fetch product sales data');
     });
@@ -375,13 +583,19 @@ class EnhancedSalesService {
 
     const data = Array.isArray(salesData.data) ? salesData.data : [salesData.data];
     
-    const totalRevenue = data.reduce((sum, item) => 
-      sum + (item.metrics?.totalRevenue || item.salesData?.salesValue || 0), 0
-    );
+    const totalRevenue = data.reduce((sum, item) => {
+      if (item.type === 'product' || item.type === 'shift') {
+        return sum + (item.metrics?.totalRevenue || 0);
+      }
+      return sum + (item.metrics?.totalRevenue || item.salesData?.salesValue || 0);
+    }, 0);
     
-    const totalLiters = data.reduce((sum, item) => 
-      sum + (item.metrics?.totalLiters || item.salesData?.litersDispensed || 0), 0
-    );
+    const totalLiters = data.reduce((sum, item) => {
+      if (item.type === 'product' || item.type === 'shift') {
+        return sum + (item.metrics?.totalLiters || 0);
+      }
+      return sum + (item.metrics?.totalLiters || item.salesData?.litersDispensed || 0);
+    }, 0);
 
     return {
       totalRevenue,
@@ -427,102 +641,32 @@ class EnhancedSalesService {
     }
   }
 
-  // Advanced data transformations
-  transformForTimeSeries(salesData, period = 'daily') {
-    if (!salesData?.data) return { series: [], categories: [] };
+  // Export utilities
+  exportToCSV(salesData, filename = 'sales-data') {
+    if (!salesData?.data) return;
 
-    const timeData = {};
-    const categories = new Set();
+    const headers = ['Date', 'Product', 'Pump', 'Liters', 'Revenue', 'Unit Price'];
+    const rows = salesData.data.map(item => [
+      new Date(item.shift?.startTime || item.salesData?.calculatedAt).toLocaleDateString(),
+      item.product?.name || 'N/A',
+      item.pump?.name || 'N/A',
+      item.metrics?.totalLiters || item.salesData?.litersDispensed || 0,
+      item.metrics?.totalRevenue || item.salesData?.salesValue || 0,
+      item.product?.minSellingPrice || 0
+    ]);
 
-    salesData.data.forEach(item => {
-      let timeKey;
-      const date = new Date(item.shift?.startTime || item.salesData?.calculatedAt || new Date());
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
 
-      switch (period) {
-        case 'hourly':
-          timeKey = date.toISOString().slice(0, 13) + ':00';
-          break;
-        case 'daily':
-          timeKey = date.toISOString().split('T')[0];
-          break;
-        case 'weekly':
-          const weekStart = new Date(date);
-          weekStart.setDate(date.getDate() - date.getDay());
-          timeKey = weekStart.toISOString().split('T')[0];
-          break;
-        case 'monthly':
-          timeKey = date.toISOString().slice(0, 7);
-          break;
-        default:
-          timeKey = date.toISOString().split('T')[0];
-      }
-
-      categories.add(timeKey);
-
-      if (!timeData[timeKey]) {
-        timeData[timeKey] = {
-          revenue: 0,
-          liters: 0,
-          transactions: 0
-        };
-      }
-
-      timeData[timeKey].revenue += item.metrics?.totalRevenue || item.salesData?.salesValue || 0;
-      timeData[timeKey].liters += item.metrics?.totalLiters || item.salesData?.litersDispensed || 0;
-      timeData[timeKey].transactions += 1;
-    });
-
-    const sortedCategories = Array.from(categories).sort();
-    
-    return {
-      series: [
-        {
-          name: 'Revenue',
-          data: sortedCategories.map(cat => timeData[cat]?.revenue || 0)
-        },
-        {
-          name: 'Liters',
-          data: sortedCategories.map(cat => timeData[cat]?.liters || 0)
-        }
-      ],
-      categories: sortedCategories
-    };
-  }
-
-  // Filter sales data by various criteria
-  filterSalesData(salesData, filters = {}) {
-    if (!salesData?.data) return salesData;
-
-    let filteredData = [...salesData.data];
-
-    if (filters.productName) {
-      filteredData = filteredData.filter(item => 
-        item.product?.name?.toLowerCase().includes(filters.productName.toLowerCase())
-      );
-    }
-
-    if (filters.minRevenue) {
-      filteredData = filteredData.filter(item => 
-        (item.metrics?.totalRevenue || item.salesData?.salesValue) >= filters.minRevenue
-      );
-    }
-
-    if (filters.maxRevenue) {
-      filteredData = filteredData.filter(item => 
-        (item.metrics?.totalRevenue || item.salesData?.salesValue) <= filters.maxRevenue
-      );
-    }
-
-    if (filters.pumpName) {
-      filteredData = filteredData.filter(item => 
-        item.pump?.name?.toLowerCase().includes(filters.pumpName.toLowerCase())
-      );
-    }
-
-    return {
-      ...salesData,
-      data: filteredData
-    };
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${filename}-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 }
 

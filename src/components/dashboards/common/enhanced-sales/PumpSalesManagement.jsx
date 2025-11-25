@@ -8,7 +8,6 @@ import {
   Input,
   Select,
   Modal,
-  Form,
   message,
   Row,
   Col,
@@ -20,8 +19,7 @@ import {
   Tabs,
   Progress,
   Divider,
-  Empty,
-  Spin
+  Empty
 } from 'antd';
 import {
   DollarOutlined,
@@ -36,14 +34,10 @@ import {
   FireOutlined,
   DashboardOutlined,
   LineChartOutlined,
-  PieChartOutlined,
-  ArrowUpOutlined,
-  ArrowDownOutlined,
   ExportOutlined
 } from '@ant-design/icons';
 import { enhancedSalesService, GROUPING_TYPES, PERIOD_TYPES } from '../../../../services/enhancedSalesService/enhancedSalesService';
 import { useApp } from '../../../../context/AppContext';
-
 const { Option } = Select;
 const { RangePicker } = DatePicker;
 const { Text, Title } = Typography;
@@ -52,7 +46,6 @@ const { TabPane } = Tabs;
 const PumpSalesManagement = () => {
   const { state } = useApp();
   const userStationId = state.currentStation?.id;
-  const userRole = state.currentUser?.role;
   
   const [loading, setLoading] = useState(false);
   const [salesData, setSalesData] = useState([]);
@@ -76,11 +69,11 @@ const PumpSalesManagement = () => {
     limit: 10,
     total: 0
   });
-  
+
   const [viewModalVisible, setViewModalVisible] = useState(false);
   const [viewingRecord, setViewingRecord] = useState(null);
 
-  // Memoized data loader
+  // Load data based on active tab
   const loadData = useCallback(async () => {
     if (!userStationId) {
       message.warning('Please select a station first');
@@ -111,16 +104,19 @@ const PumpSalesManagement = () => {
 
         case 'product-sales':
           const productResult = await enhancedSalesService.getProductPerformance(baseFilters);
+          console.log("Enhanced product-sales:", productResult);
           setProductPerformance(productResult.data || []);
           break;
 
         case 'shift-performance':
           const shiftResult = await enhancedSalesService.getShiftPerformance(baseFilters);
+          console.log("Enhanced shift-performance:", shiftResult);
           setShiftPerformance(shiftResult.data || []);
           break;
 
         case 'sales-trends':
           const trendsResult = await enhancedSalesService.getSalesTrends(baseFilters);
+          console.log("Enhanced sales-trends:", trendsResult);
           setSalesTrends(trendsResult.data || {});
           break;
 
@@ -135,7 +131,6 @@ const PumpSalesManagement = () => {
     }
   }, [userStationId, activeTab, filters, pagination.page, pagination.limit]);
 
-  // Load data when dependencies change
   useEffect(() => {
     loadData();
   }, [loadData]);
@@ -152,7 +147,7 @@ const PumpSalesManagement = () => {
       ...prev,
       startDate: dateStrings[0] || '',
       endDate: dateStrings[1] || '',
-      page: 1 // Reset to first page when filters change
+      page: 1
     }));
     setPagination(prev => ({ ...prev, page: 1 }));
   };
@@ -162,7 +157,7 @@ const PumpSalesManagement = () => {
     setFilters(prev => ({
       ...prev,
       [key]: value,
-      page: 1 // Reset to first page when filters change
+      page: 1
     }));
     setPagination(prev => ({ ...prev, page: 1 }));
   };
@@ -194,46 +189,80 @@ const PumpSalesManagement = () => {
     message.success('Data exported successfully');
   };
 
-  // Statistics for dashboard
-  const stats = useMemo(() => {
-    const dataSource = activeTab === 'pump-sales' ? salesData : 
-                      activeTab === 'product-sales' ? productPerformance : 
-                      activeTab === 'shift-performance' ? shiftPerformance : [];
+// Statistics for dashboard - FIXED to handle different data structures
+const stats = useMemo(() => {
+  let dataSource = [];
+  
+  switch (activeTab) {
+    case 'pump-sales':
+      dataSource = salesData;
+      break;
+    case 'product-sales':
+      dataSource = productPerformance;
+      break;
+    case 'shift-performance':
+      dataSource = shiftPerformance;
+      break;
+    default:
+      dataSource = salesData;
+  }
 
-    const totalRevenue = dataSource.reduce((sum, item) => 
-      sum + (item.salesData?.salesValue || item.metrics?.totalRevenue || 0), 0
-    );
-    
-    const totalLiters = dataSource.reduce((sum, item) => 
-      sum + (item.salesData?.litersDispensed || item.metrics?.totalLiters || 0), 0
-    );
-    
-    const uniquePumps = [...new Set(dataSource.map(item => item.pump?.id).filter(Boolean))].length;
-    const uniqueProducts = [...new Set(dataSource.map(item => item.product?.id).filter(Boolean))].length;
-    const uniqueShifts = [...new Set(dataSource.map(item => item.shift?.id).filter(Boolean))].length;
+  // Safe calculation with proper fallbacks
+  const totalRevenue = dataSource.reduce((sum, item) => {
+    // Handle different data structures
+    if (item.type === 'product' || item.type === 'shift') {
+      return sum + (item.metrics?.totalRevenue || 0);
+    }
+    return sum + (item.salesData?.salesValue || item.metrics?.totalRevenue || 0);
+  }, 0);
+  
+  const totalLiters = dataSource.reduce((sum, item) => {
+    // Handle different data structures
+    if (item.type === 'product' || item.type === 'shift') {
+      return sum + (item.metrics?.totalLiters || 0);
+    }
+    return sum + (item.salesData?.litersDispensed || item.metrics?.totalLiters || 0);
+  }, 0);
+  
+  const uniquePumps = [...new Set(dataSource.map(item => {
+    // Handle pump extraction from different structures
+    const pump = item.pump || (item.sales?.[0]?.pump);
+    return pump?.id;
+  }).filter(Boolean))].length;
 
-    return {
-      totalRevenue,
-      totalLiters,
-      uniquePumps,
-      uniqueProducts,
-      uniqueShifts,
-      averagePrice: totalLiters > 0 ? totalRevenue / totalLiters : 0,
-      recordCount: dataSource.length
-    };
-  }, [salesData, productPerformance, shiftPerformance, activeTab]);
+  const uniqueProducts = [...new Set(dataSource.map(item => {
+    // Handle product extraction from different structures
+    const product = item.product || (item.sales?.[0]?.product);
+    return product?.id;
+  }).filter(Boolean))].length;
 
-  // Product performance metrics
+  const uniqueShifts = [...new Set(dataSource.map(item => {
+    // Handle shift extraction from different structures
+    const shift = item.shift || (item.sales?.[0]?.shift);
+    return shift?.id;
+  }).filter(Boolean))].length;
+
+  return {
+    totalRevenue,
+    totalLiters,
+    uniquePumps,
+    uniqueProducts,
+    uniqueShifts,
+    averagePrice: totalLiters > 0 ? totalRevenue / totalLiters : 0,
+    recordCount: dataSource.length
+  };
+}, [salesData, productPerformance, shiftPerformance, activeTab]);
+
+  // Product performance metrics - FIXED
   const productMetrics = useMemo(() => {
-    if (!productPerformance.length) return {};
+    if (!productPerformance.length) return { totalRevenue: 0, productCount: 0 };
 
-    const bestProduct = productPerformance[0];
-    const totalRevenue = productPerformance.reduce((sum, product) => 
-      sum + (product.metrics?.totalRevenue || 0), 0
-    );
+    const totalRevenue = productPerformance.reduce((sum, product) => {
+      return sum + (product.metrics?.totalRevenue || 0);
+    }, 0);
 
     return {
-      bestProduct,
+      bestProduct: productPerformance[0],
       totalRevenue,
       productCount: productPerformance.length
     };
@@ -248,106 +277,123 @@ const PumpSalesManagement = () => {
       key: 'pump',
       width: 200,
       fixed: 'left',
-      render: (pump, record) => (
-        <Space direction="vertical" size={2}>
-          <Text strong style={{ fontSize: '14px' }}>
-            <FireOutlined style={{ marginRight: 4, color: '#ff4d4f' }} />
-            {pump?.name || 'Unknown Pump'}
-          </Text>
-          <Text type="secondary" style={{ fontSize: '11px' }}>
-            {pump?.label || 'No Label'}
-          </Text>
-          <Tag 
-            color={pump?.connectionStatus === 'FULLY_CONNECTED' ? 'green' : 'orange'} 
-            size="small"
-          >
-            {pump?.connectionStatus || 'UNKNOWN'}
-          </Tag>
-        </Space>
-      )
+      render: (pump, record) => {
+        // Get pump name from nested asset or direct property - FIXED
+        const pumpName = pump?.asset?.name || pump?.name || 'Unknown Pump';
+        const pumpLabel = pump?.asset?.stationLabel || pump?.label || 'No Label';
+        const connectionStatus = pump?.connectionStatus || 'UNKNOWN';
+        
+        return (
+          <Space direction="vertical" size={2}>
+            <Text strong style={{ fontSize: '14px' }}>
+              <FireOutlined style={{ marginRight: 4, color: '#ff4d4f' }} />
+              {pumpName}
+            </Text>
+            <Text type="secondary" style={{ fontSize: '11px' }}>
+              {pumpLabel}
+            </Text>
+            <Tag 
+              color={connectionStatus === 'FULLY_CONNECTED' ? 'green' : 'orange'} 
+              size="small"
+            >
+              {connectionStatus}
+            </Tag>
+          </Space>
+        );
+      }
     },
     {
       title: 'Product',
       dataIndex: 'product',
       key: 'product',
       width: 150,
-      render: (product) => (
-        product ? (
+      render: (product) => {
+        const productName = product?.name || 'Unknown Product';
+        const fuelCode = product?.fuelCode || 'N/A';
+        const price = product?.minSellingPrice || product?.price || 0;
+        
+        return (
           <Space direction="vertical" size={2}>
             <Text strong style={{ fontSize: '12px' }}>
-              {product.name}
+              {productName}
             </Text>
             <Text type="secondary" style={{ fontSize: '10px' }}>
-              {product.fuelCode || 'N/A'}
+              {fuelCode}
             </Text>
             <Text style={{ fontSize: '11px', color: '#52c41a' }}>
-              {enhancedSalesService.formatCurrency(product.minSellingPrice || product.price || 0)}/L
+              {enhancedSalesService.formatCurrency(price)}/L
             </Text>
           </Space>
-        ) : (
-          <Text type="secondary" style={{ fontSize: '10px' }}>
-            No Product
-          </Text>
-        )
-      )
+        );
+      }
     },
     {
       title: 'Shift',
       dataIndex: 'shift',
       key: 'shift',
       width: 120,
-      render: (shift) => (
-        shift ? (
+      render: (shift) => {
+        const shiftNumber = shift?.shiftNumber || 'No Shift';
+        const startTime = shift?.startTime;
+        
+        return (
           <Space direction="vertical" size={2}>
             <Text style={{ fontSize: '11px' }}>
-              🕐 {shift.shiftNumber}
+              🕐 {shiftNumber}
             </Text>
-            <Text type="secondary" style={{ fontSize: '9px' }}>
-              {enhancedSalesService.formatDate(shift.startTime)}
-            </Text>
+            {startTime && (
+              <Text type="secondary" style={{ fontSize: '9px' }}>
+                {enhancedSalesService.formatDate(startTime)}
+              </Text>
+            )}
           </Space>
-        ) : (
-          <Text type="secondary" style={{ fontSize: '10px' }}>
-            No Shift
-          </Text>
-        )
-      )
+        );
+      }
     },
     {
       title: 'Sales Data',
       key: 'salesData',
       width: 180,
-      render: (_, record) => (
-        <Space direction="vertical" size={2}>
-          <Text strong style={{ color: '#cf1322', fontSize: '14px' }}>
-            {enhancedSalesService.formatCurrency(record.salesData?.salesValue || 0)}
-          </Text>
-          <Text style={{ fontSize: '12px' }}>
-            {enhancedSalesService.formatVolume(record.salesData?.litersDispensed || 0)}
-          </Text>
-          <Text type="secondary" style={{ fontSize: '10px' }}>
-            {enhancedSalesService.formatCurrency(record.salesData?.unitPrice || 0)}/L
-          </Text>
-          <Text type="secondary" style={{ fontSize: '9px' }}>
-            Meters: {record.salesData?.openingMeter || 0} → {record.salesData?.closingMeter || 0}
-          </Text>
-        </Space>
-      )
+      render: (_, record) => {
+        const salesData = record.salesData || {};
+        
+        return (
+          <Space direction="vertical" size={2}>
+            <Text strong style={{ color: '#cf1322', fontSize: '14px' }}>
+              {enhancedSalesService.formatCurrency(salesData.salesValue || 0)}
+            </Text>
+            <Text style={{ fontSize: '12px' }}>
+              {enhancedSalesService.formatVolume(salesData.litersDispensed || 0)}
+            </Text>
+            <Text type="secondary" style={{ fontSize: '10px' }}>
+              {enhancedSalesService.formatCurrency(salesData.unitPrice || 0)}/L
+            </Text>
+            <Text type="secondary" style={{ fontSize: '9px' }}>
+              Meters: {salesData.openingMeter || 0} → {salesData.closingMeter || 0}
+            </Text>
+          </Space>
+        );
+      }
     },
     {
       title: 'Station',
       key: 'station',
       width: 150,
-      render: (_, record) => (
-        <Space direction="vertical" size={2}>
-          <Text style={{ fontSize: '11px' }}>
-            <ShopOutlined /> {record.station?.name || 'Unknown Station'}
-          </Text>
-          <Text type="secondary" style={{ fontSize: '10px' }}>
-            🏢 {record.company?.name || 'Unknown Company'}
-          </Text>
-        </Space>
-      )
+      render: (_, record) => {
+        const stationName = record.station?.name || 'Unknown Station';
+        const companyName = record.company?.name || 'Unknown Company';
+        
+        return (
+          <Space direction="vertical" size={2}>
+            <Text style={{ fontSize: '11px' }}>
+              <ShopOutlined /> {stationName}
+            </Text>
+            <Text type="secondary" style={{ fontSize: '10px' }}>
+              🏢 {companyName}
+            </Text>
+          </Space>
+        );
+      }
     },
     {
       title: 'Calculated',
@@ -377,99 +423,114 @@ const PumpSalesManagement = () => {
     }
   ];
 
-  const productPerformanceColumns = [
-    {
-      title: 'Product',
-      dataIndex: 'product',
-      key: 'product',
-      width: 200,
-      fixed: 'left',
-      render: (product) => (
+const productPerformanceColumns = [
+  {
+    title: 'Product',
+    dataIndex: 'product',
+    key: 'product',
+    width: 200,
+    fixed: 'left',
+    render: (product) => {
+      const productName = product?.name || 'Unknown Product';
+      const fuelCode = product?.fuelCode || 'N/A';
+      const price = product?.minSellingPrice || 0;
+      
+      return (
         <Space direction="vertical" size={2}>
           <Text strong style={{ fontSize: '14px' }}>
             <ProductOutlined style={{ marginRight: 4, color: '#1890ff' }} />
-            {product?.name || 'Unknown Product'}
+            {productName}
           </Text>
           <Text type="secondary" style={{ fontSize: '11px' }}>
-            Code: {product?.fuelCode || 'N/A'}
+            Code: {fuelCode}
           </Text>
           <Text style={{ fontSize: '12px', color: '#52c41a' }}>
-            Price: {enhancedSalesService.formatCurrency(product?.minSellingPrice || 0)}/L
+            Price: {enhancedSalesService.formatCurrency(price)}/L
           </Text>
         </Space>
-      )
-    },
-    {
-      title: 'Performance Metrics',
-      key: 'metrics',
-      width: 250,
-      render: (_, record) => (
+      );
+    }
+  },
+  {
+    title: 'Performance Metrics',
+    key: 'metrics',
+    width: 250,
+    render: (_, record) => {
+      const metrics = record.metrics || {};
+      
+      return (
         <Space direction="vertical" size={2} style={{ width: '100%' }}>
           <div>
             <Text strong style={{ fontSize: '12px' }}>Revenue: </Text>
             <Text strong style={{ color: '#cf1322', fontSize: '12px' }}>
-              {enhancedSalesService.formatCurrency(record.metrics?.totalRevenue || 0)}
+              {enhancedSalesService.formatCurrency(metrics.totalRevenue || 0)}
             </Text>
           </div>
           <div>
             <Text strong style={{ fontSize: '12px' }}>Volume: </Text>
             <Text style={{ fontSize: '12px' }}>
-              {enhancedSalesService.formatVolume(record.metrics?.totalLiters || 0)}
+              {enhancedSalesService.formatVolume(metrics.totalLiters || 0)}
             </Text>
           </div>
           <div>
             <Text strong style={{ fontSize: '12px' }}>Avg Price: </Text>
             <Text style={{ fontSize: '12px', color: '#52c41a' }}>
-              {enhancedSalesService.formatCurrency(record.metrics?.averagePrice || 0)}/L
+              {enhancedSalesService.formatCurrency(metrics.averagePrice || 0)}/L
             </Text>
           </div>
         </Space>
-      )
-    },
-    {
-      title: 'Distribution',
-      key: 'distribution',
-      width: 200,
-      render: (_, record) => (
+      );
+    }
+  },
+  {
+    title: 'Distribution',
+    key: 'distribution',
+    width: 200,
+    render: (_, record) => {
+      const metrics = record.metrics || {};
+      
+      return (
         <Space direction="vertical" size={2} style={{ width: '100%' }}>
           <div>
             <Text style={{ fontSize: '11px' }}>Pumps: </Text>
-            <Badge count={record.metrics?.pumpCount || 0} showZero color="#1890ff" />
+            <Badge count={metrics.pumpCount || 0} showZero color="#1890ff" />
           </div>
           <div>
             <Text style={{ fontSize: '11px' }}>Shifts: </Text>
-            <Badge count={record.metrics?.shiftCount || 0} showZero color="#52c41a" />
+            <Badge count={metrics.shiftCount || 0} showZero color="#52c41a" />
           </div>
           <div>
             <Text style={{ fontSize: '11px' }}>Sales Records: </Text>
             <Badge count={record.sales?.length || 0} showZero color="#faad14" />
           </div>
         </Space>
-      )
-    },
-    {
-      title: 'Market Share',
-      key: 'marketshare',
-      width: 150,
-      render: (_, record, index, allRecords) => {
-        const totalRevenue = allRecords.reduce((sum, r) => sum + (r.metrics?.totalRevenue || 0), 0);
-        const share = totalRevenue > 0 ? ((record.metrics?.totalRevenue || 0) / totalRevenue) * 100 : 0;
-        
-        return (
-          <Space direction="vertical" size={2} style={{ width: '100%' }}>
-            <Progress 
-              percent={Math.round(share)} 
-              size="small" 
-              strokeColor={index === 0 ? '#52c41a' : '#1890ff'}
-            />
-            <Text type="secondary" style={{ fontSize: '10px' }}>
-              {Math.round(share)}% of total
-            </Text>
-          </Space>
-        );
-      }
+      );
     }
-  ];
+  },
+  {
+    title: 'Market Share',
+    key: 'marketshare',
+    width: 150,
+    render: (_, record) => {
+      // Calculate market share using the productPerformance array directly
+      const totalRevenue = productPerformance.reduce((sum, r) => sum + (r.metrics?.totalRevenue || 0), 0);
+      const share = totalRevenue > 0 ? ((record.metrics?.totalRevenue || 0) / totalRevenue) * 100 : 0;
+      
+      return (
+        <Space direction="vertical" size={2} style={{ width: '100%' }}>
+          <Progress 
+            percent={Math.round(share)} 
+            size="small" 
+            strokeColor={record === productPerformance[0] ? '#52c41a' : '#1890ff'}
+          />
+          <Text type="secondary" style={{ fontSize: '10px' }}>
+            {Math.round(share)}% of total
+          </Text>
+        </Space>
+      );
+    }
+  }
+];
 
   const shiftPerformanceColumns = [
     {
@@ -478,67 +539,82 @@ const PumpSalesManagement = () => {
       key: 'shift',
       width: 200,
       fixed: 'left',
-      render: (shift) => (
-        <Space direction="vertical" size={2}>
-          <Text strong style={{ fontSize: '14px' }}>
-            🕐 {shift?.shiftNumber || 'Unknown Shift'}
-          </Text>
-          <Text type="secondary" style={{ fontSize: '11px' }}>
-            {enhancedSalesService.formatDate(shift?.startTime)}
-          </Text>
-          <Text type="secondary" style={{ fontSize: '10px' }}>
-            Supervisor: {shift?.supervisor?.firstName} {shift?.supervisor?.lastName}
-          </Text>
-        </Space>
-      )
+      render: (shift) => {
+        const shiftNumber = shift?.shiftNumber || 'Unknown Shift';
+        const startTime = shift?.startTime;
+        
+        return (
+          <Space direction="vertical" size={2}>
+            <Text strong style={{ fontSize: '14px' }}>
+              🕐 {shiftNumber}
+            </Text>
+            {startTime && (
+              <Text type="secondary" style={{ fontSize: '11px' }}>
+                {enhancedSalesService.formatDate(startTime)}
+              </Text>
+            )}
+            <Text type="secondary" style={{ fontSize: '10px' }}>
+              Supervisor: {shift?.supervisor?.firstName} {shift?.supervisor?.lastName}
+            </Text>
+          </Space>
+        );
+      }
     },
     {
       title: 'Performance Metrics',
       key: 'metrics',
       width: 250,
-      render: (_, record) => (
-        <Space direction="vertical" size={2} style={{ width: '100%' }}>
-          <div>
-            <Text strong style={{ fontSize: '12px' }}>Total Revenue: </Text>
-            <Text strong style={{ color: '#cf1322', fontSize: '12px' }}>
-              {enhancedSalesService.formatCurrency(record.metrics?.totalRevenue || 0)}
-            </Text>
-          </div>
-          <div>
-            <Text strong style={{ fontSize: '12px' }}>Total Volume: </Text>
-            <Text style={{ fontSize: '12px' }}>
-              {enhancedSalesService.formatVolume(record.metrics?.totalLiters || 0)}
-            </Text>
-          </div>
-          <div>
-            <Text strong style={{ fontSize: '12px' }}>Avg per Pump: </Text>
-            <Text style={{ fontSize: '12px', color: '#52c41a' }}>
-              {enhancedSalesService.formatCurrency(record.metrics?.averageRevenuePerPump || 0)}
-            </Text>
-          </div>
-        </Space>
-      )
+      render: (_, record) => {
+        const metrics = record.metrics || {};
+        
+        return (
+          <Space direction="vertical" size={2} style={{ width: '100%' }}>
+            <div>
+              <Text strong style={{ fontSize: '10px' }}>Total Revenue: </Text>
+              <Text strong style={{ color: '#2c1886ff', fontSize: '9px' }}>
+                {enhancedSalesService.formatCurrency(metrics.totalRevenue || 0)}
+              </Text>
+            </div>
+            <div>
+              <Text strong style={{ fontSize: '10px' }}>Total Volume: </Text>
+              <Text style={{ fontSize: '9px' }}>
+                {enhancedSalesService.formatVolume(metrics.totalLiters || 0)}
+              </Text>
+            </div>
+            <div>
+              <Text strong style={{ fontSize: '10px' }}>Avg per Pump: </Text>
+              <Text style={{ fontSize: '9px', color: '#52c41a' }}>
+                {enhancedSalesService.formatCurrency(metrics.averageRevenuePerPump || 0)}
+              </Text>
+            </div>
+          </Space>
+        );
+      }
     },
     {
       title: 'Activity',
       key: 'activity',
       width: 180,
-      render: (_, record) => (
-        <Space direction="vertical" size={2} style={{ width: '100%' }}>
-          <div>
-            <Text style={{ fontSize: '11px' }}>Active Pumps: </Text>
-            <Badge count={record.metrics?.pumpCount || 0} showZero color="#1890ff" />
-          </div>
-          <div>
-            <Text style={{ fontSize: '11px' }}>Products Sold: </Text>
-            <Badge count={record.metrics?.productCount || 0} showZero color="#52c41a" />
-          </div>
-          <div>
-            <Text style={{ fontSize: '11px' }}>Sales Records: </Text>
-            <Badge count={record.sales?.length || 0} showZero color="#faad14" />
-          </div>
-        </Space>
-      )
+      render: (_, record) => {
+        const metrics = record.metrics || {};
+        
+        return (
+          <Space direction="vertical" size={2} style={{ width: '100%' }}>
+            <div>
+              <Text style={{ fontSize: '11px' }}>Active Pumps: </Text>
+              <Badge count={metrics.pumpCount || 0} showZero color="#1890ff" />
+            </div>
+            <div>
+              <Text style={{ fontSize: '11px' }}>Products Sold: </Text>
+              <Badge count={metrics.productCount || 0} showZero color="#52c41a" />
+            </div>
+            <div>
+              <Text style={{ fontSize: '11px' }}>Sales Records: </Text>
+              <Badge count={record.sales?.length || 0} showZero color="#faad14" />
+            </div>
+          </Space>
+        );
+      }
     }
   ];
 
@@ -556,27 +632,33 @@ const PumpSalesManagement = () => {
     return (
       <Card title="Product Sales Performance" extra={<BarChartOutlined />}>
         <Row gutter={[16, 16]}>
-          {productPerformance.slice(0, 8).map((product, index) => (
-            <Col xs={24} sm={12} md={8} lg={6} key={product.product?.id}>
-              <Card size="small">
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Text strong ellipsis={{ tooltip: product.product?.name }}>
-                    {product.product?.name}
-                  </Text>
-                  <Progress 
-                    percent={Math.min(100, ((product.metrics?.totalRevenue || 0) / productMetrics.totalRevenue) * 100)} 
-                    strokeColor={index === 0 ? '#52c41a' : '#1890ff'}
-                  />
-                  <Text strong style={{ color: '#cf1322' }}>
-                    {enhancedSalesService.formatCurrency(product.metrics?.totalRevenue || 0)}
-                  </Text>
-                  <Text type="secondary">
-                    {enhancedSalesService.formatVolume(product.metrics?.totalLiters || 0)}
-                  </Text>
-                </Space>
-              </Card>
-            </Col>
-          ))}
+          {productPerformance.slice(0, 8).map((product, index) => {
+            const metrics = product.metrics || {};
+            const share = productMetrics.totalRevenue > 0 ? 
+              ((metrics.totalRevenue || 0) / productMetrics.totalRevenue) * 100 : 0;
+            
+            return (
+              <Col xs={24} sm={12} md={8} lg={6} key={product.product?.id || index}>
+                <Card size="small">
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <Text strong ellipsis={{ tooltip: product.product?.name }}>
+                      {product.product?.name || 'Unknown Product'}
+                    </Text>
+                    <Progress 
+                      percent={Math.min(100, share)} 
+                      strokeColor={index === 0 ? '#52c41a' : '#1890ff'}
+                    />
+                    <Text strong style={{ color: '#cf1322' }}>
+                      {enhancedSalesService.formatCurrency(metrics.totalRevenue || 0)}
+                    </Text>
+                    <Text type="secondary">
+                      {enhancedSalesService.formatVolume(metrics.totalLiters || 0)}
+                    </Text>
+                  </Space>
+                </Card>
+              </Col>
+            );
+          })}
         </Row>
       </Card>
     );
@@ -949,7 +1031,7 @@ const PumpSalesManagement = () => {
                 <Col span={12}>
                   <Text strong>Pump Name:</Text>
                   <br />
-                  <Text>{viewingRecord.pump?.name || 'Unknown'}</Text>
+                  <Text>{viewingRecord.pump?.asset?.name || viewingRecord.pump?.name || 'Unknown'}</Text>
                 </Col>
                 <Col span={12}>
                   <Text strong>Connection Status:</Text>
@@ -990,7 +1072,7 @@ const PumpSalesManagement = () => {
                 <Col span={12}>
                   <Text strong>Total Revenue:</Text>
                   <br />
-                  <Text strong style={{ color: '#cf1322', fontSize: '16px' }}>
+                  <Text strong style={{ color: '#cf1322', fontSize: '10px' }}>
                     {enhancedSalesService.formatCurrency(viewingRecord.salesData?.salesValue || 0)}
                   </Text>
                 </Col>
@@ -1045,7 +1127,9 @@ const PumpSalesManagement = () => {
             </Col>
           </Row>
         ) : (
-          <Spin size="large" />
+          <div style={{ textAlign: 'center', padding: '20px' }}>
+            <Text type="secondary">Loading record details...</Text>
+          </div>
         )}
       </Modal>
     </div>
