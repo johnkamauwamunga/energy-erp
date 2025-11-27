@@ -1,0 +1,210 @@
+.financial-dashboard {
+  min-height: 100vh;
+  background-color: #f5f5f5;
+}
+
+.dashboard-header {
+  margin-bottom: 16px;
+  border-radius: 8px;
+}
+
+.summary-cards {
+  margin-bottom: 24px;
+}
+
+.summary-card {
+  border-radius: 8px;
+  border-left: 4px solid #1890ff;
+  transition: all 0.3s ease;
+}
+
+.summary-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.card-subtitle {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #666;
+}
+
+.stats-card {
+  border-radius: 8px;
+  height: 100%;
+}
+
+.quick-stats {
+  margin-bottom: 24px;
+}
+
+.bottom-section {
+  margin-top: 16px;
+}
+
+.clickable-row {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.clickable-row:hover {
+  background-color: #f0f8ff;
+}
+
+.clickable-item {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.clickable-item:hover {
+  background-color: #f0f8ff;
+}
+
+.modal-content {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .financial-dashboard {
+    padding: 8px;
+  }
+  
+  .summary-card .ant-statistic-content {
+    font-size: 16px;
+  }
+  
+  .clickable-item {
+    padding: 12px 8px;
+  }
+  
+  .stats-card .ant-card-body {
+    padding: 12px;
+  }
+}
+
+/* Custom scrollbar for modal */
+.modal-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.modal-content::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Status indicators */
+.status-low {
+  color: #ff4d4f;
+}
+
+.status-high {
+  color: #faad14;
+}
+
+.status-normal {
+  color: #52c41a;
+}
+
+/* Animation for refresh */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sync-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Responsive table */
+@media (max-width: 576px) {
+  .ant-table-thead > tr > th,
+  .ant-table-tbody > tr > td {
+    padding: 8px 4px;
+  }
+  
+  .ant-table-content {
+    font-size: 12px;
+  }
+}
+
+/* Card hover effects */
+.ant-card {
+  transition: all 0.3s ease;
+}
+
+.ant-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.09);
+}
+
+/* Custom badge styles */
+.ant-badge-count {
+  font-size: 10px;
+  height: 16px;
+  line-height: 16px;
+  min-width: 16px;
+  padding: 0 4px;
+}
+
+/* Tab customizations */
+.ant-tabs-tab {
+  font-weight: 500;
+}
+
+.ant-tabs-tab-active {
+  font-weight: 600;
+}
+
+/* Loading states */
+.loading-overlay {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+}
+
+/* Empty state styling */
+.ant-empty-description {
+  color: #666;
+  font-size: 14px;
+}
+
+/* Progress bar customizations */
+.ant-progress-line {
+  margin: 2px 0;
+}
+
+.ant-progress-text {
+  font-size: 10px !important;
+}
+
+/* List item customizations */
+.ant-list-item-meta-title {
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.ant-list-item-meta-description {
+  font-size: 12px;
+}
+
+/* Description customizations */
+.ant-descriptions-item-label {
+  font-weight: 500;
+}
+
+.ant-descriptions-item-content {
+  font-weight: 400;
+}

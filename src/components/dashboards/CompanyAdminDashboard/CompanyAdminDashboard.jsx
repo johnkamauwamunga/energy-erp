@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   BarChart3, Building2, MapPin, Clock, Users, FileCheck, Truck, 
   TrendingUp, FileText, Warehouse, Flame, X, Menu, DollarSign, Coins,
-  User, Settings, LogOut, UserCog
+  User, Settings, LogOut, UserCog,HandCoins
 } from 'lucide-react';
 import { Button } from '../../ui';
 import { useApp, useAppDispatch, logout } from '../../../context/AppContext';
@@ -24,7 +24,9 @@ import FuelPriceManagement from './fuel-price/FuelPriceManagement';
 import SupplierManagement from './supplier/SupplierManagement';
 import SupplierAccountManagement from './supplier/accounts/SupplierAccountManagement';
 import BankManagementTabs from '../common/banks/BankManagementTabs';
+import FinancialDashboard from '../common/finance-manager/FinancialDashboard';
 import Debug from './Debug';
+import FinanceDebugComponent from '../common/FinanceDebugComponent'; // ✅ Correct
 
 const CompanyAdminDashboard = () => {
   const { state } = useApp();
@@ -50,6 +52,7 @@ const CompanyAdminDashboard = () => {
     { id: 'supplier_account', label: 'Supplier Account', icon: UserCog },
     { id: 'products_mant', label: 'Product Management', icon: MapPin },
     { id: 'fuel_price', label: 'Fuel Price', icon: Coins },
+    { id: 'finance-manager', label: 'Finances', icon: HandCoins },
     { id: 'purchase', label: 'Purchase', icon: TrendingUp },
     { id: 'banks', label: 'Banks', icon:Coins },
     { id: 'sales', label: 'Sales Analytics', icon: TrendingUp },
@@ -78,10 +81,12 @@ const CompanyAdminDashboard = () => {
         return <FuelPurchaseManagement />;
       case 'banks':
         return <BankManagementTabs />;
+      case 'finance-manager':
+        return <FinancialDashboard />;
       case 'sales':
         return <PlaceholderComponent title="Sales Analytics" icon={TrendingUp} />;
       case 'reports':
-        return <Debug />;
+        return <FinanceDebugComponent />;
       default:
         return <CompanyOverview />;
     }
