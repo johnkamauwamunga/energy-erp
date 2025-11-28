@@ -32,6 +32,9 @@ import {
   CloseCircleOutlined
 } from '@ant-design/icons';
 
+// Import your services
+import { supplierPaymentService, paymentTransformers } from '../../../../../../services/supplierPaymentService/supplierPaymentService';
+
 const { Text } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
@@ -56,8 +59,15 @@ const CreateSupplierPaymentModal = ({
     bankAccountId: '',
     applicationMethod: 'OLDEST_FIRST',
     description: '',
-    paymentReference: ''
+    paymentReference: '',
+    stationId: ''
   });
+
+  // Calculate payment summary
+  const paymentSummary = supplierPaymentService.calculatePaymentSummary(
+    formData.paymentAmount || 0, 
+    allocations
+  );
 
   // Reset everything when modal opens
   useEffect(() => {
@@ -73,7 +83,8 @@ const CreateSupplierPaymentModal = ({
         bankAccountId: '',
         applicationMethod: 'OLDEST_FIRST',
         description: '',
-        paymentReference: ''
+        paymentReference: '',
+        stationId: ''
       });
       
       form.setFieldsValue({
@@ -210,110 +221,151 @@ const CreateSupplierPaymentModal = ({
     }
   };
 
-  const buildPaymentPayload = () => {
-    console.log("🛠️ BUILDING PAYLOAD FROM FORM DATA:", formData);
-    console.log("📊 CURRENT ALLOCATIONS FOR PAYLOAD:", allocations);
+  // SINGLE buildPaymentPayload function
+// FIXED buildPaymentPayload function
+const buildPaymentPayload = () => {
+  console.log("🛠️ BUILDING PAYLOAD FROM FORM DATA:", formData);
+  console.log("📊 CURRENT ALLOCATIONS FOR PAYLOAD:", allocations);
+  console.log("🔑 SUPPLIER ID:", supplier?.id); // Debug supplier ID
+  
+  // Use supplier.id instead of supplierAccountId from formData
+  const payload = {
+    supplierAccountId: supplier?.id, // ✅ FIX: Use supplier.id directly
+    paymentAmount: parseFloat(formData.paymentAmount),
+    paymentMethod: formData.paymentMethod,
+    applicationMethod: formData.applicationMethod || 'OLDEST_FIRST',
+    allocations: allocations.map(alloc => ({
+      invoiceTransactionId: alloc.invoiceTransactionId,
+      amount: parseFloat(alloc.amount)
+    })),
+    description: formData.description || '',
+    paymentReference: formData.paymentReference || ''
+  };
+
+  // Add payment method specific fields
+  if (formData.paymentMethod === 'CASH') {
+    payload.stationId = formData.stationId;
+    if (formData.shiftId) {
+      payload.shiftId = formData.shiftId;
+    }
+  } else if (formData.paymentMethod === 'BANK_TRANSFER') {
+    payload.bankAccountId = formData.bankAccountId;
+  }
+
+  console.log("📦 FINAL PAYLOAD READY:", payload);
+  console.log("📋 PAYLOAD BREAKDOWN:");
+  console.log("  - supplierAccountId:", payload.supplierAccountId); // Should now show the correct ID
+  console.log("  - paymentAmount:", payload.paymentAmount);
+  console.log("  - paymentMethod:", payload.paymentMethod);
+  console.log("  - bankAccountId:", payload.bankAccountId);
+  console.log("  - stationId:", payload.stationId);
+  console.log("  - allocations count:", payload.allocations.length);
+  console.log("  - allocations:", payload.allocations);
+
+  return payload;
+};
+
+  // SINGLE handlePaymentSubmit function
+const handlePaymentSubmit = async () => {
+  console.log("🎯 SUBMIT BUTTON CLICKED - Starting payment submission");
+  setLoading(true);
+
+  try {
+    console.log("📝 STEP 1: Validating form fields...");
+    // Get final form values
+    const finalValues = await form.validateFields();
+    console.log("✅ FORM VALIDATION PASSED:", finalValues);
     
-    // Base payload structure
-    const payload = {
-      supplierAccountId: supplier.id,
-      paymentAmount: parseFloat(formData.paymentAmount),
-      paymentMethod: formData.paymentMethod,
-      applicationMethod: formData.applicationMethod || 'OLDEST_FIRST',
-      allocations: allocations.map(alloc => ({
-        invoiceTransactionId: alloc.invoiceTransactionId,
-        amount: parseFloat(alloc.amount)
-      })),
-      description: formData.description || '',
-      paymentReference: formData.paymentReference || ''
-    };
+    updateFormData(finalValues);
 
-    // Add payment method specific fields
-    if (formData.paymentMethod === 'CASH') {
-      payload.stationId = formData.stationId;
-    } else if (formData.paymentMethod === 'BANK_TRANSFER') {
-      payload.bankAccountId = formData.bankAccountId;
+    console.log("🎯 FINAL FORM DATA:", formData);
+    console.log("📊 FINAL ALLOCATIONS:", allocations);
+    console.log("🔑 SUPPLIER ID:", supplier?.id);
+
+    // Build the payload using transformer
+    console.log("🛠️ STEP 2: Building payment payload...");
+    const paymentPayload = buildPaymentPayload();
+    console.log("📦 PAYLOAD BUILT:", paymentPayload);
+
+    // ✅ CRITICAL CHECK: Verify supplierAccountId is set
+    if (!paymentPayload.supplierAccountId) {
+      throw new Error('Supplier account ID is missing. Please refresh and try again.');
     }
 
-    console.log("📦 FINAL PAYLOAD READY:", payload);
-    console.log("📋 PAYLOAD BREAKDOWN:");
-    console.log("  - supplierAccountId:", payload.supplierAccountId);
-    console.log("  - paymentAmount:", payload.paymentAmount);
-    console.log("  - paymentMethod:", payload.paymentMethod);
-    console.log("  - bankAccountId:", payload.bankAccountId);
-    console.log("  - allocations count:", payload.allocations.length);
-    console.log("  - allocations:", payload.allocations);
+    console.log("✅ STEP 3: All critical validations passed");
 
-    return payload;
-  };
+    console.log("🚀 STEP 4: Calling API service...");
+    
+    // Call the appropriate service based on payment method
+    let result;
+    if (paymentPayload.paymentMethod === 'CASH') {
+      console.log("💵 PROCESSING CASH PAYMENT...");
+      result = await supplierPaymentService.processCashPayment(paymentPayload);
+    } else if (paymentPayload.paymentMethod === 'BANK_TRANSFER') {
+      console.log("🏦 PROCESSING BANK PAYMENT...");
+      result = await supplierPaymentService.processBankPayment(paymentPayload);
+    } else {
+      throw new Error(`Unsupported payment method: ${paymentPayload.paymentMethod}`);
+    }
 
-  const handlePaymentSubmit = async () => {
-    setLoading(true);
+    console.log("✅ STEP 5: API CALL SUCCESS:", result);
 
-    try {
-      // Get final form values
-      const finalValues = await form.validateFields();
-      updateFormData(finalValues);
+    // Transform response for UI
+    const transformedResponse = paymentTransformers.transformPaymentResponse(result);
 
-      console.log("🎯 FINAL FORM DATA:", formData);
-      console.log("📊 FINAL ALLOCATIONS:", allocations);
-
-      // Build the payload
-      const paymentPayload = buildPaymentPayload();
-
-      // Validate critical fields
-      if (!paymentPayload.paymentAmount || paymentPayload.paymentAmount <= 0) {
-        throw new Error('Invalid payment amount');
+    if (transformedResponse.success) {
+      const successMessage = `Payment processed successfully! Reference: ${transformedResponse.data?.transferNumber}`;
+      
+      // Add credit balance info if overpayment occurred
+      if (transformedResponse.data.hasCredit) {
+        message.success(
+          `${successMessage} Credit balance: ${transformedResponse.data.formattedCreditBalance}`
+        );
+      } else {
+        message.success(successMessage);
       }
-      if (!paymentPayload.paymentMethod) {
-        throw new Error('Payment method is required');
-      }
-      if (paymentPayload.paymentMethod === 'BANK_TRANSFER' && !paymentPayload.bankAccountId) {
-        throw new Error('Bank account is required for bank transfers');
-      }
-      if (paymentPayload.allocations.length === 0) {
-        throw new Error('Please allocate payment to at least one invoice');
-      }
+      
+      console.log("✅ STEP 6: Calling onSuccess callback...");
+      onSuccess(transformedResponse);
+      onCancel();
+    } else {
+      throw new Error(transformedResponse.message || 'Payment processing failed');
+    }
 
-      console.log("🚀 SENDING TO BACKEND:", paymentPayload);
-
-      // TODO: Uncomment when ready to call actual service
-      // let result;
-      // if (paymentPayload.paymentMethod === 'CASH') {
-      //   result = await supplierPaymentService.processCashPayment(paymentPayload);
-      // } else {
-      //   result = await supplierPaymentService.processBankPayment(paymentPayload);
-      // }
-
-      // Simulate success for now
-      setTimeout(() => {
-        message.success('Payment processed successfully!');
-        onSuccess({ data: { transferNumber: 'SPAY-2024-000001' } });
-        onCancel();
-      }, 1000);
-
-    } catch (error) {
-      console.error("💥 PAYMENT ERROR:", error);
+  } catch (error) {
+    console.error("💥 PAYMENT ERROR:", error);
+    console.error("💥 ERROR DETAILS:", {
+      message: error.message,
+      response: error.response,
+      stack: error.stack
+    });
+    
+    // Handle specific error types
+    if (error.response?.data?.errors) {
+      // Zod validation errors from backend
+      const validationErrors = error.response.data.errors;
+      validationErrors.forEach(err => {
+        message.error(`${err.field}: ${err.message}`);
+      });
+    } else if (error.response?.data?.message) {
+      // Backend error message
+      message.error(error.response.data.message);
+    } else {
+      // Generic error
       message.error(error.message || 'Failed to process payment');
-    } finally {
-      setLoading(false);
     }
-  };
+  } finally {
+    console.log("🏁 STEP 7: Submission process completed");
+    setLoading(false);
+  }
+};
 
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-KE', {
-      style: 'currency',
-      currency: 'KES'
-    }).format(amount || 0);
+    return paymentTransformers.formatCurrency(amount);
   };
 
   const formatDate = (date) => {
-    if (!date) return 'N/A';
-    return new Date(date).toLocaleDateString('en-KE', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
+    return paymentTransformers.formatDate(date);
   };
 
   // Step 1: Payment Details
@@ -410,6 +462,36 @@ const CreateSupplierPaymentModal = ({
                         <div>
                           <Text type="secondary">
                             Balance: {formatCurrency(account.currentBalance)}
+                          </Text>
+                        </div>
+                      </Space>
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            );
+          } else if (paymentMethod === 'CASH') {
+            return (
+              <Form.Item
+                name="stationId"
+                label="Station Wallet"
+                rules={[{ required: true, message: 'Please select station wallet' }]}
+              >
+                <Select 
+                  placeholder="Select station wallet" 
+                  size="large"
+                  onChange={(value) => updateFormData({ stationId: value })}
+                >
+                  {stationWallets.map(wallet => (
+                    <Option key={wallet.id} value={wallet.stationId}>
+                      <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                        <div>
+                          <WalletOutlined /> 
+                          <strong>{wallet.stationName}</strong>
+                        </div>
+                        <div>
+                          <Text type="secondary">
+                            Balance: {formatCurrency(wallet.currentBalance)}
                           </Text>
                         </div>
                       </Space>
@@ -583,8 +665,33 @@ const CreateSupplierPaymentModal = ({
         )}
       </Card>
 
+      {/* Payment Summary */}
+      {allocations.length > 0 && (
+        <Alert
+          message="Payment Summary"
+          description={
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <Text>Total Allocated: <Text strong>{formatCurrency(paymentSummary.totalAllocated)}</Text></Text>
+              {paymentSummary.isOverpayment && (
+                <Text type="warning">
+                  Credit Balance: {formatCurrency(paymentSummary.creditBalance)} 
+                  (This will be available for future payments)
+                </Text>
+              )}
+              {!paymentSummary.isValid && (
+                <Text type="danger">
+                  Warning: Total allocated amount exceeds payment amount!
+                </Text>
+              )}
+            </Space>
+          }
+          type={paymentSummary.isValid ? "info" : "warning"}
+          showIcon
+        />
+      )}
+
       {/* Debug buttons */}
-      <Space>
+      <Space style={{ marginTop: 16 }}>
         <Button 
           type="dashed" 
           onClick={() => {
@@ -609,6 +716,17 @@ const CreateSupplierPaymentModal = ({
   // Step 2: Review & Confirm
   const renderStep2 = () => (
     <div>
+      {/* Overpayment Alert */}
+      {paymentSummary.isOverpayment && (
+        <Alert
+          message={`Overpayment Detected: ${formatCurrency(paymentSummary.creditBalance)}`}
+          description="This amount will be available as credit for future payments"
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+      )}
+
       <Card title="Payment Confirmation" style={{ marginBottom: 16 }}>
         <Descriptions column={1} bordered>
           <Descriptions.Item label="Supplier">
@@ -624,12 +742,33 @@ const CreateSupplierPaymentModal = ({
               {formData.paymentMethod === 'CASH' ? 'Cash' : 'Bank Transfer'}
             </Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="Bank Account">
-            <Text>
-              {bankAccounts.find(b => b.id === formData.bankAccountId)?.bankName} - 
-              {bankAccounts.find(b => b.id === formData.bankAccountId)?.accountNumber}
+          {formData.paymentMethod === 'BANK_TRANSFER' && (
+            <Descriptions.Item label="Bank Account">
+              <Text>
+                {bankAccounts.find(b => b.id === formData.bankAccountId)?.bankName} - 
+                {bankAccounts.find(b => b.id === formData.bankAccountId)?.accountNumber}
+              </Text>
+            </Descriptions.Item>
+          )}
+          {formData.paymentMethod === 'CASH' && (
+            <Descriptions.Item label="Station Wallet">
+              <Text>
+                {stationWallets.find(w => w.stationId === formData.stationId)?.stationName}
+              </Text>
+            </Descriptions.Item>
+          )}
+          <Descriptions.Item label="Total Allocated">
+            <Text strong>
+              {formatCurrency(paymentSummary.totalAllocated)}
             </Text>
           </Descriptions.Item>
+          {paymentSummary.isOverpayment && (
+            <Descriptions.Item label="Credit Balance">
+              <Text strong type="warning">
+                {formatCurrency(paymentSummary.creditBalance)}
+              </Text>
+            </Descriptions.Item>
+          )}
           <Descriptions.Item label="Allocations">
             {allocations.length > 0 ? (
               <List

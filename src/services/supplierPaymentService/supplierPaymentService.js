@@ -1,4 +1,3 @@
-// services/supplierPaymentService.js
 import { apiService } from '../apiService';
 
 export const supplierPaymentService = {
@@ -61,11 +60,12 @@ export const supplierPaymentService = {
    */
   processCashPayment: async (paymentData) => {
     try {
+      console.log("💵 SENDING CASH PAYMENT:", paymentData);
       const response = await apiService.post('/supplier-payments/payments/cash', paymentData);
-      console.log("Cash payment processed:", response);
+      console.log("✅ Cash payment processed:", response);
       return response;
     } catch (error) {
-      console.error('Failed to process cash payment:', error);
+      console.error('❌ Failed to process cash payment:', error);
       throw error;
     }
   },
@@ -75,11 +75,12 @@ export const supplierPaymentService = {
    */
   processBankPayment: async (paymentData) => {
     try {
+      console.log("🏦 SENDING BANK PAYMENT:", paymentData);
       const response = await apiService.post('/supplier-payments/payments/bank', paymentData);
-      console.log("Bank payment processed:", response);
+      console.log("✅ Bank payment processed:", response);
       return response;
     } catch (error) {
-      console.error('Failed to process bank payment:', error);
+      console.error('❌ Failed to process bank payment:', error);
       throw error;
     }
   },
@@ -206,7 +207,7 @@ export const supplierPaymentService = {
    * Validate payment allocations (client-side)
    */
   validateAllocations: (allocations, paymentAmount) => {
-    const totalAllocated = allocations.reduce((sum, alloc) => sum + alloc.amount, 0);
+    const totalAllocated = allocations.reduce((sum, alloc) => sum + (parseFloat(alloc.amount) || 0), 0);
     
     if (totalAllocated > paymentAmount) {
       throw new Error(`Total allocation (${totalAllocated}) exceeds payment amount (${paymentAmount})`);
@@ -228,22 +229,22 @@ export const supplierPaymentService = {
 
     // Sort by due date (oldest first)
     const sortedInvoices = [...outstandingInvoices].sort((a, b) => 
-      new Date(a.dueDate) - new Date(b.dueDate)
+      new Date(a.dueDate || 0) - new Date(b.dueDate || 0)
     );
 
     for (const invoice of sortedInvoices) {
       if (remainingAmount <= 0) break;
 
-      const amountToAllocate = Math.min(invoice.remainingBalance, remainingAmount);
+      const amountToAllocate = Math.min(invoice.remainingBalance || 0, remainingAmount);
       suggestions.push({
         invoiceTransactionId: invoice.id,
-        invoiceNumber: invoice.referenceNumber || `INV-${invoice.id.slice(-6)}`,
-        originalAmount: invoice.amount,
-        remainingBalance: invoice.remainingBalance,
+        invoiceNumber: invoice.invoiceNumber || invoice.referenceNumber || `INV-${invoice.id?.slice(-6)}`,
+        originalAmount: invoice.amount || 0,
+        remainingBalance: invoice.remainingBalance || 0,
         suggestedAmount: amountToAllocate,
         dueDate: invoice.dueDate,
-        isOverdue: invoice.dueDate && new Date(invoice.dueDate) < new Date(),
-        purchaseNumber: invoice.purchase?.purchaseNumber
+        isOverdue: invoice.isOverdue || (invoice.dueDate && new Date(invoice.dueDate) < new Date()),
+        purchaseNumber: invoice.purchaseNumber || invoice.purchase?.purchaseNumber
       });
 
       remainingAmount -= amountToAllocate;
@@ -257,39 +258,17 @@ export const supplierPaymentService = {
   },
 
   /**
-   * Generate suggested allocations (highest amount first)
+   * Calculate payment summary
    */
-  generateSuggestedAllocationsHighestFirst: (outstandingInvoices, paymentAmount) => {
-    const suggestions = [];
-    let remainingAmount = paymentAmount;
-
-    // Sort by amount (highest first)
-    const sortedInvoices = [...outstandingInvoices].sort((a, b) => 
-      b.remainingBalance - a.remainingBalance
-    );
-
-    for (const invoice of sortedInvoices) {
-      if (remainingAmount <= 0) break;
-
-      const amountToAllocate = Math.min(invoice.remainingBalance, remainingAmount);
-      suggestions.push({
-        invoiceTransactionId: invoice.id,
-        invoiceNumber: invoice.referenceNumber || `INV-${invoice.id.slice(-6)}`,
-        originalAmount: invoice.amount,
-        remainingBalance: invoice.remainingBalance,
-        suggestedAmount: amountToAllocate,
-        dueDate: invoice.dueDate,
-        isOverdue: invoice.dueDate && new Date(invoice.dueDate) < new Date(),
-        purchaseNumber: invoice.purchase?.purchaseNumber
-      });
-
-      remainingAmount -= amountToAllocate;
-    }
-
+  calculatePaymentSummary: (paymentAmount, allocations) => {
+    const totalAllocated = allocations.reduce((sum, alloc) => sum + (parseFloat(alloc.amount) || 0), 0);
+    const creditBalance = paymentAmount - totalAllocated;
+    
     return {
-      suggestions,
-      totalSuggested: paymentAmount - remainingAmount,
-      remainingPayment: remainingAmount
+      totalAllocated,
+      creditBalance,
+      isOverpayment: creditBalance > 0,
+      isValid: totalAllocated <= paymentAmount
     };
   }
 };
@@ -302,122 +281,84 @@ export const paymentTransformers = {
   /**
    * Transform supplier account data for UI
    */
-  transformSupplierAccount: (account) => ({
-    id: account.id,
-    supplierName: account.supplier?.name || 'Unknown Supplier',
-    contactPerson: account.supplier?.contactPerson,
-    phone: account.supplier?.phone,
-    currentBalance: account.currentBalance || 0,
-    creditLimit: account.creditLimit,
-    availableCredit: account.availableCredit,
-    status: account.status,
-    paymentTerms: account.paymentTerms,
-    outstandingInvoices: account.outstandingInvoices?.map(invoice => ({
-      id: invoice.id,
-      invoiceNumber: invoice.referenceNumber || `INV-${invoice.id?.slice(-6) || 'N/A'}`,
-      originalAmount: invoice.amount,
-      remainingBalance: invoice.remainingBalance,
-      dueDate: invoice.dueDate,
-      isOverdue: invoice.dueDate && new Date(invoice.dueDate) < new Date(),
-      purchaseNumber: invoice.purchase?.purchaseNumber,
-      description: invoice.description,
-      status: invoice.status
-    })) || [],
-    totalOutstanding: account.totalOutstanding || 0
-  }),
+  transformSupplierAccount: (account) => {
+    const outstandingInvoices = account.outstandingInvoices || [];
+    const totalOutstanding = outstandingInvoices.reduce((sum, inv) => sum + (inv.remainingBalance || 0), 0);
+    
+    return {
+      id: account.id,
+      supplierName: account.supplier?.name || account.supplierName || 'Unknown Supplier',
+      contactPerson: account.supplier?.contactPerson,
+      phone: account.supplier?.phone,
+      currentBalance: account.currentBalance || 0,
+      creditLimit: account.creditLimit,
+      availableCredit: account.availableCredit || (account.creditLimit ? account.creditLimit - (account.currentBalance || 0) : null),
+      status: account.status,
+      paymentTerms: account.paymentTerms,
+      outstandingInvoices: outstandingInvoices.map(invoice => ({
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber || invoice.referenceNumber || `INV-${invoice.id?.slice(-6) || 'N/A'}`,
+        originalAmount: invoice.amount || 0,
+        remainingBalance: invoice.remainingBalance || (invoice.amount || 0),
+        dueDate: invoice.dueDate,
+        isOverdue: invoice.isOverdue || (invoice.dueDate && new Date(invoice.dueDate) < new Date()),
+        purchaseNumber: invoice.purchaseNumber || invoice.purchase?.purchaseNumber,
+        description: invoice.description,
+        status: invoice.status || 'OUTSTANDING'
+      })),
+      totalOutstanding
+    };
+  },
 
   /**
-   * Transform payment journey for UI
+   * Transform payment response for UI
    */
-  transformPaymentJourney: (journey) => ({
-    supplier: journey.supplier,
-    currentBalance: journey.currentBalance || 0,
-    creditLimit: journey.creditLimit,
-    transactions: journey.transactions?.map(transaction => ({
-      id: transaction.id,
-      type: transaction.type,
-      amount: transaction.amount,
-      balanceBefore: transaction.balanceBefore,
-      balanceAfter: transaction.balanceAfter,
-      description: transaction.description,
-      transactionDate: transaction.transactionDate,
-      status: transaction.status,
-      purchase: transaction.purchase,
-      purchaseReceiving: transaction.purchaseReceiving,
-      source: transaction.accountTransfer ? {
-        type: transaction.accountTransfer.fromAccountType,
-        name: transaction.accountTransfer.fromAccountName,
-        bankTransaction: transaction.accountTransfer.bankTransaction,
-        walletTransaction: transaction.accountTransfer.walletTransactions?.[0]
-      } : null,
-      allocations: transaction.allocations || []
-    })) || []
-  }),
-
-  /**
-   * Transform transaction for UI display
-   */
-  transformTransaction: (transaction) => ({
-    id: transaction.id,
-    type: transaction.type,
-    amount: transaction.amount,
-    balanceBefore: transaction.balanceBefore,
-    balanceAfter: transaction.balanceAfter,
-    description: transaction.description,
-    transactionDate: transaction.transactionDate,
-    status: transaction.status,
-    supplierName: transaction.supplierAccount?.supplier?.name,
-    purchaseNumber: transaction.purchase?.purchaseNumber,
-    paymentMethod: transaction.paymentMethod,
-    referenceNumber: transaction.referenceNumber
-  }),
-
-  /**
-   * Transform allocation for UI display
-   */
-  transformAllocation: (allocation) => ({
-    id: allocation.id,
-    allocatedAmount: allocation.allocatedAmount,
-    allocationDate: allocation.allocationDate,
-    applicationMethod: allocation.applicationMethod,
-    paymentTransaction: allocation.paymentTransaction ? {
-      id: allocation.paymentTransaction.id,
-      amount: allocation.paymentTransaction.amount,
-      transactionDate: allocation.paymentTransaction.transactionDate,
-      supplierName: allocation.paymentTransaction.supplierAccount?.supplier?.name
-    } : null,
-    invoiceTransaction: allocation.invoiceTransaction ? {
-      id: allocation.invoiceTransaction.id,
-      purchaseNumber: allocation.invoiceTransaction.purchase?.purchaseNumber,
-      amount: allocation.invoiceTransaction.amount
-    } : null,
-    allocatedBy: allocation.allocatedBy ? {
-      name: `${allocation.allocatedBy.firstName} ${allocation.allocatedBy.lastName}`
-    } : null
-  }),
+  transformPaymentResponse: (response) => {
+    if (!response.data) return response;
+    
+    return {
+      ...response,
+      data: {
+        ...response.data,
+        // Add formatted values for UI
+        formattedPaymentAmount: paymentTransformers.formatCurrency(response.data.paymentAmount || 0),
+        formattedAllocatedAmount: paymentTransformers.formatCurrency(response.data.allocatedAmount || 0),
+        formattedCreditBalance: paymentTransformers.formatCurrency(response.data.creditBalance || 0),
+        hasCredit: (response.data.creditBalance || 0) > 0,
+        invoiceStatuses: response.data.invoiceStatuses || []
+      }
+    };
+  },
 
   /**
    * Prepare payment data for API
    */
-  preparePaymentData: (formData, allocations) => ({
-    supplierAccountId: formData.supplierAccountId,
-    paymentAmount: parseFloat(formData.paymentAmount),
-    paymentMethod: formData.paymentMethod,
-    applicationMethod: formData.applicationMethod || 'OLDEST_FIRST',
-    allocations: allocations.map(alloc => ({
-      invoiceTransactionId: alloc.invoiceTransactionId,
-      amount: parseFloat(alloc.amount)
-    })),
-    description: formData.description,
-    paymentReference: formData.paymentReference,
-    ...(formData.paymentMethod === 'CASH' && {
-      stationId: formData.stationId,
-      shiftId: formData.shiftId
-    }),
-    ...(formData.paymentMethod === 'BANK_TRANSFER' && {
-      bankAccountId: formData.bankAccountId
-    })
-  }),
+  preparePaymentData: (formData, allocations) => {
+    const payload = {
+      supplierAccountId: formData.supplierAccountId,
+      paymentAmount: parseFloat(formData.paymentAmount) || 0,
+      paymentMethod: formData.paymentMethod,
+      applicationMethod: formData.applicationMethod || 'OLDEST_FIRST',
+      allocations: allocations.map(alloc => ({
+        invoiceTransactionId: alloc.invoiceTransactionId,
+        amount: parseFloat(alloc.amount) || 0
+      })),
+      description: formData.description || '',
+      paymentReference: formData.paymentReference || ''
+    };
+
+    // Add payment method specific fields
+    if (formData.paymentMethod === 'CASH') {
+      payload.stationId = formData.stationId;
+      if (formData.shiftId) {
+        payload.shiftId = formData.shiftId;
+      }
+    } else if (formData.paymentMethod === 'BANK_TRANSFER') {
+      payload.bankAccountId = formData.bankAccountId;
+    }
+
+    return payload;
+  },
 
   /**
    * Format currency for display
@@ -472,7 +413,10 @@ export const paymentStatus = {
       'OVERDUE': 'red',
       'ACTIVE': 'green',
       'ON_HOLD': 'yellow',
-      'SUSPENDED': 'red'
+      'SUSPENDED': 'red',
+      'COMPLETED': 'green',
+      'PENDING': 'orange',
+      'FAILED': 'red'
     };
     return colors[status] || 'default';
   },
@@ -483,7 +427,7 @@ export const paymentStatus = {
   getTransactionTypeText: (type) => {
     const types = {
       'PURCHASE_INVOICE': 'Purchase Invoice',
-      'PAYMENT_MADE': 'Payment',
+      'PAYMENT_MADE': 'Payment Made',
       'CREDIT_NOTE': 'Credit Note',
       'DEBIT_NOTE': 'Debit Note',
       'ADJUSTMENT': 'Adjustment'
@@ -511,54 +455,3 @@ export const paymentStatus = {
     return diffDays;
   }
 };
-
-// =====================
-// USAGE EXAMPLES
-// =====================
-
-/*
-// Example 1: Health check
-await supplierPaymentService.healthCheck();
-
-// Example 2: Get supplier accounts
-const suppliers = await supplierPaymentService.getSupplierAccounts({
-  page: 1,
-  limit: 10,
-  includePaidInvoices: false
-});
-
-// Example 3: Process cash payment
-const cashPaymentResult = await supplierPaymentService.processCashPayment({
-  supplierAccountId: '625d5961-5f6e-43c4-9b24-c1d4e765abf9',
-  paymentAmount: 130000,
-  paymentMethod: 'CASH',
-  stationId: '14991d3e-f5d9-40c3-bc1a-c9288992f649',
-  applicationMethod: 'MANUAL_ALLOCATION',
-  allocations: [
-    {
-      invoiceTransactionId: '53fdfb1f-9cbd-40b5-a868-7f47e416eb69',
-      amount: 50000
-    }
-  ],
-  description: 'Partial payment for November fuel',
-  paymentReference: 'CASH-001'
-});
-
-// Example 4: Validate allocations via API
-const validation = await supplierPaymentService.validateAllocationsApi(
-  allocations,
-  paymentAmount
-);
-
-// Example 5: Get account transfers
-const transfers = await supplierPaymentService.getAccountTransfers({
-  startDate: '2024-01-01',
-  endDate: '2024-12-31',
-  transferCategory: 'SUPPLIER_PAYMENT'
-});
-
-// Example 6: Transform data for UI
-const transformedAccount = paymentTransformers.transformSupplierAccount(rawAccount);
-const formattedAmount = paymentTransformers.formatCurrency(139200);
-const statusColor = paymentStatus.getStatusColor('OUTSTANDING');
-*/
