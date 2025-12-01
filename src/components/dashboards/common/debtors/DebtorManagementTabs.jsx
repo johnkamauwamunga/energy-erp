@@ -13,7 +13,7 @@ import CreateDebtorModal from './modal/CreateDebtorModal';
 const { TabPane } = Tabs;
 
 const DebtorManagementTabs = () => {
-  const [activeTab, setActiveTab] = useState('debtors');
+  const [activeTab, setActiveTab] = useState('categories');
   const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
   const [showCreateDebtorModal, setShowCreateDebtorModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);

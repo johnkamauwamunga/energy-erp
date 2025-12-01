@@ -26,11 +26,16 @@ import {
   EyeOutlined,
   TruckOutlined,
   ReloadOutlined,
-  CheckCircleOutlined
+  CheckCircleOutlined,
+  DownloadOutlined
 } from '@ant-design/icons';
 import { purchaseService } from '../../../../services/purchaseService/purchaseService';
 import { useApp } from '../../../../context/AppContext';
 import OffloadWizard from './create/OffloadWizard';
+
+// Import report generators
+import ReportGenerator from '../../common/downloadable/ReportGenerator';
+import AdvancedReportGenerator from '../../common/downloadable/AdvancedReportGenerator';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -64,7 +69,8 @@ const OffloadManagement = () => {
   });
 
   const currentStation = state.currentStation?.id;
-  const currentUser=state.currentUser?.id;
+  const currentUser = state.currentUser?.id;
+  const currentStationName = state.currentStation?.name;
 
   // Fetch purchase records
   const fetchPurchases = async () => {
@@ -186,6 +192,98 @@ const OffloadManagement = () => {
     return totalOrdered > 0 ? (totalReceived / totalOrdered) * 100 : 0;
   };
 
+  // Enhanced purchases data for reporting
+  const enhancedPurchases = purchases.map(purchase => {
+    const formattedPurchase = purchaseService.formatPurchase(purchase);
+    const receivedPercentage = calculateReceivedPercentage(purchase);
+    const totalOrdered = purchase.items?.reduce((sum, item) => sum + (item.orderedQty || 0), 0) || 0;
+    const totalReceived = purchase.items?.reduce((sum, item) => sum + (item.receivedQty || 0), 0) || 0;
+    const remaining = totalOrdered - totalReceived;
+    
+    return {
+      ...purchase,
+      ...formattedPurchase,
+      formattedStatus: getPurchaseStatusConfig(purchase.status).label,
+      receivedPercentage: Math.round(receivedPercentage),
+      totalOrdered,
+      totalReceived,
+      remaining,
+      mainProduct: purchase.items?.[0]?.product?.name || 'N/A',
+      productCode: purchase.items?.[0]?.product?.fuelCode || 'N/A',
+      supplierName: purchase.supplier?.name || 'N/A',
+      formattedPurchaseDate: purchase.purchaseDate ? new Date(purchase.purchaseDate).toLocaleDateString() : 'N/A'
+    };
+  });
+
+  // Export columns for reports
+  const exportColumns = [
+    {
+      title: 'Purchase Number',
+      dataIndex: 'purchaseNumber',
+      key: 'purchaseNumber'
+    },
+    {
+      title: 'Supplier',
+      dataIndex: 'supplierName',
+      key: 'supplierName'
+    },
+    {
+      title: 'Product',
+      dataIndex: 'mainProduct',
+      key: 'mainProduct'
+    },
+    {
+      title: 'Product Code',
+      dataIndex: 'productCode',
+      key: 'productCode'
+    },
+    {
+      title: 'Type',
+      dataIndex: 'type',
+      key: 'type'
+    },
+    {
+      title: 'Ordered Quantity',
+      dataIndex: 'totalOrdered',
+      key: 'totalOrdered',
+      render: (qty, record) => `${qty} ${record.type === 'FUEL' ? 'L' : 'units'}`
+    },
+    {
+      title: 'Received Quantity',
+      dataIndex: 'totalReceived',
+      key: 'totalReceived',
+      render: (qty, record) => `${qty} ${record.type === 'FUEL' ? 'L' : 'units'}`
+    },
+    {
+      title: 'Remaining',
+      dataIndex: 'remaining',
+      key: 'remaining',
+      render: (qty, record) => `${qty} ${record.type === 'FUEL' ? 'L' : 'units'}`
+    },
+    {
+      title: 'Received %',
+      dataIndex: 'receivedPercentage',
+      key: 'receivedPercentage',
+      render: (percent) => `${percent}%`
+    },
+    {
+      title: 'Status',
+      dataIndex: 'formattedStatus',
+      key: 'formattedStatus'
+    },
+    {
+      title: 'Net Payable',
+      dataIndex: 'netPayable',
+      key: 'netPayable',
+      render: (amount) => amount ? `Ksh ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'
+    },
+    {
+      title: 'Purchase Date',
+      dataIndex: 'formattedPurchaseDate',
+      key: 'formattedPurchaseDate'
+    }
+  ];
+
   // Purchases Table Columns
   const purchaseColumns = [
     {
@@ -214,10 +312,8 @@ const OffloadManagement = () => {
         const mainProduct = record.items[0];
         return (
           <div>
-            <div><Text strong>{mainProduct.product?.name}</Text></div>
-            <div><Text type="secondary" style={{ fontSize: '12px' }}>
-              {mainProduct.product?.fuelCode || 'N/A'}
-            </Text></div>
+            <div><Text style={{fontSize:"10px", color:"blue"}}>{mainProduct.product?.name}</Text></div>
+      
           </div>
         );
       }
@@ -243,13 +339,13 @@ const OffloadManagement = () => {
                 </Text>
               </div>
             )}
-            {remaining > 0 && (
+            {/* {remaining > 0 && (
               <div>
                 <Text type="secondary" style={{ fontSize: '12px', color: '#ff4d4f' }}>
                   Remaining: {remaining.toLocaleString()} L
                 </Text>
               </div>
-            )}
+            )} */}
           </div>
         );
       }
@@ -262,7 +358,7 @@ const OffloadManagement = () => {
         if (!record.items || record.items.length === 0) return 'N/A';
         
         const mainItem = record.items[0];
-        return mainItem.unitCost ? `$${mainItem.unitCost.toFixed(2)}` : 'N/A';
+        return mainItem.unitCost ? `Ksh ${mainItem.unitCost.toFixed(2)}` : 'N/A';
       }
     },
     {
@@ -270,14 +366,14 @@ const OffloadManagement = () => {
       dataIndex: 'totalTaxAmount',
       key: 'tax',
       width: 120,
-      render: (taxAmount) => taxAmount ? `$${taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'
+      render: (taxAmount) => taxAmount ? `Ksh ${taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'
     },
     {
       title: 'Net Payable',
       dataIndex: 'netPayable',
       key: 'netPayable',
       width: 130,
-      render: (amount) => amount ? `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'
+      render: (amount) => amount ? `Ksh ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Ksh 0.00'
     },
     {
       title: 'Status',
@@ -486,13 +582,13 @@ const OffloadManagement = () => {
                     title: 'Unit Cost', 
                     dataIndex: 'unitCost', 
                     key: 'unitCost', 
-                    render: cost => cost ? `$${cost.toFixed(2)}` : 'N/A' 
+                    render: cost => cost ? `Ksh ${cost.toFixed(2)}` : 'N/A' 
                   },
                   { 
                     title: 'Total Cost', 
                     dataIndex: 'grossAmount', 
                     key: 'grossAmount', 
-                    render: amount => amount ? `$${amount.toFixed(2)}` : 'N/A' 
+                    render: amount => amount ? `Ksh ${amount.toFixed(2)}` : 'N/A' 
                   }
                 ]}
               />
@@ -541,17 +637,28 @@ const OffloadManagement = () => {
             </Text>
           </Col>
           <Col>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              size="large"
-              onClick={() => {
-                // Navigate to create purchase
-                console.log('Navigate to create purchase form');
-              }}
-            >
-              New Purchase
-            </Button>
+            <Space>
+              {/* Export Button */}
+              <AdvancedReportGenerator
+                dataSource={enhancedPurchases}
+                columns={exportColumns}
+                title={`Purchase Management Report - ${currentStationName}`}
+                fileName={`purchases_${new Date().toISOString().split('T')[0]}`}
+                footerText={`Generated from Energy ERP System - Station: ${currentStationName} - User: ${state.currentUser?.firstName} ${state.currentUser?.lastName} - ${new Date().toLocaleDateString()}`}
+                showFooter={true}
+              />
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                size="large"
+                onClick={() => {
+                  // Navigate to create purchase
+                  console.log('Navigate to create purchase form');
+                }}
+              >
+                New Purchase
+              </Button>
+            </Space>
           </Col>
         </Row>
       </Card>
@@ -563,7 +670,7 @@ const OffloadManagement = () => {
             <Statistic
               title="Total Purchases"
               value={stats.total}
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{ color: '#1890ff',fontSize:"20px"  }}
             />
           </Card>
         </Col>
@@ -572,7 +679,7 @@ const OffloadManagement = () => {
             <Statistic
               title="Pending Approval"
               value={stats.pending}
-              valueStyle={{ color: '#fa8c16' }}
+              valueStyle={{ color: '#fa8c16',fontSize:"20px"  }}
             />
           </Card>
         </Col>
@@ -581,7 +688,7 @@ const OffloadManagement = () => {
             <Statistic
               title="Ready to Receive"
               value={stats.receivable}
-              valueStyle={{ color: '#52c41a' }}
+              valueStyle={{ color: '#52c41a',fontSize:"20px"  }}
             />
           </Card>
         </Col>
@@ -590,7 +697,7 @@ const OffloadManagement = () => {
             <Statistic
               title="In Transit"
               value={stats.inTransit}
-              valueStyle={{ color: '#722ed1' }}
+              valueStyle={{ color: '#722ed1', fontSize:"20px"  }}
             />
           </Card>
         </Col>
@@ -599,7 +706,7 @@ const OffloadManagement = () => {
             <Statistic
               title="Completed"
               value={stats.completed}
-              valueStyle={{ color: '#52c41a' }}
+              valueStyle={{ color: '#52c41a',fontSize:"20px"  }}
             />
           </Card>
         </Col>
@@ -608,8 +715,8 @@ const OffloadManagement = () => {
             <Statistic
               title="Total Value"
               value={stats.totalValue}
-              prefix="$"
-              valueStyle={{ color: '#faad14' }}
+              prefix="Ksh"
+              valueStyle={{ color: '#faad14', fontSize:"20px" }}
             />
           </Card>
         </Col>
@@ -703,6 +810,15 @@ const OffloadManagement = () => {
               >
                 Clear All Filters
               </Button>
+              {/* Export Button in Filters */}
+              <AdvancedReportGenerator
+                dataSource={enhancedPurchases}
+                columns={exportColumns}
+                title={`Purchase Management Report - ${currentStationName}`}
+                fileName={`purchases_${new Date().toISOString().split('T')[0]}`}
+                footerText={`Generated from Energy ERP System - Station: ${currentStationName} - ${new Date().toLocaleDateString()}`}
+                showFooter={true}
+              />
               {(filters.search || filters.status || filters.type || filters.productId || filters.dateRange) && (
                 <Text type="secondary">
                   Filtered by: 

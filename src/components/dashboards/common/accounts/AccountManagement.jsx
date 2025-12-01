@@ -42,6 +42,13 @@ import { bankingService } from '../../../../services/bankingService/bankingServi
 import { bankService } from '../../../../services/bankService/bankService';
 import { useApp } from '../../../../context/AppContext';
 
+// reports
+// Add this import at the top
+import ReportGenerator from '../../common/downloadable/ReportGenerator';
+// or for advanced features:
+import AdvancedReportGenerator from '../../common/downloadable/AdvancedReportGenerator';
+
+
 const { Option } = Select;
 const { TabPane } = Tabs;
 const { RangePicker } = DatePicker;
@@ -909,106 +916,132 @@ const AccountsManagement = () => {
       )}
 
       {/* Tabs Section */}
-      <Card>
-        <Tabs 
-          activeKey={activeTab} 
-          onChange={setActiveTab}
-        >
-          <TabPane 
-            tab={
-              <span>
-                <WalletOutlined />
-                Wallet Transactions ({transactions.length})
-              </span>
-            } 
-            key="wallet"
-          >
-            {/* Wallet Transactions Table */}
-            <Table
-              columns={walletColumns}
-              dataSource={transactions}
-              loading={loading}
-              rowKey="id"
-              pagination={{
-                current: pagination.page,
-                pageSize: pagination.limit,
-                total: pagination.total,
-                showSizeChanger: true,
-                showQuickJumper: true,
-                showTotal: (total, range) => 
-                  `Showing ${range[0]}-${range[1]} of ${total} transactions`,
-                onChange: (page, pageSize) => {
-                  setPagination(prev => ({ ...prev, page, limit: pageSize }));
-                }
-              }}
-            />
-          </TabPane>
-          
-          <TabPane 
-            tab={
-              <span>
-                <SwapOutlined />
-                Bank Transfers ({transfers.length})
-              </span>
-            } 
-            key="transfers"
-          >
-            {/* Filters */}
-            <Card size="small" style={{ marginBottom: 16 }}>
-              <Row gutter={[8, 8]} align="middle">
-                <Col xs={24} sm={8} md={6}>
-                  <Input
-                    placeholder="Search transfers..."
-                    value={filters.search}
-                    onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-                    prefix={<SearchOutlined />}
-                  />
-                </Col>
-                <Col xs={12} sm={8} md={4}>
-                  <Select
-                    style={{ width: '100%' }}
-                    placeholder="Status"
-                    value={filters.status}
-                    onChange={(value) => setFilters(prev => ({ ...prev, status: value }))}
-                    allowClear
-                  >
-                    <Option value="COMPLETED">Completed</Option>
-                    <Option value="PENDING">Pending</Option>
-                    <Option value="FAILED">Failed</Option>
-                  </Select>
-                </Col>
-                <Col xs={12} sm={8} md={6}>
-                  <RangePicker
-                    style={{ width: '100%' }}
-                    onChange={(dates) => setFilters(prev => ({ ...prev, dateRange: dates }))}
-                  />
-                </Col>
-              </Row>
-            </Card>
+    {/* Tabs Section */}
+<Card>
+  <Tabs 
+    activeKey={activeTab} 
+    onChange={setActiveTab}
+  >
+    <TabPane 
+      tab={
+        <span>
+          <WalletOutlined />
+          Wallet Transactions ({transactions.length})
+        </span>
+      } 
+      key="wallet"
+    >
+      {/* Wallet Transactions Header with Export Button */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h3 style={{ margin: 0 }}>Wallet Transactions</h3>
+        <AdvancedReportGenerator
+          dataSource={transactions}
+          columns={walletColumns}
+          title={`Wallet Transactions Report - ${formattedWallet?.stationDisplay || 'Station'}`}
+          fileName={`wallet_transactions_${new Date().toISOString().split('T')[0]}`}
+          footerText={`Generated from Energy ERP System - ${formattedWallet?.stationDisplay || 'Station'} - ${new Date().toLocaleDateString()}`}
+          showFooter={true}
+        />
+      </div>
 
-            {/* Transfers Table */}
-            <Table
-              columns={transferColumns}
-              dataSource={transfers}
-              loading={loading}
-              rowKey="id"
-              pagination={{
-                current: pagination.page,
-                pageSize: pagination.limit,
-                total: pagination.total,
-                showSizeChanger: true,
-                showQuickJumper: true,
-                showTotal: (total, range) => 
-                  `Showing ${range[0]}-${range[1]} of ${total} transfers`,
-                onChange: (page, pageSize) => {
-                  setPagination(prev => ({ ...prev, page, limit: pageSize }));
-                }
-              }}
+      {/* Wallet Transactions Table */}
+      <Table
+        columns={walletColumns}
+        dataSource={transactions}
+        loading={loading}
+        rowKey="id"
+        pagination={{
+          current: pagination.page,
+          pageSize: pagination.limit,
+          total: pagination.total,
+          showSizeChanger: true,
+          showQuickJumper: true,
+          showTotal: (total, range) => 
+            `Showing ${range[0]}-${range[1]} of ${total} transactions`,
+          onChange: (page, pageSize) => {
+            setPagination(prev => ({ ...prev, page, limit: pageSize }));
+          }
+        }}
+      />
+    </TabPane>
+    
+    <TabPane 
+      tab={
+        <span>
+          <SwapOutlined />
+          Bank Transfers ({transfers.length})
+        </span>
+      } 
+      key="transfers"
+    >
+      {/* Bank Transfers Header with Export Button */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h3 style={{ margin: 0 }}>Bank Transfers</h3>
+        <AdvancedReportGenerator
+          dataSource={transfers}
+          columns={transferColumns}
+          title={`Bank Transfers Report - ${formattedWallet?.stationDisplay || 'Station'}`}
+          fileName={`bank_transfers_${new Date().toISOString().split('T')[0]}`}
+          footerText={`Generated from Energy ERP System - ${formattedWallet?.stationDisplay || 'Station'} - ${new Date().toLocaleDateString()}`}
+          showFooter={true}
+        />
+      </div>
+
+      {/* Filters */}
+      <Card size="small" style={{ marginBottom: 16 }}>
+        <Row gutter={[8, 8]} align="middle">
+          <Col xs={24} sm={8} md={6}>
+            <Input
+              placeholder="Search transfers..."
+              value={filters.search}
+              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+              prefix={<SearchOutlined />}
             />
-          </TabPane>
-        </Tabs>
+          </Col>
+          <Col xs={12} sm={8} md={4}>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="Status"
+              value={filters.status}
+              onChange={(value) => setFilters(prev => ({ ...prev, status: value }))}
+              allowClear
+            >
+              <Option value="COMPLETED">Completed</Option>
+              <Option value="PENDING">Pending</Option>
+              <Option value="FAILED">Failed</Option>
+            </Select>
+          </Col>
+          <Col xs={12} sm={8} md={6}>
+            <RangePicker
+              style={{ width: '100%' }}
+              onChange={(dates) => setFilters(prev => ({ ...prev, dateRange: dates }))}
+            />
+          </Col>
+        </Row>
       </Card>
 
+      {/* Transfers Table */}
+      <Table
+        columns={transferColumns}
+        dataSource={transfers}
+        loading={loading}
+        rowKey="id"
+        pagination={{
+          current: pagination.page,
+          pageSize: pagination.limit,
+          total: pagination.total,
+          showSizeChanger: true,
+          showQuickJumper: true,
+          showTotal: (total, range) => 
+            `Showing ${range[0]}-${range[1]} of ${total} transfers`,
+          onChange: (page, pageSize) => {
+            setPagination(prev => ({ ...prev, page, limit: pageSize }));
+          }
+        }}
+      />
+    </TabPane>
+  </Tabs>
+</Card>
       {/* Bank Deposit Modal */}
       <Modal
         title={

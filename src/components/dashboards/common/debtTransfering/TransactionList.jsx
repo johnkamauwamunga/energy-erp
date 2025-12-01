@@ -19,9 +19,14 @@ import {
   FilterOutlined,
   ReloadOutlined,
   EyeOutlined,
-  ScheduleOutlined
+  ScheduleOutlined,
+  DownloadOutlined
 } from '@ant-design/icons';
 import { formatCurrency, formatDate } from '../../../../utils/formatters';
+
+// Import report generators
+import ReportGenerator from '../../common/downloadable/ReportGenerator';
+import AdvancedReportGenerator from '../../common/downloadable/AdvancedReportGenerator';
 
 const { Text } = Typography;
 const { Search } = Input;
@@ -35,7 +40,9 @@ const TransactionList = ({
   onFiltersChange, 
   onRefresh,
   showFilters = true,
-  pagination = { pageSize: 10 }
+  pagination = { pageSize: 10 },
+  currentUser,
+  currentStation
 }) => {
   
   const handleSearch = (value) => {
@@ -90,7 +97,23 @@ const TransactionList = ({
     }));
   };
 
-  // Transaction columns
+  // Enhanced transactions data for reporting
+  const enhancedTransactions = transactions.map(transaction => ({
+    ...transaction,
+    formattedDate: formatDate(transaction.transactionDate, true),
+    formattedAmount: formatCurrency(Math.abs(transaction.amount)),
+    formattedNewBalance: formatCurrency(transaction.newBalance),
+    formattedStatus: transaction.status?.replace(/_/g, ' ') || 'N/A',
+    debtorName: transaction.stationDebtorAccount?.debtor?.name || 
+                transaction.debtor?.name || 
+                'N/A',
+    shiftNumber: transaction.shift?.shiftNumber || 'N/A',
+    recordedByDisplay: transaction.recordedBy ? 
+      `${transaction.recordedBy.firstName} ${transaction.recordedBy.lastName}` : 
+      'System'
+  }));
+
+  // Transaction columns for table display
   const columns = [
     {
       title: 'Date & Time',
@@ -219,6 +242,73 @@ const TransactionList = ({
     }
   ];
 
+  // Columns for export (simplified for better PDF/Excel format)
+  const exportColumns = [
+    {
+      title: 'Date & Time',
+      dataIndex: 'transactionDate',
+      key: 'transactionDate',
+      render: (date) => formatDate(date, true)
+    },
+    {
+      title: 'Shift Number',
+      key: 'shiftNumber',
+      render: (_, record) => record.shift?.shiftNumber || 'N/A'
+    },
+    {
+      title: 'Debtor',
+      key: 'debtor',
+      render: (_, record) => 
+        record.stationDebtorAccount?.debtor?.name || 
+        record.debtor?.name || 
+        'N/A'
+    },
+    {
+      title: 'Type',
+      dataIndex: 'type',
+      key: 'type'
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status) => status?.replace(/_/g, ' ') || 'N/A'
+    },
+    {
+      title: 'Amount',
+      dataIndex: 'amount',
+      key: 'amount',
+      render: (amount, record) => (
+        <span style={{ 
+          color: record.type === 'CREDIT' ? '#52c41a' : '#ff4d4f',
+          fontWeight: 'bold'
+        }}>
+          {formatCurrency(Math.abs(amount))}
+        </span>
+      )
+    },
+    {
+      title: 'Balance After',
+      dataIndex: 'newBalance',
+      key: 'newBalance',
+      render: (balance) => formatCurrency(balance)
+    },
+    {
+      title: 'Recorded By',
+      key: 'recordedBy',
+      render: (_, record) => 
+        record.recordedBy ? 
+          `${record.recordedBy.firstName} ${record.recordedBy.lastName}` : 
+          'System'
+    },
+    {
+      title: 'Description',
+      dataIndex: 'description',
+      key: 'description',
+      render: (text) => text || 'N/A'
+    }
+  ];
+
   const handleViewDetails = (transaction) => {
     console.log('View transaction details:', transaction);
     // Implement view details logic
@@ -280,16 +370,16 @@ const TransactionList = ({
                 ))}
               </Select>
             </Col>
-            <Col xs={24} sm={4}>
+            {/* <Col xs={24} sm={4}>
               <RangePicker
                 style={{ width: '100%' }}
                 onChange={handleDateChange}
                 placeholder={['Start Date', 'End Date']}
               />
-            </Col>
+            </Col> */}
             <Col xs={24} sm={2}>
               <Space>
-                <Button
+                {/* <Button
                   icon={<ReloadOutlined />}
                   onClick={onRefresh}
                   loading={loading}
@@ -301,7 +391,16 @@ const TransactionList = ({
                   size="small"
                 >
                   Clear
-                </Button>
+                </Button> */}
+                {/* Export Button */}
+                <AdvancedReportGenerator
+                  dataSource={enhancedTransactions}
+                  columns={exportColumns}
+                  title={`Transaction History - ${currentStation ? 'Station' : 'Company'} Level`}
+                  fileName={`transactions_${new Date().toISOString().split('T')[0]}`}
+                  footerText={`Generated from Energy ERP System - ${currentUser ? `User: ${currentUser.firstName} ${currentUser.lastName}` : ''} - ${new Date().toLocaleDateString()}`}
+                  showFooter={true}
+                />
               </Space>
             </Col>
           </Row>
@@ -334,10 +433,21 @@ const TransactionList = ({
                   {formatCurrency(transactions.reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0))}
                 </Text>
               </Table.Summary.Cell>
-              <Table.Summary.Cell index={2} colSpan={6}>
+              <Table.Summary.Cell index={2} colSpan={5}>
                 <Text type="secondary">
                   {transactions.length} transactions found
                 </Text>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={3}>
+                {/* Export button in table summary */}
+                <AdvancedReportGenerator
+                  dataSource={enhancedTransactions}
+                  columns={exportColumns}
+                  title={`Debt Transactions Report - ${currentStation ? 'Station' : 'Company'} Level`}
+                  fileName={`debt_transactions_${new Date().toISOString().split('T')[0]}`}
+                  footerText={`Generated from Energy ERP System - ${currentUser ? `User: ${currentUser.firstName} ${currentUser.lastName}` : ''} - ${new Date().toLocaleDateString()}`}
+                  showFooter={true}
+                />
               </Table.Summary.Cell>
             </Table.Summary.Row>
           </Table.Summary>

@@ -20,9 +20,14 @@ import {
   ReloadOutlined,
   EyeOutlined,
   BankOutlined,
-  WalletOutlined
+  WalletOutlined,
+  DownloadOutlined
 } from '@ant-design/icons';
 import { formatCurrency, formatDate } from '../../../../utils/formatters';
+
+// Import report generators
+import ReportGenerator from '../../common/downloadable/ReportGenerator';
+import AdvancedReportGenerator from '../../common/downloadable/AdvancedReportGenerator';
 
 const { Text } = Typography;
 const { Search } = Input;
@@ -36,7 +41,9 @@ const TransferList = ({
   onFiltersChange, 
   onRefresh,
   showFilters = true,
-  pagination = { pageSize: 10 }
+  pagination = { pageSize: 10 },
+  currentUser,
+  currentStation
 }) => {
   
   const handleSearch = (value) => {
@@ -90,7 +97,20 @@ const TransferList = ({
     return colors[category] || 'default';
   };
 
-  // Transfer columns
+  // Enhanced transfers data for reporting
+  const enhancedTransfers = transfers.map(transfer => ({
+    ...transfer,
+    formattedDate: formatDate(transfer.transferDate, true),
+    formattedAmount: formatCurrency(transfer.amount),
+    formattedCategory: transfer.transferCategory?.replace(/_/g, ' '),
+    formattedStatus: transfer.status,
+    transactionModeDisplay: transfer.bankTransaction?.transactionMode || 'N/A',
+    createdByDisplay: transfer.createdBy ? 
+      `${transfer.createdBy.firstName} ${transfer.createdBy.lastName}` : 
+      'System'
+  }));
+
+  // Transfer columns for table display
   const columns = [
     {
       title: 'Transfer Date',
@@ -131,9 +151,6 @@ const TransferList = ({
           <Text strong>
             {record.fromAccountName}
           </Text>
-          {/* <Text type="secondary" size="small">
-            {record.fromAccountType?.replace(/_/g, ' ')}
-          </Text> */}
         </Space>
       ),
       ellipsis: true,
@@ -147,9 +164,6 @@ const TransferList = ({
           <Text strong>
             {record.toAccountName}
           </Text>
-          {/* <Text type="secondary" size="small">
-            {record.toAccountType?.replace(/_/g, ' ')}
-          </Text> */}
         </Space>
       ),
       ellipsis: true,
@@ -265,6 +279,70 @@ const TransferList = ({
     }
   ];
 
+  // Columns for export (simplified for better PDF/Excel format)
+  const exportColumns = [
+    {
+      title: 'Transfer Date',
+      dataIndex: 'transferDate',
+      key: 'transferDate',
+      render: (date) => formatDate(date, true)
+    },
+    {
+      title: 'Transfer Number',
+      dataIndex: 'transferNumber',
+      key: 'transferNumber'
+    },
+    {
+      title: 'Amount',
+      dataIndex: 'amount',
+      key: 'amount',
+      render: (amount) => formatCurrency(amount)
+    },
+    {
+      title: 'From Account',
+      dataIndex: 'fromAccountName',
+      key: 'fromAccountName'
+    },
+    {
+      title: 'To Account',
+      dataIndex: 'toAccountName',
+      key: 'toAccountName'
+    },
+    {
+      title: 'Category',
+      dataIndex: 'transferCategory',
+      key: 'transferCategory',
+      render: (category) => category?.replace(/_/g, ' ')
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status'
+    },
+    {
+      title: 'Transaction Mode',
+      key: 'transactionMode',
+      render: (_, record) => record.bankTransaction?.transactionMode || 'N/A'
+    },
+    {
+      title: 'Description',
+      dataIndex: 'description',
+      key: 'description'
+    },
+    {
+      title: 'Reference',
+      dataIndex: 'reference',
+      key: 'reference'
+    },
+    {
+      title: 'Created By',
+      key: 'createdBy',
+      render: (_, record) => record.createdBy ? 
+        `${record.createdBy.firstName} ${record.createdBy.lastName}` : 
+        'System'
+    }
+  ];
+
   const handleViewDetails = (transfer) => {
     console.log('View transfer details:', transfer);
   };
@@ -325,28 +403,37 @@ const TransferList = ({
                 <Option value="CHEQUE">Cheque</Option>
               </Select>
             </Col>
-            <Col xs={24} sm={4}>
+            {/* <Col xs={24} sm={4}>
               <RangePicker
                 style={{ width: '100%' }}
                 onChange={handleDateChange}
                 placeholder={['Start Date', 'End Date']}
               />
-            </Col>
+            </Col> */}
             <Col xs={24} sm={2}>
               <Space>
-                <Button
+                {/* <Button
                   icon={<ReloadOutlined />}
                   onClick={onRefresh}
                   loading={loading}
                   size="small"
-                />
-                <Button
+                /> */}
+                {/* <Button
                   icon={<FilterOutlined />}
                   onClick={clearFilters}
                   size="small"
                 >
                   Clear
-                </Button>
+                </Button> */}
+                {/* Export Button */}
+                <AdvancedReportGenerator
+                  dataSource={enhancedTransfers}
+                  columns={exportColumns}
+                  title={`Debt Transfer Report - ${currentStation ? 'Station' : 'Company'} Level`}
+                  fileName={`debt_transfers_${new Date().toISOString().split('T')[0]}`}
+                  footerText={`Generated from Energy ERP System - ${currentUser ? `User: ${currentUser.firstName} ${currentUser.lastName}` : ''} - ${new Date().toLocaleDateString()}`}
+                  showFooter={true}
+                />
               </Space>
             </Col>
           </Row>
@@ -379,10 +466,21 @@ const TransferList = ({
                   {formatCurrency(transfers.reduce((sum, transfer) => sum + transfer.amount, 0))}
                 </Text>
               </Table.Summary.Cell>
-              <Table.Summary.Cell index={2} colSpan={9}>
+              <Table.Summary.Cell index={2} colSpan={8}>
                 <Text type="secondary">
                   {transfers.length} transfers found
                 </Text>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={3}>
+                {/* Export button in table summary */}
+                <AdvancedReportGenerator
+                  dataSource={enhancedTransfers}
+                  columns={exportColumns}
+                  title={`Debt Transfer Report - ${currentStation ? 'Station' : 'Company'} Level`}
+                  fileName={`debt_transfers_${new Date().toISOString().split('T')[0]}`}
+                  footerText={`Generated from Energy ERP System - ${currentUser ? `User: ${currentUser.firstName} ${currentUser.lastName}` : ''} - ${new Date().toLocaleDateString()}`}
+                  showFooter={true}
+                />
               </Table.Summary.Cell>
             </Table.Summary.Row>
           </Table.Summary>

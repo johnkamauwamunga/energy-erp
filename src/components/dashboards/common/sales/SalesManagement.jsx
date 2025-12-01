@@ -62,6 +62,9 @@ import { productSalesService } from '../../../../services/productSalesService/pr
 import { pumpSalesService } from '../../../../services/pumpSalesService/pumpSalesService';
 import { useApp } from '../../../../context/AppContext';
 import dayjs from 'dayjs';
+// Add these imports with your other imports
+import ReportGenerator from '../../common/downloadable/ReportGenerator';
+import AdvancedReportGenerator from '../../common/downloadable/AdvancedReportGenerator';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -198,66 +201,132 @@ const SalesManagement = () => {
   ];
 
   // Overview Tab Content
-  const OverviewTab = () => {
-    const productSummary = productsData.summary || {};
-    const pumpSummary = pumpsData.summary || {};
-    
-    return (
-      <div className="space-y-4">
-        {/* Key Metrics */}
-        <Row gutter={[16, 16]}>
-          <Col xs={12} sm={6}>
-            <Card size="small" loading={loading}>
-              <Statistic
-                title="Total Revenue"
-                value={(productSummary.totalSalesValue || 0) + (pumpSummary.totalSalesValue || 0)}
-                formatter={value => formatCurrency(value)}
-                valueStyle={{ color: '#1890ff' }}
-                prefix={<DollarOutlined />}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small" loading={loading}>
-              <Statistic
-                title="Total Liters"
-                value={(productSummary.totalLiters || 0) + (pumpSummary.totalLiters || 0)}
-                formatter={value => formatNumber(value)}
-                valueStyle={{ color: '#52c41a' }}
-                prefix={<AreaChartOutlined />}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small" loading={loading}>
-              <Statistic
-                title="Active Products"
-                value={productSummary.totalProducts || 0}
-                valueStyle={{ color: '#faad14' }}
-                prefix={<ProductOutlined />}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small" loading={loading}>
-              <Statistic
-                title="Active Pumps"
-                value={pumpSummary.totalPumps || 0}
-                valueStyle={{ color: '#722ed1' }}
-                prefix={<FireOutlined />}
-              />
-            </Card>
-          </Col>
-        </Row>
+// Overview Tab Content
+const OverviewTab = () => {
+  const productSummary = productsData.summary || {};
+  const pumpSummary = pumpsData.summary || {};
+  const products = productsData.products || [];
+  const pumps = pumpsData.pumps || [];
+  
+  // Create overview data for export
+  const overviewData = [
+    {
+      metric: 'Total Revenue',
+      value: (productSummary.totalSalesValue || 0) + (pumpSummary.totalSalesValue || 0),
+      type: 'currency'
+    },
+    {
+      metric: 'Total Liters',
+      value: (productSummary.totalLiters || 0) + (pumpSummary.totalLiters || 0),
+      type: 'number'
+    },
+    {
+      metric: 'Active Products',
+      value: productSummary.totalProducts || products.length,
+      type: 'number'
+    },
+    {
+      metric: 'Active Pumps',
+      value: pumpSummary.totalPumps || pumps.length,
+      type: 'number'
+    }
+  ];
 
-        {/* Performance Overview */}
-        <Row gutter={[16, 16]}>
-          <Col xs={24} sm={12}>
-            <Card 
-              title="Product Performance" 
-              size="small" 
-              loading={loading}
-              extra={
+  const overviewColumns = [
+    {
+      title: 'Metric',
+      dataIndex: 'metric',
+      key: 'metric',
+    },
+    {
+      title: 'Value',
+      dataIndex: 'value',
+      key: 'value',
+      render: (value, record) => 
+        record.type === 'currency' ? formatCurrency(value) : formatNumber(value)
+    }
+  ];
+  
+  return (
+    <div className="space-y-4">
+      {/* Export Button for Overview */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <AdvancedReportGenerator
+          dataSource={overviewData}
+          columns={overviewColumns}
+          title={`Sales Overview Report - ${currentStation ? 'Station' : 'Company'} - ${filters.period.toUpperCase()}`}
+          fileName={`sales_overview_${filters.period}_${new Date().toISOString().split('T')[0]}`}
+          footerText={`Generated from Energy ERP System - Period: ${filters.period} - ${new Date().toLocaleDateString()}`}
+          showFooter={true}
+        />
+      </div>
+
+      {/* Key Metrics */}
+      <Row gutter={[16, 16]}>
+        <Col xs={12} sm={6}>
+          <Card size="small" loading={loading}>
+            <Statistic
+              title="Total Revenue"
+              value={(productSummary.totalSalesValue || 0) + (pumpSummary.totalSalesValue || 0)}
+              formatter={value => formatCurrency(value)}
+              valueStyle={{ color: '#1890ff' }}
+              prefix={<DollarOutlined />}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small" loading={loading}>
+            <Statistic
+              title="Total Liters"
+              value={(productSummary.totalLiters || 0) + (pumpSummary.totalLiters || 0)}
+              formatter={value => formatNumber(value)}
+              valueStyle={{ color: '#52c41a' }}
+              prefix={<AreaChartOutlined />}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small" loading={loading}>
+            <Statistic
+              title="Active Products"
+              value={productSummary.totalProducts || products.length}
+              valueStyle={{ color: '#faad14' }}
+              prefix={<ProductOutlined />}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small" loading={loading}>
+            <Statistic
+              title="Active Pumps"
+              value={pumpSummary.totalPumps || pumps.length}
+              valueStyle={{ color: '#722ed1' }}
+              prefix={<FireOutlined />}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Performance Overview */}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} sm={12}>
+          <Card 
+            title="Product Performance" 
+            size="small" 
+            loading={loading}
+            extra={
+              <Space>
+                <AdvancedReportGenerator
+                  dataSource={products.slice(0, 3)}
+                  columns={[
+                    { title: 'Product', dataIndex: ['product', 'name'], key: 'name' },
+                    { title: 'Sales Value', dataIndex: 'totalSalesValue', key: 'totalSalesValue', render: formatCurrency },
+                    { title: 'Liters', dataIndex: 'totalLiters', key: 'totalLiters', render: formatNumber }
+                  ]}
+                  title={`Top Products Report - ${currentStation ? 'Station' : 'Company'}`}
+                  fileName={`top_products_${new Date().toISOString().split('T')[0]}`}
+                  showFooter={false}
+                />
                 <Button 
                   type="link" 
                   onClick={() => setActiveTab('products')}
@@ -265,30 +334,44 @@ const SalesManagement = () => {
                 >
                   View Details
                 </Button>
-              }
-            >
-              {productsData.products?.slice(0, 3).map((product, index) => (
-                <div key={product.product?.id} className="mb-3 last:mb-0">
-                  <div className="flex justify-between items-center">
-                    <Text strong>{product.product?.name}</Text>
-                    <Text>{formatCurrency(product.totalSalesValue)}</Text>
-                  </div>
-                  <Progress 
-                    percent={Math.min((product.totalSalesValue / (productSummary.totalSalesValue || 1)) * 100, 100)} 
-                    size="small" 
-                    showInfo={false}
-                  />
+              </Space>
+            }
+          >
+            {products.slice(0, 3).map((product, index) => (
+              <div key={product.product?.id} className="mb-3 last:mb-0">
+                <div className="flex justify-between items-center">
+                  <Text strong>{product.product?.name}</Text>
+                  <Text>{formatCurrency(product.totalSalesValue)}</Text>
                 </div>
-              ))}
-            </Card>
-          </Col>
-          
-          <Col xs={24} sm={12}>
-            <Card 
-              title="Pump Performance" 
-              size="small" 
-              loading={loading}
-              extra={
+                <Progress 
+                  percent={Math.min((product.totalSalesValue / (productSummary.totalSalesValue || 1)) * 100, 100)} 
+                  size="small" 
+                  showInfo={false}
+                />
+              </div>
+            ))}
+          </Card>
+        </Col>
+        
+        <Col xs={24} sm={12}>
+          <Card 
+            title="Pump Performance" 
+            size="small" 
+            loading={loading}
+            extra={
+              <Space>
+                <AdvancedReportGenerator
+                  dataSource={pumps.slice(0, 3)}
+                  columns={[
+                    { title: 'Pump', dataIndex: ['pump', 'asset', 'name'], key: 'name' },
+                    { title: 'Sales Value', dataIndex: 'totalSalesValue', key: 'totalSalesValue', render: formatCurrency },
+                    { title: 'Liters', dataIndex: 'totalLiters', key: 'totalLiters', render: formatNumber },
+                    { title: 'Efficiency', dataIndex: 'efficiency', key: 'efficiency', render: (eff) => formatPercentage(eff * 100) }
+                  ]}
+                  title={`Top Pumps Report - ${currentStation ? 'Station' : 'Company'}`}
+                  fileName={`top_pumps_${new Date().toISOString().split('T')[0]}`}
+                  showFooter={false}
+                />
                 <Button 
                   type="link" 
                   onClick={() => setActiveTab('pumps')}
@@ -296,378 +379,386 @@ const SalesManagement = () => {
                 >
                   View Details
                 </Button>
-              }
-            >
-              {pumpsData.pumps?.slice(0, 3).map((pump, index) => (
-                <div key={pump.pump?.id} className="mb-3 last:mb-0">
-                  <div className="flex justify-between items-center">
-                    <Text strong>{pump.pump?.asset?.name}</Text>
-                    <Text>{formatCurrency(pump.totalSalesValue)}</Text>
-                  </div>
-                  <Progress 
-                    percent={Math.min((pump.totalSalesValue / (pumpSummary.totalSalesValue || 1)) * 100, 100)} 
-                    size="small" 
-                    showInfo={false}
-                  />
+              </Space>
+            }
+          >
+            {pumps.slice(0, 3).map((pump, index) => (
+              <div key={pump.pump?.id} className="mb-3 last:mb-0">
+                <div className="flex justify-between items-center">
+                  <Text strong>{pump.pump?.asset?.name}</Text>
+                  <Text>{formatCurrency(pump.totalSalesValue)}</Text>
                 </div>
-              ))}
-            </Card>
-          </Col>
-        </Row>
+                <Progress 
+                  percent={Math.min((pump.totalSalesValue / (pumpSummary.totalSalesValue || 1)) * 100, 100)} 
+                  size="small" 
+                  showInfo={false}
+                />
+              </div>
+            ))}
+          </Card>
+        </Col>
+      </Row>
 
-        {/* Recent Activity */}
-        <Card title="Recent Activity" size="small" loading={loading}>
-          <Timeline pending={loading}>
-            <Timeline.Item color="green" dot={<CheckCircleOutlined />}>
-              <Space direction="vertical" size={0}>
-                <Text strong>Product Sales Updated</Text>
-                <Text type="secondary">Latest data synchronized</Text>
-              </Space>
-            </Timeline.Item>
-            <Timeline.Item color="blue" dot={<FireOutlined />}>
-              <Space direction="vertical" size={0}>
-                <Text strong>Pump Readings</Text>
-                <Text type="secondary">All pump meters updated</Text>
-              </Space>
-            </Timeline.Item>
-          </Timeline>
-        </Card>
-      </div>
-    );
-  };
+      {/* Recent Activity */}
+      <Card title="Recent Activity" size="small" loading={loading}>
+        <Timeline pending={loading}>
+          <Timeline.Item color="green" dot={<CheckCircleOutlined />}>
+            <Space direction="vertical" size={0}>
+              <Text strong>Product Sales Updated</Text>
+              <Text type="secondary">Latest data synchronized</Text>
+            </Space>
+          </Timeline.Item>
+          <Timeline.Item color="blue" dot={<FireOutlined />}>
+            <Space direction="vertical" size={0}>
+              <Text strong>Pump Readings</Text>
+              <Text type="secondary">All pump meters updated</Text>
+            </Space>
+          </Timeline.Item>
+        </Timeline>
+      </Card>
+    </div>
+  );
+};
+// Products Tab Content
+const ProductsTab = () => {
+  const products = productsData.products || [];
+  const summary = productsData.summary || {};
+  
+  const productColumns = [
+    {
+      title: 'Product',
+      dataIndex: 'product',
+      key: 'product',
+      width: 150,
+      render: (product) => (
+        <Space>
+          <div 
+            style={{
+              width: 12,
+              height: 12,
+              borderRadius: '50%',
+              backgroundColor: product?.colorCode ? `#${product.colorCode}` : '#666'
+            }}
+          />
+          <Text strong>{product?.name}</Text>
+        </Space>
+      )
+    },
+    {
+      title: 'Type',
+      dataIndex: 'product',
+      key: 'type',
+      width: 100,
+      render: (product) => (
+        <Tag color={product?.type === 'FUEL' ? 'blue' : 'green'}>
+          {product?.type}
+        </Tag>
+      )
+    },
+    {
+      title: 'Total Liters',
+      dataIndex: 'totalLiters',
+      key: 'totalLiters',
+      width: 120,
+      render: (liters) => formatNumber(liters),
+      sorter: (a, b) => a.totalLiters - b.totalLiters
+    },
+    {
+      title: 'Sales Value',
+      dataIndex: 'totalSalesValue',
+      key: 'totalSalesValue',
+      width: 130,
+      render: (value) => (
+        <Text strong>{formatCurrency(value)}</Text>
+      ),
+      sorter: (a, b) => a.totalSalesValue - b.totalSalesValue
+    },
+    {
+      title: 'Avg Unit Price',
+      dataIndex: 'avgUnitPrice',
+      key: 'avgUnitPrice',
+      width: 130,
+      render: (price) => formatCurrency(price),
+      sorter: (a, b) => a.avgUnitPrice - b.avgUnitPrice
+    },
+    {
+      title: 'Performance',
+      key: 'performance',
+      width: 120,
+      render: (_, record) => (
+        <Badge 
+          count={`#${record.performanceRank || 1}`} 
+          style={{ backgroundColor: record.performanceRank <= 3 ? '#52c41a' : '#d9d9d9' }}
+        />
+      )
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 100,
+      render: (_, record) => (
+        <Space size="small">
+          <Tooltip title="View Details">
+            <Button icon={<EyeOutlined />} size="small" />
+          </Tooltip>
+        </Space>
+      )
+    }
+  ];
 
-  // Products Tab Content
-  const ProductsTab = () => {
-    const products = productsData.products || [];
-    const summary = productsData.summary || {};
-    
-    const productColumns = [
-      {
-        title: 'Product',
-        dataIndex: 'product',
-        key: 'product',
-        width: 150,
-        render: (product) => (
-          <Space>
-            <div 
-              style={{
-                width: 12,
-                height: 12,
-                borderRadius: '50%',
-                backgroundColor: product?.colorCode ? `#${product.colorCode}` : '#666'
-              }}
+  return (
+    <div className="space-y-4">
+      {/* Product Summary Cards */}
+      <Row gutter={[16, 16]}>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            <Statistic
+              title="Total Products"
+              value={summary.totalProducts || products.length}
+              valueStyle={{ color: '#1890ff' }}
             />
-            <Text strong>{product?.name}</Text>
-          </Space>
-        )
-      },
-      {
-        title: 'Type',
-        dataIndex: 'product',
-        key: 'type',
-        width: 100,
-        render: (product) => (
-          <Tag color={product?.type === 'FUEL' ? 'blue' : 'green'}>
-            {product?.type}
-          </Tag>
-        )
-      },
-      {
-        title: 'Total Liters',
-        dataIndex: 'totalLiters',
-        key: 'totalLiters',
-        width: 120,
-        render: (liters) => formatNumber(liters),
-        sorter: (a, b) => a.totalLiters - b.totalLiters
-      },
-      {
-        title: 'Sales Value',
-        dataIndex: 'totalSalesValue',
-        key: 'totalSalesValue',
-        width: 130,
-        render: (value) => (
-          <Text strong>{formatCurrency(value)}</Text>
-        ),
-        sorter: (a, b) => a.totalSalesValue - b.totalSalesValue
-      },
-      {
-        title: 'Avg Unit Price',
-        dataIndex: 'avgUnitPrice',
-        key: 'avgUnitPrice',
-        width: 130,
-        render: (price) => formatCurrency(price),
-        sorter: (a, b) => a.avgUnitPrice - b.avgUnitPrice
-      },
-      {
-        title: 'Performance',
-        key: 'performance',
-        width: 120,
-        render: (_, record) => (
-          <Badge 
-            count={`#${record.performanceRank || 1}`} 
-            style={{ backgroundColor: record.performanceRank <= 3 ? '#52c41a' : '#d9d9d9' }}
-          />
-        )
-      },
-      {
-        title: 'Actions',
-        key: 'actions',
-        width: 100,
-        render: (_, record) => (
-          <Space size="small">
-            <Tooltip title="View Details">
-              <Button icon={<EyeOutlined />} size="small" />
-            </Tooltip>
-            <Tooltip title="Export Data">
-              <Button icon={<DownloadOutlined />} size="small" />
-            </Tooltip>
-          </Space>
-        )
-      }
-    ];
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            <Statistic
+              title="Total Revenue"
+              value={summary.totalSalesValue || products.reduce((sum, p) => sum + p.totalSalesValue, 0)}
+              formatter={value => formatCurrency(value)}
+              valueStyle={{ color: '#52c41a' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            <Statistic
+              title="Total Liters"
+              value={summary.totalLiters || products.reduce((sum, p) => sum + p.totalLiters, 0)}
+              valueStyle={{ color: '#faad14' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            <Statistic
+              title="Avg Efficiency"
+              value={summary.avgEfficiency || 0}
+              suffix="%"
+              valueStyle={{ color: '#722ed1' }}
+            />
+          </Card>
+        </Col>
+      </Row>
 
-    return (
-      <div className="space-y-4">
-        {/* Product Summary Cards */}
-        <Row gutter={[16, 16]}>
-          <Col xs={12} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Total Products"
-                value={summary.totalProducts || products.length}
-                valueStyle={{ color: '#1890ff' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Total Revenue"
-                value={summary.totalSalesValue || products.reduce((sum, p) => sum + p.totalSalesValue, 0)}
-                formatter={value => formatCurrency(value)}
-                valueStyle={{ color: '#52c41a' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Total Liters"
-                value={summary.totalLiters || products.reduce((sum, p) => sum + p.totalLiters, 0)}
-                valueStyle={{ color: '#faad14' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Avg Efficiency"
-                value={summary.avgEfficiency || 0}
-                suffix="%"
-                valueStyle={{ color: '#722ed1' }}
-              />
-            </Card>
-          </Col>
-        </Row>
-
-        {/* Products Table */}
-        <Card 
-          title="Product Sales Performance"
-          extra={
-            <Button 
-              icon={<DownloadOutlined />}
-              onClick={() => productSalesService.exportProductSalesToCSV(productsData, 'period')}
-            >
-              Export
-            </Button>
-          }
-        >
-          <Table
-            columns={productColumns}
-            dataSource={products}
-            loading={loading}
-            size="small"
-            pagination={{ pageSize: 10 }}
-            rowKey={(record) => record.product?.id}
-            locale={{
-              emptyText: (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="No product sales data available"
-                />
-              )
-            }}
-          />
-        </Card>
-      </div>
-    );
-  };
-
-  // Pumps Tab Content
-  const PumpsTab = () => {
-    const pumps = pumpsData.pumps || [];
-    const summary = pumpsData.summary || {};
-    
-    const pumpColumns = [
-      {
-        title: 'Pump',
-        dataIndex: 'pump',
-        key: 'pump',
-        width: 150,
-        render: (pump) => (
+      {/* Products Table */}
+      <Card 
+        title={
           <Space>
-            <FireOutlined style={{ color: '#ff4d4f' }} />
-            <Text strong>{pump?.asset?.name}</Text>
+            <ProductOutlined />
+            Product Sales Performance
           </Space>
-        )
-      },
-      {
-        title: 'Product',
-        dataIndex: 'pump',
-        key: 'product',
-        width: 120,
-        render: (pump) => pump?.product?.name || 'N/A'
-      },
-      {
-        title: 'Island',
-        dataIndex: 'pump',
-        key: 'island',
-        width: 100,
-        render: (pump) => pump?.island?.name || 'N/A'
-      },
-      {
-        title: 'Total Liters',
-        dataIndex: 'totalLiters',
-        key: 'totalLiters',
-        width: 120,
-        render: (liters) => formatNumber(liters),
-        sorter: (a, b) => a.totalLiters - b.totalLiters
-      },
-      {
-        title: 'Sales Value',
-        dataIndex: 'totalSalesValue',
-        key: 'totalSalesValue',
-        width: 130,
-        render: (value) => (
-          <Text strong>{formatCurrency(value)}</Text>
-        ),
-        sorter: (a, b) => a.totalSalesValue - b.totalSalesValue
-      },
-      {
-        title: 'Efficiency',
-        dataIndex: 'efficiency',
-        key: 'efficiency',
-        width: 100,
-        render: (efficiency) => (
-          <Tag color={efficiency > 0.9 ? 'green' : efficiency > 0.8 ? 'orange' : 'red'}>
-            {formatPercentage(efficiency * 100)}
-          </Tag>
-        )
-      },
-      {
-        title: 'Status',
-        dataIndex: 'pump',
-        key: 'status',
-        width: 100,
-        render: (pump) => (
-          <Tag color={pump?.connectionStatus === 'CONNECTED' ? 'green' : 'red'}>
-            {pumpSalesService.formatConnectionStatus(pump?.connectionStatus)}
-          </Tag>
-        )
-      },
-      {
-        title: 'Actions',
-        key: 'actions',
-        width: 100,
-        render: (_, record) => (
-          <Space size="small">
-            <Tooltip title="View Details">
-              <Button icon={<EyeOutlined />} size="small" />
-            </Tooltip>
-            <Tooltip title="Export Data">
-              <Button icon={<DownloadOutlined />} size="small" />
-            </Tooltip>
-          </Space>
-        )
-      }
-    ];
-
-    return (
-      <div className="space-y-4">
-        {/* Pump Summary Cards */}
-        <Row gutter={[16, 16]}>
-          <Col xs={12} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Total Pumps"
-                value={summary.totalPumps || pumps.length}
-                valueStyle={{ color: '#1890ff' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Total Revenue"
-                value={summary.totalSalesValue || pumps.reduce((sum, p) => sum + p.totalSalesValue, 0)}
-                formatter={value => formatCurrency(value)}
-                valueStyle={{ color: '#52c41a' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Total Liters"
-                value={summary.totalLiters || pumps.reduce((sum, p) => sum + p.totalLiters, 0)}
-                valueStyle={{ color: '#faad14' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Avg Efficiency"
-                value={summary.avgEfficiency || pumps.reduce((sum, p) => sum + (p.efficiency || 0), 0) / pumps.length}
-                suffix="%"
-                valueStyle={{ color: '#722ed1' }}
-              />
-            </Card>
-          </Col>
-        </Row>
-
-        {/* Pumps Table */}
-        <Card 
-          title="Pump Sales Performance"
-          extra={
-            <Button 
-              icon={<DownloadOutlined />}
-              onClick={() => pumpSalesService.exportPumpSalesToCSV(pumpsData, 'period')}
-            >
-              Export
-            </Button>
-          }
-        >
-          <Table
-            columns={pumpColumns}
-            dataSource={pumps}
-            loading={loading}
-            size="small"
-            pagination={{ pageSize: 10 }}
-            rowKey={(record) => record.pump?.id}
-            locale={{
-              emptyText: (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="No pump sales data available"
-                />
-              )
-            }}
+        }
+        extra={
+          <AdvancedReportGenerator
+            dataSource={products}
+            columns={productColumns}
+            title={`Product Sales Report - ${currentStation ? 'Station' : 'Company'} - ${filters.period.toUpperCase()}`}
+            fileName={`product_sales_${filters.period}_${new Date().toISOString().split('T')[0]}`}
+            footerText={`Generated from Energy ERP System - Period: ${filters.period} - ${new Date().toLocaleDateString()}`}
+            showFooter={true}
           />
-        </Card>
-      </div>
-    );
-  };
+        }
+      >
+        <Table
+          columns={productColumns}
+          dataSource={products}
+          loading={loading}
+          size="small"
+          pagination={{ pageSize: 10 }}
+          rowKey={(record) => record.product?.id}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="No product sales data available"
+              />
+            )
+          }}
+        />
+      </Card>
+    </div>
+  );
+};
+
+// Pumps Tab Content
+const PumpsTab = () => {
+  const pumps = pumpsData.pumps || [];
+  const summary = pumpsData.summary || {};
+  
+  const pumpColumns = [
+    {
+      title: 'Pump',
+      dataIndex: 'pump',
+      key: 'pump',
+      width: 150,
+      render: (pump) => (
+        <Space>
+          <FireOutlined style={{ color: '#ff4d4f' }} />
+          <Text strong>{pump?.asset?.name}</Text>
+        </Space>
+      )
+    },
+    {
+      title: 'Product',
+      dataIndex: 'pump',
+      key: 'product',
+      width: 120,
+      render: (pump) => pump?.product?.name || 'N/A'
+    },
+    {
+      title: 'Island',
+      dataIndex: 'pump',
+      key: 'island',
+      width: 100,
+      render: (pump) => pump?.island?.name || 'N/A'
+    },
+    {
+      title: 'Total Liters',
+      dataIndex: 'totalLiters',
+      key: 'totalLiters',
+      width: 120,
+      render: (liters) => formatNumber(liters),
+      sorter: (a, b) => a.totalLiters - b.totalLiters
+    },
+    {
+      title: 'Sales Value',
+      dataIndex: 'totalSalesValue',
+      key: 'totalSalesValue',
+      width: 130,
+      render: (value) => (
+        <Text strong>{formatCurrency(value)}</Text>
+      ),
+      sorter: (a, b) => a.totalSalesValue - b.totalSalesValue
+    },
+    {
+      title: 'Efficiency',
+      dataIndex: 'efficiency',
+      key: 'efficiency',
+      width: 100,
+      render: (efficiency) => (
+        <Tag color={efficiency > 0.9 ? 'green' : efficiency > 0.8 ? 'orange' : 'red'}>
+          {formatPercentage(efficiency * 100)}
+        </Tag>
+      )
+    },
+    {
+      title: 'Status',
+      dataIndex: 'pump',
+      key: 'status',
+      width: 100,
+      render: (pump) => (
+        <Tag color={pump?.connectionStatus === 'CONNECTED' ? 'green' : 'red'}>
+          {pumpSalesService.formatConnectionStatus(pump?.connectionStatus)}
+        </Tag>
+      )
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 100,
+      render: (_, record) => (
+        <Space size="small">
+          <Tooltip title="View Details">
+            <Button icon={<EyeOutlined />} size="small" />
+          </Tooltip>
+        </Space>
+      )
+    }
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Pump Summary Cards */}
+      <Row gutter={[16, 16]}>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            <Statistic
+              title="Total Pumps"
+              value={summary.totalPumps || pumps.length}
+              valueStyle={{ color: '#1890ff' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            <Statistic
+              title="Total Revenue"
+              value={summary.totalSalesValue || pumps.reduce((sum, p) => sum + p.totalSalesValue, 0)}
+              formatter={value => formatCurrency(value)}
+              valueStyle={{ color: '#52c41a' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            <Statistic
+              title="Total Liters"
+              value={summary.totalLiters || pumps.reduce((sum, p) => sum + p.totalLiters, 0)}
+              valueStyle={{ color: '#faad14' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            <Statistic
+              title="Avg Efficiency"
+              value={summary.avgEfficiency || pumps.reduce((sum, p) => sum + (p.efficiency || 0), 0) / pumps.length}
+              suffix="%"
+              valueStyle={{ color: '#722ed1' }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Pumps Table */}
+      <Card 
+        title={
+          <Space>
+            <FireOutlined />
+            Pump Sales Performance
+          </Space>
+        }
+        extra={
+          <AdvancedReportGenerator
+            dataSource={pumps}
+            columns={pumpColumns}
+            title={`Pump Sales Report - ${currentStation ? 'Station' : 'Company'} - ${filters.period.toUpperCase()}`}
+            fileName={`pump_sales_${filters.period}_${new Date().toISOString().split('T')[0]}`}
+            footerText={`Generated from Energy ERP System - Period: ${filters.period} - ${new Date().toLocaleDateString()}`}
+            showFooter={true}
+          />
+        }
+      >
+        <Table
+          columns={pumpColumns}
+          dataSource={pumps}
+          loading={loading}
+          size="small"
+          pagination={{ pageSize: 10 }}
+          rowKey={(record) => record.pump?.id}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="No pump sales data available"
+              />
+            )
+          }}
+        />
+      </Card>
+    </div>
+  );
+};
 
   // Render tab content based on active tab
   const renderTabContent = () => {
