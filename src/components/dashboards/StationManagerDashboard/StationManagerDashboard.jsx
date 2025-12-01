@@ -23,6 +23,7 @@ import StationDebug from './StationDebug';
 import AssetTopologyDebug from './AssetTopologyDebug';
 import SimpleIslandPumpTest from './SimpleIslandPumpTest';
 import TankReconciliationManagement from '../common/wetstock-reconcilliation/TankReconciliation';
+import WetStockManagement from '../common/wetstock/WetStockManagement';
 import ExpenseManagement from '../common/expenses/ExpenseManagement';
 import AccountsManagement from '../common/accounts/AccountManagement';
 import DebtTransferManagement from '../common/debtTransfering/DebtTransferManagement';
@@ -92,7 +93,7 @@ const StationManagerDashboard = () => {
       case 'activity':
         return <EventLogManagement />;
       case 'wet_stock':
-        return <TankReconciliationManagement />;
+        return <WetStockManagement />;
       default:
         return <PlaceholderComponent title="Station Dashboard" icon={BarChart3} />;
     }
