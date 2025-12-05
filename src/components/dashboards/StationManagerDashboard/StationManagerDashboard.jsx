@@ -4,7 +4,7 @@ import { logout } from '../../../context/AppContext/actions';
 import { 
   BarChart3, Activity, Clock, Users, FileText, 
   Flame, X, Menu, MapPin, DollarSign, Truck, Building2, Fuel, LogOut, User, Settings,CoinsIcon,BookAIcon,
-  Users2Icon,HandCoinsIcon
+  Users2Icon,HandCoinsIcon,FileCheck2Icon,SquareUserRound
 } from 'lucide-react';
 import { Button } from '../../ui';
 import DashboardOverview from '../../../components/dashboards/common/CompanyOverview';
@@ -29,6 +29,7 @@ import AccountsManagement from '../common/accounts/AccountManagement';
 import DebtTransferManagement from '../common/debtTransfering/DebtTransferManagement';
 import EventLogManagement from '../common/events/EventLogManagement';
 import PumpSalesManagement from '../common/enhanced-sales/PumpSalesManagement';
+import StaffAccountManagement from '../common/staff-accounts/StaffAccountManagement';
 
 const StationManagerDashboard = () => {
   const { state } = useApp();
@@ -55,6 +56,7 @@ const StationManagerDashboard = () => {
     { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
      { id: 'expenses', label: 'Expenses', icon: CoinsIcon },
     { id: 'accounts', label: 'Accounts', icon: BookAIcon },
+    { id: 'staff-accounts', label: 'Staff Accounts', icon:SquareUserRound },
     { id: 'sales', label: 'Sales', icon: DollarSign },
     { id: 'debtor', label: 'Debtors', icon: Users2Icon },
     {id: 'debt-transfer', label: 'Payment & Transfer',icon:HandCoinsIcon},
@@ -94,6 +96,8 @@ const StationManagerDashboard = () => {
         return <EventLogManagement />;
       case 'wet_stock':
         return <WetStockManagement />;
+        case 'staff-accounts':
+        return <StaffAccountManagement />;
       default:
         return <PlaceholderComponent title="Station Dashboard" icon={BarChart3} />;
     }
