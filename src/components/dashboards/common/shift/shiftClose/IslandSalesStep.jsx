@@ -1,4 +1,4 @@
-// IslandSalesStep.jsx - Compact version WITH SIMPLIFIED PUMP SALES
+// IslandSalesStep.jsx - COMPLETE UPDATED VERSION
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Card,
@@ -17,7 +17,8 @@ import {
   Tag,
   InputNumber,
   Popover,
-  List
+  List,
+  Modal
 } from 'antd';
 import {
   Calculator,
@@ -30,12 +31,14 @@ import {
   DollarSign,
   Receipt,
   Zap,
-  Fuel
+  Fuel,
+  AlertCircle
 } from 'lucide-react';
 import CollectionsModal from './CollectionsModal';
 import SummaryModal from './SummaryModal';
 import { useApp } from '../../../../../context/AppContext';
 import { expenseService } from '../../../../../services/expenseService/expenseService';
+import { staffAccountService } from '../../../../../services/staffAccountService/staffAccountService';
 
 const { Text, Title } = Typography;
 
@@ -57,8 +60,11 @@ const IslandSalesStep = ({
   const [submitting, setSubmitting] = useState(false);
   const [loadingExpenses, setLoadingExpenses] = useState({});
   const [islandExpenses, setIslandExpenses] = useState({});
+  const [shortageRecords, setShortageRecords] = useState({});
+  const [staffAccountsMap, setStaffAccountsMap] = useState({});
 
   const currentUserId = state.currentUser?.id;
+  const currentStationId = state.currentStation?.id;
   const shiftId = readingsData?.shiftId;
 
   // Initialize data from readings
@@ -95,8 +101,50 @@ const IslandSalesStep = ({
 
       // Load expenses for each island
       loadIslandExpenses(readingsData.islands);
+      
+      // Pre-fetch staff accounts for all attendants
+      prefetchStaffAccounts(readingsData.islands);
     }
   }, [readingsData]);
+
+  // Pre-fetch staff accounts for all attendants
+  const prefetchStaffAccounts = async (islands) => {
+    const accountsMap = {};
+    
+    for (const island of islands) {
+      for (const attendant of (island.attendants || [])) {
+        if (attendant.id && !accountsMap[attendant.id]) {
+          try {
+            const account = await getStaffAccountByUserId(attendant.id);
+            if (account) {
+              accountsMap[attendant.id] = account;
+            }
+          } catch (error) {
+            console.error(`Failed to fetch staff account for attendant ${attendant.id}:`, error);
+          }
+        }
+      }
+    }
+    
+    setStaffAccountsMap(accountsMap);
+  };
+
+  // Get staff account by user ID
+  const getStaffAccountByUserId = async (userId) => {
+    try {
+      const response = await staffAccountService.getStaffAccountsByStation(currentStationId, {
+        page: 1,
+        limit: 100
+      });
+      
+      const accounts = response?.data || response?.accounts || response || [];
+      const account = accounts.find(acc => acc.userId === userId);
+      return account || null;
+    } catch (error) {
+      console.error('Error fetching staff accounts:', error);
+      return null;
+    }
+  };
 
   // Load cumulative expenses for each island in the shift
   const loadIslandExpenses = async (islands) => {
@@ -196,10 +244,11 @@ const IslandSalesStep = ({
     }));
   };
 
-  // Handle collections save
-  const handleCollectionsSave = (islandIndex, finalCollections) => {
+  // Handle collections save - NOW RECORDS SHORTAGES
+  const handleCollectionsSave = async (islandIndex, finalCollections, variance) => {
     console.log(`💾 Saving collections for island ${islandIndex}:`, finalCollections);
     
+    // Save collections
     setCollections(prev => ({
       ...prev,
       [islandIndex]: finalCollections || []
@@ -208,6 +257,61 @@ const IslandSalesStep = ({
     setCollectionsModalVisible(false);
     
     const totalCollected = finalCollections.reduce((sum, c) => sum + (c.amount || 0), 0);
+    
+    // If there's a shortage (variance > 0), record it
+    if (variance > 0) {
+      const island = islandsData[islandIndex];
+      const primaryAttendant = island.attendants?.[0];
+      
+      if (primaryAttendant) {
+        // Get staff account
+        const staffAccount = staffAccountsMap[primaryAttendant.id] || 
+                           await getStaffAccountByUserId(primaryAttendant.id);
+        
+        if (staffAccount) {
+          try {
+            // Create shortage record
+            const shortageData = {
+              staffAccountId: staffAccount.id,
+              amount: variance,
+              description: `Cash shortage during shift ${shiftId} at ${island.islandName}`,
+              shortageDate: new Date().toISOString(),
+              dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+              deductionPriority: 2,
+              referenceType: 'SHIFT',
+              referenceId: shiftId,
+              shiftId: shiftId,
+              islandId: island.islandId,
+              stationId: currentStationId,
+              createdBy: currentUserId,
+              requiresAcknowledgement: true
+            };
+
+            // Record shortage
+            const shortageResponse = await staffAccountService.createShortage(shortageData);
+            
+            // Store shortage record
+            setShortageRecords(prev => ({
+              ...prev,
+              [islandIndex]: {
+                ...shortageResponse,
+                attendantName: `${primaryAttendant.firstName} ${primaryAttendant.lastName}`,
+                recordedAt: new Date().toISOString()
+              }
+            }));
+            
+            message.success(`Shortage of KES ${variance.toFixed(2)} recorded for ${primaryAttendant.firstName} ${primaryAttendant.lastName}`);
+            
+          } catch (error) {
+            console.error('❌ Failed to create shortage:', error);
+            message.error(`Failed to record shortage: ${error.message}`);
+          }
+        } else {
+          message.warning(`No staff account found for ${primaryAttendant.firstName} ${primaryAttendant.lastName}. Shortage cannot be recorded.`);
+        }
+      }
+    }
+    
     message.success(`Collections saved! Total: KES ${totalCollected.toFixed(2)}`);
   };
 
@@ -239,15 +343,23 @@ const IslandSalesStep = ({
       
       // Expected = Pump Sales + Receipts - Expenses
       const totalExpected = totalPumpSales + islandReceipts - islandExpenseAmount;
-      const totalExpectedWithCollections = totalActualSales + totalCollection;
-      const totalDifference = totalExpectedWithCollections - totalExpected;
-
-      // Island is complete when:
-      // 1. Total sales have been entered (> 0)
-      // 2. Collections have been entered (at least one collection entry)
-      const hasSales = totalActualSales > 0;
-      const hasCollections = islandCollections.length > 0;
-      const isComplete = hasSales && hasCollections;
+      const totalCollectedSoFar = cashCollection + debtCollection;
+      const variance = totalExpected - totalCollectedSoFar;
+      
+      // Check if collections modal was completed
+      const collectionsModalCompleted = islandCollections.length > 0;
+      
+      // Check if this island has shortage data
+      const shortageRecord = shortageRecords[islandIndex];
+      const shortageAmount = variance > 0 ? variance : 0;
+      const shortageRecorded = !!shortageRecord;
+      
+      // NEW LOGIC: Island is complete when:
+      // 1. Sales have been entered (>= 0)
+      // 2. Collections modal was completed (user saved collections)
+      // 3. Any shortage is recorded
+      const hasSales = totalActualSales >= 0;
+      const isComplete = hasSales && collectionsModalCompleted;
 
       return {
         ...island,
@@ -260,46 +372,36 @@ const IslandSalesStep = ({
         expenseData: islandExpenseData,
         receipts: islandReceipts,
         totalExpected,
-        totalExpectedWithCollections,
-        totalDifference,
+        variance,
         totalPumps: island.pumps.length,
+        
+        // Status fields
         isComplete,
-        hasCollections,
         hasSales,
-        isLoadingExpenses: loadingExpenses[islandIndex] || false,
-        // Store pump count for display
+        collectionsModalCompleted,
+        shortageAmount,
+        shortageRecorded,
+        shortageRecord,
+        
+        // For display
         pumpCount: island.pumps.length,
         pumpNames: island.pumps.map(p => p.pumpName).join(', ')
       };
     });
-  }, [islandsData, salesEntries, collections, expenses, receipts, islandExpenses, loadingExpenses]);
+  }, [islandsData, salesEntries, collections, expenses, receipts, islandExpenses, shortageRecords]);
 
   // Overall statistics
   const overallStats = useMemo(() => {
     const totalIslands = islandStats.length;
-    const totalPumps = islandStats.reduce((sum, island) => sum + island.pumps.length, 0);
     const completedIslands = islandStats.filter(island => island.isComplete).length;
-    const totalPumpSales = islandStats.reduce((sum, island) => sum + island.totalPumpSales, 0);
-    const totalActualSales = islandStats.reduce((sum, island) => sum + island.totalActualSales, 0);
-    const totalReceipts = islandStats.reduce((sum, island) => sum + island.receipts, 0);
-    const totalExpenses = islandStats.reduce((sum, island) => sum + island.expenses, 0);
-    const totalCollections = islandStats.reduce((sum, island) => sum + island.totalCollection, 0);
-    const totalExpected = islandStats.reduce((sum, island) => sum + island.totalExpected, 0);
-    const totalExpectedWithCollections = islandStats.reduce((sum, island) => sum + island.totalExpectedWithCollections, 0);
-    const totalDifference = totalExpectedWithCollections - totalExpected;
-
+    const islandsWithShortages = islandStats.filter(island => island.variance > 0).length;
+    const totalShortageAmount = islandStats.reduce((sum, island) => sum + (island.shortageAmount || 0), 0);
+    
     return {
       totalIslands,
-      totalPumps,
       completedIslands,
-      totalPumpSales,
-      totalActualSales,
-      totalReceipts,
-      totalExpenses,
-      totalCollections,
-      totalExpected,
-      totalExpectedWithCollections,
-      totalDifference,
+      islandsWithShortages,
+      totalShortageAmount,
       allIslandsComplete: completedIslands === totalIslands && totalIslands > 0
     };
   }, [islandStats]);
@@ -354,7 +456,7 @@ const IslandSalesStep = ({
     );
   };
 
-  // SIMPLIFIED Island table columns - Clean version
+  // Island table columns
   const islandColumns = [
     {
       title: 'ISLAND',
@@ -426,8 +528,8 @@ const IslandSalesStep = ({
               </div>
             </div>
             
-            {/* Actual Sales Input - SIMPLIFIED */}
-            {/* <InputNumber
+            {/* Actual Sales Input */}
+            <InputNumber
               size="small"
               style={{ 
                 width: '100%', 
@@ -445,7 +547,7 @@ const IslandSalesStep = ({
               formatter={value => `KES ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
               parser={value => value.replace(/KES\s?|(,*)/g, '')}
               prefix={<DollarSign size={12} color={hasSales ? '#52c41a' : '#d9d9d9'} />}
-            /> */}
+            />
             
             {/* Difference indicator */}
             {hasSales && (
@@ -538,8 +640,8 @@ const IslandSalesStep = ({
       render: (_, island, islandIndex) => (
         <div style={{ textAlign: 'center' }}>
           <Button 
-            type={island.hasCollections ? "primary" : "default"}
-            icon={<Wallet size={12} style={{ color: island.hasCollections ? '#fff' : '#faad14' }} />}
+            type={island.collectionsModalCompleted ? "primary" : "default"}
+            icon={<Wallet size={12} style={{ color: island.collectionsModalCompleted ? '#fff' : '#faad14' }} />}
             onClick={() => openCollectionsModal(islandIndex)}
             size="small"
             style={{ 
@@ -547,25 +649,73 @@ const IslandSalesStep = ({
               height: '32px',
               fontSize: '11px',
               fontWeight: 'bold',
-              backgroundColor: island.hasCollections ? '#52c41a' : '#fff',
-              borderColor: island.hasCollections ? '#52c41a' : '#d9d9d9',
-              color: island.hasCollections ? '#fff' : '#000',
+              backgroundColor: island.collectionsModalCompleted ? '#52c41a' : '#fff',
+              borderColor: island.collectionsModalCompleted ? '#52c41a' : '#d9d9d9',
+              color: island.collectionsModalCompleted ? '#fff' : '#000',
               borderRadius: '4px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
             }}
           >
-            {island.hasCollections ? '✅ ' : ''}
+            {island.collectionsModalCompleted ? '✅ ' : ''}
             {getCurrentCollections(islandIndex).length} drops
           </Button>
-          {island.hasCollections && (
+          {island.collectionsModalCompleted && (
             <Text style={{ fontSize: '10px', color: '#52c41a', marginTop: 4 }}>
               KES {island.totalCollection.toFixed(2)}
             </Text>
           )}
         </div>
       ),
+    },
+    {
+      title: 'VARIANCE',
+      key: 'variance',
+      width: 120,
+      render: (_, island) => {
+        const variance = island.variance;
+        const hasShortage = variance > 0;
+        const hasOverage = variance < 0;
+        const shortageRecorded = island.shortageRecorded;
+        
+        if (variance === 0) {
+          return (
+            <Tag color="green" style={{ width: '100%', textAlign: 'center' }}>
+              ✓ Balanced
+            </Tag>
+          );
+        }
+        
+        return (
+          <div style={{ textAlign: 'center' }}>
+            {hasShortage ? (
+              <div>
+                <Tag color="red" style={{ width: '100%', marginBottom: 4 }}>
+                  Shortage
+                </Tag>
+                <Text strong style={{ color: '#ff4d4f', fontSize: '12px' }}>
+                  KES {variance.toFixed(2)}
+                </Text>
+                {shortageRecorded && (
+                  <div style={{ fontSize: '9px', color: '#52c41a', marginTop: 2 }}>
+                    ✓ Recorded
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div>
+                <Tag color="gold" style={{ width: '100%', marginBottom: 4 }}>
+                  Overage
+                </Tag>
+                <Text strong style={{ color: '#faad14', fontSize: '12px' }}>
+                  KES {Math.abs(variance).toFixed(2)}
+                </Text>
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       title: 'STATUS',
@@ -581,11 +731,11 @@ const IslandSalesStep = ({
           status = 'success';
           statusText = 'Complete';
           color = '#52c41a';
-        } else if (island.hasSales && !island.hasCollections) {
+        } else if (island.hasSales && !island.collectionsModalCompleted) {
           status = 'warning';
           statusText = 'Needs Drops';
           color = '#faad14';
-        } else if (island.hasCollections && !island.hasSales) {
+        } else if (island.collectionsModalCompleted && !island.hasSales) {
           status = 'warning';
           statusText = 'Needs Sales';
           color = '#faad14';
@@ -656,7 +806,8 @@ const IslandSalesStep = ({
           amount
         }));
 
-        const variance = island.totalDifference;
+        const variance = island.variance;
+        const shortageRecord = shortageRecords[index];
         
         return {
           islandId: island.islandId,
@@ -666,11 +817,16 @@ const IslandSalesStep = ({
           expectedCashAmount: island.totalExpected,
           debtorCollections: debtorCollections,
           expensesAmount: island.expenses,
-          shortageAmount: variance < 0 ? Math.abs(variance) : 0,
-          overageAmount: variance > 0 ? variance : 0
+          shortageAmount: variance > 0 ? variance : 0,
+          overageAmount: variance < 0 ? Math.abs(variance) : 0,
+          shortageRecorded: !!shortageRecord,
+          shortageId: shortageRecord?.id,
+          staffAccountId: shortageRecord?.staffAccountId,
+          attendantName: shortageRecord?.attendantName
         };
       }),
       
+      shortageRecords: Object.values(shortageRecords),
       reconciliationNotes: "Shift completed with collections system",
       emergencyClosure: false
     };
@@ -686,6 +842,40 @@ const IslandSalesStep = ({
       return;
     }
 
+    // Check for unrecorded shortages
+    const islandsWithUnrecordedShortages = islandStats.filter(
+      island => island.variance > 0 && !island.shortageRecorded
+    );
+
+    if (islandsWithUnrecordedShortages.length > 0) {
+      Modal.confirm({
+        title: 'Unrecorded Shortages Detected',
+        content: (
+          <div>
+            <p>The following islands have shortages that haven't been recorded to staff accounts:</p>
+            <ul>
+              {islandsWithUnrecordedShortages.map((island, idx) => (
+                <li key={idx}>
+                  <strong>{island.islandName}</strong>: KES {island.variance.toFixed(2)}
+                </li>
+              ))}
+            </ul>
+            <p>These shortages won't be deducted from attendant accounts. Continue anyway?</p>
+          </div>
+        ),
+        okText: 'Continue Without Recording',
+        cancelText: 'Go Back',
+        onOk: () => {
+          openSummaryModal();
+        }
+      });
+    } else {
+      openSummaryModal();
+    }
+  };
+
+  // Open summary modal
+  const openSummaryModal = () => {
     // Create a clean, flattened data structure for SummaryModal
     const finalData = {
       // Core shift data
@@ -713,11 +903,13 @@ const IslandSalesStep = ({
         expenseData: island.expenseData,
         receipts: island.receipts,
         totalExpected: island.totalExpected,
-        totalExpectedWithCollections: island.totalExpectedWithCollections,
-        totalDifference: island.totalDifference,
+        variance: island.variance,
+        shortageAmount: island.shortageAmount,
+        shortageRecorded: island.shortageRecorded,
+        shortageRecord: shortageRecords[index],
         pumpCount: island.pumpCount,
         isComplete: island.isComplete,
-        hasCollections: island.hasCollections,
+        collectionsModalCompleted: island.collectionsModalCompleted,
         hasSales: island.hasSales,
         
         // Additional data for detailed display
@@ -727,6 +919,7 @@ const IslandSalesStep = ({
       
       // Statistics
       overallStats: overallStats,
+      shortageRecords: shortageRecords,
       
       // API payload
       apiPayload: preparePayload(),
@@ -768,14 +961,6 @@ const IslandSalesStep = ({
         <Title level={3} style={{ marginBottom: 8 }}>
           💰 Island Sales & Collections
         </Title>
-        
-        {/* <Alert
-          message="Sales Calculation: Expected = Pump Sales + Receipts - Expenses"
-          description="Enter total sales for each island. Collections capture cash and debt payments."
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-        /> */}
 
         {/* Shift Info */}
         <Card size="small" style={{ marginBottom: 16 }}>
@@ -784,13 +969,18 @@ const IslandSalesStep = ({
             <Text code>{shiftId}</Text>
             <Text strong>Station:</Text>
             <Text>{state?.currentStation?.name}</Text>
+            {overallStats.islandsWithShortages > 0 && (
+              <Tag color="red" icon={<AlertCircle size={12} />}>
+                {overallStats.islandsWithShortages} islands with shortages
+              </Tag>
+            )}
           </Space>
         </Card>
       </div>
 
       {/* Overall Statistics */}
       <Row gutter={[8, 8]} style={{ marginBottom: 20 }}>
-        <Col span={4}>
+        <Col span={3}>
           <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
             <Statistic
               title="Total Islands"
@@ -799,7 +989,7 @@ const IslandSalesStep = ({
             />
           </Card>
         </Col>
-        <Col span={4}>
+        <Col span={3}>
           <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
             <Statistic
               title="Completed"
@@ -813,44 +1003,27 @@ const IslandSalesStep = ({
             />
           </Card>
         </Col>
-        <Col span={4}>
+        <Col span={3}>
           <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
             <Statistic
-              title="Expected Sales"
-              value={overallStats.totalExpected}
-              precision={0}
-              prefix="KES"
-              valueStyle={{ fontSize: '14px', fontWeight: 'bold', color: '#1890ff' }}
+              title="With Shortages"
+              value={overallStats.islandsWithShortages}
+              valueStyle={{ fontSize: '14px', fontWeight: 'bold', color: '#ff4d4f' }}
             />
           </Card>
         </Col>
-        <Col span={4}>
+        <Col span={3}>
           <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
             <Statistic
-              title="Total Drops"
-              value={overallStats.totalCollections}
+              title="Total Shortage"
+              value={overallStats.totalShortageAmount}
               precision={0}
               prefix="KES"
-              valueStyle={{ fontSize: '14px', fontWeight: 'bold', color: '#52c41a' }}
+              valueStyle={{ fontSize: '14px', fontWeight: 'bold', color: '#ff4d4f' }}
             />
           </Card>
         </Col>
-        <Col span={4}>
-          <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
-            <Statistic
-              title="Variance"
-              value={overallStats.totalDifference}
-              precision={0}
-              prefix="KES"
-              valueStyle={{ 
-                fontSize: '14px', 
-                fontWeight: 'bold',
-                color: overallStats.totalDifference >= 0 ? '#52c41a' : '#fa541c' 
-              }}
-            />
-          </Card>
-        </Col>
-        <Col span={4}>
+        <Col span={3}>
           <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
             <Statistic
               title="Status"
@@ -867,7 +1040,7 @@ const IslandSalesStep = ({
 
       <Divider />
 
-      {/* Islands Table - CLEAN VERSION */}
+      {/* Islands Table */}
       <Card 
         bodyStyle={{ padding: '12px' }}
         style={{ marginBottom: 16 }}
@@ -891,7 +1064,7 @@ const IslandSalesStep = ({
           dataSource={islandStats.map((island, index) => ({ ...island, key: index }))}
           pagination={false}
           size="small"
-          scroll={{ x: 900 }}
+          scroll={{ x: 1100 }}
           style={{ fontSize: '11px' }}
           rowClassName={(record) => record.isComplete ? 'table-row-success' : ''}
         />
@@ -942,7 +1115,7 @@ const IslandSalesStep = ({
       <CollectionsModal
         visible={collectionsModalVisible}
         onCancel={() => setCollectionsModalVisible(false)}
-        onSave={(finalCollections) => handleCollectionsSave(currentIslandIndex, finalCollections)}
+        onSave={(finalCollections, variance) => handleCollectionsSave(currentIslandIndex, finalCollections, variance)}
         island={islandStats[currentIslandIndex]}
         currentCollections={getCurrentCollections(currentIslandIndex)}
         setCurrentCollections={(newCollections) => 

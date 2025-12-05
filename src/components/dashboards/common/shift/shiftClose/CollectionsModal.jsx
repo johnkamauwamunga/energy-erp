@@ -1,5 +1,5 @@
-// CollectionsModal.jsx - With actual attendant info
-import React, { useState, useEffect } from 'react';
+// CollectionsModal.jsx - COMPLETE OPTIMIZED VERSION
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Card,
   Button,
@@ -17,11 +17,10 @@ import {
   Modal,
   InputNumber,
   Tag,
-  Form,
   Avatar,
-  Descriptions,
   Divider,
-  Badge
+  Badge,
+  Grid
 } from 'antd';
 import {
   SearchOutlined,
@@ -35,13 +34,16 @@ import {
   ExclamationCircleOutlined,
   IdcardOutlined,
   WalletOutlined,
-  SafetyOutlined
+  SafetyOutlined,
+  CreditCardOutlined,
+  CalculatorOutlined
 } from '@ant-design/icons';
 import { debtorService } from '../../../../../services/debtorService/debtorService';
-import { staffAccountService } from '../../../../../services/staffAccountService/staffAccountService';
+import './CollectionsModal.css'; // We'll create a CSS file for custom styles
 
 const { Title, Text } = Typography;
 const { Option } = Select;
+const { useBreakpoint } = Grid;
 
 const CollectionsModal = ({ 
   visible, 
@@ -59,141 +61,152 @@ const CollectionsModal = ({
   const [selectedDebtor, setSelectedDebtor] = useState(null);
   const [debtAmount, setDebtAmount] = useState(0);
   
+  // Responsive breakpoints
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
+  const isTablet = !screens.lg && screens.md;
+  
   // Get actual attendant info from island prop
   const attendants = island?.attendants || [];
   const islandName = island?.islandName || 'Unknown Island';
   
-  // Log the attendant info for debugging
-  useEffect(() => {
-    if (visible && attendants.length > 0) {
-      console.log('👤 Attendants for this island:', attendants);
-      console.log('🔍 Attendant IDs available:', attendants.map(a => ({
-        id: a.id,
-        attendantId: a.attendantId,
-        name: `${a.firstName} ${a.lastName}`,
-        assignmentType: a.assignmentType
-      })));
-    }
-  }, [visible, attendants]);
-
-  // Safe calculations with null checks
-  const totalPumpSales = island?.totalPumpSales || 0;
-  const totalActualSales = island?.totalActualSales || 0;
-  const islandExpenses = island?.expenses || 0;
-  const islandReceipts = island?.receipts || 0;
-  
-  // CORRECT CALCULATION: Expected = Pump Sales + Receipts - Expenses
-  const totalExpected = totalPumpSales + islandReceipts - islandExpenses;
-
-  // Calculate current collections
-  const currentCashCollection = currentCollections
-    .filter(c => c && c.type === 'cash')
-    .reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
-  
-  const currentDebtCollections = currentCollections
-    .filter(c => c && c.type === 'debt');
-
-  const totalDebtCollection = currentDebtCollections
-    .reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
-
-  const totalCollectedSoFar = currentCashCollection + totalDebtCollection + (parseFloat(cashAmount) || 0);
-  const remainingAmount = Math.max(0, totalExpected - totalCollectedSoFar);
+  // Calculations using useMemo for performance
+  const calculations = useMemo(() => {
+    const totalPumpSales = island?.totalPumpSales || 0;
+    const islandReceipts = island?.receipts || 0;
+    const islandExpenses = island?.expenses || 0;
+    const totalExpected = totalPumpSales + islandReceipts - islandExpenses;
+    
+    const currentCashCollection = currentCollections
+      .filter(c => c?.type === 'cash')
+      .reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
+    
+    const currentDebtCollections = currentCollections
+      .filter(c => c?.type === 'debt');
+    
+    const totalDebtCollection = currentDebtCollections
+      .reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
+    
+    const currentTotal = currentCashCollection + totalDebtCollection;
+    const cashNum = parseFloat(cashAmount) || 0;
+    const totalCollectedSoFar = currentTotal + cashNum;
+    const remainingAmount = totalExpected - totalCollectedSoFar;
+    
+    return {
+      totalExpected,
+      currentCashCollection,
+      totalDebtCollection,
+      totalCollectedSoFar,
+      remainingAmount,
+      currentDebtCollections
+    };
+  }, [island, currentCollections, cashAmount]);
 
   // Format currency display
   const formatCurrency = (amount) => {
-    return `KES ${(parseFloat(amount) || 0).toLocaleString('en-KE', {
+    const num = parseFloat(amount) || 0;
+    return `KES ${num.toLocaleString('en-KE', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     })}`;
   };
 
-  // Render attendant information
-  const renderAttendantInfo = () => {
+  // Compact attendant display
+  const renderCompactAttendantInfo = () => {
     if (attendants.length === 0) {
       return (
         <Alert
           message="No Attendant Assigned"
-          description="This island has no attendant assigned. Please assign an attendant before recording collections."
+          description="Assign an attendant before recording collections"
           type="warning"
           showIcon
-          icon={<ExclamationCircleOutlined />}
+          size="small"
+          style={{ marginBottom: 12 }}
         />
       );
     }
 
     return (
-      <Card 
-        size="small" 
-        title={
-          <Space>
-            <TeamOutlined />
-            <Text strong>Island Attendant(s)</Text>
-            <Badge count={attendants.length} style={{ backgroundColor: '#52c41a' }} />
-          </Space>
-        }
-        style={{ marginBottom: 16 }}
-      >
-        <List
-          size="small"
-          dataSource={attendants}
-          renderItem={(attendant, index) => (
-            <List.Item
+      <div className="compact-attendant-info">
+        <div className="attendant-header">
+          <TeamOutlined style={{ fontSize: '14px', marginRight: 6 }} />
+          <Text strong style={{ fontSize: '13px' }}>Attendant{attendants.length > 1 ? 's' : ''}:</Text>
+          <Badge 
+            count={attendants.length} 
+            size="small" 
+            style={{ 
+              backgroundColor: '#52c41a',
+              marginLeft: 8,
+              fontSize: '10px'
+            }} 
+          />
+        </div>
+        <div className="attendant-list">
+          {attendants.slice(0, 2).map((attendant, index) => (
+            <Tag 
               key={attendant.id || attendant.attendantId}
-              actions={[
-                <Tag 
-                  color={attendant.assignmentType === 'PRIMARY' ? 'green' : 'blue'}
-                  key="type"
-                >
-                  {attendant.assignmentType || 'ASSIGNED'}
-                </Tag>
-              ]}
+              color={attendant.assignmentType === 'PRIMARY' ? 'green' : 'blue'}
+              size="small"
+              style={{ 
+                margin: '2px 4px 2px 0',
+                fontSize: '11px',
+                padding: '1px 6px'
+              }}
             >
-              <List.Item.Meta
-                avatar={
-                  <Avatar 
-                    icon={<UserOutlined />}
-                    style={{ backgroundColor: index === 0 ? '#1890ff' : '#52c41a' }}
-                  >
-                    {attendant.firstName?.[0]}{attendant.lastName?.[0]}
-                  </Avatar>
-                }
-                title={
-                  <Space>
-                    <Text strong>
-                      {attendant.firstName} {attendant.lastName}
-                    </Text>
-                    {index === 0 && (
-                      <Tag color="gold" icon={<SafetyOutlined />}>Responsible</Tag>
-                    )}
-                  </Space>
-                }
-                description={
-                  <Space direction="vertical" size={0}>
-                    <Text type="secondary" style={{ fontSize: '11px' }}>
-                      ID: {attendant.attendantId || attendant.id}
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: '11px' }}>
-                      Shortages will be debited to this attendant's staff account
-                    </Text>
-                  </Space>
-                }
-              />
-            </List.Item>
+              {attendant.firstName?.charAt(0)}.{attendant.lastName}
+              {attendant.assignmentType === 'PRIMARY' && ' ⭐'}
+            </Tag>
+          ))}
+          {attendants.length > 2 && (
+            <Tag size="small" style={{ fontSize: '11px', padding: '1px 6px' }}>
+              +{attendants.length - 2} more
+            </Tag>
           )}
-        />
-        
-        <Divider style={{ margin: '8px 0' }} />
-        
-        <Alert
-          message="Responsibility Notice"
-          description="Any shortages will be recorded against the primary attendant's staff account"
-          type="info"
-          showIcon
-          icon={<IdcardOutlined />}
-        />
-      </Card>
+        </div>
+      </div>
     );
   };
+
+  // Compact statistics display
+  const renderCompactStats = () => (
+    <Row gutter={[8, 8]} className="compact-stats-row">
+      <Col xs={12} sm={6}>
+        <div className="compact-stat">
+          <div className="stat-label">Expected</div>
+          <div className="stat-value" style={{ color: '#1890ff' }}>
+            {formatCurrency(calculations.totalExpected)}
+          </div>
+        </div>
+      </Col>
+      <Col xs={12} sm={6}>
+        <div className="compact-stat">
+          <div className="stat-label">Cash</div>
+          <div className="stat-value" style={{ color: '#52c41a' }}>
+            {formatCurrency(cashAmount)}
+          </div>
+        </div>
+      </Col>
+      <Col xs={12} sm={6}>
+        <div className="compact-stat">
+          <div className="stat-label">Debt</div>
+          <div className="stat-value" style={{ color: '#faad14' }}>
+            {formatCurrency(calculations.totalDebtCollection)}
+          </div>
+        </div>
+      </Col>
+      <Col xs={12} sm={6}>
+        <div className="compact-stat">
+          <div className="stat-label">Balance</div>
+          <div className="stat-value" style={{ 
+            color: calculations.remainingAmount === 0 ? '#52c41a' : 
+                   calculations.remainingAmount > 0 ? '#fa541c' : '#faad14'
+          }}>
+            {formatCurrency(calculations.remainingAmount)}
+          </div>
+        </div>
+      </Col>
+    </Row>
+  );
 
   // Fetch debtors
   useEffect(() => {
@@ -204,10 +217,8 @@ const CollectionsModal = ({
       try {
         const result = await debtorService.getDebtors();
         const debtorsData = result.debtors || result.data || result || [];
-        
         setAvailableDebtors(debtorsData);
         setFilteredDebtors(debtorsData);
-        
       } catch (error) {
         console.error('Failed to fetch debtors:', error);
         message.error('Failed to load debtors');
@@ -247,20 +258,12 @@ const CollectionsModal = ({
 
   // Handle cash amount change
   const handleCashAmountChange = (value) => {
-    if (value === null || value === undefined || value === '') {
-      setCashAmount(0);
-    } else {
-      setCashAmount(value);
-    }
+    setCashAmount(value || 0);
   };
 
   // Handle debt amount change
   const handleDebtAmountChange = (value) => {
-    if (value === null || value === undefined || value === '') {
-      setDebtAmount(0);
-    } else {
-      setDebtAmount(value);
-    }
+    setDebtAmount(value || 0);
   };
 
   const handleAddDebtCollection = () => {
@@ -268,11 +271,6 @@ const CollectionsModal = ({
     
     if (!selectedDebtor || debtAmountNum <= 0) {
       message.warning('Please select a debtor and enter valid amount');
-      return;
-    }
-
-    if (debtAmountNum > remainingAmount) {
-      message.warning(`Debt amount cannot exceed remaining amount of ${formatCurrency(remainingAmount)}`);
       return;
     }
 
@@ -301,7 +299,6 @@ const CollectionsModal = ({
 
   const handleSaveCollections = () => {
     const cashAmountNum = parseFloat(cashAmount) || 0;
-    const debtAmountNum = totalDebtCollection;
     
     const finalCollections = [...currentCollections];
     
@@ -315,95 +312,32 @@ const CollectionsModal = ({
     }
 
     const totalCollected = finalCollections.reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
-    const variance = totalExpected - totalCollected;
+    const variance = calculations.totalExpected - totalCollected;
     
-    // Prepare data for shortage handling if there's a variance
-    const shortageData = {
-      hasShortage: variance > 0,
-      shortageAmount: variance > 0 ? variance : 0,
-      hasOverage: variance < 0,
-      overageAmount: variance < 0 ? Math.abs(variance) : 0,
-      responsibleAttendant: attendants.length > 0 ? attendants[0] : null, // Primary attendant
-      allAttendants: attendants
-    };
-
-    const payload = {
-      cashAmount: cashAmountNum,
-      debtCollections: currentDebtCollections.map(debt => ({
-        debtorId: debt.debtorId,
-        debtorName: debt.debtorName,
-        amount: parseFloat(debt.amount) || 0
-      })),
-      totalCollected: totalCollected,
-      variance: variance,
-      collections: finalCollections,
-      shortageData: shortageData,
-      islandInfo: {
-        islandId: island.islandId,
-        islandName: islandName,
-        shiftId: island.shiftId,
-        stationId: island.stationId
-      }
-    };
-
-    console.log('💾 Saving collections with payload:', payload);
-    console.log('👤 Responsible attendant for shortages:', shortageData.responsibleAttendant);
-
-    // If there's a shortage, we'll handle it in the parent component
-    if (variance > 0) {
-      Modal.confirm({
-        title: 'Shortage Detected',
-        content: (
-          <div>
-            <p>There is a shortage of <strong>{formatCurrency(variance)}</strong>.</p>
-            <p>This amount will be debited to the attendant's staff account:</p>
-            <Alert
-              message={`${shortageData.responsibleAttendant?.firstName} ${shortageData.responsibleAttendant?.lastName}`}
-              description={`Attendant ID: ${shortageData.responsibleAttendant?.attendantId}`}
-              type="warning"
-              showIcon
-              style={{ marginTop: 8 }}
-            />
-            <p style={{ marginTop: 8, fontSize: '12px', color: '#666' }}>
-              Continue with collections?
-            </p>
-          </div>
-        ),
-        okText: 'Record Shortage & Save',
-        cancelText: 'Cancel',
-        onOk: () => {
-          onSave(finalCollections, variance, shortageData);
-          message.success('Collections saved with shortage recorded');
-        }
-      });
-    } else if (variance < 0) {
-      Modal.confirm({
-        title: 'Overage Detected',
-        content: `There is an overage of ${formatCurrency(Math.abs(variance))}. This amount will be recorded as extra cash. Continue?`,
-        onOk: () => {
-          onSave(finalCollections, variance, shortageData);
-          message.success('Collections saved with overage recorded');
-        }
-      });
-    } else {
-      onSave(finalCollections, variance, shortageData);
-      message.success('Collections saved successfully');
-    }
+    onSave(finalCollections, variance);
   };
 
   return (
     <Modal
       title={
-        <Space>
-          <WalletOutlined />
-          <Text strong>Collections - {islandName}</Text>
-        </Space>
+        <div className="modal-header-compact">
+          <WalletOutlined style={{ marginRight: 8 }} />
+          <Text strong style={{ fontSize: '15px' }}>
+            Collections - {islandName}
+          </Text>
+          {!isMobile && renderCompactAttendantInfo()}
+        </div>
       }
       open={visible}
       onCancel={onCancel}
-      width={1000}
+      width={isMobile ? '95%' : isTablet ? '90%' : 850}
+      className="collections-modal"
       footer={[
-        <Button key="cancel" onClick={onCancel}>
+        <Button 
+          key="cancel" 
+          onClick={onCancel}
+          size={isMobile ? "small" : "middle"}
+        >
           Cancel
         </Button>,
         <Button 
@@ -412,243 +346,145 @@ const CollectionsModal = ({
           onClick={handleSaveCollections}
           icon={<SaveOutlined />}
           disabled={attendants.length === 0}
+          size={isMobile ? "small" : "middle"}
         >
-          Save Collections
+          {isMobile ? 'Save' : 'Save Collections'}
         </Button>
       ]}
     >
-      {/* Island and Attendant Information */}
-      {renderAttendantInfo()}
+      {/* Mobile attendant info */}
+      {isMobile && (
+        <div style={{ marginBottom: 12 }}>
+          {renderCompactAttendantInfo()}
+        </div>
+      )}
       
-      {/* Summary Statistics */}
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={6}>
-          <Card size="small">
-            <Statistic
-              title="Total Expected"
-              value={totalExpected}
-              precision={2}
-              prefix="KES"
-              valueStyle={{ color: '#1890ff' }}
-              formatter={value => `KES ${value.toLocaleString('en-KE', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-              })}`}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card size="small">
-            <Statistic
-              title="Cash Collected"
-              value={cashAmount}
-              precision={2}
-              prefix="KES"
-              valueStyle={{ color: '#52c41a' }}
-              formatter={value => `KES ${value.toLocaleString('en-KE', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-              })}`}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card size="small">
-            <Statistic
-              title="Debt Collected"
-              value={totalDebtCollection}
-              precision={2}
-              prefix="KES"
-              valueStyle={{ color: '#faad14' }}
-              formatter={value => `KES ${value.toLocaleString('en-KE', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-              })}`}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card size="small">
-            <Statistic
-              title="Remaining"
-              value={remainingAmount}
-              precision={2}
-              prefix="KES"
-              valueStyle={{ 
-                color: remainingAmount === 0 ? '#52c41a' : '#fa541c' 
-              }}
-              formatter={value => `KES ${value.toLocaleString('en-KE', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-              })}`}
-            />
-          </Card>
-        </Col>
-      </Row>
+      {/* Compact Statistics */}
+      {renderCompactStats()}
 
-      <Row gutter={16}>
-        {/* Left Side - Cash Collection */}
-        <Col span={12}>
+      <Row gutter={[16, 16]}>
+        {/* Left Side - Cash & Current Debt Collections */}
+        <Col xs={24} md={12}>
           <Card 
-            title={
-              <Space>
-                <DollarOutlined />
-                Cash Collection
-              </Space>
-            }
             size="small"
+            title={
+              <span className="card-title-compact">
+                <DollarOutlined style={{ fontSize: '14px', marginRight: 6 }} />
+                Cash
+              </span>
+            }
+            className="compact-card"
           >
-            <Space direction="vertical" style={{ width: '100%' }} size="middle">
-              <div>
-                <Text strong>Enter Cash Amount:</Text>
-                <InputNumber
-                  style={{ 
-                    width: '100%', 
-                    marginTop: 8
-                  }}
-                  size="large"
-                  placeholder="0.00"
-                  value={cashAmount}
-                  onChange={handleCashAmountChange}
-                  min={0}
-                  max={totalExpected}
-                  step={100}
-                  addonBefore="KES"
-                  precision={2}
-                  formatter={value => `KES ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={value => value.replace(/KES\s?|(,*)/g, '')}
-                />
-                <Text type="secondary" style={{ fontSize: '12px', marginTop: 4 }}>
-                  Enter 0 if no cash collection
-                </Text>
-              </div>
-
-              <Alert
-                message="Cash Collection"
-                description="Cash amount goes directly to station wallet"
-                type="info"
-                showIcon
+            <div className="cash-input-section">
+              <InputNumber
+                style={{ width: '100%' }}
+                size={isMobile ? "middle" : "large"}
+                placeholder="0.00"
+                value={cashAmount}
+                onChange={handleCashAmountChange}
+                min={0}
+                step={100}
+                prefix="KES"
+                className="compact-input-number"
+                precision={2}
               />
-            </Space>
+              <Text type="secondary" className="input-hint">
+                Enter cash amount collected
+              </Text>
+            </div>
           </Card>
 
           {/* Current Debt Collections Display */}
-          {currentDebtCollections.length > 0 && (
+          {calculations.currentDebtCollections.length > 0 && (
             <Card 
-              title="Current Debt Collections" 
-              size="small" 
-              style={{ marginTop: 16 }}
+              size="small"
+              title={
+                <span className="card-title-compact">
+                  <CreditCardOutlined style={{ fontSize: '14px', marginRight: 6 }} />
+                  Current Debt ({calculations.currentDebtCollections.length})
+                </span>
+              }
+              className="compact-card"
+              style={{ marginTop: 12 }}
             >
-              <List
-                size="small"
-                dataSource={currentDebtCollections}
-                renderItem={(collection) => (
-                  <List.Item
-                    actions={[
-                      <Tooltip title="Remove" key="remove">
-                        <Button
-                          type="text"
-                          danger
-                          icon={<DeleteOutlined />}
-                          onClick={() => handleRemoveCollection(collection.id)}
-                          size="small"
-                        />
-                      </Tooltip>
-                    ]}
-                  >
-                    <List.Item.Meta
-                      title={
-                        <Space>
-                          <UserOutlined />
-                          <Text strong>{collection.debtorName}</Text>
-                          {collection.debtorCode && (
-                            <Tag color="blue" size="small">{collection.debtorCode}</Tag>
-                          )}
-                        </Space>
-                      }
-                      description={
-                        <Text strong style={{ color: '#1890ff', fontSize: '16px' }}>
-                          {formatCurrency(collection.amount)}
-                        </Text>
-                      }
-                    />
-                  </List.Item>
-                )}
-              />
-              
-              <div style={{ marginTop: 16, textAlign: 'center' }}>
-                <Tag color="blue">
-                  {currentDebtCollections.length} debt entries
-                </Tag>
-                <Tag color="green">
-                  Total Debt: {formatCurrency(totalDebtCollection)}
-                </Tag>
+              <div className="debt-list-container">
+                {calculations.currentDebtCollections.map((collection) => (
+                  <div key={collection.id} className="debt-list-item">
+                    <div className="debt-item-info">
+                      <div className="debtor-name">
+                        <UserOutlined style={{ fontSize: '12px', marginRight: 4 }} />
+                        {collection.debtorName}
+                      </div>
+                      <div className="debt-amount">
+                        {formatCurrency(collection.amount)}
+                      </div>
+                    </div>
+                    <Tooltip title="Remove">
+                      <Button
+                        type="text"
+                        danger
+                        size="small"
+                        icon={<DeleteOutlined style={{ fontSize: '12px' }} />}
+                        onClick={() => handleRemoveCollection(collection.id)}
+                        className="remove-btn"
+                      />
+                    </Tooltip>
+                  </div>
+                ))}
+                <div className="debt-total">
+                  <Tag color="green" size="small">
+                    Total: {formatCurrency(calculations.totalDebtCollection)}
+                  </Tag>
+                </div>
               </div>
             </Card>
           )}
         </Col>
 
-        {/* Right Side - Debt Collection Form */}
-        <Col span={12}>
+        {/* Right Side - Add Debt Collection */}
+        <Col xs={24} md={12}>
           <Card 
-            title={
-              <Space>
-                <TeamOutlined />
-                Add Debt Collection
-              </Space>
-            }
             size="small"
+            title={
+              <span className="card-title-compact">
+                <PlusOutlined style={{ fontSize: '14px', marginRight: 6 }} />
+                Add Debt
+              </span>
+            }
+            className="compact-card"
           >
-            <Space direction="vertical" style={{ width: '100%' }} size="middle">
-              {/* Debtor Search and Selection */}
-              <div>
-                <Text strong>Select Debtor:</Text>
+            <div className="debt-form">
+              {/* Debtor Search */}
+              <div className="form-section">
+                <Text className="form-label">Select Debtor</Text>
                 <Input
-                  placeholder="Search debtors by name, phone, or email..."
+                  placeholder="Search debtors..."
                   prefix={<SearchOutlined />}
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
-                  style={{ marginTop: 8, marginBottom: 8 }}
-                  size="middle"
+                  size="small"
+                  className="compact-input"
                 />
                 
                 <Select
-                  style={{ width: '100%' }}
-                  placeholder={loading ? "Loading debtors..." : "Select a debtor..."}
+                  style={{ width: '100%', marginTop: 8 }}
+                  placeholder={loading ? "Loading..." : "Select debtor"}
                   value={selectedDebtor?.id}
                   onChange={(value) => setSelectedDebtor(availableDebtors.find(d => d.id === value))}
                   loading={loading}
-                  size="middle"
+                  size="small"
                   showSearch
                   filterOption={false}
-                  dropdownRender={menu => (
-                    <div>
-                      <div style={{ padding: 8 }}>
-                        <Input
-                          placeholder="Search debtors..."
-                          value={searchText}
-                          onChange={e => setSearchText(e.target.value)}
-                          style={{ marginBottom: 8 }}
-                          prefix={<SearchOutlined />}
-                        />
-                      </div>
-                      {loading ? (
-                        <div style={{ padding: '16px', textAlign: 'center' }}>
-                          <Text type="secondary">Loading debtors...</Text>
-                        </div>
-                      ) : (
-                        menu
-                      )}
-                    </div>
-                  )}
+                  dropdownMatchSelectWidth={false}
+                  className="compact-select"
                 >
-                  {filteredDebtors.map(debtor => (
+                  {filteredDebtors.slice(0, 10).map(debtor => (
                     <Option key={debtor.id} value={debtor.id}>
-                      <div>
-                        <div style={{ fontWeight: 500 }}>{debtor.name}</div>
-                        <div style={{ color: '#666', fontSize: '12px' }}>
-                          {debtor.code} • {debtor.phone || 'No phone'}
-                          {debtor.contactPerson && ` • 👤 ${debtor.contactPerson}`}
+                      <div className="debtor-option">
+                        <div className="debtor-name-option">{debtor.name}</div>
+                        <div className="debtor-details">
+                          {debtor.code && <span>{debtor.code}</span>}
+                          {debtor.phone && <span> • 📞 {debtor.phone}</span>}
                         </div>
                       </div>
                     </Option>
@@ -658,37 +494,28 @@ const CollectionsModal = ({
 
               {/* Selected Debtor Info */}
               {selectedDebtor && (
-                <Card size="small" style={{ backgroundColor: '#f0f8ff' }}>
-                  <Space direction="vertical" size={2}>
-                    <Text strong>Selected Debtor:</Text>
-                    <Text>{selectedDebtor.name} ({selectedDebtor.code})</Text>
-                    {selectedDebtor.phone && (
-                      <Text type="secondary">📞 {selectedDebtor.phone}</Text>
-                    )}
-                  </Space>
-                </Card>
+                <div className="selected-debtor-info">
+                  <Tag color="blue" size="small" style={{ margin: '4px 0' }}>
+                    {selectedDebtor.name}
+                    {selectedDebtor.code && ` (${selectedDebtor.code})`}
+                  </Tag>
+                </div>
               )}
 
               {/* Debt Amount Input */}
-              <div>
-                <Text strong>Debt Amount:</Text>
+              <div className="form-section">
+                <Text className="form-label">Debt Amount</Text>
                 <InputNumber
-                  style={{ width: '100%', marginTop: 8 }}
-                  size="large"
+                  style={{ width: '100%' }}
+                  size="small"
                   placeholder="0.00"
                   value={debtAmount}
                   onChange={handleDebtAmountChange}
                   min={0}
-                  max={remainingAmount}
-                  step={100}
-                  addonBefore="KES"
+                  prefix="KES"
+                  className="compact-input-number"
                   precision={2}
-                  formatter={value => `KES ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={value => value.replace(/KES\s?|(,*)/g, '')}
                 />
-                <Text type="secondary" style={{ fontSize: '12px', marginTop: 4 }}>
-                  Maximum: {formatCurrency(remainingAmount)}
-                </Text>
               </div>
 
               {/* Add Debt Button */}
@@ -698,79 +525,93 @@ const CollectionsModal = ({
                 onClick={handleAddDebtCollection}
                 disabled={!selectedDebtor || !debtAmount || parseFloat(debtAmount) <= 0}
                 block
-                size="large"
+                size="small"
+                className="add-debt-btn"
               >
                 Add Debt Collection
               </Button>
-            </Space>
+            </div>
           </Card>
 
-          {/* Collection Summary */}
+          {/* Quick Summary */}
           <Card 
-            title="Collection Summary" 
-            size="small" 
-            style={{ marginTop: 16 }}
+            size="small"
+            title={
+              <span className="card-title-compact">
+                <CalculatorOutlined style={{ fontSize: '14px', marginRight: 6 }} />
+                Summary
+              </span>
+            }
+            className="compact-card"
+            style={{ marginTop: 12 }}
           >
-            <Space direction="vertical" style={{ width: '100%' }} size="small">
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Text>Cash:</Text>
-                <Text strong>{formatCurrency(cashAmount)}</Text>
+            <div className="summary-grid">
+              <div className="summary-item">
+                <div className="summary-label">Total Collected</div>
+                <div className="summary-value highlight">
+                  {formatCurrency(calculations.totalCollectedSoFar)}
+                </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Text>Debt Collections:</Text>
-                <Text strong>{formatCurrency(totalDebtCollection)}</Text>
+              <div className="summary-item">
+                <div className="summary-label">Balance</div>
+                <div className="summary-value" style={{ 
+                  color: calculations.remainingAmount === 0 ? '#52c41a' : 
+                         calculations.remainingAmount > 0 ? '#fa541c' : '#faad14'
+                }}>
+                  {formatCurrency(calculations.remainingAmount)}
+                </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #f0f0f0', paddingTop: 8 }}>
-                <Text strong>Total Collected:</Text>
-                <Text strong style={{ color: '#52c41a', fontSize: '16px' }}>
-                  {formatCurrency(totalCollectedSoFar)}
-                </Text>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Text>Remaining:</Text>
-                <Text strong style={{ color: remainingAmount === 0 ? '#52c41a' : '#fa541c' }}>
-                  {formatCurrency(remainingAmount)}
-                </Text>
-              </div>
-            </Space>
+            </div>
           </Card>
         </Col>
       </Row>
 
-      {/* Variance Warning */}
-      {remainingAmount > 0 && attendants.length > 0 && (
-        <Alert
-          message="Shortage Notice"
-          description={`There is a shortage of ${formatCurrency(remainingAmount)}. This will be recorded against ${attendants[0].firstName} ${attendants[0].lastName}'s staff account.`}
-          type="warning"
-          showIcon
-          style={{ marginTop: 16 }}
-          icon={<ExclamationCircleOutlined />}
-        />
-      )}
+      {/* Status Alerts */}
+      <div className="status-alerts">
+        {calculations.remainingAmount > 0 && (
+          <Alert
+            message="Shortage Detected"
+            description={`Shortage of ${formatCurrency(calculations.remainingAmount)} will be debited to attendant's account`}
+            type="warning"
+            showIcon
+            size="small"
+            className="compact-alert"
+          />
+        )}
 
-      {/* Success Message when fully allocated */}
-      {remainingAmount === 0 && totalExpected > 0 && (
-        <Alert
-          message="Perfect Allocation!"
-          description="All expected amount has been fully allocated between cash and debt collections."
-          type="success"
-          showIcon
-          icon={<CheckCircleOutlined />}
-          style={{ marginTop: 16 }}
-        />
-      )}
+        {calculations.remainingAmount < 0 && (
+          <Alert
+            message="Overage Detected"
+            description={`Overage of ${formatCurrency(Math.abs(calculations.remainingAmount))} will be added to station wallet`}
+            type="success"
+            showIcon
+            size="small"
+            className="compact-alert"
+          />
+        )}
 
-      {/* Warning if no attendant */}
-      {attendants.length === 0 && (
-        <Alert
-          message="No Attendant Warning"
-          description="Cannot save collections without an assigned attendant. Please assign an attendant to this island first."
-          type="error"
-          showIcon
-          style={{ marginTop: 16 }}
-        />
-      )}
+        {calculations.remainingAmount === 0 && calculations.totalExpected > 0 && (
+          <Alert
+            message="Perfect Allocation!"
+            description="All expected amount has been fully allocated"
+            type="success"
+            showIcon
+            size="small"
+            className="compact-alert"
+          />
+        )}
+
+        {attendants.length === 0 && (
+          <Alert
+            message="No Attendant"
+            description="Cannot save without an assigned attendant"
+            type="error"
+            showIcon
+            size="small"
+            className="compact-alert"
+          />
+        )}
+      </div>
     </Modal>
   );
 };
