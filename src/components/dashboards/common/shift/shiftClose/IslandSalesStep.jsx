@@ -1,4 +1,4 @@
-// IslandSalesStep.jsx - Compact version
+// IslandSalesStep.jsx - Compact version WITH SIMPLIFIED PUMP SALES
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Card,
@@ -28,7 +28,9 @@ import {
   FileText,
   Wallet,
   DollarSign,
-  Receipt
+  Receipt,
+  Zap,
+  Fuel
 } from 'lucide-react';
 import CollectionsModal from './CollectionsModal';
 import SummaryModal from './SummaryModal';
@@ -76,12 +78,14 @@ const IslandSalesStep = ({
         initialExpenses[islandIndex] = 0;
         initialCollections[islandIndex] = [];
         
-        island.pumps.forEach(pump => {
-          initialEntries[islandIndex][pump.pumpId] = {
-            actualSales: pump.expectedSales || 0,
-            notes: ''
-          };
-        });
+        // Calculate total expected sales for all pumps in this island
+        const totalExpectedSales = island.pumps.reduce((sum, pump) => sum + (pump.expectedSales || 0), 0);
+        
+        // Set initial sales entry for the whole island (not per pump)
+        initialEntries[islandIndex] = {
+          islandTotalSales: totalExpectedSales,
+          notes: ''
+        };
       });
       
       setSalesEntries(initialEntries);
@@ -94,102 +98,92 @@ const IslandSalesStep = ({
     }
   }, [readingsData]);
 
-
   // Load cumulative expenses for each island in the shift
-// Load cumulative expenses for each island in the shift - FIXED VERSION
-const loadIslandExpenses = async (islands) => {
-  if (!shiftId) return;
+  const loadIslandExpenses = async (islands) => {
+    if (!shiftId) return;
 
-  const expensesData = {};
-  const loadingStates = {};
+    const expensesData = {};
+    const loadingStates = {};
 
-  // Initialize loading states
-  islands.forEach((island, index) => {
-    if (island.islandId) {
-      loadingStates[index] = true;
+    // Initialize loading states
+    islands.forEach((island, index) => {
+      if (island.islandId) {
+        loadingStates[index] = true;
+      }
+    });
+
+    setLoadingExpenses(loadingStates);
+
+    try {
+      // Load expenses for each island in parallel
+      const expensePromises = islands.map(async (island, index) => {
+        if (!island.islandId) return null;
+
+        try {
+          const result = await expenseService.getExpensesByShiftAndIsland(shiftId, island.islandId);
+          
+          // Filter expenses to only include current shift expenses
+          const allExpenses = result.data || [];
+          const currentShiftExpenses = allExpenses.filter(expense => expense.shiftId === shiftId);
+          
+          // Calculate cumulative amount from CURRENT SHIFT expenses only
+          const cumulativeAmount = currentShiftExpenses.reduce((total, expense) => total + (expense.amount || 0), 0);
+          
+          return { 
+            index, 
+            result: {
+              ...result,
+              cumulativeAmount,
+              count: currentShiftExpenses.length,
+              expenses: currentShiftExpenses
+            }
+          };
+        } catch (error) {
+          console.error(`❌ Error loading expenses for island ${island.islandId}:`, error);
+          return { 
+            index, 
+            result: { 
+              expenses: [], 
+              cumulativeAmount: 0, 
+              count: 0 
+            } 
+          };
+        }
+      });
+
+      const results = await Promise.all(expensePromises);
+
+      // Process results
+      results.forEach(({ index, result }) => {
+        if (result) {
+          expensesData[index] = result;
+        }
+      });
+
+      setIslandExpenses(expensesData);
+
+      // Update expenses with cumulative amounts
+      const updatedExpenses = { ...expenses };
+      Object.entries(expensesData).forEach(([index, data]) => {
+        updatedExpenses[index] = data.cumulativeAmount || 0;
+      });
+      setExpenses(updatedExpenses);
+
+    } catch (error) {
+      console.error('❌ Error loading island expenses:', error);
+      message.error('Failed to load island expenses');
+    } finally {
+      setLoadingExpenses({});
     }
-  });
+  };
 
-  setLoadingExpenses(loadingStates);
-
-  try {
-    // Load expenses for each island in parallel
-    const expensePromises = islands.map(async (island, index) => {
-      if (!island.islandId) return null;
-
-      try {
-        const result = await expenseService.getExpensesByShiftAndIsland(shiftId, island.islandId);
-        console.log("the result from expense ", result.data);
-
-        console.log("the current shift is ", shiftId);
-        
-        // ✅ FIXED: Filter expenses to only include current shift expenses
-        const allExpenses = result.data || [];
-        const currentShiftExpenses = allExpenses.filter(expense => expense.shiftId === shiftId);
-        
-        // ✅ FIXED: Calculate cumulative amount from CURRENT SHIFT expenses only
-        const cumulativeAmount = currentShiftExpenses.reduce((total, expense) => total + (expense.amount || 0), 0);
-        
-        console.log(`📊 Island ${island.islandId}: ${currentShiftExpenses.length} expenses for current shift, Total: KES ${cumulativeAmount}`);
-        
-        return { 
-          index, 
-          result: {
-            ...result,
-            cumulativeAmount,
-            count: currentShiftExpenses.length,
-            expenses: currentShiftExpenses // Only current shift expenses
-          }
-        };
-      } catch (error) {
-        console.error(`❌ Error loading expenses for island ${island.islandId}:`, error);
-        return { 
-          index, 
-          result: { 
-            expenses: [], 
-            cumulativeAmount: 0, 
-            count: 0 
-          } 
-        };
-      }
-    });
-
-    const results = await Promise.all(expensePromises);
-
-    // Process results
-    results.forEach(({ index, result }) => {
-      if (result) {
-        expensesData[index] = result;
-      }
-    });
-
-    setIslandExpenses(expensesData);
-
-    // Update expenses with cumulative amounts (from current shift only)
-    const updatedExpenses = { ...expenses };
-    Object.entries(expensesData).forEach(([index, data]) => {
-      updatedExpenses[index] = data.cumulativeAmount || 0;
-    });
-    setExpenses(updatedExpenses);
-
-  } catch (error) {
-    console.error('❌ Error loading island expenses:', error);
-    message.error('Failed to load island expenses');
-  } finally {
-    setLoadingExpenses({});
-  }
-};
-
-  // Handle sales input change
-  const handleSalesChange = (islandIndex, pumpId, value) => {
+  // Handle total island sales change
+  const handleSalesChange = (islandIndex, value) => {
     setSalesEntries(prev => ({
       ...prev,
       [islandIndex]: {
         ...prev[islandIndex],
-        [pumpId]: {
-          ...prev[islandIndex]?.[pumpId],
-          actualSales: value || 0
-        }
+        islandTotalSales: value || 0
       }
     }));
   };
@@ -226,24 +220,12 @@ const loadIslandExpenses = async (islands) => {
       const islandExpenseAmount = expenses[islandIndex] || 0;
       const islandReceipts = receipts[islandIndex] || 0;
       
-      let totalPumpSales = 0;
-      let totalActualSales = 0;
-      let completedPumps = 0;
-
-      // Calculate pump sales and completion
-      island.pumps.forEach(pump => {
-        totalPumpSales += pump.expectedSales || 0;
-        
-        const pumpSales = islandSales[pump.pumpId];
-        const actualSales = pumpSales?.actualSales || 0;
-        totalActualSales += actualSales;
-        
-        // A pump is completed if actual sales is entered (not 0 or empty)
-        if (actualSales > 0) {
-          completedPumps++;
-        }
-      });
-
+      // Calculate total expected sales from all pumps
+      const totalPumpSales = island.pumps.reduce((sum, pump) => sum + (pump.expectedSales || 0), 0);
+      
+      // Get actual sales entered for the whole island
+      const totalActualSales = islandSales.islandTotalSales || 0;
+      
       // Calculate collections
       const cashCollection = islandCollections
         .filter(c => c && c.type === 'cash')
@@ -261,11 +243,11 @@ const loadIslandExpenses = async (islands) => {
       const totalDifference = totalExpectedWithCollections - totalExpected;
 
       // Island is complete when:
-      // 1. All pumps have sales entered (> 0)
+      // 1. Total sales have been entered (> 0)
       // 2. Collections have been entered (at least one collection entry)
-      const allPumpsCompleted = completedPumps === island.pumps.length;
+      const hasSales = totalActualSales > 0;
       const hasCollections = islandCollections.length > 0;
-      const isComplete = allPumpsCompleted && hasCollections;
+      const isComplete = hasSales && hasCollections;
 
       return {
         ...island,
@@ -280,12 +262,14 @@ const loadIslandExpenses = async (islands) => {
         totalExpected,
         totalExpectedWithCollections,
         totalDifference,
-        completedPumps,
         totalPumps: island.pumps.length,
         isComplete,
         hasCollections,
-        allPumpsCompleted,
-        isLoadingExpenses: loadingExpenses[islandIndex] || false
+        hasSales,
+        isLoadingExpenses: loadingExpenses[islandIndex] || false,
+        // Store pump count for display
+        pumpCount: island.pumps.length,
+        pumpNames: island.pumps.map(p => p.pumpName).join(', ')
       };
     });
   }, [islandsData, salesEntries, collections, expenses, receipts, islandExpenses, loadingExpenses]);
@@ -351,7 +335,7 @@ const loadIslandExpenses = async (islands) => {
                 {expense.description && (
                   <Text type="secondary" style={{ fontSize: '10px' }}>{expense.description}</Text>
                 )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
+                <div style={{ display: '-flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
                   <Text>{expenseService.getCategoryDisplay(expense.category)}</Text>
                   <Text>{expenseService.formatDate(expense.expenseDate)}</Text>
                 </div>
@@ -370,7 +354,7 @@ const loadIslandExpenses = async (islands) => {
     );
   };
 
-  // Island table columns - COMPACT VERSION
+  // SIMPLIFIED Island table columns - Clean version
   const islandColumns = [
     {
       title: 'ISLAND',
@@ -378,10 +362,16 @@ const loadIslandExpenses = async (islands) => {
       width: 100,
       fixed: 'left',
       render: (_, island, islandIndex) => (
-        <Space direction="vertical" size={1}>
-          <Text strong style={{ fontSize: '12px' }}>🏝️ {island.islandName}</Text>
+        <Space direction="vertical" size={2}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Fuel size={14} color="#52c41a" />
+            <Text strong style={{ fontSize: '12px' }}>{island.islandName}</Text>
+          </div>
           <Text type="secondary" style={{ fontSize: '10px' }}>
-            {island.completedPumps}/{island.pumps.length} pumps
+            {island.pumpCount} pumps
+          </Text>
+          <Text type="secondary" style={{ fontSize: '9px', color: '#666' }}>
+            {island.pumpNames}
           </Text>
         </Space>
       ),
@@ -391,11 +381,19 @@ const loadIslandExpenses = async (islands) => {
       key: 'attendants',
       width: 120,
       render: (_, island) => (
-        <Space direction="vertical" size={1}>
+        <Space direction="vertical" size={2}>
           {island.attendants.map((attendant, idx) => (
-            <Text key={idx} style={{ fontSize: '11px' }}>
-              👤 {attendant.firstName} {attendant.lastName}
-            </Text>
+            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ 
+                width: 6, 
+                height: 6, 
+                borderRadius: '50%', 
+                backgroundColor: idx === 0 ? '#52c41a' : '#1890ff' 
+              }} />
+              <Text style={{ fontSize: '11px' }}>
+                {attendant.firstName} {attendant.lastName}
+              </Text>
+            </div>
           ))}
           {island.attendants.length === 0 && (
             <Text type="secondary" style={{ fontSize: '10px' }}>No attendants</Text>
@@ -406,64 +404,73 @@ const loadIslandExpenses = async (islands) => {
     {
       title: 'PUMP SALES',
       key: 'pumpSales',
-      width: 150,
-      render: (_, island, islandIndex) => (
-        <Space direction="vertical" size={2} style={{ width: '100%' }}>
-          {island.pumps.map((pump, pumpIndex) => {
-            const pumpSales = salesEntries[islandIndex]?.[pump.pumpId];
-            const actualSales = pumpSales?.actualSales || 0;
-            const isCompleted = actualSales > 0;
-            
-            return (
-              <div key={pump.pumpId} style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center',
-                padding: '4px 6px',
-                backgroundColor: pumpIndex % 2 === 0 ? '#fafafa' : 'transparent',
-                borderRadius: '4px',
-                border: isCompleted ? '1px solid #52c41a' : '1px solid #d9d9d9'
-              }}>
-                <Text style={{ 
-                  fontSize: '8px', 
-                  fontWeight: 'bold',
-                  color: isCompleted ? '#52c41a' : '#000000' 
-                }}>
-                  {pump.pumpName}
+      width: 140,
+      render: (_, island, islandIndex) => {
+        const expectedSales = island.totalPumpSales;
+        const actualSales = salesEntries[islandIndex]?.islandTotalSales || 0;
+        const hasSales = actualSales > 0;
+        
+        return (
+          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            {/* Expected Sales (display only) */}
+            <div style={{ 
+              padding: '4px 8px', 
+              backgroundColor: '#f6ffed', 
+              borderRadius: '4px',
+              border: '1px solid #b7eb8f'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text strong style={{ fontSize: '11px', color: '#389e0d' }}>
+                  KES {expectedSales.toFixed(2)}
                 </Text>
-                <InputNumber
-                  size="small"
-                  style={{ 
-                    width: '100px', 
-                    fontSize: '11px',
-                    fontWeight: 'bold',
-                    border: isCompleted ? '1px solid #52c41a' : '1px solid #d9d9d9',
-                    borderRadius: '4px'
-                  }}
-                  value={actualSales}
-                  onChange={(value) => handleSalesChange(islandIndex, pump.pumpId, value)}
-                  min={0}
-                  placeholder="Sales"
-                  formatter={value => `KES ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={value => value.replace(/KES\s?|(,*)/g, '')}
-                />
               </div>
-            );
-          })}
-        </Space>
-      ),
-    },
-    {
-      title: 'TOTAL SALES',
-      key: 'totalSales',
-      width: 100,
-      render: (_, island) => (
-        <div style={{ textAlign: 'center' }}>
-          <Text strong style={{ fontSize: '12px', color: '#1890ff' }}>
-            KES {island.totalActualSales.toFixed(2)}
-          </Text>
-        </div>
-      ),
+            </div>
+            
+            {/* Actual Sales Input - SIMPLIFIED */}
+            {/* <InputNumber
+              size="small"
+              style={{ 
+                width: '100%', 
+                fontSize: '12px',
+                fontWeight: 'bold',
+                backgroundColor: hasSales ? '#f6ffed' : '#fff',
+                border: hasSales ? '2px solid #52c41a' : '1px solid #d9d9d9',
+                borderRadius: '4px',
+                height: '32px'
+              }}
+              value={actualSales}
+              onChange={(value) => handleSalesChange(islandIndex, value)}
+              min={0}
+              placeholder="Enter total sales"
+              formatter={value => `KES ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+              parser={value => value.replace(/KES\s?|(,*)/g, '')}
+              prefix={<DollarSign size={12} color={hasSales ? '#52c41a' : '#d9d9d9'} />}
+            /> */}
+            
+            {/* Difference indicator */}
+            {hasSales && (
+              <div style={{ 
+                padding: '2px 6px', 
+                backgroundColor: '#e6f7ff', 
+                borderRadius: '2px',
+                fontSize: '10px',
+                textAlign: 'center'
+              }}>
+                <Text type="secondary">
+                  Diff: 
+                  <span style={{ 
+                    color: actualSales >= expectedSales ? '#389e0d' : '#fa541c',
+                    fontWeight: 'bold',
+                    marginLeft: 4
+                  }}>
+                    KES {(actualSales - expectedSales).toFixed(2)}
+                  </span>
+                </Text>
+              </div>
+            )}
+          </Space>
+        );
+      },
     },
     {
       title: 'RECEIPTS',
@@ -473,11 +480,12 @@ const loadIslandExpenses = async (islands) => {
         <InputNumber
           size="small"
           style={{ 
-            width: '90px',
+            width: '100%',
             border: '1px solid #d9d9d9',
             borderRadius: '4px',
-            fontSize: '11px',
-            fontWeight: 'bold'
+            fontSize: '12px',
+            fontWeight: 'bold',
+            height: '32px'
           }}
           value={island.receipts}
           onChange={(value) => handleReceiptsChange(islandIndex, value)}
@@ -485,6 +493,7 @@ const loadIslandExpenses = async (islands) => {
           placeholder="Receipts"
           formatter={value => `KES ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
           parser={value => value.replace(/KES\s?|(,*)/g, '')}
+          prefix={<Receipt size={12} color="#faad14" />}
         />
       ),
     },
@@ -500,33 +509,26 @@ const loadIslandExpenses = async (islands) => {
           placement="left"
         >
           <div style={{ 
-            padding: '4px 8px', 
+            padding: '8px', 
             cursor: 'pointer',
-            textAlign: 'center'
+            textAlign: 'center',
+            border: '1px solid #1890ff',
+            borderRadius: '4px',
+            backgroundColor: '#e6f7ff',
+            height: '32px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
           }}>
             {island.isLoadingExpenses ? (
               <Text type="secondary" style={{ fontSize: '10px' }}>Loading...</Text>
             ) : (
-              <>
-                <Text strong style={{ fontSize: '12px', color: '#1890ff' }}>
-                  KES {island.expenses.toFixed(2)}
-                </Text>
-              </>
+              <Text strong style={{ fontSize: '12px', color: '#1890ff' }}>
+                KES {island.expenses.toFixed(2)}
+              </Text>
             )}
           </div>
         </Popover>
-      ),
-    },
-    {
-      title: 'EXPECTED',
-      key: 'expected',
-      width: 100,
-      render: (_, island) => (
-        <div style={{ textAlign: 'center' }}>
-          <Text strong style={{ fontSize: '10px', color: '#52c41a' }}>
-            KES {island.totalExpected.toFixed(2)}
-          </Text>
-        </div>
       ),
     },
     {
@@ -534,32 +536,35 @@ const loadIslandExpenses = async (islands) => {
       key: 'collections',
       width: 110,
       render: (_, island, islandIndex) => (
-        <Space direction="vertical" size={2} style={{ width: '100%' }}>
+        <div style={{ textAlign: 'center' }}>
           <Button 
             type={island.hasCollections ? "primary" : "default"}
             icon={<Wallet size={12} style={{ color: island.hasCollections ? '#fff' : '#faad14' }} />}
             onClick={() => openCollectionsModal(islandIndex)}
             size="small"
             style={{ 
-              padding: '2px 8px', 
-              height: 'auto',
+              width: '100%',
+              height: '32px',
               fontSize: '11px',
               fontWeight: 'bold',
               backgroundColor: island.hasCollections ? '#52c41a' : '#fff',
               borderColor: island.hasCollections ? '#52c41a' : '#d9d9d9',
               color: island.hasCollections ? '#fff' : '#000',
-              borderRadius: '4px'
+              borderRadius: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}
           >
             {island.hasCollections ? '✅ ' : ''}
             {getCurrentCollections(islandIndex).length} drops
           </Button>
           {island.hasCollections && (
-            <Text style={{ fontSize: '9px', color: '#52c41a', textAlign: 'center' }}>
+            <Text style={{ fontSize: '10px', color: '#52c41a', marginTop: 4 }}>
               KES {island.totalCollection.toFixed(2)}
             </Text>
           )}
-        </Space>
+        </div>
       ),
     },
     {
@@ -576,29 +581,31 @@ const loadIslandExpenses = async (islands) => {
           status = 'success';
           statusText = 'Complete';
           color = '#52c41a';
-        } else if (island.allPumpsCompleted && !island.hasCollections) {
+        } else if (island.hasSales && !island.hasCollections) {
           status = 'warning';
           statusText = 'Needs Drops';
           color = '#faad14';
-        } else if (island.hasCollections && !island.allPumpsCompleted) {
+        } else if (island.hasCollections && !island.hasSales) {
           status = 'warning';
           statusText = 'Needs Sales';
           color = '#faad14';
         } else {
           status = 'processing';
-          statusText = `${island.completedPumps}/${island.pumps.length}`;
+          statusText = island.hasSales ? 'Sales Done' : 'No Sales';
           color = '#1890ff';
         }
 
         return (
-          <Badge 
-            status={status} 
-            text={
-              <Text strong style={{ color, fontSize: '11px' }}>
-                {statusText}
-              </Text>
-            }
-          />
+          <div style={{ textAlign: 'center' }}>
+            <Badge 
+              status={status} 
+              text={
+                <Text strong style={{ color, fontSize: '11px' }}>
+                  {statusText}
+                </Text>
+              }
+            />
+          </div>
         );
       },
     },
@@ -708,14 +715,13 @@ const loadIslandExpenses = async (islands) => {
         totalExpected: island.totalExpected,
         totalExpectedWithCollections: island.totalExpectedWithCollections,
         totalDifference: island.totalDifference,
-        completedPumps: island.completedPumps,
-        totalPumps: island.totalPumps,
+        pumpCount: island.pumpCount,
         isComplete: island.isComplete,
         hasCollections: island.hasCollections,
-        allPumpsCompleted: island.allPumpsCompleted,
+        hasSales: island.hasSales,
         
         // Additional data for detailed display
-        salesEntries: salesEntries[index] || {},
+        salesEntry: salesEntries[index] || {},
         collections: getCurrentCollections(index)
       })),
       
@@ -763,13 +769,13 @@ const loadIslandExpenses = async (islands) => {
           💰 Island Sales & Collections
         </Title>
         
-        <Alert
+        {/* <Alert
           message="Sales Calculation: Expected = Pump Sales + Receipts - Expenses"
-          description="Expenses are automatically calculated from shift expenses. Click on expense amount to view details."
+          description="Enter total sales for each island. Collections capture cash and debt payments."
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-        />
+        /> */}
 
         {/* Shift Info */}
         <Card size="small" style={{ marginBottom: 16 }}>
@@ -810,7 +816,7 @@ const loadIslandExpenses = async (islands) => {
         <Col span={4}>
           <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
             <Statistic
-              title="Expected"
+              title="Expected Sales"
               value={overallStats.totalExpected}
               precision={0}
               prefix="KES"
@@ -821,18 +827,7 @@ const loadIslandExpenses = async (islands) => {
         <Col span={4}>
           <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
             <Statistic
-              title="Expenses"
-              value={overallStats.totalExpenses}
-              precision={0}
-              prefix="KES"
-              valueStyle={{ fontSize: '14px', fontWeight: 'bold', color: '#1890ff' }}
-            />
-          </Card>
-        </Col>
-        <Col span={4}>
-          <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
-            <Statistic
-              title="Drops"
+              title="Total Drops"
               value={overallStats.totalCollections}
               precision={0}
               prefix="KES"
@@ -855,18 +850,31 @@ const loadIslandExpenses = async (islands) => {
             />
           </Card>
         </Col>
+        <Col span={4}>
+          <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
+            <Statistic
+              title="Status"
+              value={overallStats.allIslandsComplete ? "Ready" : "In Progress"}
+              valueStyle={{ 
+                fontSize: '14px', 
+                fontWeight: 'bold',
+                color: overallStats.allIslandsComplete ? '#52c41a' : '#faad14' 
+              }}
+            />
+          </Card>
+        </Col>
       </Row>
 
       <Divider />
 
-      {/* Islands Table */}
+      {/* Islands Table - CLEAN VERSION */}
       <Card 
         bodyStyle={{ padding: '12px' }}
         style={{ marginBottom: 16 }}
         title={
           <Space>
-            <Users size={14} />
-            <Text strong style={{ fontSize: '14px' }}>Island Sales & Collections</Text>
+            <Fuel size={14} color="#52c41a" />
+            <Text strong style={{ fontSize: '14px' }}>Island Sales Summary</Text>
             <Badge 
               count={`${overallStats.completedIslands}/${overallStats.totalIslands}`} 
               showZero 
@@ -883,8 +891,9 @@ const loadIslandExpenses = async (islands) => {
           dataSource={islandStats.map((island, index) => ({ ...island, key: index }))}
           pagination={false}
           size="small"
-          scroll={{ x: 1000 }}
+          scroll={{ x: 900 }}
           style={{ fontSize: '11px' }}
+          rowClassName={(record) => record.isComplete ? 'table-row-success' : ''}
         />
       </Card>
 
@@ -899,6 +908,7 @@ const loadIslandExpenses = async (islands) => {
           size="middle"
           icon={<ArrowLeft size={14} />}
           onClick={onBackToReadings}
+          style={{ height: '40px' }}
         >
           BACK TO READINGS
         </Button>
@@ -910,6 +920,7 @@ const loadIslandExpenses = async (islands) => {
           onClick={handleProceedToSummary}
           disabled={!overallStats.allIslandsComplete}
           style={{ 
+            height: '40px',
             fontWeight: 'bold',
             backgroundColor: overallStats.allIslandsComplete ? '#52c41a' : '#d9d9d9',
             borderColor: overallStats.allIslandsComplete ? '#52c41a' : '#d9d9d9'
@@ -954,7 +965,7 @@ const loadIslandExpenses = async (islands) => {
       {!overallStats.allIslandsComplete && (
         <Alert
           message="Complete All Island Sales & Collections"
-          description={`Please enter sales for all pumps and complete drops for all ${overallStats.totalIslands - overallStats.completedIslands} remaining islands before proceeding.`}
+          description={`Please enter total sales and complete drops for all ${overallStats.totalIslands - overallStats.completedIslands} remaining islands before proceeding.`}
           type="warning"
           showIcon
           style={{ marginTop: 16, fontSize: '12px' }}
@@ -963,5 +974,22 @@ const loadIslandExpenses = async (islands) => {
     </div>
   );
 };
+
+// Add CSS for row highlighting
+const styles = `
+  .table-row-success {
+    background-color: #f6ffed !important;
+  }
+  .table-row-success:hover {
+    background-color: #d9f7be !important;
+  }
+`;
+
+// Add styles to document head
+if (typeof document !== 'undefined') {
+  const styleSheet = document.createElement("style");
+  styleSheet.innerText = styles;
+  document.head.appendChild(styleSheet);
+}
 
 export default IslandSalesStep;

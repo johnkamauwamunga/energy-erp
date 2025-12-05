@@ -913,7 +913,7 @@ const ReadingsStep = ({
       </div>
 
       {/* Auto-fill Status */}
-      {autoFilled && (
+      {/* {autoFilled && (
         <Alert
           message="✅ Opening Readings Loaded from Open Shift"
           description={`Successfully loaded ${pumps.length} pumps and ${tanks.length} tanks with opening readings`}
@@ -922,7 +922,7 @@ const ReadingsStep = ({
           style={{ marginBottom: 12, fontSize: '12px' }}
           size="small"
         />
-      )}
+      )} */}
 
       {/* Quick Stats */}
       <Row gutter={[8, 8]} style={{ marginBottom: 16 }}>
@@ -1016,7 +1016,7 @@ const ReadingsStep = ({
               ),
               children: (
                 <div>
-                  <Alert
+                  {/* <Alert
                     message={`Using ${globalMeterType.toUpperCase()} Meter for Calculations`}
                     description={
                       globalMeterType === 'electric' 
@@ -1029,7 +1029,7 @@ const ReadingsStep = ({
                     showIcon
                     style={{ marginBottom: 12, fontSize: '11px' }}
                     size="small"
-                  />
+                  /> */}
                   <Table
                     columns={pumpColumns}
                     dataSource={pumps}
@@ -1063,14 +1063,14 @@ const ReadingsStep = ({
               ),
               children: (
                 <div>
-                  <Alert
+                  {/* <Alert
                     message="Tank Volume Recording"
                     description="Enter closing volume to calculate current inventory levels"
                     type="info"
                     showIcon
                     style={{ marginBottom: 12, fontSize: '11px' }}
                     size="small"
-                  />
+                  /> */}
                   <Table
                     columns={tankColumns}
                     dataSource={tanks}

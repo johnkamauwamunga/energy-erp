@@ -1,3 +1,4 @@
+// CollectionsModal.jsx - With actual attendant info
 import React, { useState, useEffect } from 'react';
 import {
   Card,
@@ -15,7 +16,12 @@ import {
   message,
   Modal,
   InputNumber,
-  Tag
+  Tag,
+  Form,
+  Avatar,
+  Descriptions,
+  Divider,
+  Badge
 } from 'antd';
 import {
   SearchOutlined,
@@ -25,9 +31,14 @@ import {
   DeleteOutlined,
   SaveOutlined,
   DollarOutlined,
-  TeamOutlined
+  TeamOutlined,
+  ExclamationCircleOutlined,
+  IdcardOutlined,
+  WalletOutlined,
+  SafetyOutlined
 } from '@ant-design/icons';
 import { debtorService } from '../../../../../services/debtorService/debtorService';
+import { staffAccountService } from '../../../../../services/staffAccountService/staffAccountService';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -47,6 +58,23 @@ const CollectionsModal = ({
   const [cashAmount, setCashAmount] = useState(0);
   const [selectedDebtor, setSelectedDebtor] = useState(null);
   const [debtAmount, setDebtAmount] = useState(0);
+  
+  // Get actual attendant info from island prop
+  const attendants = island?.attendants || [];
+  const islandName = island?.islandName || 'Unknown Island';
+  
+  // Log the attendant info for debugging
+  useEffect(() => {
+    if (visible && attendants.length > 0) {
+      console.log('👤 Attendants for this island:', attendants);
+      console.log('🔍 Attendant IDs available:', attendants.map(a => ({
+        id: a.id,
+        attendantId: a.attendantId,
+        name: `${a.firstName} ${a.lastName}`,
+        assignmentType: a.assignmentType
+      })));
+    }
+  }, [visible, attendants]);
 
   // Safe calculations with null checks
   const totalPumpSales = island?.totalPumpSales || 0;
@@ -70,6 +98,102 @@ const CollectionsModal = ({
 
   const totalCollectedSoFar = currentCashCollection + totalDebtCollection + (parseFloat(cashAmount) || 0);
   const remainingAmount = Math.max(0, totalExpected - totalCollectedSoFar);
+
+  // Format currency display
+  const formatCurrency = (amount) => {
+    return `KES ${(parseFloat(amount) || 0).toLocaleString('en-KE', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}`;
+  };
+
+  // Render attendant information
+  const renderAttendantInfo = () => {
+    if (attendants.length === 0) {
+      return (
+        <Alert
+          message="No Attendant Assigned"
+          description="This island has no attendant assigned. Please assign an attendant before recording collections."
+          type="warning"
+          showIcon
+          icon={<ExclamationCircleOutlined />}
+        />
+      );
+    }
+
+    return (
+      <Card 
+        size="small" 
+        title={
+          <Space>
+            <TeamOutlined />
+            <Text strong>Island Attendant(s)</Text>
+            <Badge count={attendants.length} style={{ backgroundColor: '#52c41a' }} />
+          </Space>
+        }
+        style={{ marginBottom: 16 }}
+      >
+        <List
+          size="small"
+          dataSource={attendants}
+          renderItem={(attendant, index) => (
+            <List.Item
+              key={attendant.id || attendant.attendantId}
+              actions={[
+                <Tag 
+                  color={attendant.assignmentType === 'PRIMARY' ? 'green' : 'blue'}
+                  key="type"
+                >
+                  {attendant.assignmentType || 'ASSIGNED'}
+                </Tag>
+              ]}
+            >
+              <List.Item.Meta
+                avatar={
+                  <Avatar 
+                    icon={<UserOutlined />}
+                    style={{ backgroundColor: index === 0 ? '#1890ff' : '#52c41a' }}
+                  >
+                    {attendant.firstName?.[0]}{attendant.lastName?.[0]}
+                  </Avatar>
+                }
+                title={
+                  <Space>
+                    <Text strong>
+                      {attendant.firstName} {attendant.lastName}
+                    </Text>
+                    {index === 0 && (
+                      <Tag color="gold" icon={<SafetyOutlined />}>Responsible</Tag>
+                    )}
+                  </Space>
+                }
+                description={
+                  <Space direction="vertical" size={0}>
+                    <Text type="secondary" style={{ fontSize: '11px' }}>
+                      ID: {attendant.attendantId || attendant.id}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: '11px' }}>
+                      Shortages will be debited to this attendant's staff account
+                    </Text>
+                  </Space>
+                }
+              />
+            </List.Item>
+          )}
+        />
+        
+        <Divider style={{ margin: '8px 0' }} />
+        
+        <Alert
+          message="Responsibility Notice"
+          description="Any shortages will be recorded against the primary attendant's staff account"
+          type="info"
+          showIcon
+          icon={<IdcardOutlined />}
+        />
+      </Card>
+    );
+  };
 
   // Fetch debtors
   useEffect(() => {
@@ -148,7 +272,7 @@ const CollectionsModal = ({
     }
 
     if (debtAmountNum > remainingAmount) {
-      message.warning(`Debt amount cannot exceed remaining amount of KES ${remainingAmount.toLocaleString()}`);
+      message.warning(`Debt amount cannot exceed remaining amount of ${formatCurrency(remainingAmount)}`);
       return;
     }
 
@@ -167,7 +291,7 @@ const CollectionsModal = ({
     
     setSelectedDebtor(null);
     setDebtAmount(0);
-    message.success(`Added KES ${debtAmountNum.toLocaleString()} debt for ${selectedDebtor.name}`);
+    message.success(`Added ${formatCurrency(debtAmountNum)} debt for ${selectedDebtor.name}`);
   };
 
   const handleRemoveCollection = (collectionId) => {
@@ -177,6 +301,7 @@ const CollectionsModal = ({
 
   const handleSaveCollections = () => {
     const cashAmountNum = parseFloat(cashAmount) || 0;
+    const debtAmountNum = totalDebtCollection;
     
     const finalCollections = [...currentCollections];
     
@@ -191,6 +316,16 @@ const CollectionsModal = ({
 
     const totalCollected = finalCollections.reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
     const variance = totalExpected - totalCollected;
+    
+    // Prepare data for shortage handling if there's a variance
+    const shortageData = {
+      hasShortage: variance > 0,
+      shortageAmount: variance > 0 ? variance : 0,
+      hasOverage: variance < 0,
+      overageAmount: variance < 0 ? Math.abs(variance) : 0,
+      responsibleAttendant: attendants.length > 0 ? attendants[0] : null, // Primary attendant
+      allAttendants: attendants
+    };
 
     const payload = {
       cashAmount: cashAmountNum,
@@ -201,35 +336,69 @@ const CollectionsModal = ({
       })),
       totalCollected: totalCollected,
       variance: variance,
-      collections: finalCollections
+      collections: finalCollections,
+      shortageData: shortageData,
+      islandInfo: {
+        islandId: island.islandId,
+        islandName: islandName,
+        shiftId: island.shiftId,
+        stationId: island.stationId
+      }
     };
 
-    if (variance !== 0) {
+    console.log('💾 Saving collections with payload:', payload);
+    console.log('👤 Responsible attendant for shortages:', shortageData.responsibleAttendant);
+
+    // If there's a shortage, we'll handle it in the parent component
+    if (variance > 0) {
       Modal.confirm({
-        title: 'Variance Detected',
-        content: `There is a variance of KES ${Math.abs(variance).toLocaleString()}. This amount will be debited to the attendant's account. Continue?`,
+        title: 'Shortage Detected',
+        content: (
+          <div>
+            <p>There is a shortage of <strong>{formatCurrency(variance)}</strong>.</p>
+            <p>This amount will be debited to the attendant's staff account:</p>
+            <Alert
+              message={`${shortageData.responsibleAttendant?.firstName} ${shortageData.responsibleAttendant?.lastName}`}
+              description={`Attendant ID: ${shortageData.responsibleAttendant?.attendantId}`}
+              type="warning"
+              showIcon
+              style={{ marginTop: 8 }}
+            />
+            <p style={{ marginTop: 8, fontSize: '12px', color: '#666' }}>
+              Continue with collections?
+            </p>
+          </div>
+        ),
+        okText: 'Record Shortage & Save',
+        cancelText: 'Cancel',
         onOk: () => {
-          onSave(finalCollections, variance);
-          message.success('Collections saved successfully');
+          onSave(finalCollections, variance, shortageData);
+          message.success('Collections saved with shortage recorded');
+        }
+      });
+    } else if (variance < 0) {
+      Modal.confirm({
+        title: 'Overage Detected',
+        content: `There is an overage of ${formatCurrency(Math.abs(variance))}. This amount will be recorded as extra cash. Continue?`,
+        onOk: () => {
+          onSave(finalCollections, variance, shortageData);
+          message.success('Collections saved with overage recorded');
         }
       });
     } else {
-      onSave(finalCollections, variance);
+      onSave(finalCollections, variance, shortageData);
       message.success('Collections saved successfully');
     }
   };
 
-  // Format currency display
-  const formatCurrency = (amount) => {
-    return `KES ${(parseFloat(amount) || 0).toLocaleString('en-KE', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })}`;
-  };
-
   return (
     <Modal
-      title={`💰 Collections - ${island?.islandName || 'Island'}`}
+      title={
+        <Space>
+          <WalletOutlined />
+          <Text strong>Collections - {islandName}</Text>
+        </Space>
+      }
       open={visible}
       onCancel={onCancel}
       width={1000}
@@ -242,11 +411,15 @@ const CollectionsModal = ({
           type="primary" 
           onClick={handleSaveCollections}
           icon={<SaveOutlined />}
+          disabled={attendants.length === 0}
         >
           Save Collections
         </Button>
       ]}
     >
+      {/* Island and Attendant Information */}
+      {renderAttendantInfo()}
+      
       {/* Summary Statistics */}
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col span={6}>
@@ -257,6 +430,10 @@ const CollectionsModal = ({
               precision={2}
               prefix="KES"
               valueStyle={{ color: '#1890ff' }}
+              formatter={value => `KES ${value.toLocaleString('en-KE', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+              })}`}
             />
           </Card>
         </Col>
@@ -268,6 +445,10 @@ const CollectionsModal = ({
               precision={2}
               prefix="KES"
               valueStyle={{ color: '#52c41a' }}
+              formatter={value => `KES ${value.toLocaleString('en-KE', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+              })}`}
             />
           </Card>
         </Col>
@@ -279,6 +460,10 @@ const CollectionsModal = ({
               precision={2}
               prefix="KES"
               valueStyle={{ color: '#faad14' }}
+              formatter={value => `KES ${value.toLocaleString('en-KE', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+              })}`}
             />
           </Card>
         </Col>
@@ -292,6 +477,10 @@ const CollectionsModal = ({
               valueStyle={{ 
                 color: remainingAmount === 0 ? '#52c41a' : '#fa541c' 
               }}
+              formatter={value => `KES ${value.toLocaleString('en-KE', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+              })}`}
             />
           </Card>
         </Col>
@@ -326,6 +515,8 @@ const CollectionsModal = ({
                   step={100}
                   addonBefore="KES"
                   precision={2}
+                  formatter={value => `KES ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                  parser={value => value.replace(/KES\s?|(,*)/g, '')}
                 />
                 <Text type="secondary" style={{ fontSize: '12px', marginTop: 4 }}>
                   Enter 0 if no cash collection
@@ -492,6 +683,8 @@ const CollectionsModal = ({
                   step={100}
                   addonBefore="KES"
                   precision={2}
+                  formatter={value => `KES ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                  parser={value => value.replace(/KES\s?|(,*)/g, '')}
                 />
                 <Text type="secondary" style={{ fontSize: '12px', marginTop: 4 }}>
                   Maximum: {formatCurrency(remainingAmount)}
@@ -545,13 +738,14 @@ const CollectionsModal = ({
       </Row>
 
       {/* Variance Warning */}
-      {remainingAmount !== 0 && (
+      {remainingAmount > 0 && attendants.length > 0 && (
         <Alert
-          message="Variance Notice"
-          description={`There is a variance of KES ${Math.abs(remainingAmount).toLocaleString()}. This will be debited to the attendant's account.`}
+          message="Shortage Notice"
+          description={`There is a shortage of ${formatCurrency(remainingAmount)}. This will be recorded against ${attendants[0].firstName} ${attendants[0].lastName}'s staff account.`}
           type="warning"
           showIcon
           style={{ marginTop: 16 }}
+          icon={<ExclamationCircleOutlined />}
         />
       )}
 
@@ -563,6 +757,17 @@ const CollectionsModal = ({
           type="success"
           showIcon
           icon={<CheckCircleOutlined />}
+          style={{ marginTop: 16 }}
+        />
+      )}
+
+      {/* Warning if no attendant */}
+      {attendants.length === 0 && (
+        <Alert
+          message="No Attendant Warning"
+          description="Cannot save collections without an assigned attendant. Please assign an attendant to this island first."
+          type="error"
+          showIcon
           style={{ marginTop: 16 }}
         />
       )}
