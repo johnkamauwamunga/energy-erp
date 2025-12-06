@@ -865,17 +865,17 @@ const PersonnelStep = ({
               items={[
                 {
                   title: 'Create Shift',
-                  description: 'Start new shift operations',
+               //   description: 'Start new shift operations',
                   status: canProceed ? 'finish' : 'process'
                 },
                 {
                   title: 'Assign Personnel',
-                  description: 'Select attendants and assign islands',
+                //  description: 'Select attendants and assign islands',
                   status: canProceed ? (hasRequiredPersonnelData ? 'finish' : 'process') : 'wait'
                 },
                 {
                   title: 'Take Readings',
-                  description: 'Record pump and tank readings',
+                 // description: 'Record pump and tank readings',
                   status: 'wait'
                 }
               ]}

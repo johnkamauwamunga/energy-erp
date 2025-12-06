@@ -1,293 +1,126 @@
 /* CollectionsModal.css */
 
-/* Modal customization */
-.collections-modal .ant-modal-body {
-  padding: 16px !important;
-}
-
-.collections-modal .ant-modal-header {
-  padding: 12px 16px !important;
-}
-
-.modal-header-compact {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-}
-
-/* Compact attendant info */
-.compact-attendant-info {
-  background: #f8f9fa;
-  border-radius: 6px;
-  padding: 8px 12px;
-  border: 1px solid #f0f0f0;
-}
-
-.attendant-header {
-  display: flex;
-  align-items: center;
-  margin-bottom: 4px;
-}
-
-.attendant-list {
-  display: flex;
-  flex-wrap: wrap;
-}
-
-/* Compact stats */
-.compact-stats-row {
-  margin-bottom: 16px !important;
-}
-
-.compact-stat {
-  text-align: center;
-  padding: 8px;
-  background: #fafafa;
-  border-radius: 6px;
-  border: 1px solid #f0f0f0;
-  height: 100%;
-}
-
-.stat-label {
-  font-size: 11px;
-  color: #666;
-  margin-bottom: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.stat-value {
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Compact cards */
-.compact-card {
-  height: 100%;
-}
-
-.compact-card .ant-card-head {
-  min-height: 36px !important;
-  padding: 0 12px !important;
-}
-
-.compact-card .ant-card-body {
-  padding: 12px !important;
-}
-
-.card-title-compact {
-  font-size: 13px !important;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-}
-
-/* Form elements */
-.cash-input-section,
-.debt-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.form-section {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.form-label {
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.input-hint {
-  font-size: 11px;
-  margin-top: 2px;
-}
-
-.compact-input-number {
-  font-size: 13px !important;
-}
-
-.compact-input-number .ant-input-number-input {
-  font-size: 13px !important;
-  height: 32px !important;
-}
-
-.compact-input,
-.compact-select {
-  font-size: 13px !important;
-}
-
-.compact-select .ant-select-selector {
-  min-height: 32px !important;
-  padding: 0 8px !important;
-}
-
-/* Debt list styling */
-.debt-list-container {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.debt-list-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 8px;
-  background: #f8f9fa;
-  border-radius: 4px;
-  border: 1px solid #f0f0f0;
-}
-
-.debt-item-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.debtor-name {
-  font-size: 12px;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  margin-bottom: 2px;
-}
-
-.debt-amount {
-  font-size: 12px;
-  color: #1890ff;
-  font-weight: 600;
-}
-
-.remove-btn {
+/* Remove modal footer border */
+.collections-modal .ant-modal-footer {
+  border-top: none !important;
   padding: 0 !important;
-  width: 24px !important;
-  height: 24px !important;
 }
 
-.debt-total {
-  margin-top: 8px;
-  text-align: center;
+/* Modal customizations */
+.collections-modal .ant-modal-header {
+  border-bottom: 1px solid #f0f0f0;
+  padding: 16px 20px !important;
 }
 
-/* Debtor option styling */
-.debtor-option {
-  padding: 4px 0;
+.collections-modal .ant-modal-body {
+  padding: 20px !important;
 }
 
-.debtor-name-option {
-  font-size: 12px;
-  font-weight: 500;
+/* Compact styles */
+.attendant-info-compact {
+  transition: all 0.2s ease;
 }
 
-.debtor-details {
-  font-size: 10px;
-  color: #666;
-  margin-top: 2px;
+.attendant-info-compact:hover {
+  background-color: #f8f9fa;
 }
 
-.selected-debtor-info {
-  margin: 4px 0;
+/* Custom scrollbar for debt list */
+.debt-list-scroll::-webkit-scrollbar {
+  width: 4px;
 }
 
-.add-debt-btn {
-  margin-top: 8px !important;
-  font-size: 12px !important;
-  height: 32px !important;
+.debt-list-scroll::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
 }
 
-/* Summary styling */
-.summary-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+.debt-list-scroll::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
 }
 
-.summary-item {
-  text-align: center;
-  padding: 8px;
-  background: #f8f9fa;
-  border-radius: 6px;
-}
-
-.summary-label {
-  font-size: 11px;
-  color: #666;
-  margin-bottom: 4px;
-  text-transform: uppercase;
-}
-
-.summary-value {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.summary-value.highlight {
-  color: #52c41a;
-  font-size: 14px;
-}
-
-/* Status alerts */
-.status-alerts {
-  margin-top: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.compact-alert {
-  padding: 8px 12px !important;
-  font-size: 12px !important;
-}
-
-.compact-alert .ant-alert-message {
-  font-size: 12px !important;
-}
-
-.compact-alert .ant-alert-description {
-  font-size: 11px !important;
+.debt-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
-  .compact-stat {
-    padding: 6px 4px;
+  .collections-modal .ant-modal-body {
+    padding: 16px !important;
   }
   
-  .stat-label {
-    font-size: 10px;
+  .collections-modal .ant-modal-header {
+    padding: 12px 16px !important;
   }
   
-  .stat-value {
-    font-size: 11px;
-  }
-  
-  .summary-grid {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-  
-  .debt-list-item {
-    padding: 4px 6px;
+  .ant-input-number,
+  .ant-input {
+    font-size: 14px !important;
   }
 }
 
 @media (max-width: 576px) {
-  .compact-stats-row {
-    margin-bottom: 12px !important;
-  }
-  
   .collections-modal .ant-modal-body {
     padding: 12px !important;
   }
   
-  .compact-card .ant-card-body {
-    padding: 8px !important;
+  .action-buttons {
+    flex-direction: column;
+    gap: 8px;
   }
+  
+  .action-buttons .ant-btn {
+    width: 100% !important;
+  }
+}
+
+/* Card hover effects */
+.collections-modal .ant-card {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.collections-modal .ant-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-color: #d9d9d9;
+}
+
+/* Alert customizations */
+.collections-modal .ant-alert {
+  border-radius: 6px;
+}
+
+.collections-modal .ant-alert-error {
+  background-color: #fff2f0;
+  border: 1px solid #ffccc7;
+}
+
+.collections-modal .ant-alert-warning {
+  background-color: #fffbe6;
+  border: 1px solid #ffe58f;
+}
+
+.collections-modal .ant-alert-success {
+  background-color: #f6ffed;
+  border: 1px solid #b7eb8f;
+}
+
+/* Select dropdown customization */
+.collections-modal .ant-select-dropdown {
+  max-height: 300px;
+}
+
+.collections-modal .ant-select-item-option-content {
+  padding: 4px 0;
+}
+
+/* Input number customizations */
+.collections-modal .ant-input-number {
+  border-radius: 6px;
+}
+
+.collections-modal .ant-input-number:hover,
+.collections-modal .ant-input-number:focus {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
 }

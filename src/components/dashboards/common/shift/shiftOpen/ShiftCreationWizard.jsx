@@ -255,7 +255,7 @@ const handleOpenShift = useCallback(async () => {
     {
       title: 'Personnel',
       icon: <Users size={16} />,
-      description: 'Assign supervisor & attendants',
+     // description: 'Assign supervisor & attendants',
       content: (
         <PersonnelStep 
           stationId={stationId}
@@ -274,7 +274,7 @@ const handleOpenShift = useCallback(async () => {
 {
   title: 'Readings',
   icon: <Gauge size={16} />,
-  description: 'Record opening readings',
+  //description: 'Record opening readings',
   content: (
     <ReadingsStep 
       stationId={stationId}
@@ -290,7 +290,7 @@ const handleOpenShift = useCallback(async () => {
     {
       title: 'Summary',
       icon: <FileText size={16} />,
-      description: 'Review & start shift',
+     // description: 'Review & start shift',
       content: (
         <SummaryStep 
           wizardData={wizardData}
@@ -465,7 +465,7 @@ const handleOpenShift = useCallback(async () => {
       </div>
 
       {/* Debug Info - Only in development */}
-      {process.env.NODE_ENV === 'development' && (
+      {/* {process.env.NODE_ENV === 'development' && (
         <details style={{ marginTop: 16, fontSize: 12 }}>
           <summary>🔍 Debug Info</summary>
           <div style={{ 
@@ -487,7 +487,7 @@ const handleOpenShift = useCallback(async () => {
             <div><strong>All Tanks:</strong> {wizardData.readings.allTanks.length}</div>
           </div>
         </details>
-      )}
+      )} */}
     </Card>
   );
 };

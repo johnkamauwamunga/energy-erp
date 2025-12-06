@@ -1,0 +1,104 @@
+/* SummaryModal.css */
+.summary-modal .ant-modal-header {
+  padding: 16px 20px !important;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.summary-modal .ant-modal-body {
+  padding: 20px !important;
+}
+
+.compact-table .ant-table-thead > tr > th {
+  padding: 8px !important;
+  font-size: 12px;
+}
+
+.compact-table .ant-table-tbody > tr > td {
+  padding: 8px !important;
+  font-size: 12px;
+}
+
+/* Print styles */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  
+  .print-content,
+  .print-content * {
+    visibility: visible;
+  }
+  
+  .print-content {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+  }
+  
+  .ant-modal,
+  .ant-modal-content,
+  .ant-modal-body {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+  
+  @page {
+    size: landscape;
+    margin: 15mm;
+  }
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .summary-modal .ant-modal {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  .summary-modal .ant-modal-content {
+    border-radius: 0;
+  }
+  
+  .summary-modal .ant-card-body {
+    padding: 12px !important;
+  }
+  
+  .compact-table .ant-table-thead > tr > th {
+    font-size: 11px;
+    padding: 6px !important;
+  }
+  
+  .compact-table .ant-table-tbody > tr > td {
+    font-size: 11px;
+    padding: 6px !important;
+  }
+}
+
+/* Scrollbar styling */
+.summary-modal ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.summary-modal ::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.summary-modal ::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.summary-modal ::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}

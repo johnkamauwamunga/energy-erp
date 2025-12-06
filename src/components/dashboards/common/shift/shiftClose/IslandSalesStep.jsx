@@ -469,9 +469,9 @@ const IslandSalesStep = ({
             <Fuel size={14} color="#52c41a" />
             <Text strong style={{ fontSize: '12px' }}>{island.islandName}</Text>
           </div>
-          <Text type="secondary" style={{ fontSize: '10px' }}>
+          {/* <Text type="secondary" style={{ fontSize: '10px' }}>
             {island.pumpCount} pumps
-          </Text>
+          </Text> */}
           <Text type="secondary" style={{ fontSize: '9px', color: '#666' }}>
             {island.pumpNames}
           </Text>
@@ -515,7 +515,7 @@ const IslandSalesStep = ({
         return (
           <Space direction="vertical" size={4} style={{ width: '100%' }}>
             {/* Expected Sales (display only) */}
-            <div style={{ 
+            {/* <div style={{ 
               padding: '4px 8px', 
               backgroundColor: '#f6ffed', 
               borderRadius: '4px',
@@ -526,7 +526,7 @@ const IslandSalesStep = ({
                   KES {expectedSales.toFixed(2)}
                 </Text>
               </div>
-            </div>
+            </div> */}
             
             {/* Actual Sales Input */}
             <InputNumber
@@ -550,7 +550,7 @@ const IslandSalesStep = ({
             />
             
             {/* Difference indicator */}
-            {hasSales && (
+            {/* {hasSales && (
               <div style={{ 
                 padding: '2px 6px', 
                 backgroundColor: '#e6f7ff', 
@@ -558,7 +558,7 @@ const IslandSalesStep = ({
                 fontSize: '10px',
                 textAlign: 'center'
               }}>
-                <Text type="secondary">
+                {/* <Text type="secondary">
                   Diff: 
                   <span style={{ 
                     color: actualSales >= expectedSales ? '#389e0d' : '#fa541c',
@@ -567,9 +567,9 @@ const IslandSalesStep = ({
                   }}>
                     KES {(actualSales - expectedSales).toFixed(2)}
                   </span>
-                </Text>
-              </div>
-            )}
+                </Text> */}
+              {/* </div> */} 
+            {/* )}  */}
           </Space>
         );
       },

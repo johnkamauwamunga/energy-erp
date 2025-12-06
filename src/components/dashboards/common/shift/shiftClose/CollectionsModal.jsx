@@ -1,4 +1,4 @@
-// CollectionsModal.jsx - COMPLETE OPTIMIZED VERSION
+// CollectionsModal.jsx - COMPACT & RESPONSIVE VERSION
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Card,
@@ -10,7 +10,6 @@ import {
   Typography,
   Row,
   Col,
-  Statistic,
   List,
   Space,
   message,
@@ -18,7 +17,6 @@ import {
   InputNumber,
   Tag,
   Avatar,
-  Divider,
   Badge,
   Grid
 } from 'antd';
@@ -32,14 +30,13 @@ import {
   DollarOutlined,
   TeamOutlined,
   ExclamationCircleOutlined,
-  IdcardOutlined,
   WalletOutlined,
   SafetyOutlined,
   CreditCardOutlined,
   CalculatorOutlined
 } from '@ant-design/icons';
 import { debtorService } from '../../../../../services/debtorService/debtorService';
-import './CollectionsModal.css'; // We'll create a CSS file for custom styles
+import './CollectionsModal.css';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -64,13 +61,13 @@ const CollectionsModal = ({
   // Responsive breakpoints
   const screens = useBreakpoint();
   const isMobile = !screens.md;
-  const isTablet = !screens.lg && screens.md;
+  const isSmallScreen = !screens.lg;
   
-  // Get actual attendant info from island prop
+  // Get actual attendant info
   const attendants = island?.attendants || [];
   const islandName = island?.islandName || 'Unknown Island';
   
-  // Calculations using useMemo for performance
+  // Calculations using useMemo
   const calculations = useMemo(() => {
     const totalPumpSales = island?.totalPumpSales || 0;
     const islandReceipts = island?.receipts || 0;
@@ -102,7 +99,7 @@ const CollectionsModal = ({
     };
   }, [island, currentCollections, cashAmount]);
 
-  // Format currency display
+  // Format currency
   const formatCurrency = (amount) => {
     const num = parseFloat(amount) || 0;
     return `KES ${num.toLocaleString('en-KE', {
@@ -121,92 +118,51 @@ const CollectionsModal = ({
           type="warning"
           showIcon
           size="small"
-          style={{ marginBottom: 12 }}
+          className="mb-3"
         />
       );
     }
 
     return (
-      <div className="compact-attendant-info">
-        <div className="attendant-header">
-          <TeamOutlined style={{ fontSize: '14px', marginRight: 6 }} />
-          <Text strong style={{ fontSize: '13px' }}>Attendant{attendants.length > 1 ? 's' : ''}:</Text>
-          <Badge 
-            count={attendants.length} 
-            size="small" 
-            style={{ 
-              backgroundColor: '#52c41a',
-              marginLeft: 8,
-              fontSize: '10px'
-            }} 
-          />
+      <div className="attendant-info-compact bg-gray-50 rounded-lg p-3 border border-gray-200">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center">
+            <TeamOutlined className="text-gray-600 mr-2" style={{ fontSize: '14px' }} />
+            <Text strong className="text-sm">Attendant{attendants.length > 1 ? 's' : ''}:</Text>
+            <Badge 
+              count={attendants.length} 
+              size="small" 
+              className="ml-2"
+              style={{ backgroundColor: '#52c41a', fontSize: '10px' }}
+            />
+          </div>
+          {attendants.some(a => a.assignmentType === 'PRIMARY') && (
+            <Tag color="gold" size="small" icon={<SafetyOutlined />}>
+              Primary
+            </Tag>
+          )}
         </div>
-        <div className="attendant-list">
-          {attendants.slice(0, 2).map((attendant, index) => (
+        <div className="flex flex-wrap gap-1">
+          {attendants.slice(0, 3).map((attendant) => (
             <Tag 
               key={attendant.id || attendant.attendantId}
               color={attendant.assignmentType === 'PRIMARY' ? 'green' : 'blue'}
               size="small"
-              style={{ 
-                margin: '2px 4px 2px 0',
-                fontSize: '11px',
-                padding: '1px 6px'
-              }}
+              className="text-xs py-0.5"
             >
               {attendant.firstName?.charAt(0)}.{attendant.lastName}
               {attendant.assignmentType === 'PRIMARY' && ' ⭐'}
             </Tag>
           ))}
-          {attendants.length > 2 && (
-            <Tag size="small" style={{ fontSize: '11px', padding: '1px 6px' }}>
-              +{attendants.length - 2} more
+          {attendants.length > 3 && (
+            <Tag size="small" className="text-xs py-0.5 bg-gray-200">
+              +{attendants.length - 3} more
             </Tag>
           )}
         </div>
       </div>
     );
   };
-
-  // Compact statistics display
-  const renderCompactStats = () => (
-    <Row gutter={[8, 8]} className="compact-stats-row">
-      <Col xs={12} sm={6}>
-        <div className="compact-stat">
-          <div className="stat-label">Expected</div>
-          <div className="stat-value" style={{ color: '#1890ff' }}>
-            {formatCurrency(calculations.totalExpected)}
-          </div>
-        </div>
-      </Col>
-      <Col xs={12} sm={6}>
-        <div className="compact-stat">
-          <div className="stat-label">Cash</div>
-          <div className="stat-value" style={{ color: '#52c41a' }}>
-            {formatCurrency(cashAmount)}
-          </div>
-        </div>
-      </Col>
-      <Col xs={12} sm={6}>
-        <div className="compact-stat">
-          <div className="stat-label">Debt</div>
-          <div className="stat-value" style={{ color: '#faad14' }}>
-            {formatCurrency(calculations.totalDebtCollection)}
-          </div>
-        </div>
-      </Col>
-      <Col xs={12} sm={6}>
-        <div className="compact-stat">
-          <div className="stat-label">Balance</div>
-          <div className="stat-value" style={{ 
-            color: calculations.remainingAmount === 0 ? '#52c41a' : 
-                   calculations.remainingAmount > 0 ? '#fa541c' : '#faad14'
-          }}>
-            {formatCurrency(calculations.remainingAmount)}
-          </div>
-        </div>
-      </Col>
-    </Row>
-  );
 
   // Fetch debtors
   useEffect(() => {
@@ -232,7 +188,7 @@ const CollectionsModal = ({
     fetchDebtors();
   }, [visible]);
 
-  // Filter debtors based on search text
+  // Filter debtors
   useEffect(() => {
     if (searchText) {
       const filtered = availableDebtors.filter(debtor =>
@@ -246,7 +202,7 @@ const CollectionsModal = ({
     }
   }, [searchText, availableDebtors]);
 
-  // Reset form when modal opens
+  // Reset form
   useEffect(() => {
     if (visible) {
       setCashAmount(0);
@@ -255,16 +211,6 @@ const CollectionsModal = ({
       setSearchText('');
     }
   }, [visible]);
-
-  // Handle cash amount change
-  const handleCashAmountChange = (value) => {
-    setCashAmount(value || 0);
-  };
-
-  // Handle debt amount change
-  const handleDebtAmountChange = (value) => {
-    setDebtAmount(value || 0);
-  };
 
   const handleAddDebtCollection = () => {
     const debtAmountNum = parseFloat(debtAmount) || 0;
@@ -284,22 +230,18 @@ const CollectionsModal = ({
       timestamp: new Date().toISOString()
     };
 
-    const updatedCollections = [...currentCollections, newCollection];
-    setCurrentCollections(updatedCollections);
-    
+    setCurrentCollections([...currentCollections, newCollection]);
     setSelectedDebtor(null);
     setDebtAmount(0);
     message.success(`Added ${formatCurrency(debtAmountNum)} debt for ${selectedDebtor.name}`);
   };
 
   const handleRemoveCollection = (collectionId) => {
-    const updatedCollections = currentCollections.filter(c => c.id !== collectionId);
-    setCurrentCollections(updatedCollections);
+    setCurrentCollections(currentCollections.filter(c => c.id !== collectionId));
   };
 
   const handleSaveCollections = () => {
     const cashAmountNum = parseFloat(cashAmount) || 0;
-    
     const finalCollections = [...currentCollections];
     
     if (cashAmountNum > 0) {
@@ -320,297 +262,360 @@ const CollectionsModal = ({
   return (
     <Modal
       title={
-        <div className="modal-header-compact">
-          <WalletOutlined style={{ marginRight: 8 }} />
-          <Text strong style={{ fontSize: '15px' }}>
-            Collections - {islandName}
-          </Text>
-          {!isMobile && renderCompactAttendantInfo()}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <WalletOutlined className="mr-2 text-blue-600" />
+            <Text strong className="text-base">Collections - {islandName}</Text>
+          </div>
+          {!isMobile && (
+            <div className="flex items-center">
+              <Text className="text-sm text-gray-600 mr-2">Expected:</Text>
+              <Text strong className="text-blue-600">
+                {formatCurrency(calculations.totalExpected)}
+              </Text>
+            </div>
+          )}
         </div>
       }
       open={visible}
       onCancel={onCancel}
-      width={isMobile ? '95%' : isTablet ? '90%' : 850}
+      width={isMobile ? '95%' : isSmallScreen ? '90%' : 800}
       className="collections-modal"
-      footer={[
-        <Button 
-          key="cancel" 
-          onClick={onCancel}
-          size={isMobile ? "small" : "middle"}
-        >
-          Cancel
-        </Button>,
-        <Button 
-          key="save" 
-          type="primary" 
-          onClick={handleSaveCollections}
-          icon={<SaveOutlined />}
-          disabled={attendants.length === 0}
-          size={isMobile ? "small" : "middle"}
-        >
-          {isMobile ? 'Save' : 'Save Collections'}
-        </Button>
-      ]}
+      footer={null} // Remove default footer
+      centered={isMobile}
     >
-      {/* Mobile attendant info */}
-      {isMobile && (
-        <div style={{ marginBottom: 12 }}>
+      <div className="space-y-4">
+        {/* Attendant Info & Quick Stats */}
+        <div className="space-y-3">
           {renderCompactAttendantInfo()}
-        </div>
-      )}
-      
-      {/* Compact Statistics */}
-      {renderCompactStats()}
-
-      <Row gutter={[16, 16]}>
-        {/* Left Side - Cash & Current Debt Collections */}
-        <Col xs={24} md={12}>
-          <Card 
-            size="small"
-            title={
-              <span className="card-title-compact">
-                <DollarOutlined style={{ fontSize: '14px', marginRight: 6 }} />
-                Cash
-              </span>
-            }
-            className="compact-card"
-          >
-            <div className="cash-input-section">
-              <InputNumber
-                style={{ width: '100%' }}
-                size={isMobile ? "middle" : "large"}
-                placeholder="0.00"
-                value={cashAmount}
-                onChange={handleCashAmountChange}
-                min={0}
-                step={100}
-                prefix="KES"
-                className="compact-input-number"
-                precision={2}
-              />
-              <Text type="secondary" className="input-hint">
-                Enter cash amount collected
-              </Text>
+          
+          {isMobile && (
+            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+              <div className="flex items-center justify-between mb-1">
+                <Text className="text-sm text-gray-600">Expected:</Text>
+                <Text strong className="text-base text-blue-600">
+                  {formatCurrency(calculations.totalExpected)}
+                </Text>
+              </div>
+              <div className="flex items-center justify-between">
+                <Text className="text-sm text-gray-600">Balance:</Text>
+                <Text strong className={`text-base ${
+                  calculations.remainingAmount === 0 ? 'text-green-600' :
+                  calculations.remainingAmount > 0 ? 'text-red-600' : 'text-orange-600'
+                }`}>
+                  {formatCurrency(calculations.remainingAmount)}
+                </Text>
+              </div>
             </div>
-          </Card>
+          )}
+        </div>
 
-          {/* Current Debt Collections Display */}
-          {calculations.currentDebtCollections.length > 0 && (
+        {/* Main Content Grid */}
+        <Row gutter={[16, 16]}>
+          {/* Left Column - Cash */}
+          <Col xs={24} md={12}>
             <Card 
               size="small"
+              className="h-full border border-gray-200"
+              bodyStyle={{ padding: '16px' }}
               title={
-                <span className="card-title-compact">
-                  <CreditCardOutlined style={{ fontSize: '14px', marginRight: 6 }} />
-                  Current Debt ({calculations.currentDebtCollections.length})
-                </span>
+                <div className="flex items-center">
+                  <DollarOutlined className="mr-2 text-green-600" />
+                  <Text strong className="text-sm">Cash Collection</Text>
+                </div>
               }
-              className="compact-card"
-              style={{ marginTop: 12 }}
             >
-              <div className="debt-list-container">
-                {calculations.currentDebtCollections.map((collection) => (
-                  <div key={collection.id} className="debt-list-item">
-                    <div className="debt-item-info">
-                      <div className="debtor-name">
-                        <UserOutlined style={{ fontSize: '12px', marginRight: 4 }} />
-                        {collection.debtorName}
-                      </div>
-                      <div className="debt-amount">
-                        {formatCurrency(collection.amount)}
-                      </div>
+              <div className="space-y-3">
+                <div>
+                  <Text className="text-sm font-medium block mb-2">Enter Cash Amount</Text>
+                  <InputNumber
+                    className="w-full"
+                    size={isMobile ? "middle" : "large"}
+                    placeholder="0.00"
+                    value={cashAmount}
+                    onChange={setCashAmount}
+                    min={0}
+                    step={100}
+                    prefix="KES"
+                    formatter={value => `KES ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                    parser={value => value.replace(/KES\s?|(,*)/g, '')}
+                    precision={2}
+                  />
+                  <Text className="text-xs text-gray-500 mt-1 block">
+                    Enter the physical cash amount collected
+                  </Text>
+                </div>
+
+                {/* Quick Stats */}
+                <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Text className="text-xs text-gray-600 block">Cash</Text>
+                      <Text strong className="text-green-600">
+                        {formatCurrency(cashAmount)}
+                      </Text>
                     </div>
+                    <div>
+                      <Text className="text-xs text-gray-600 block">Debts</Text>
+                      <Text strong className="text-orange-600">
+                        {formatCurrency(calculations.totalDebtCollection)}
+                      </Text>
+                    </div>
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-gray-200">
+                    <div className="flex justify-between">
+                      <Text className="text-sm">Total Collected:</Text>
+                      <Text strong className="text-blue-600">
+                        {formatCurrency(calculations.totalCollectedSoFar)}
+                      </Text>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </Col>
+
+          {/* Right Column - Debt Collection */}
+          <Col xs={24} md={12}>
+            <Card 
+              size="small"
+              className="h-full border border-gray-200"
+              bodyStyle={{ padding: '16px' }}
+              title={
+                <div className="flex items-center">
+                  <PlusOutlined className="mr-2 text-blue-600" />
+                  <Text strong className="text-sm">Add Debt Collection</Text>
+                </div>
+              }
+            >
+              <div className="space-y-4">
+                {/* Debtor Search */}
+                <div className="space-y-2">
+                  <Text className="text-sm font-medium">Select Debtor</Text>
+                  <Input
+                    placeholder="Search debtors..."
+                    prefix={<SearchOutlined />}
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                    size="small"
+                    className="w-full"
+                  />
+                  
+                  <Select
+                    className="w-full"
+                    placeholder={loading ? "Loading debtors..." : "Select a debtor"}
+                    value={selectedDebtor?.id}
+                    onChange={(value) => setSelectedDebtor(availableDebtors.find(d => d.id === value))}
+                    loading={loading}
+                    size="small"
+                    showSearch
+                    filterOption={false}
+                  >
+                    {filteredDebtors.slice(0, 8).map(debtor => (
+                      <Option key={debtor.id} value={debtor.id}>
+                        <div className="py-1">
+                          <div className="font-medium">{debtor.name}</div>
+                          <div className="text-xs text-gray-600">
+                            {debtor.code && <span>{debtor.code}</span>}
+                            {debtor.phone && <span> • {debtor.phone}</span>}
+                          </div>
+                        </div>
+                      </Option>
+                    ))}
+                  </Select>
+                </div>
+
+                {/* Selected Debtor */}
+                {selectedDebtor && (
+                  <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <Text strong className="text-sm">{selectedDebtor.name}</Text>
+                        {selectedDebtor.code && (
+                          <Text className="text-xs text-gray-600 block">Code: {selectedDebtor.code}</Text>
+                        )}
+                      </div>
+                      {selectedDebtor.phone && (
+                        <Tag size="small" color="blue">📞 {selectedDebtor.phone}</Tag>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Debt Amount */}
+                <div className="space-y-2">
+                  <Text className="text-sm font-medium">Debt Amount</Text>
+                  <InputNumber
+                    className="w-full"
+                    size={isMobile ? "middle" : "large"}
+                    placeholder="0.00"
+                    value={debtAmount}
+                    onChange={setDebtAmount}
+                    min={0}
+                    prefix="KES"
+                    formatter={value => `KES ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                    parser={value => value.replace(/KES\s?|(,*)/g, '')}
+                    precision={2}
+                  />
+                </div>
+
+                {/* Add Debt Button */}
+                <Button 
+                  type="primary" 
+                  icon={<PlusOutlined />}
+                  onClick={handleAddDebtCollection}
+                  disabled={!selectedDebtor || !debtAmount || parseFloat(debtAmount) <= 0}
+                  block
+                  size={isMobile ? "middle" : "large"}
+                  className="mt-2"
+                >
+                  Add Debt Collection
+                </Button>
+              </div>
+            </Card>
+          </Col>
+        </Row>
+
+        {/* Current Debt Collections */}
+        {calculations.currentDebtCollections.length > 0 && (
+          <Card 
+            size="small"
+            className="border border-gray-200"
+            bodyStyle={{ padding: '16px' }}
+            title={
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <CreditCardOutlined className="mr-2 text-orange-600" />
+                  <Text strong className="text-sm">
+                    Current Debt Collections ({calculations.currentDebtCollections.length})
+                  </Text>
+                </div>
+                <Tag color="green" size="small">
+                  Total: {formatCurrency(calculations.totalDebtCollection)}
+                </Tag>
+              </div>
+            }
+          >
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+              {calculations.currentDebtCollections.map((collection) => (
+                <div 
+                  key={collection.id} 
+                  className="flex items-center justify-between p-2 bg-gray-50 rounded hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center">
+                    <UserOutlined className="text-gray-600 mr-2" />
+                    <div>
+                      <Text strong className="text-sm">{collection.debtorName}</Text>
+                      {collection.debtorCode && (
+                        <Text className="text-xs text-gray-600 block">Code: {collection.debtorCode}</Text>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Text strong className="text-blue-600">
+                      {formatCurrency(collection.amount)}
+                    </Text>
                     <Tooltip title="Remove">
                       <Button
                         type="text"
                         danger
                         size="small"
-                        icon={<DeleteOutlined style={{ fontSize: '12px' }} />}
+                        icon={<DeleteOutlined />}
                         onClick={() => handleRemoveCollection(collection.id)}
-                        className="remove-btn"
                       />
                     </Tooltip>
                   </div>
-                ))}
-                <div className="debt-total">
-                  <Tag color="green" size="small">
-                    Total: {formatCurrency(calculations.totalDebtCollection)}
-                  </Tag>
                 </div>
-              </div>
-            </Card>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Status Alerts */}
+        <div className="space-y-2">
+          {calculations.remainingAmount > 0 && (
+            <Alert
+              message="Shortage Detected"
+              description={
+                <div className="flex items-center justify-between">
+                  <span>Shortage of {formatCurrency(calculations.remainingAmount)} will be debited to attendant</span>
+                  <Text strong className="text-red-600">
+                    {formatCurrency(calculations.remainingAmount)}
+                  </Text>
+                </div>
+              }
+              type="warning"
+              showIcon
+              size="small"
+              className="border border-orange-200"
+            />
           )}
-        </Col>
 
-        {/* Right Side - Add Debt Collection */}
-        <Col xs={24} md={12}>
-          <Card 
-            size="small"
-            title={
-              <span className="card-title-compact">
-                <PlusOutlined style={{ fontSize: '14px', marginRight: 6 }} />
-                Add Debt
-              </span>
-            }
-            className="compact-card"
-          >
-            <div className="debt-form">
-              {/* Debtor Search */}
-              <div className="form-section">
-                <Text className="form-label">Select Debtor</Text>
-                <Input
-                  placeholder="Search debtors..."
-                  prefix={<SearchOutlined />}
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  size="small"
-                  className="compact-input"
-                />
-                
-                <Select
-                  style={{ width: '100%', marginTop: 8 }}
-                  placeholder={loading ? "Loading..." : "Select debtor"}
-                  value={selectedDebtor?.id}
-                  onChange={(value) => setSelectedDebtor(availableDebtors.find(d => d.id === value))}
-                  loading={loading}
-                  size="small"
-                  showSearch
-                  filterOption={false}
-                  dropdownMatchSelectWidth={false}
-                  className="compact-select"
-                >
-                  {filteredDebtors.slice(0, 10).map(debtor => (
-                    <Option key={debtor.id} value={debtor.id}>
-                      <div className="debtor-option">
-                        <div className="debtor-name-option">{debtor.name}</div>
-                        <div className="debtor-details">
-                          {debtor.code && <span>{debtor.code}</span>}
-                          {debtor.phone && <span> • 📞 {debtor.phone}</span>}
-                        </div>
-                      </div>
-                    </Option>
-                  ))}
-                </Select>
-              </div>
-
-              {/* Selected Debtor Info */}
-              {selectedDebtor && (
-                <div className="selected-debtor-info">
-                  <Tag color="blue" size="small" style={{ margin: '4px 0' }}>
-                    {selectedDebtor.name}
-                    {selectedDebtor.code && ` (${selectedDebtor.code})`}
-                  </Tag>
+          {calculations.remainingAmount < 0 && (
+            <Alert
+              message="Overage Detected"
+              description={
+                <div className="flex items-center justify-between">
+                  <span>Overage of {formatCurrency(Math.abs(calculations.remainingAmount))} will be added to station wallet</span>
+                  <Text strong className="text-green-600">
+                    {formatCurrency(Math.abs(calculations.remainingAmount))}
+                  </Text>
                 </div>
-              )}
+              }
+              type="success"
+              showIcon
+              size="small"
+              className="border border-green-200"
+            />
+          )}
 
-              {/* Debt Amount Input */}
-              <div className="form-section">
-                <Text className="form-label">Debt Amount</Text>
-                <InputNumber
-                  style={{ width: '100%' }}
-                  size="small"
-                  placeholder="0.00"
-                  value={debtAmount}
-                  onChange={handleDebtAmountChange}
-                  min={0}
-                  prefix="KES"
-                  className="compact-input-number"
-                  precision={2}
-                />
-              </div>
+          {calculations.remainingAmount === 0 && calculations.totalExpected > 0 && (
+            <Alert
+              message="Perfect Allocation"
+              description="All expected amount has been fully allocated"
+              type="success"
+              showIcon
+              size="small"
+              className="border border-green-200"
+            />
+          )}
+        </div>
 
-              {/* Add Debt Button */}
-              <Button 
-                type="primary" 
-                icon={<PlusOutlined />}
-                onClick={handleAddDebtCollection}
-                disabled={!selectedDebtor || !debtAmount || parseFloat(debtAmount) <= 0}
-                block
+        {/* Action Buttons (Inside modal body, not footer) */}
+        <div className="flex justify-between pt-4 border-t border-gray-200">
+          <div>
+            {attendants.length === 0 && (
+              <Alert
+                message="No Attendant"
+                description="Cannot save without an assigned attendant"
+                type="error"
+                showIcon
                 size="small"
-                className="add-debt-btn"
-              >
-                Add Debt Collection
-              </Button>
-            </div>
-          </Card>
-
-          {/* Quick Summary */}
-          <Card 
-            size="small"
-            title={
-              <span className="card-title-compact">
-                <CalculatorOutlined style={{ fontSize: '14px', marginRight: 6 }} />
-                Summary
-              </span>
-            }
-            className="compact-card"
-            style={{ marginTop: 12 }}
-          >
-            <div className="summary-grid">
-              <div className="summary-item">
-                <div className="summary-label">Total Collected</div>
-                <div className="summary-value highlight">
-                  {formatCurrency(calculations.totalCollectedSoFar)}
-                </div>
-              </div>
-              <div className="summary-item">
-                <div className="summary-label">Balance</div>
-                <div className="summary-value" style={{ 
-                  color: calculations.remainingAmount === 0 ? '#52c41a' : 
-                         calculations.remainingAmount > 0 ? '#fa541c' : '#faad14'
-                }}>
-                  {formatCurrency(calculations.remainingAmount)}
-                </div>
-              </div>
-            </div>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Status Alerts */}
-      <div className="status-alerts">
-        {calculations.remainingAmount > 0 && (
-          <Alert
-            message="Shortage Detected"
-            description={`Shortage of ${formatCurrency(calculations.remainingAmount)} will be debited to attendant's account`}
-            type="warning"
-            showIcon
-            size="small"
-            className="compact-alert"
-          />
-        )}
-
-        {calculations.remainingAmount < 0 && (
-          <Alert
-            message="Overage Detected"
-            description={`Overage of ${formatCurrency(Math.abs(calculations.remainingAmount))} will be added to station wallet`}
-            type="success"
-            showIcon
-            size="small"
-            className="compact-alert"
-          />
-        )}
-
-        {calculations.remainingAmount === 0 && calculations.totalExpected > 0 && (
-          <Alert
-            message="Perfect Allocation!"
-            description="All expected amount has been fully allocated"
-            type="success"
-            showIcon
-            size="small"
-            className="compact-alert"
-          />
-        )}
-
-        {attendants.length === 0 && (
-          <Alert
-            message="No Attendant"
-            description="Cannot save without an assigned attendant"
-            type="error"
-            showIcon
-            size="small"
-            className="compact-alert"
-          />
-        )}
+                className="w-fit"
+              />
+            )}
+          </div>
+          
+          <div className="flex gap-2">
+            <Button 
+              onClick={onCancel}
+              size={isMobile ? "middle" : "large"}
+              className="px-6"
+            >
+              Cancel
+            </Button>
+            <Button 
+              type="primary"
+              icon={<SaveOutlined />}
+              onClick={handleSaveCollections}
+              disabled={attendants.length === 0}
+              size={isMobile ? "middle" : "large"}
+              className="px-6"
+            >
+              Save Collections
+            </Button>
+          </div>
+        </div>
       </div>
     </Modal>
   );
