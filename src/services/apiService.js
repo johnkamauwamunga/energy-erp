@@ -1,6 +1,12 @@
 import { authService } from './auth/authService';
 
-const API_BASE_URL = 'http://localhost:3001/api';
+// const API_BASE_URL = 'http://localhost:3001/api';
+
+// const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:3001/api';
+// Use environment variable with fallback
+
+const API_BASE_URL = 'http://178.128.201.205/api';  // Production
+// const API_BASE_URL = 'http://localhost:3001/api';  // Development
 
 class ApiService {
   constructor() {
