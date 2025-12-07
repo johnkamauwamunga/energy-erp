@@ -113,6 +113,7 @@ const LoginPage = () => {
       <Content style={{ padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <Row justify="center" style={{ width: '100%', maxWidth: 1200 }}>
           <Col xs={24} sm={20} md={16} lg={12} xl={8}>
+          
             {/* Back to Home Button */}
             <Button 
               type="text" 
