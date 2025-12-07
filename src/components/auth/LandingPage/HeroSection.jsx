@@ -27,7 +27,7 @@ const HeroSection = ({ onNavigate, currentFeature, features }) => {
           <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 leading-tight">
             Energy Management
             <span className="block text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-blue-300">
-              ERP System
+              Lynx  System
             </span>
           </h1>
           <p className="text-xl md:text-2xl text-blue-100 mb-8 max-w-3xl mx-auto leading-relaxed">

@@ -33,6 +33,7 @@ import {
   TeamOutlined,
   SyncOutlined
 } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 
 const { Title, Text, Paragraph } = Typography;
 const { Header, Content, Footer } = Layout;
@@ -41,6 +42,7 @@ const { useBreakpoint } = Grid;
 const LandingPage = ({ onNavigate }) => {
   const [currentFeature, setCurrentFeature] = useState(0);
   const screens = useBreakpoint();
+   const navigate = useNavigate();
   
   const features = [
     {
@@ -131,11 +133,14 @@ const LandingPage = ({ onNavigate }) => {
               </Button>
               <Button type="text" style={{ fontWeight: 600 }} onClick={() => document.getElementById('contact').scrollIntoView({ behavior: 'smooth' })}>
                 Contact
-              </Button>
+               </Button>
+
+               
+              
               <Button 
                 type="primary" 
                 icon={<LoginOutlined />}
-                onClick={() => onNavigate('login')}
+                 onClick={() => navigate('/login')} 
                 style={{ 
                   fontWeight: 600,
                   background: 'linear-gradient(135deg, #ff6b6b 0%, #ffa726 100%)',
