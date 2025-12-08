@@ -286,73 +286,117 @@ const SuperAdminDashboardOverView = () => {
   }), [superAdminData]);
 
   const renderSystemStats = () => (
-    <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4 mb-6">
+    <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-8 gap-3 md:gap-4 mb-6">
       <StatsCard
-        title="Total Companies"
-        value={superAdminData.systemMetrics.totalCompanies}
+        title="Companies"
+        subtitle="Total / Active"
+        value={`${superAdminData.systemMetrics.totalCompanies} / ${superAdminData.systemMetrics.activeCompanies}`}
         icon={Building2}
         color="blue"
         trend={5.2}
+        compact={true}
       />
       <StatsCard
-        title="Active Companies"
-        value={superAdminData.systemMetrics.activeCompanies}
-        total={superAdminData.systemMetrics.totalCompanies}
-        icon={CheckCircle}
-        color="green"
-      />
-      <StatsCard
-        title="Total Stations"
-        value={superAdminData.systemMetrics.totalStations}
+        title="Stations"
+        subtitle="Total / Active"
+        value={`${superAdminData.systemMetrics.totalStations} / ${superAdminData.systemMetrics.activeStations}`}
         icon={MapPin}
         color="purple"
         trend={8.7}
+        compact={true}
       />
       <StatsCard
-        title="Active Stations"
-        value={superAdminData.systemMetrics.activeStations}
-        total={superAdminData.systemMetrics.totalStations}
-        icon={Zap}
-        color="orange"
-      />
-      <StatsCard
-        title="Total Staff"
-        value={superAdminData.systemMetrics.totalStaff}
+        title="Staff"
+        subtitle="Total / Active"
+        value={`${superAdminData.systemMetrics.totalStaff} / ${superAdminData.systemMetrics.activeStaff}`}
         icon={Users}
         color="indigo"
+        compact={true}
       />
       <StatsCard
-        title="Active Staff"
-        value={superAdminData.systemMetrics.activeStaff}
-        total={superAdminData.systemMetrics.totalStaff}
-        icon={Users}
-        color="green"
-      />
-      <StatsCard
-        title="System Uptime"
+        title="Uptime"
         value={superAdminData.systemMetrics.systemUptime}
         icon={Activity}
         color="green"
+        compact={true}
       />
       <StatsCard
-        title="Today's Sales"
+        title="Today Sales"
+        value={`KSH ${(superAdminData.financials.todaySales / 1000000).toFixed(1)}M`}
+        icon={DollarSign}
+        color="green"
+        trend={superAdminData.financials.salesTrend}
+        compact={true}
+      />
+      <StatsCard
+        title="Monthly Target"
+        value={`KSH ${(superAdminData.financials.monthlyTarget / 1000000).toFixed(0)}M`}
+        subtitle={`${((superAdminData.financials.todaySales / superAdminData.financials.monthlyTarget) * 100).toFixed(1)}% achieved`}
+        icon={TrendingUp}
+        color="blue"
+        compact={true}
+      />
+      <StatsCard
+        title="Avg Tx Value"
+        value={`KSH ${superAdminData.financials.averageTransaction.toLocaleString()}`}
+        icon={DollarSign}
+        color="orange"
+        compact={true}
+      />
+      <StatsCard
+        title="Suppliers"
+        value={superAdminData.systemMetrics.totalSuppliers}
+        icon={Package}
+        color="teal"
+        compact={true}
+      />
+    </div>
+  );
+
+  const renderCompactSystemStats = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <StatsCard
+        title="System Health"
+        value={`${metrics.systemHealth}%`}
+        icon={Activity}
+        color="green"
+        trend={2.1}
+      />
+      <StatsCard
+        title="Active Stations"
+        value={`${superAdminData.systemMetrics.activeStations}`}
+        subtitle={`of ${superAdminData.systemMetrics.totalStations} total`}
+        icon={Zap}
+        color="orange"
+        trend={8.7}
+      />
+      <StatsCard
+        title="Today's Revenue"
         value={`KSH ${(superAdminData.financials.todaySales / 1000000).toFixed(1)}M`}
         icon={DollarSign}
         color="green"
         trend={superAdminData.financials.salesTrend}
       />
+      <StatsCard
+        title="Avg Performance"
+        value={`${metrics.avgCompanyPerformance.toFixed(0)}%`}
+        icon={TrendingUp}
+        color="blue"
+      />
     </div>
   );
 
   const renderCompaniesOverview = () => (
-    <Card className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
+    <Card className="p-4 md:p-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div className="flex-1">
           <h3 className="text-lg font-semibold text-gray-900">Companies Overview</h3>
-          <p className="text-gray-600">Performance and status of all registered companies</p>
+          <p className="text-gray-600 text-sm md:text-base">Performance and status of all registered companies</p>
         </div>
-        <div className="flex items-center gap-2">
-          <SearchInput placeholder="Search companies..." />
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
+          <div className="flex-1 sm:flex-none">
+            <SearchInput placeholder="Search companies..." className="w-full" />
+          </div>
           <FilterDropdown
             options={[
               { label: 'All Status', value: 'all' },
@@ -360,95 +404,100 @@ const SuperAdminDashboardOverView = () => {
               { label: 'Suspended', value: 'suspended' }
             ]}
             onFilter={(value) => console.log('Filter:', value)}
+            className="w-full sm:w-auto"
           />
         </div>
       </div>
 
-      <div className="overflow-hidden">
-        <Table
-          columns={[
-            { key: 'name', label: 'Company Name' },
-            { key: 'status', label: 'Status' },
-            { key: 'stations', label: 'Stations' },
-            { key: 'sales', label: 'Today Sales' },
-            { key: 'performance', label: 'Performance' },
-            { key: 'actions', label: 'Actions' }
-          ]}
-          data={superAdminData.companies.map(company => ({
-            name: (
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Building2 className="w-5 h-5 text-blue-600" />
+      <div className="overflow-x-auto -mx-4 md:mx-0">
+        <div className="min-w-full inline-block align-middle">
+          <Table
+            columns={[
+              { key: 'name', label: 'Company Name', className: 'min-w-[200px]' },
+              { key: 'status', label: 'Status', className: 'whitespace-nowrap' },
+              { key: 'stations', label: 'Stations', className: 'whitespace-nowrap' },
+              { key: 'sales', label: 'Today Sales', className: 'whitespace-nowrap' },
+              { key: 'performance', label: 'Performance', className: 'min-w-[100px]' },
+              { key: 'actions', label: 'Actions', className: 'whitespace-nowrap' }
+            ]}
+            data={superAdminData.companies.map(company => ({
+              name: (
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex-shrink-0 w-8 h-8 md:w-10 md:h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <Building2 className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-gray-900 truncate">{company.name}</div>
+                    <div className="text-sm text-gray-500 truncate">{company.contact}</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="font-medium text-gray-900">{company.name}</div>
-                  <div className="text-sm text-gray-500">{company.contact}</div>
+              ),
+              status: (
+                <Badge variant={company.status === 'active' ? 'success' : 'error'} size="sm">
+                  {company.status}
+                </Badge>
+              ),
+              stations: (
+                <div className="text-center">
+                  <div className="font-semibold">{company.activeStations}/{company.stations}</div>
+                  <div className="text-xs text-gray-500">Active/Total</div>
                 </div>
-              </div>
-            ),
-            status: (
-              <Badge variant={company.status === 'active' ? 'success' : 'error'}>
-                {company.status}
-              </Badge>
-            ),
-            stations: (
-              <div className="text-center">
-                <div className="font-semibold">{company.activeStations}/{company.stations}</div>
-                <div className="text-xs text-gray-500">Active/Total</div>
-              </div>
-            ),
-            sales: (
-              <div>
-                <div className="font-semibold">KSH {(company.todaySales / 1000).toFixed(0)}K</div>
-                <div className={`text-xs flex items-center gap-1 ${
-                  company.salesTrend >= 0 ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {company.salesTrend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                  {Math.abs(company.salesTrend)}%
+              ),
+              sales: (
+                <div className="min-w-[120px]">
+                  <div className="font-semibold">KSH {(company.todaySales / 1000).toFixed(0)}K</div>
+                  <div className={`text-xs flex items-center gap-1 ${
+                    company.salesTrend >= 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {company.salesTrend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                    {Math.abs(company.salesTrend)}%
+                  </div>
                 </div>
-              </div>
-            ),
-            performance: (
-              <div className="w-full">
-                <Progress value={company.performance} className="mb-2" />
-                <div className="text-xs text-gray-600 text-center">{company.performance}%</div>
-              </div>
-            ),
-            actions: (
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" icon={Eye}>
-                  View
-                </Button>
-                <Button variant="outline" size="sm" icon={BarChart3}>
-                  Analytics
-                </Button>
-              </div>
-            )
-          }))}
-        />
+              ),
+              performance: (
+                <div className="w-full max-w-[150px] mx-auto">
+                  <Progress value={company.performance} className="mb-1" size="sm" />
+                  <div className="text-xs text-gray-600 text-center">{company.performance}%</div>
+                </div>
+              ),
+              actions: (
+                <div className="flex gap-1 md:gap-2">
+                  <Button variant="ghost" size="xs" icon={Eye} className="px-2">
+                    <span className="hidden md:inline">View</span>
+                  </Button>
+                  <Button variant="ghost" size="xs" icon={BarChart3} className="px-2">
+                    <span className="hidden md:inline">Analytics</span>
+                  </Button>
+                </div>
+              )
+            }))}
+            size="sm"
+          />
+        </div>
       </div>
     </Card>
   );
 
   const renderGeolocationMap = () => (
-    <Card className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
+    <Card className="p-4 md:p-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div className="flex-1">
           <h3 className="text-lg font-semibold text-gray-900">Companies Geolocation</h3>
-          <p className="text-gray-600">Geographic distribution of all companies and stations</p>
+          <p className="text-gray-600 text-sm md:text-base">Geographic distribution of all companies and stations</p>
         </div>
-        <Button variant="outline" size="sm" icon={Globe}>
-          View Full Map
+        <Button variant="outline" size="sm" icon={Globe} className="w-full md:w-auto">
+          <span className="hidden sm:inline">View Full Map</span>
+          <span className="sm:hidden">Map</span>
         </Button>
       </div>
 
       {/* Simplified map representation - in real app, use a proper map library */}
-      <div className="bg-gray-100 rounded-lg h-96 relative mb-4">
+      <div className="bg-gray-100 rounded-lg h-64 md:h-80 lg:h-96 relative mb-4">
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-center">
-            <Globe className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600">Interactive Map View</p>
-            <p className="text-sm text-gray-500 mt-2">
+            <Globe className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-2 md:mb-4" />
+            <p className="text-gray-600 text-sm md:text-base">Interactive Map View</p>
+            <p className="text-xs md:text-sm text-gray-500 mt-1 md:mt-2">
               {superAdminData.companies.length} companies, {superAdminData.allStations.length} stations
             </p>
           </div>
@@ -458,7 +507,7 @@ const SuperAdminDashboardOverView = () => {
         {superAdminData.companies.map((company, index) => (
           <div
             key={company.id}
-            className={`absolute w-4 h-4 rounded-full border-2 border-white cursor-pointer ${
+            className={`absolute w-3 h-3 md:w-4 md:h-4 rounded-full border-2 border-white cursor-pointer ${
               company.status === 'active' ? 'bg-green-500' : 'bg-red-500'
             }`}
             style={{
@@ -470,17 +519,17 @@ const SuperAdminDashboardOverView = () => {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
         {superAdminData.companies.slice(0, 3).map(company => (
           <div key={company.id} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg">
-            <div className={`w-3 h-3 rounded-full ${
+            <div className={`w-2 h-2 md:w-3 md:h-3 rounded-full ${
               company.status === 'active' ? 'bg-green-500' : 'bg-red-500'
             }`} />
-            <div className="flex-1">
-              <div className="font-medium text-gray-900">{company.name}</div>
-              <div className="text-sm text-gray-600">{company.stations} stations</div>
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-gray-900 truncate">{company.name}</div>
+              <div className="text-sm text-gray-600 truncate">{company.stations} stations</div>
             </div>
-            <Badge variant={company.status === 'active' ? 'success' : 'error'}>
+            <Badge variant={company.status === 'active' ? 'success' : 'error'} size="sm">
               {company.status}
             </Badge>
           </div>
@@ -490,38 +539,39 @@ const SuperAdminDashboardOverView = () => {
   );
 
   const renderSalesPerformance = () => (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 md:gap-6">
       {/* Sales by Company */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
+      <Card className="p-4 md:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="flex-1">
             <h3 className="text-lg font-semibold text-gray-900">Sales by Company</h3>
-            <p className="text-gray-600">Monthly sales performance per company</p>
+            <p className="text-gray-600 text-sm md:text-base">Monthly sales performance per company</p>
           </div>
-          <Button variant="outline" size="sm" icon={Download}>
-            Export
+          <Button variant="outline" size="sm" icon={Download} className="w-full sm:w-auto">
+            <span className="hidden sm:inline">Export</span>
+            <span className="sm:hidden">Export Data</span>
           </Button>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-3 md:space-y-4">
           {superAdminData.salesPerformance.byCompany.map((company, index) => (
             <div key={company.company} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-              <div className="flex items-center gap-3 flex-1">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold ${
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className={`w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center text-white font-semibold text-xs md:text-sm flex-shrink-0 ${
                   index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : 'bg-blue-500'
                 }`}>
                   {index + 1}
                 </div>
-                <div className="flex-1">
-                  <div className="font-medium text-gray-900">{company.company}</div>
-                  <div className="text-sm text-gray-600">{company.marketShare}% market share</div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-gray-900 truncate">{company.company}</div>
+                  <div className="text-sm text-gray-600 truncate">{company.marketShare}% market share</div>
                 </div>
               </div>
-              <div className="text-right">
-                <div className="font-semibold text-gray-900">
+              <div className="text-right flex-shrink-0 ml-2">
+                <div className="font-semibold text-gray-900 whitespace-nowrap">
                   KSH {(company.sales / 1000000).toFixed(1)}M
                 </div>
-                <Badge variant={company.trend >= 0 ? "success" : "error"} className="flex items-center gap-1">
+                <Badge variant={company.trend >= 0 ? "success" : "error"} size="sm" className="flex items-center gap-1 mt-1">
                   {company.trend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                   {Math.abs(company.trend)}%
                 </Badge>
@@ -532,36 +582,37 @@ const SuperAdminDashboardOverView = () => {
       </Card>
 
       {/* Sales by Station */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
+      <Card className="p-4 md:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="flex-1">
             <h3 className="text-lg font-semibold text-gray-900">Top Performing Stations</h3>
-            <p className="text-gray-600">Best performing stations across all companies</p>
+            <p className="text-gray-600 text-sm md:text-base">Best performing stations across all companies</p>
           </div>
-          <Button variant="outline" size="sm" icon={Filter}>
-            Filter
+          <Button variant="outline" size="sm" icon={Filter} className="w-full sm:w-auto">
+            <span className="hidden sm:inline">Filter</span>
+            <span className="sm:hidden">Filter</span>
           </Button>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-3 md:space-y-4">
           {superAdminData.salesPerformance.byStation.map((station, index) => (
             <div key={station.station} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-              <div className="flex items-center gap-3 flex-1">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold ${
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className={`w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center text-white font-semibold text-xs md:text-sm flex-shrink-0 ${
                   index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : 'bg-blue-500'
                 }`}>
                   {index + 1}
                 </div>
-                <div className="flex-1">
-                  <div className="font-medium text-gray-900">{station.station}</div>
-                  <div className="text-sm text-gray-600">{station.company}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-gray-900 truncate">{station.station}</div>
+                  <div className="text-sm text-gray-600 truncate">{station.company}</div>
                 </div>
               </div>
-              <div className="text-right">
-                <div className="font-semibold text-gray-900">
+              <div className="text-right flex-shrink-0 ml-2">
+                <div className="font-semibold text-gray-900 whitespace-nowrap">
                   KSH {(station.sales / 1000000).toFixed(1)}M
                 </div>
-                <Badge variant={station.trend >= 0 ? "success" : "error"} className="flex items-center gap-1">
+                <Badge variant={station.trend >= 0 ? "success" : "error"} size="sm" className="flex items-center gap-1 mt-1">
                   {station.trend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                   {Math.abs(station.trend)}%
                 </Badge>
@@ -574,48 +625,49 @@ const SuperAdminDashboardOverView = () => {
   );
 
   const renderRecentActivities = () => (
-    <Card className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
+    <Card className="p-4 md:p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div className="flex-1">
           <h3 className="text-lg font-semibold text-gray-900">System Activities</h3>
-          <p className="text-gray-600">Recent activities across all companies and stations</p>
+          <p className="text-gray-600 text-sm md:text-base">Recent activities across all companies and stations</p>
         </div>
-        <Button variant="outline" size="sm" icon={Eye}>
-          View All Activities
+        <Button variant="outline" size="sm" icon={Eye} className="w-full sm:w-auto">
+          <span className="hidden sm:inline">View All Activities</span>
+          <span className="sm:hidden">View All</span>
         </Button>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3 md:space-y-4">
         {superAdminData.recentActivities.map((activity) => {
           const IconComponent = activity.icon;
           return (
-            <div key={activity.id} className="flex items-start gap-4 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-              <div className={`p-2 rounded-lg ${
+            <div key={activity.id} className="flex items-start gap-3 md:gap-4 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              <div className={`p-2 rounded-lg flex-shrink-0 ${
                 activity.color === 'green' ? 'bg-green-100 text-green-600' :
                 activity.color === 'orange' ? 'bg-orange-100 text-orange-600' :
                 activity.color === 'blue' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'
               }`}>
                 <IconComponent className="w-4 h-4" />
               </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <p className="font-medium text-gray-900">{activity.title}</p>
-                  <span className="text-xs text-gray-500">
-                    {new Date(activity.timestamp).toLocaleTimeString()}
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <p className="font-medium text-gray-900 truncate">{activity.title}</p>
+                  <span className="text-xs text-gray-500 whitespace-nowrap">
+                    {new Date(activity.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
-                <p className="text-sm text-gray-600 mt-1">{activity.description}</p>
-                <div className="flex items-center gap-4 mt-2">
+                <p className="text-sm text-gray-600 mt-1 truncate">{activity.description}</p>
+                <div className="flex items-center gap-2 md:gap-4 mt-2 flex-wrap">
                   {activity.company && (
                     <div className="flex items-center gap-1">
                       <Building2 className="w-3 h-3 text-gray-400" />
-                      <span className="text-xs text-gray-500">{activity.company}</span>
+                      <span className="text-xs text-gray-500 truncate">{activity.company}</span>
                     </div>
                   )}
                   {activity.station && (
                     <div className="flex items-center gap-1">
                       <MapPin className="w-3 h-3 text-gray-400" />
-                      <span className="text-xs text-gray-500">{activity.station}</span>
+                      <span className="text-xs text-gray-500 truncate">{activity.station}</span>
                     </div>
                   )}
                 </div>
@@ -628,44 +680,44 @@ const SuperAdminDashboardOverView = () => {
   );
 
   const renderPurchasesOverview = () => (
-    <Card className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
+    <Card className="p-4 md:p-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div className="flex-1">
           <h3 className="text-lg font-semibold text-gray-900">Purchases Overview</h3>
-          <p className="text-gray-600">Recent fuel purchases across all companies</p>
+          <p className="text-gray-600 text-sm md:text-base">Recent fuel purchases across all companies</p>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">{superAdminData.purchases.completed}</div>
-            <div className="text-sm text-gray-600">Completed</div>
+            <div className="text-xl md:text-2xl font-bold text-green-600">{superAdminData.purchases.completed}</div>
+            <div className="text-xs md:text-sm text-gray-600">Completed</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-orange-600">{superAdminData.purchases.pending}</div>
-            <div className="text-sm text-gray-600">Pending</div>
+            <div className="text-xl md:text-2xl font-bold text-orange-600">{superAdminData.purchases.pending}</div>
+            <div className="text-xs md:text-sm text-gray-600">Pending</div>
           </div>
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3 md:space-y-4">
         {superAdminData.purchases.recent.map((purchase) => (
-          <div key={purchase.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-            <div className="flex items-center gap-4 flex-1">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Truck className="w-6 h-6 text-blue-600" />
+          <div key={purchase.id} className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 border border-gray-200 rounded-lg">
+            <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
+              <div className="w-10 h-10 md:w-12 md:h-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Truck className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
               </div>
-              <div className="flex-1">
-                <div className="font-semibold text-gray-900">{purchase.product} Purchase</div>
-                <div className="text-sm text-gray-600">{purchase.company} • {purchase.supplier}</div>
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-gray-900 truncate">{purchase.product} Purchase</div>
+                <div className="text-sm text-gray-600 truncate">{purchase.company} • {purchase.supplier}</div>
                 <div className="text-xs text-gray-500 mt-1">
                   {purchase.quantity.toLocaleString()}L • KSH {(purchase.value / 1000000).toFixed(1)}M
                 </div>
               </div>
             </div>
-            <div className="text-right">
-              <Badge variant={purchase.status === 'completed' ? 'success' : 'warning'}>
+            <div className="text-right md:text-left md:min-w-[120px]">
+              <Badge variant={purchase.status === 'completed' ? 'success' : 'warning'} className="mb-1">
                 {purchase.status}
               </Badge>
-              <div className="text-sm text-gray-600 mt-1">{purchase.date}</div>
+              <div className="text-sm text-gray-600">{purchase.date}</div>
             </div>
           </div>
         ))}
@@ -675,47 +727,49 @@ const SuperAdminDashboardOverView = () => {
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto p-6">
-        <LoadingSpinner />
+      <div className="max-w-7xl mx-auto p-4 md:p-6">
+        <div className="flex items-center justify-center h-64">
+          <LoadingSpinner size="lg" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
+    <div className="max-w-7xl mx-auto p-3 md:p-4 lg:p-6">
       {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <Globe className="w-8 h-8 text-blue-600" />
+      <div className="mb-6 md:mb-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 md:gap-3 mb-2">
+              <Globe className="w-6 h-6 md:w-8 md:h-8 text-blue-600" />
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">Super Admin Dashboard</h1>
-                <p className="text-gray-600">
+                <h1 className="text-xl md:text-2xl lg:text-3xl font-bold text-gray-900">Super Admin Dashboard</h1>
+                <p className="text-gray-600 text-sm md:text-base">
                   Complete overview of all companies, stations, and system performance
                 </p>
               </div>
             </div>
           </div>
           <div className="text-right">
-            <p className="text-lg font-semibold text-gray-900">
+            <p className="text-base md:text-lg font-semibold text-gray-900">
               System Health: <span className="text-green-600">{metrics.systemHealth}%</span>
             </p>
-            <p className="text-gray-600">{new Date().toLocaleDateString()}</p>
+            <p className="text-gray-600 text-sm md:text-base">{new Date().toLocaleDateString()}</p>
           </div>
         </div>
 
         {/* System Health Alert */}
         <Alert variant="info" className="mb-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <Activity className="w-5 h-5 text-blue-600" />
+              <Activity className="w-5 h-5 text-blue-600 flex-shrink-0" />
               <div>
-                <h4 className="font-semibold">System Operating Normally</h4>
-                <p className="text-sm">All services are running smoothly. Last incident: 7 days ago</p>
+                <h4 className="font-semibold text-sm md:text-base">System Operating Normally</h4>
+                <p className="text-xs md:text-sm">All services are running smoothly. Last incident: 7 days ago</p>
               </div>
             </div>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" className="w-full md:w-auto mt-2 md:mt-0">
               View Logs
             </Button>
           </div>
@@ -723,23 +777,25 @@ const SuperAdminDashboardOverView = () => {
       </div>
 
       {/* Tabs */}
-      <Card className="mb-6">
-        <Tabs value={activeTab} onChange={setActiveTab}>
-          <Tab value="overview">System Overview</Tab>
-          <Tab value="companies">Companies</Tab>
-          <Tab value="stations">All Stations</Tab>
-          <Tab value="sales">Sales Analytics</Tab>
-          <Tab value="activities">Activities</Tab>
-          <Tab value="purchases">Purchases</Tab>
-        </Tabs>
+      <Card className="mb-4 md:mb-6">
+        <div className="overflow-x-auto">
+          <Tabs value={activeTab} onChange={setActiveTab} className="min-w-max">
+            <Tab value="overview">Overview</Tab>
+            <Tab value="companies">Companies</Tab>
+            <Tab value="stations">Stations</Tab>
+            <Tab value="sales">Analytics</Tab>
+            <Tab value="activities">Activities</Tab>
+            <Tab value="purchases">Purchases</Tab>
+          </Tabs>
+        </div>
       </Card>
 
       {/* Main Content */}
       {activeTab === 'overview' && (
-        <div className="space-y-6">
+        <div className="space-y-4 md:space-y-6">
           {renderSystemStats()}
           {renderGeolocationMap()}
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 md:gap-6">
             <div className="xl:col-span-2">
               {renderSalesPerformance()}
             </div>
@@ -751,99 +807,106 @@ const SuperAdminDashboardOverView = () => {
       )}
 
       {activeTab === 'companies' && (
-        <div className="space-y-6">
+        <div className="space-y-4 md:space-y-6">
+          {renderCompactSystemStats()}
           {renderCompaniesOverview()}
           {renderGeolocationMap()}
         </div>
       )}
 
       {activeTab === 'stations' && (
-        <div className="space-y-6">
-          <Card className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
+        <div className="space-y-4 md:space-y-6">
+          <Card className="p-4 md:p-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+              <div className="flex-1">
                 <h3 className="text-lg font-semibold text-gray-900">All Stations</h3>
-                <p className="text-gray-600">Complete list of all stations across all companies</p>
+                <p className="text-gray-600 text-sm md:text-base">Complete list of all stations across all companies</p>
               </div>
-              <div className="flex items-center gap-2">
-                <SearchInput placeholder="Search stations..." />
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
+                <div className="flex-1 sm:flex-none">
+                  <SearchInput placeholder="Search stations..." className="w-full" />
+                </div>
                 <FilterDropdown
                   options={[
                     { label: 'All Companies', value: 'all' },
                     ...superAdminData.companies.map(c => ({ label: c.name, value: c.id }))
                   ]}
                   onFilter={(value) => console.log('Filter company:', value)}
+                  className="w-full sm:w-auto"
                 />
               </div>
             </div>
 
-            <div className="overflow-hidden">
-              <Table
-                columns={[
-                  { key: 'station', label: 'Station Name' },
-                  { key: 'company', label: 'Company' },
-                  { key: 'status', label: 'Status' },
-                  { key: 'sales', label: 'Today Sales' },
-                  { key: 'utilization', label: 'Utilization' },
-                  { key: 'lastActivity', label: 'Last Activity' }
-                ]}
-                data={superAdminData.allStations.map(station => ({
-                  station: (
-                    <div className="font-medium text-gray-900">{station.name}</div>
-                  ),
-                  company: (
-                    <div className="text-gray-600">{station.companyName}</div>
-                  ),
-                  status: (
-                    <Badge variant={station.status === 'active' ? 'success' : 'warning'}>
-                      {station.status}
-                    </Badge>
-                  ),
-                  sales: (
-                    <div>
-                      <div className="font-semibold">KSH {station.sales.today.toLocaleString()}</div>
-                      <div className={`text-xs flex items-center gap-1 ${
-                        station.sales.trend >= 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {station.sales.trend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(station.sales.trend)}%
+            <div className="overflow-x-auto -mx-4 md:mx-0">
+              <div className="min-w-full inline-block align-middle">
+                <Table
+                  columns={[
+                    { key: 'station', label: 'Station Name', className: 'min-w-[180px]' },
+                    { key: 'company', label: 'Company', className: 'min-w-[150px]' },
+                    { key: 'status', label: 'Status', className: 'whitespace-nowrap' },
+                    { key: 'sales', label: 'Today Sales', className: 'whitespace-nowrap' },
+                    { key: 'utilization', label: 'Utilization', className: 'min-w-[100px]' },
+                    { key: 'lastActivity', label: 'Last Activity', className: 'whitespace-nowrap' }
+                  ]}
+                  data={superAdminData.allStations.map(station => ({
+                    station: (
+                      <div className="font-medium text-gray-900 truncate">{station.name}</div>
+                    ),
+                    company: (
+                      <div className="text-gray-600 truncate">{station.companyName}</div>
+                    ),
+                    status: (
+                      <Badge variant={station.status === 'active' ? 'success' : 'warning'} size="sm">
+                        {station.status}
+                      </Badge>
+                    ),
+                    sales: (
+                      <div className="min-w-[120px]">
+                        <div className="font-semibold">KSH {station.sales.today.toLocaleString()}</div>
+                        <div className={`text-xs flex items-center gap-1 ${
+                          station.sales.trend >= 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {station.sales.trend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {Math.abs(station.sales.trend)}%
+                        </div>
                       </div>
-                    </div>
-                  ),
-                  utilization: (
-                    <div className="w-24">
-                      <Progress value={station.utilization} className="mb-1" />
-                      <div className="text-xs text-gray-600 text-center">{station.utilization}%</div>
-                    </div>
-                  ),
-                  lastActivity: (
-                    <div className="text-sm text-gray-600">
-                      {new Date(station.lastActivity).toLocaleTimeString()}
-                    </div>
-                  )
-                }))}
-              />
+                    ),
+                    utilization: (
+                      <div className="w-20 md:w-24">
+                        <Progress value={station.utilization} className="mb-1" size="sm" />
+                        <div className="text-xs text-gray-600 text-center">{station.utilization}%</div>
+                      </div>
+                    ),
+                    lastActivity: (
+                      <div className="text-sm text-gray-600 whitespace-nowrap">
+                        {new Date(station.lastActivity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    )
+                  }))}
+                  size="sm"
+                />
+              </div>
             </div>
           </Card>
         </div>
       )}
 
       {activeTab === 'sales' && (
-        <div className="space-y-6">
-          {renderSystemStats()}
+        <div className="space-y-4 md:space-y-6">
+          {renderCompactSystemStats()}
           {renderSalesPerformance()}
           {renderPurchasesOverview()}
         </div>
       )}
 
       {activeTab === 'activities' && (
-        <div className="space-y-6">
+        <div className="space-y-4 md:space-y-6">
           {renderRecentActivities()}
         </div>
       )}
 
       {activeTab === 'purchases' && (
-        <div className="space-y-6">
+        <div className="space-y-4 md:space-y-6">
           {renderPurchasesOverview()}
         </div>
       )}
