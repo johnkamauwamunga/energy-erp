@@ -5,9 +5,11 @@ import { authService } from './auth/authService';
 // const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:3001/api';
 // Use environment variable with fallback
 
-const API_BASE_URL = 'https://178.128.201.205/api';  // Production
+//const API_BASE_URL = 'https://178.128.201.205/api';  // Production
 
 // const API_BASE_URL = 'http://localhost:3001/api';  // Development
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
 
 class ApiService {
   constructor() {
