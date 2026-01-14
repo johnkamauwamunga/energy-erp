@@ -6,9 +6,9 @@ import { authService } from './auth/authService';
 // Use environment variable with fallback
 
 //const API_BASE_URL = 'https://178.128.201.205/api';  // Production
-const API_BASE_URL = 'https://lynxenergy.duckdns.org/api';
+//const API_BASE_URL = 'https://lynxenergy.duckdns.org/api';
 
-// const API_BASE_URL = 'http://localhost:3001/api';  // Development
+ const API_BASE_URL = 'http://localhost:3001/api';  // Development
 
 //const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 

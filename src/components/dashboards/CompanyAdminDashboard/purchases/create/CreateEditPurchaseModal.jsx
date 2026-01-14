@@ -25,7 +25,7 @@ import {
 import { purchaseService } from '../../../../../services/purchaseService/purchaseService';
 import { supplierService } from '../../../../../services/supplierService/supplierService';
 import { fuelService } from '../../../../../services/fuelService/fuelService';
-import {stationService} from '../../../../../services/stationService/stationService';
+import { stationService } from '../../../../../services/stationService/stationService';
 import { useApp } from '../../../../../context/AppContext';
 
 const { Option } = Select;
@@ -40,10 +40,7 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
   
   const [suppliers, setSuppliers] = useState([]);
   const [fuelProducts, setFuelProducts] = useState([]);
-  const [supplierProducts, setSupplierProducts] = useState([]);
-  const [stations, setStations]=useState([]);
-
- 
+  const [stations, setStations] = useState([]);
   
   const [formData, setFormData] = useState({
     supplierId: '',
@@ -107,44 +104,33 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      const [suppliersData, productsData, stationData ] = await Promise.all([
+      const [suppliersData, productsData, stationData] = await Promise.all([
         supplierService.getSuppliers(true),
         fuelService.getFuelProducts(),
         stationService.getCompanyStations()
       ]);
       
-      setSuppliers(suppliersData);
+      setSuppliers(suppliersData || []);
       console.log("stations ", stationData);
-      setFuelProducts(productsData.products || productsData || []);
-       console.log("products ", productsData);
-      setStations(stationData);
+      
+      // Handle the products data structure - it has a data property
+      let products = [];
+      if (productsData && productsData.data && Array.isArray(productsData.data)) {
+        products = productsData.data;
+      } else if (Array.isArray(productsData)) {
+        products = productsData;
+      } else if (productsData && Array.isArray(productsData.products)) {
+        products = productsData.products;
+      }
+      
+      console.log("products loaded:", products);
+      setFuelProducts(products);
+      setStations(stationData || []);
     } catch (error) {
       console.error('Failed to load data:', error);
       setError('Failed to load suppliers and products');
     } finally {
       setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (formData.supplierId) {
-      loadSupplierProducts(formData.supplierId);
-    } else {
-      setSupplierProducts([]);
-    }
-  }, [formData.supplierId]);
-
-  const loadSupplierProducts = async (supplierId) => {
-    try {
-      const supplier = suppliers.find(s => s.id === supplierId);
-      if (supplier && supplier.supplierProducts) {
-        setSupplierProducts(supplier.supplierProducts);
-      } else {
-        setSupplierProducts(fuelProducts);
-      }
-    } catch (error) {
-      console.error('Failed to load supplier products:', error);
-      setSupplierProducts(fuelProducts);
     }
   };
 
@@ -182,14 +168,27 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
   const updateItem = (index, field, value) => {
     setFormData(prev => ({
       ...prev,
-      items: prev.items.map((item, i) => 
-        i === index ? { 
+      items: prev.items.map((item, i) => {
+        if (i !== index) return item;
+        
+        // Create the updated item
+        const updatedItem = { 
           ...item, 
           [field]: field === 'orderedQty' || field === 'unitCost' || field === 'taxRate' 
             ? parseFloat(value) || 0 
             : value 
-        } : item
-      )
+        };
+        
+        // If product is changed, update unit cost with base price AND make it read-only
+        if (field === 'productId' && value) {
+          const selectedProduct = getAvailableProducts().find(p => p.id === value);
+          if (selectedProduct && selectedProduct.baseCostPrice) {
+            updatedItem.unitCost = parseFloat(selectedProduct.baseCostPrice);
+          }
+        }
+        
+        return updatedItem;
+      })
     }));
   };
 
@@ -261,9 +260,9 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
   };
 
   const handleSubmit = async () => {
-    // if (!validateForm()) {
-    //   return;
-    // }
+    if (!validateForm()) {
+      return;
+    }
 
     try {
       setSubmitting(true);
@@ -272,7 +271,7 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
       // Prepare data for backend with proper date formatting
       const purchaseData = {
         supplierId: formData.supplierId,
-        stationId:formData.stationId,
+        stationId: formData.stationId,
         purchaseDate: formatDateForBackend(formData.purchaseDate),
         expectedDate: formData.expectedDate ? formatDateForBackend(formData.expectedDate) : null,
         type: formData.type,
@@ -321,10 +320,33 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
   };
 
   const getAvailableProducts = () => {
-    if (formData.supplierId && supplierProducts.length > 0) {
-      return supplierProducts;
+    // Ensure we always return an array
+    if (Array.isArray(fuelProducts)) {
+      return fuelProducts;
     }
-    return fuelProducts;
+    
+    // If fuelProducts is not an array, return empty array
+    console.warn('fuelProducts is not an array:', fuelProducts);
+    return [];
+  };
+
+  const getProductBasePrice = (productId) => {
+    const product = getAvailableProducts().find(p => p.id === productId);
+    return product ? product.baseCostPrice : 0;
+  };
+
+  const getProductInfo = (productId) => {
+    const product = getAvailableProducts().find(p => p.id === productId);
+    if (!product) return null;
+    
+    return {
+      name: product.name,
+      fuelCode: product.fuelCode,
+      baseCostPrice: product.baseCostPrice,
+      unit: product.unit,
+      type: product.type,
+      fuelCategory: product.fuelCategory?.name
+    };
   };
 
   const totals = calculatePurchaseTotals();
@@ -483,152 +505,213 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
             </div>
           ) : (
             <div style={{ gap: 16, display: 'flex', flexDirection: 'column' }}>
-              {formData.items.map((item, index) => (
-                <Card 
-                  key={index} 
-                  size="small" 
-                  style={{ backgroundColor: '#fafafa' }}
-                  title={`Product #${index + 1}`}
-                  extra={
-                    <Button
-                      type="text"
-                      danger
-                      icon={<MinusOutlined />}
-                      onClick={() => removeItem(index)}
-                      size="small"
-                    >
-                      Remove
-                    </Button>
-                  }
-                >
-                  <Row gutter={16}>
-                    <Col span={12}>
-                      <Form.Item label="Product" required>
-                        <Select
-                          value={item.productId}
-                          onChange={(value) => updateItem(index, 'productId', value)}
-                          placeholder="Select Product"
-                          style={{ width: '100%' }}
-                          showSearch
-                          filterOption={(input, option) =>
-                            option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
+              {formData.items.map((item, index) => {
+                const productInfo = getProductInfo(item.productId);
+                const basePrice = getProductBasePrice(item.productId);
+                
+                return (
+                  <Card 
+                    key={index} 
+                    size="small" 
+                    style={{ backgroundColor: '#fafafa' }}
+                    title={
+                      <Space>
+                        <span>Product #{index + 1}</span>
+                        {productInfo && (
+                          <Badge 
+                            count={productInfo.fuelCategory || productInfo.type} 
+                            style={{ backgroundColor: '#52c41a' }}
+                          />
+                        )}
+                      </Space>
+                    }
+                    extra={
+                      <Button
+                        type="text"
+                        danger
+                        icon={<MinusOutlined />}
+                        onClick={() => removeItem(index)}
+                        size="small"
+                      >
+                        Remove
+                      </Button>
+                    }
+                  >
+                    <Row gutter={16}>
+                      <Col span={12}>
+                        <Form.Item label="Product" required>
+                          <Select
+                            value={item.productId}
+                            onChange={(value) => updateItem(index, 'productId', value)}
+                            placeholder="Select Product"
+                            style={{ width: '100%' }}
+                            showSearch
+                            filterOption={(input, option) =>
+                              option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
+                            }
+                          >
+                            <Option value="">Select Product</Option>
+                            {getAvailableProducts().map(product => (
+                              <Option key={product.id} value={product.id}>
+                                <Space direction="vertical" size={0}>
+                                  <Text strong>
+                                    {product?.name || 'Unnamed Product'} 
+                                    {product?.fuelCode ? ` (${product.fuelCode})` : ''}
+                                  </Text>
+                                  <Text type="secondary" style={{ fontSize: '12px' }}>
+                                    Base Price: Ksh {product.baseCostPrice?.toLocaleString() || '0.00'}
+                                  </Text>
+                                </Space>
+                              </Option>
+                            ))}
+                          </Select>
+                        </Form.Item>
+                      </Col>
+
+                      <Col span={6}>
+                        <Form.Item 
+                          label={
+                            <Space>
+                              <span>Quantity</span>
+                              {productInfo?.unit && (
+                                <Badge count={productInfo.unit} style={{ backgroundColor: '#1890ff' }} />
+                              )}
+                            </Space>
+                          } 
+                          required
+                          tooltip={productInfo?.unit ? `Unit: ${productInfo.unit}` : null}
+                        >
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            value={item.orderedQty}
+                            onChange={(e) => updateItem(index, 'orderedQty', e.target.value)}
+                            placeholder="0.00"
+                          />
+                        </Form.Item>
+                      </Col>
+
+                      <Col span={6}>
+                        <Form.Item 
+                          label="Unit Cost" 
+                          required
+                          tooltip={
+                            productInfo?.baseCostPrice ? 
+                            `Base Price (Auto-filled): Ksh ${productInfo.baseCostPrice}` : 
+                            null
                           }
                         >
-                          <Option value="">Select Product</Option>
-                          {getAvailableProducts().map(product => (
-                            <Option key={product.id} value={product.id}>
-                              {/* {product.name} {product.fuelCode ? `(${product.fuelCode})` : ''} */}
-                              {product?.name}
-                            </Option>
-                          ))}
-                        </Select>
-                      </Form.Item>
-                    </Col>
-
-                    <Col span={6}>
-                      <Form.Item label="Quantity" required>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          value={item.orderedQty}
-                          onChange={(e) => updateItem(index, 'orderedQty', e.target.value)}
-                          placeholder="0.00"
-                        />
-                      </Form.Item>
-                    </Col>
-
-                    <Col span={6}>
-                      <Form.Item label="Unit Cost" required>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={item.unitCost}
-                          onChange={(e) => updateItem(index, 'unitCost', e.target.value)}
-                          placeholder="0.00"
-                          prefix="Ksh"
-                        />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-
-                  <Row gutter={16}>
-                    <Col span={8}>
-                      <Form.Item label="Tax Rate">
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          max="1"
-                          value={item.taxRate}
-                          onChange={(e) => updateItem(index, 'taxRate', e.target.value)}
-                          placeholder="0.16"
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item label="Batch Number">
-                        <Input
-                          value={item.batchNumber}
-                          onChange={(e) => updateItem(index, 'batchNumber', e.target.value)}
-                          placeholder="Optional"
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item label="Expiry Date">
-                        <Input
-                          type="date"
-                          value={item.expiryDate}
-                          onChange={(e) => updateItem(index, 'expiryDate', e.target.value)}
-                          placeholder="Optional"
-                        />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-
-                  {item.productId && item.orderedQty > 0 && (
-                    <Card size="small" style={{ marginTop: 8, backgroundColor: 'white' }}>
-                      <Row gutter={16}>
-                        <Col span={8}>
-                          <div style={{ textAlign: 'center' }}>
-                            <Text type="secondary">Gross Amount</Text>
-                            <div style={{ fontWeight: 'bold', fontSize: '16px' }}>
-                              Ksh {calculateItemTotals(item).grossAmount.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2
-                              })}
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={item.unitCost}
+                            readOnly={!!item.productId} // Make it read-only once product is selected
+                            placeholder="0.00"
+                            prefix="Ksh"
+                            style={{
+                              backgroundColor: item.productId ? '#f6ffed' : 'white',
+                              cursor: item.productId ? 'not-allowed' : 'text'
+                            }}
+                          />
+                          {productInfo?.baseCostPrice && (
+                            <div style={{ marginTop: 4 }}>
+                              <Text type="secondary" style={{ fontSize: '12px' }}>
+                                Base Price (Auto-filled): Ksh {productInfo.baseCostPrice.toLocaleString()}
+                              </Text>
                             </div>
-                          </div>
-                        </Col>
-                        <Col span={8}>
-                          <div style={{ textAlign: 'center' }}>
-                            <Text type="secondary">Tax Amount</Text>
-                            <div style={{ fontWeight: 'bold', fontSize: '16px' }}>
-                              Ksh {calculateItemTotals(item).taxAmount.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2
-                              })}
+                          )}
+                        </Form.Item>
+                      </Col>
+                    </Row>
+
+                    <Row gutter={16}>
+                      <Col span={8}>
+                        <Form.Item label="Tax Rate">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="1"
+                            value={item.taxRate}
+                            onChange={(e) => updateItem(index, 'taxRate', e.target.value)}
+                            placeholder="0.16"
+                          />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item label="Batch Number">
+                          <Input
+                            value={item.batchNumber}
+                            onChange={(e) => updateItem(index, 'batchNumber', e.target.value)}
+                            placeholder="Optional"
+                          />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item label="Expiry Date">
+                          <Input
+                            type="date"
+                            value={item.expiryDate}
+                            onChange={(e) => updateItem(index, 'expiryDate', e.target.value)}
+                            placeholder="Optional"
+                          />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+
+                    {item.productId && item.orderedQty > 0 && (
+                      <Card size="small" style={{ marginTop: 8, backgroundColor: 'white' }}>
+                        <Row gutter={16}>
+                          <Col span={8}>
+                            <div style={{ textAlign: 'center' }}>
+                              <Text type="secondary">Gross Amount</Text>
+                              <div style={{ fontWeight: 'bold', fontSize: '16px' }}>
+                                Ksh {calculateItemTotals(item).grossAmount.toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2
+                                })}
+                              </div>
+                              <Text type="secondary" style={{ fontSize: '12px' }}>
+                                {item.orderedQty} × Ksh {item.unitCost}
+                              </Text>
                             </div>
-                          </div>
-                        </Col>
-                        <Col span={8}>
-                          <div style={{ textAlign: 'center' }}>
-                            <Text type="secondary">Net Amount</Text>
-                            <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#52c41a' }}>
-                              Ksh {calculateItemTotals(item).netAmount.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2
-                              })}
+                          </Col>
+                          <Col span={8}>
+                            <div style={{ textAlign: 'center' }}>
+                              <Text type="secondary">Tax Amount</Text>
+                              <div style={{ fontWeight: 'bold', fontSize: '16px' }}>
+                                Ksh {calculateItemTotals(item).taxAmount.toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2
+                                })}
+                              </div>
+                              <Text type="secondary" style={{ fontSize: '12px' }}>
+                                Gross × {item.taxRate * 100}%
+                              </Text>
                             </div>
-                          </div>
-                        </Col>
-                      </Row>
-                    </Card>
-                  )}
-                </Card>
-              ))}
+                          </Col>
+                          <Col span={8}>
+                            <div style={{ textAlign: 'center' }}>
+                              <Text type="secondary">Net Amount</Text>
+                              <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#52c41a' }}>
+                                Ksh {calculateItemTotals(item).netAmount.toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2
+                                })}
+                              </div>
+                              <Text type="secondary" style={{ fontSize: '12px' }}>
+                                Gross + Tax
+                              </Text>
+                            </div>
+                          </Col>
+                        </Row>
+                      </Card>
+                    )}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </Card>
@@ -677,13 +760,11 @@ const CreateEditPurchaseModal = ({ isOpen, onClose, purchase, onPurchaseCreated,
 
         <Card title="Additional Information" style={{ marginBottom: 16 }}>
           <Row gutter={16}>
-
-{/* stations */}
             <Col span={24}>
-              <Form.Item label="Deliverly Station" required>
+              <Form.Item label="Delivery Station" required>
                 <Select
                   value={formData.stationId}
-                 onChange={(value) => handleFormChange('stationId', value)}
+                  onChange={(value) => handleFormChange('stationId', value)}
                   placeholder="Select Station"
                   style={{ width: '100%' }}
                   showSearch

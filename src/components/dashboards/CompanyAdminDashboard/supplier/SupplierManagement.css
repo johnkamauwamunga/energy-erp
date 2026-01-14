@@ -72,3 +72,49 @@
   font-size: 12px;
   font-weight: 500;
 }
+
+/* Card hover effects */
+.ant-card-hoverable:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+  transition: all 0.3s ease;
+}
+
+/* Badge styles */
+.ant-badge-count {
+  font-size: 10px;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+}
+
+/* Modal forms */
+.ant-form-item-label > label {
+  font-weight: 500;
+}
+
+/* Action buttons */
+.ant-dropdown-menu-item-danger {
+  color: #ff4d4f;
+}
+
+.ant-dropdown-menu-item-danger:hover {
+  background-color: #fff2f0;
+}
+
+/* Mobile card styles */
+@media (max-width: 576px) {
+  .supplier-card .ant-card-body {
+    padding: 12px;
+  }
+  
+  .supplier-card .ant-card-actions {
+    padding: 0 8px;
+  }
+  
+  .supplier-card .ant-avatar {
+    width: 32px;
+    height: 32px;
+    line-height: 32px;
+  }
+}

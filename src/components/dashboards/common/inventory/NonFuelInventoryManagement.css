@@ -1,0 +1,87 @@
+/* src/pages/inventory/NonFuelInventoryManagement.css */
+.non-fuel-inventory-management {
+  background: #f0f2f5;
+  min-height: 100vh;
+}
+
+.inventory-header-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.inventory-header-card .ant-typography,
+.inventory-header-card .ant-statistic-title,
+.inventory-header-card .ant-statistic-content {
+  color: white !important;
+}
+
+.quick-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Purchase Tracking */
+.purchase-tracking-dashboard .ant-table-expanded-row {
+  background: #fafafa;
+}
+
+/* Stock Management */
+.stock-management .expired-row {
+  background-color: #fff1f0;
+}
+
+.stock-management .critical-row {
+  background-color: #fff7e6;
+}
+
+.stock-management .lowstock-row {
+  background-color: #fcffe6;
+}
+
+/* Status Tags */
+.ant-tag {
+  border-radius: 12px;
+}
+
+/* Progress Bars */
+.ant-progress-inner {
+  border-radius: 10px;
+}
+
+/* Card Hover Effects */
+.ant-card-hoverable:hover {
+  transform: translateY(-2px);
+  transition: transform 0.3s;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Filter Bar */
+.filter-bar {
+  background: white;
+  padding: 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  .quick-actions {
+    justify-content: flex-start;
+    margin-top: 16px;
+  }
+  
+  .filter-bar .ant-space {
+    width: 100%;
+  }
+  
+  .action-buttons {
+    flex-wrap: wrap;
+  }
+}

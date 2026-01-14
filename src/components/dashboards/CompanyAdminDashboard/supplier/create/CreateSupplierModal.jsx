@@ -8,7 +8,8 @@ import {
   Button,
   Row,
   Col,
-  message
+  message,
+  Alert
 } from 'antd';
 import { supplierService } from '../../../../../services/supplierService/supplierService';
 
@@ -18,6 +19,7 @@ const { TextArea } = Input;
 const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [autoGenerateCode, setAutoGenerateCode] = useState(true);
 
   const handleSubmit = async (values) => {
     setLoading(true);
@@ -29,7 +31,12 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
         return;
       }
 
-      await supplierService.createSupplier(values);
+      // If auto-generate code is selected, remove the code field
+      const submitData = autoGenerateCode 
+        ? { ...values, code: undefined } 
+        : values;
+
+      await supplierService.createSupplier(submitData);
       form.resetFields();
       onSuccess();
     } catch (error) {
@@ -41,7 +48,15 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
 
   const handleCancel = () => {
     form.resetFields();
+    setAutoGenerateCode(true);
     onCancel();
+  };
+
+  const handleCodeGenerationChange = (checked) => {
+    setAutoGenerateCode(checked);
+    if (checked) {
+      form.setFieldsValue({ code: undefined });
+    }
   };
 
   return (
@@ -53,6 +68,14 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
       width={800}
       destroyOnClose
     >
+      <Alert
+        message="Supplier Code"
+        description="Supplier codes must be unique within your company. If you don't provide a code, one will be automatically generated."
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+      />
+
       <Form
         form={form}
         layout="vertical"
@@ -60,7 +83,8 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
         initialValues={{
           country: 'Kenya',
           paymentTerms: 30,
-          deliveryLeadTime: 2
+          deliveryLeadTime: 2,
+          status: 'ACTIVE'
         }}
       >
         <Row gutter={16}>
@@ -70,7 +94,8 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
               name="name"
               rules={[
                 { required: true, message: 'Please enter supplier name' },
-                { min: 2, message: 'Supplier name must be at least 2 characters' }
+                { min: 2, message: 'Supplier name must be at least 2 characters' },
+                { max: 200, message: 'Supplier name must be less than 200 characters' }
               ]}
             >
               <Input placeholder="Enter supplier name" />
@@ -80,9 +105,25 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
             <Form.Item
               label="Supplier Code"
               name="code"
-              rules={[{ required: true, message: 'Please enter supplier code' }]}
+              rules={[
+                { max: 20, message: 'Supplier code must be less than 20 characters' }
+              ]}
+              extra="Leave blank to auto-generate"
             >
-              <Input placeholder="e.g., VIVO, TOTAL" />
+              <Input 
+                placeholder="e.g., VIVO, TOTAL" 
+                disabled={autoGenerateCode}
+                addonBefore={
+                  <Select 
+                    value={autoGenerateCode ? 'auto' : 'manual'} 
+                    onChange={handleCodeGenerationChange}
+                    style={{ width: 100 }}
+                  >
+                    <Option value="auto">Auto</Option>
+                    <Option value="manual">Manual</Option>
+                  </Select>
+                }
+              />
             </Form.Item>
           </Col>
         </Row>
@@ -92,6 +133,9 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
             <Form.Item
               label="Contact Person"
               name="contactPerson"
+              rules={[
+                { max: 100, message: 'Contact person name must be less than 100 characters' }
+              ]}
             >
               <Input placeholder="Enter contact person name" />
             </Form.Item>
@@ -121,7 +165,10 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
             <Form.Item
               label="Email"
               name="email"
-              rules={[{ type: 'email', message: 'Please enter valid email' }]}
+              rules={[
+                { type: 'email', message: 'Please enter valid email' },
+                { max: 255, message: 'Email must be less than 255 characters' }
+              ]}
             >
               <Input placeholder="supplier@company.com" />
             </Form.Item>
@@ -130,6 +177,9 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
             <Form.Item
               label="Phone"
               name="phone"
+              rules={[
+                { max: 20, message: 'Phone number must be less than 20 characters' }
+              ]}
             >
               <Input placeholder="+254712345678" />
             </Form.Item>
@@ -141,6 +191,9 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
             <Form.Item
               label="Alternate Phone"
               name="alternatePhone"
+              rules={[
+                { max: 20, message: 'Alternate phone must be less than 20 characters' }
+              ]}
             >
               <Input placeholder="+254734567890" />
             </Form.Item>
@@ -149,6 +202,9 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
             <Form.Item
               label="Tax ID"
               name="taxId"
+              rules={[
+                { max: 50, message: 'Tax ID must be less than 50 characters' }
+              ]}
             >
               <Input placeholder="P051234567K" />
             </Form.Item>
@@ -158,6 +214,9 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
         <Form.Item
           label="Address"
           name="address"
+          rules={[
+            { max: 500, message: 'Address must be less than 500 characters' }
+          ]}
         >
           <TextArea placeholder="Enter full address" rows={2} />
         </Form.Item>
@@ -167,6 +226,9 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
             <Form.Item
               label="City"
               name="city"
+              rules={[
+                { max: 100, message: 'City name must be less than 100 characters' }
+              ]}
             >
               <Input placeholder="Nairobi" />
             </Form.Item>
@@ -175,6 +237,9 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
             <Form.Item
               label="State/County"
               name="state"
+              rules={[
+                { max: 100, message: 'State name must be less than 100 characters' }
+              ]}
             >
               <Input placeholder="Nairobi County" />
             </Form.Item>
@@ -194,6 +259,9 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
             <Form.Item
               label="Payment Terms (Days)"
               name="paymentTerms"
+              rules={[
+                { type: 'number', min: 0, max: 365, message: 'Payment terms must be between 0 and 365 days' }
+              ]}
             >
               <InputNumber
                 min={0}
@@ -233,6 +301,9 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
         <Form.Item
           label="Delivery Areas"
           name="deliveryAreas"
+          rules={[
+            { max: 500, message: 'Delivery areas must be less than 500 characters' }
+          ]}
         >
           <TextArea 
             placeholder="Enter delivery areas e.g., Nairobi, Mombasa, Kisumu" 
@@ -243,6 +314,9 @@ const CreateSupplierModal = ({ visible, onCancel, onSuccess }) => {
         <Form.Item
           label="Business Registration Number"
           name="businessRegNumber"
+          rules={[
+            { max: 50, message: 'Business registration number must be less than 50 characters' }
+          ]}
         >
           <Input placeholder="CPT-2012-123456" />
         </Form.Item>

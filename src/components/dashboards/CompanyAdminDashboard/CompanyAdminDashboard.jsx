@@ -15,7 +15,8 @@ import CompanyAssetManagement from './CompanyAssetManagement';
 import CompanyUserManagement from './CompanyUserManagement';
 import CompanyStationsManagement from './stations/CompanyStationsManagement';
 import FuelPurchaseManagement from './purchases/PurchaseManagement';
-import FuelManagement from './products/FuelManagement';
+import ProductManagement from './products/ProductManagement';
+import NonFuelManagement from './products/nonfuel/NonFuelManagement';
 import ShiftCreationWizard from '../common/shiftWizard/ShiftCreationWizard';
 import CompanyDashboardOverview from '../common/CompanyDashboardOverview';
 import AnalyticsDemo from '../common/analytics/AnalyticsDemo';
@@ -25,6 +26,7 @@ import SupplierManagement from './supplier/SupplierManagement';
 import SupplierAccountManagement from './supplier/accounts/SupplierAccountManagement';
 import BankManagementTabs from '../common/banks/BankManagementTabs';
 import FinancialDashboard from '../common/finance-manager/FinancialDashboard';
+import WarehouseManagement from '../common/warehouses/WarehouseManagement';
 import Debug from './Debug';
 import FinanceDebugComponent from '../common/FinanceDebugComponent'; // ✅ Correct
 
@@ -51,6 +53,7 @@ const CompanyAdminDashboard = () => {
     { id: 'suppliers', label: 'Supplier', icon: Warehouse },
     { id: 'supplier_account', label: 'Supplier Account', icon: UserCog },
     { id: 'products_mant', label: 'Product Management', icon: MapPin },
+    { id: 'nonfuel_mant', label: 'Nonfuel Management', icon: MapPin },
     { id: 'fuel_price', label: 'Fuel Price', icon: Coins },
     { id: 'finance-manager', label: 'Finances', icon: HandCoins },
     { id: 'purchase', label: 'Purchase', icon: TrendingUp },
@@ -70,7 +73,9 @@ const CompanyAdminDashboard = () => {
       case 'assets':
         return <CompanyAssetManagement />;
       case 'products_mant':
-        return <FuelManagement />;
+        return <ProductManagement />;
+      case 'nonfuel_mant':
+        return <NonFuelManagement />;
       case 'fuel_price':
         return <FuelPriceManagement />;
       case 'suppliers':

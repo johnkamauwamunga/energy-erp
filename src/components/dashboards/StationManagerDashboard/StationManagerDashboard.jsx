@@ -4,7 +4,7 @@ import { logout } from '../../../context/AppContext/actions';
 import { 
   BarChart3, Activity, Clock, Users, FileText, 
   Flame, X, Menu, MapPin, DollarSign, Truck, Building2, Fuel, LogOut, User, Settings,CoinsIcon,BookAIcon,
-  Users2Icon,HandCoinsIcon,FileCheck2Icon,SquareUserRound
+  Users2Icon,HandCoinsIcon,FileCheck2Icon,SquareUserRound,Warehouse
 } from 'lucide-react';
 import { Button } from '../../ui';
 import DashboardOverview from '../../../components/dashboards/common/CompanyOverview';
@@ -30,6 +30,7 @@ import DebtTransferManagement from '../common/debtTransfering/DebtTransferManage
 import EventLogManagement from '../common/events/EventLogManagement';
 import PumpSalesManagement from '../common/enhanced-sales/PumpSalesManagement';
 import StaffAccountManagement from '../common/staff-accounts/StaffAccountManagement';
+import WarehouseManagement from '../common/warehouses/WarehouseManagement';
 
 const StationManagerDashboard = () => {
   const { state } = useApp();
@@ -52,9 +53,10 @@ const StationManagerDashboard = () => {
     { id: 'staff', label: 'Staff', icon: Users },
     { id: 'shifts', label: 'Shift Management', icon: Clock },
     { id: 'assets', label: 'Assets', icon: Building2 },
+     { id: 'warehouses', label: 'Warehouses', icon: Warehouse },
     { id: "fuel_tanks", label: "Fuel Tanks", icon: Fuel },
     { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
-     { id: 'expenses', label: 'Expenses', icon: CoinsIcon },
+    { id: 'expenses', label: 'Expenses', icon: CoinsIcon },
     { id: 'accounts', label: 'Accounts', icon: BookAIcon },
     { id: 'staff-accounts', label: 'Staff Accounts', icon:SquareUserRound },
     { id: 'sales', label: 'Sales', icon: DollarSign },
@@ -74,6 +76,8 @@ const StationManagerDashboard = () => {
         return <StationUserManagement />;
       case 'assets':
         return <StationAssetManagement />;
+        case 'warehouses':
+        return <WarehouseManagement />;
       case 'fuel_tanks':
         return <FuelTankManagement />;
       case 'shifts':

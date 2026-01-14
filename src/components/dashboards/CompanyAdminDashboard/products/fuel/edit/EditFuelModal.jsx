@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Input, Button, Select } from '../../../components/ui';
-import Dialog from '../../../components/ui/Dialog';
+import { Input, Button, Select, Dialog } from '../../../../../ui';
 import { fuelService } from '../../../services/fuelService';
 import { Fuel, Package, Layers, Save } from 'lucide-react';
 
