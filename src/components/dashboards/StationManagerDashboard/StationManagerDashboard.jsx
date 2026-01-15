@@ -3,7 +3,7 @@ import { useApp, useAppDispatch } from '../../../context/AppContext';
 import { logout } from '../../../context/AppContext/actions';
 import { 
   BarChart3, Activity, Clock, Users, FileText, 
-  Flame, X, Menu, MapPin, DollarSign, Truck, Building2, Fuel, LogOut, User, Settings,CoinsIcon,BookAIcon,
+  Flame, X, Menu, MapPin, DollarSign, Truck, Building2, Fuel, LogOut, User, Settings,CoinsIcon,BookAIcon,LucideCoins,
   Users2Icon,HandCoinsIcon,FileCheck2Icon,SquareUserRound,Warehouse
 } from 'lucide-react';
 import { Button } from '../../ui';
@@ -32,6 +32,7 @@ import PumpSalesManagement from '../common/enhanced-sales/PumpSalesManagement';
 import StaffAccountManagement from '../common/staff-accounts/StaffAccountManagement';
 import WarehouseManagement from '../common/warehouses/WarehouseManagement';
 import FuelSalesManagement from '../common/fuelSales/FuelSalesManagement';
+import CashMovement from '../common/cashMovement/CashMovement';
 
 const StationManagerDashboard = () => {
   const { state } = useApp();
@@ -63,6 +64,7 @@ const StationManagerDashboard = () => {
     { id: 'sales', label: 'Sales', icon: DollarSign },
     { id: 'debtor', label: 'Debtors', icon: Users2Icon },
     {id: 'debt-transfer', label: 'Payment & Transfer',icon:HandCoinsIcon},
+    { id: 'cash-movement', label: 'Cash Movement', icon: LucideCoins },
     { id: 'reports', label: 'Reports', icon: FileText },
     { id: 'wet_stock', label: 'Wet Stock', icon: Fuel},
     { id: 'activity', label: 'Activity Logs', icon: Activity }
@@ -93,8 +95,10 @@ const StationManagerDashboard = () => {
         return <FuelSalesManagement />;
       case 'debtor':
         return <DebtorManagementTabs />;
-        case 'debt-transfer':
+      case 'debt-transfer':
           return <DebtTransferManagement />;
+      case 'cash-movement':
+        return <CashMovement />;
       case 'reports':
         return <AssetTopologyDebug />;
       case 'activity':
