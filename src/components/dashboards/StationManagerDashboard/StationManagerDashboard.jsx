@@ -31,6 +31,7 @@ import EventLogManagement from '../common/events/EventLogManagement';
 import PumpSalesManagement from '../common/enhanced-sales/PumpSalesManagement';
 import StaffAccountManagement from '../common/staff-accounts/StaffAccountManagement';
 import WarehouseManagement from '../common/warehouses/WarehouseManagement';
+import FuelSalesManagement from '../common/fuelSales/FuelSalesManagement';
 
 const StationManagerDashboard = () => {
   const { state } = useApp();
@@ -89,7 +90,7 @@ const StationManagerDashboard = () => {
       case 'accounts':
          return <AccountsManagement />;
       case 'sales':
-        return <PumpSalesManagement />;
+        return <FuelSalesManagement />;
       case 'debtor':
         return <DebtorManagementTabs />;
         case 'debt-transfer':

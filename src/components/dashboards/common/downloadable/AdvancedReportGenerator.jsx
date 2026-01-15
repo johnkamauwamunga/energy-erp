@@ -16,8 +16,26 @@ import {
   FileExcelOutlined,
   SettingOutlined 
 } from '@ant-design/icons';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+
+// IMPORT FIX: Try different import methods
+let jsPDF;
+let autoTable;
+
+try {
+  // Method 1: Default import
+  const jspdfModule = require('jspdf');
+  const autoTableModule = require('jspdf-autotable');
+  jsPDF = jspdfModule.jsPDF || jspdfModule.default;
+  autoTable = autoTableModule.default;
+  
+  // Attach autoTable to jsPDF prototype
+  if (jsPDF && autoTable) {
+    jsPDF.autoTable = autoTable;
+  }
+} catch (error) {
+  console.error('Error loading jsPDF modules:', error);
+}
+
 import * as XLSX from 'xlsx';
 
 const AdvancedReportGenerator = ({ 
@@ -66,12 +84,17 @@ const AdvancedReportGenerator = ({
         
         // Apply column render function if exists
         if (header.render && typeof header.render === 'function') {
-          const rendered = header.render(value, record);
-          if (React.isValidElement(rendered)) {
-            // Extract text from React elements
-            value = extractTextFromElement(rendered);
-          } else {
-            value = rendered;
+          try {
+            const rendered = header.render(value, record);
+            if (React.isValidElement(rendered)) {
+              // Extract text from React elements
+              value = extractTextFromElement(rendered);
+            } else {
+              value = rendered;
+            }
+          } catch (err) {
+            console.warn('Error rendering column:', err);
+            value = record[header.dataIndex];
           }
         }
         
@@ -87,12 +110,16 @@ const AdvancedReportGenerator = ({
   const extractTextFromElement = (element) => {
     if (typeof element === 'string') return element;
     if (typeof element === 'number') return String(element);
+    if (element === null || element === undefined) return '';
     
     if (React.isValidElement(element)) {
       // Handle simple elements with children
       if (element.props && element.props.children) {
         if (typeof element.props.children === 'string') {
           return element.props.children;
+        }
+        if (typeof element.props.children === 'number') {
+          return String(element.props.children);
         }
         if (Array.isArray(element.props.children)) {
           return element.props.children
@@ -102,15 +129,36 @@ const AdvancedReportGenerator = ({
       }
     }
     
-    return '';
+    return String(element);
   };
 
   // Generate PDF with advanced features
   const generatePDF = () => {
     try {
+      // Check if jsPDF is available
+      if (!jsPDF) {
+        message.error('PDF generation library not available');
+        console.error('jsPDF is not available. Check imports.');
+        return;
+      }
+
       const { headers, data } = getExportData();
       
-      const doc = new jsPDF();
+      // Validate data
+      if (!data || data.length === 0) {
+        message.warning('No data available to generate PDF');
+        return;
+      }
+
+      console.log('Generating PDF with:', { headers, data: data.length });
+
+      // Create jsPDF instance
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
       const pageWidth = doc.internal.pageSize.getWidth();
       
       // Add title
@@ -123,44 +171,76 @@ const AdvancedReportGenerator = ({
       doc.setFont('helvetica', 'normal');
       doc.text(`Generated on: ${new Date().toLocaleString()}`, pageWidth / 2, 22, { align: 'center' });
       
-      // Prepare table data
+      // Prepare table data - ensure all values are strings
       const pdfHeaders = headers.map(header => header.title);
       const pdfData = data.map(record => 
-        headers.map(header => record[header.title])
+        headers.map(header => {
+          const value = record[header.title];
+          // Ensure value is a string and not too long
+          let strValue = value != null ? String(value) : '';
+          if (strValue.length > 100) {
+            strValue = strValue.substring(0, 97) + '...';
+          }
+          return strValue;
+        })
       );
 
+      console.log('PDF Table Data:', { pdfHeaders, pdfData: pdfData.length });
+
       // Generate table
-      doc.autoTable({
-        head: [pdfHeaders],
-        body: pdfData,
-        startY: 30,
-        styles: { 
-          fontSize: 8,
-          cellPadding: 2
-        },
-        headStyles: { 
-          fillColor: [41, 128, 185],
-          textColor: 255,
-          fontStyle: 'bold'
-        },
-        alternateRowStyles: {
-          fillColor: [245, 245, 245]
-        },
-        margin: { top: 30 }
-      });
+      if (doc.autoTable) {
+        doc.autoTable({
+          head: [pdfHeaders],
+          body: pdfData,
+          startY: 30,
+          styles: { 
+            fontSize: 8,
+            cellPadding: 2,
+            overflow: 'linebreak'
+          },
+          headStyles: { 
+            fillColor: [41, 128, 185],
+            textColor: 255,
+            fontStyle: 'bold'
+          },
+          alternateRowStyles: {
+            fillColor: [245, 245, 245]
+          },
+          margin: { top: 30 },
+          columnStyles: {
+            0: { cellWidth: 'auto' },
+            1: { cellWidth: 'auto' },
+            2: { cellWidth: 'auto' }
+          }
+        });
+      } else {
+        // Fallback if autoTable is not attached
+        console.warn('autoTable not available, creating simple PDF');
+        doc.text('Table data:', 10, 30);
+        data.forEach((row, index) => {
+          const yPos = 40 + (index * 10);
+          if (yPos < 280) { // Don't go past page height
+            doc.text(JSON.stringify(row), 10, yPos);
+          }
+        });
+      }
 
       // Add footer if needed
       if (showFooter && footerText) {
-        const finalY = doc.lastAutoTable.finalY || 100;
+        const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : 100;
         doc.setFontSize(8);
-        doc.text(footerText, pageWidth / 2, finalY + 10, { align: 'center' });
+        doc.text(footerText, pageWidth / 2, finalY, { align: 'center' });
       }
 
-      doc.save(`${fileName}_${new Date().toISOString().split('T')[0]}.pdf`);
+      // Save PDF
+      const dateStr = new Date().toISOString().split('T')[0];
+      const safeFileName = fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      doc.save(`${safeFileName}_${dateStr}.pdf`);
+      
       message.success('PDF report generated successfully!');
     } catch (error) {
       console.error('PDF generation error:', error);
-      message.error('Failed to generate PDF report');
+      message.error(`Failed to generate PDF: ${error.message}`);
     }
   };
 
@@ -252,7 +332,8 @@ const AdvancedReportGenerator = ({
       key: 'pdf',
       label: 'Export as PDF',
       icon: <FilePdfOutlined />,
-      onClick: generatePDF
+      onClick: generatePDF,
+      disabled: !jsPDF // Disable if jsPDF not available
     },
     {
       type: 'divider'
