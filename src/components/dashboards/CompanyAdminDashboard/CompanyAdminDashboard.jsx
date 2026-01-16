@@ -154,9 +154,11 @@ const CompanyAdminDashboard = () => {
       onToggle: () => toggleMenu('analytics'),
       items: [
         { id: 'sales', label: 'Sales Analytics', icon: TrendingUp },
-        { id: 'reports', label: 'Reports', icon: FileText },
+        // { id: 'reports', label: 'Reports', icon: FileText },
+       
         { id: 'analytics', label: 'Custom Analytics', icon: PieChart },
-        { id: 'debug', label: 'System Debug', icon: Settings2 }
+        // { id: 'debug', label: 'System Debug', icon: Settings2 }
+      
       ]
     }
   ];
