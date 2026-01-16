@@ -19,7 +19,11 @@ import {
   Descriptions,
   Progress,
   Tooltip,
-  Modal
+  Modal,
+  Steps,
+  notification,
+  Popconfirm,
+  Dropdown
 } from 'antd';
 import { 
   Gauge, 
@@ -35,7 +39,16 @@ import {
   Clock,
   Calendar,
   Eye,
-  BarChart3
+  BarChart3,
+  AlertTriangle,
+  Edit,
+  Trash2,
+  SkipForward,
+  MoreVertical,
+  ChevronRight,
+  Loader2,
+  PlusCircle,
+  PauseCircle
 } from 'lucide-react';
 import { useApp } from '../../../../context/AppContext';
 import { useShift } from '../../../../hooks/useShift';
@@ -47,6 +60,7 @@ import { operationsService } from '../../../../services/operationService/operati
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
 const { Search } = Input;
+const { Step } = Steps;
 
 const ShiftManagement = () => {
   const { state } = useApp();
@@ -66,25 +80,56 @@ const ShiftManagement = () => {
     checkActiveShift,
     canOpenShift,
     canCloseShift,
-    getShiftStatus
+    getShiftStatus,
+    abortIncompleteShift
   } = useShift(userStationId);
 
   const [wizardMode, setWizardMode] = useState(null);
   const [supervisorId, setSupervisorId] = useState('');
   const [hasOpenShift, setHasOpenShift] = useState(false);
+  const [hasPendingShift, setHasPendingShift] = useState(false);
   const [checkingShift, setCheckingShift] = useState(true);
   const [openShiftData, setOpenShiftData] = useState(null);
+  const [pendingShiftData, setPendingShiftData] = useState(null);
   
-  // New state for shifts history table
+  // State for shifts history table
   const [shiftsHistory, setShiftsHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [resumeShiftId, setResumeShiftId] = useState(null);
+  const [abortingShift, setAbortingShift] = useState(false);
 
-  // Check for open shift and load shifts history
+  // Safe wrapper for fetching open shift that handles "not found" gracefully
+  const fetchOpenShiftSafe = async (stationId) => {
+    try {
+      const result = await shiftService.getOpenShift(stationId);
+      return result;
+    } catch (error) {
+      // Check if this is a "no open shift" error
+      const errorMessage = error.message || '';
+      const isNotFoundError = 
+        error.response?.status === 404 ||
+        errorMessage.includes('404') ||
+        errorMessage.includes('not found') ||
+        errorMessage.includes('No open shift') ||
+        errorMessage.includes('open shift');
+      
+      if (isNotFoundError) {
+        console.log(`ℹ️ No open shift found for station ${stationId}`);
+        return null; // Return null for "not found"
+      }
+      
+      // Re-throw actual errors
+      console.error(`❌ Error fetching open shift for station ${stationId}:`, error);
+      throw error;
+    }
+  };
+
+  // Check for open and pending shifts
   useEffect(() => {
-    console.log("🔍 Checking for open shift...", userStationId);
+    console.log("🔍 Checking for shifts...", userStationId);
     
-    const fetchOpenShift = async () => {
+    const fetchShifts = async () => {
       if (!userStationId) {
         setCheckingShift(false);
         return;
@@ -92,56 +137,82 @@ const ShiftManagement = () => {
       
       setCheckingShift(true);
       try {
-        console.log("🔍 Calling shiftService.getOpenShift...");
-        const result = await shiftService.getOpenShift(userStationId);
-        console.log("✅ Open shift check result:", result);
+        // Fetch data with individual error handling
+        let openShiftResult = null;
+        let shiftsHistoryResult = null;
         
-        if (result && result.status === "OPEN") {
+        // Fetch open shift with safe wrapper
+        try {
+          openShiftResult = await fetchOpenShiftSafe(userStationId);
+        } catch (openShiftError) {
+          console.log("⚠️ Could not fetch open shift:", openShiftError.message);
+          // Don't throw - continue to fetch history
+        }
+        
+        // Fetch shift history
+        try {
+          shiftsHistoryResult = await operationsService.getShifts({
+            stationId: userStationId,
+            limit: 50,
+            page: 1,
+            status: 'ALL'
+          });
+        } catch (historyError) {
+          console.error("❌ Error fetching shift history:", historyError);
+          // Still continue, we'll have empty history
+          shiftsHistoryResult = { shifts: [] };
+        }
+
+        console.log("✅ Shifts check results:", {
+          openShift: openShiftResult ? `Found: ${openShiftResult.shiftNumber}` : 'Not found',
+          historyCount: Array.isArray(shiftsHistoryResult) ? 
+            shiftsHistoryResult.length : 
+            (shiftsHistoryResult?.shifts?.length || 0)
+        });
+
+        // Check for OPEN shift (fully started)
+        if (openShiftResult && openShiftResult.status === "OPEN") {
           setHasOpenShift(true);
-          setOpenShiftData(result);
-          console.log("🚦 Open shift found:", result.shiftNumber);
+          setOpenShiftData(openShiftResult);
+          setHasPendingShift(false);
+          setPendingShiftData(null);
+          console.log("🚦 Open shift found:", openShiftResult.shiftNumber);
         } else {
           setHasOpenShift(false);
           setOpenShiftData(null);
-          console.log("🚦 No open shift found");
+          console.log("🚦 No open shift found - this is OK");
         }
+
+        // Check for PENDING shift (created but not fully opened)
+        const shiftsArray = Array.isArray(shiftsHistoryResult) ? 
+          shiftsHistoryResult : 
+          (shiftsHistoryResult?.shifts || []);
+
+        const pendingShift = shiftsArray.find(shift => 
+          shift.status === 'PENDING' && !shift.endTime
+        );
+
+        if (pendingShift) {
+          setHasPendingShift(true);
+          setPendingShiftData(pendingShift);
+          console.log("⏳ Pending shift found:", pendingShift.shiftNumber);
+        } else {
+          setHasPendingShift(false);
+          setPendingShiftData(null);
+        }
+
+        // Update history
+        setShiftsHistory(shiftsArray);
+
       } catch (error) {
-        console.error("❌ Error checking open shift:", error);
-        setHasOpenShift(false);
-        setOpenShiftData(null);
+        console.error("❌ Unexpected error checking shifts:", error);
         message.error('Failed to check shift status');
       } finally {
         setCheckingShift(false);
       }
     };
 
-    const loadShiftsHistory = async () => {
-      if (!userStationId) return;
-      
-      setLoadingHistory(true);
-      try {
-        console.log("📊 Loading shifts history...");
-        const shiftsData = await operationsService.getShifts({
-          stationId: userStationId,
-          limit: 50,
-          page: 1
-        });
-        
-        // Handle the response - it's an array directly, not wrapped in data.shifts
-        console.log("✅ Shifts history response:", shiftsData);
-        const shiftsArray = Array.isArray(shiftsData) ? shiftsData : (shiftsData?.shifts || []);
-        console.log("✅ Shifts history loaded:", shiftsArray.length, "shifts");
-        setShiftsHistory(shiftsArray);
-      } catch (error) {
-        console.error("❌ Error loading shifts history:", error);
-        message.error('Failed to load shifts history');
-      } finally {
-        setLoadingHistory(false);
-      }
-    };
-
-    fetchOpenShift();
-    loadShiftsHistory();
+    fetchShifts();
   }, [userStationId]);
 
   // Handle shift creation
@@ -176,8 +247,8 @@ const ShiftManagement = () => {
       setHasOpenShift(false);
       setOpenShiftData(null);
       
-      // Refresh shifts history after closing
-      loadShiftsHistory();
+      // Refresh shifts after closing
+      await refreshAllShifts();
       message.success('Shift closed successfully');
     } catch (err) {
       console.error("❌ Failed to close shift:", err);
@@ -190,71 +261,171 @@ const ShiftManagement = () => {
     setWizardMode(null);
   };
 
-  // Re-check open shift status and refresh history
-  const checkOpenShiftStatus = async () => {
+  // Refresh all shifts data
+  const refreshAllShifts = async () => {
     if (!userStationId) return;
     
     setCheckingShift(true);
+    setLoadingHistory(true);
     try {
-      const [openShiftResult] = await Promise.all([
-        shiftService.getOpenShift(userStationId),
-        loadShiftsHistory() // Refresh history as well
-      ]);
+      let openShiftResult = null;
+      let shiftsHistoryResult = null;
       
+      // Fetch open shift with safe wrapper
+      try {
+        openShiftResult = await fetchOpenShiftSafe(userStationId);
+      } catch (openShiftError) {
+        console.log("⚠️ Could not refresh open shift:", openShiftError.message);
+      }
+      
+      // Fetch shift history
+      try {
+        shiftsHistoryResult = await operationsService.getShifts({
+          stationId: userStationId,
+          limit: 50,
+          page: 1,
+          status: 'ALL'
+        });
+      } catch (historyError) {
+        console.error("❌ Error refreshing shift history:", historyError);
+        shiftsHistoryResult = { shifts: [] };
+      }
+
+      // Update open shift
       if (openShiftResult && openShiftResult.status === "OPEN") {
         setHasOpenShift(true);
         setOpenShiftData(openShiftResult);
-        message.success('Shift status refreshed');
+        setHasPendingShift(false);
+        setPendingShiftData(null);
       } else {
         setHasOpenShift(false);
         setOpenShiftData(null);
       }
+
+      // Update pending shift
+      const shiftsArray = Array.isArray(shiftsHistoryResult) ? 
+        shiftsHistoryResult : 
+        (shiftsHistoryResult?.shifts || []);
+
+      const pendingShift = shiftsArray.find(shift => 
+        shift.status === 'PENDING' && !shift.endTime
+      );
+
+      if (pendingShift) {
+        setHasPendingShift(true);
+        setPendingShiftData(pendingShift);
+      } else {
+        setHasPendingShift(false);
+        setPendingShiftData(null);
+      }
+
+      // Update history
+      setShiftsHistory(shiftsArray);
+
+      message.success('Shift data refreshed');
     } catch (error) {
-      console.error("Error re-checking shift status:", error);
-      setHasOpenShift(false);
-      setOpenShiftData(null);
-      message.error('Failed to refresh shift status');
+      console.error("Error refreshing shifts:", error);
+      message.error('Failed to refresh shift data');
     } finally {
       setCheckingShift(false);
-    }
-  };
-
-  // Load shifts history
-  const loadShiftsHistory = async () => {
-    if (!userStationId) return;
-    
-    setLoadingHistory(true);
-    try {
-      const shiftsData = await operationsService.getShifts({
-        stationId: userStationId,
-        limit: 50,
-        page: 1
-      });
-      
-      // Handle the response structure
-      const shiftsArray = Array.isArray(shiftsData) ? shiftsData : (shiftsData?.shifts || []);
-      setShiftsHistory(shiftsArray);
-    } catch (error) {
-      console.error("Error loading shifts history:", error);
-      message.error('Failed to load shifts history');
-    } finally {
       setLoadingHistory(false);
     }
   };
 
   // Direct close shift handler
-  const handleDirectCloseShift = () => {
-    if (!hasOpenShift || !openShiftData) {
-      message.warning('No open shift available to close');
+  const handleDirectCloseShift = (shiftId) => {
+    const shift = shiftsHistory.find(s => s.id === shiftId);
+    if (!shift) {
+      message.warning('Shift not found');
       return;
     }
     
-    console.log("🎯 Starting shift close process for:", openShiftData.shiftNumber);
+    console.log("🎯 Starting shift close process for:", shift.shiftNumber);
+    setOpenShiftData(shift); // Set as the shift to close
     setWizardMode('close');
   };
 
+  // Handle aborting a pending shift
+  const handleAbortShift = async (shiftId) => {
+    const shift = shiftsHistory.find(s => s.id === shiftId);
+    if (!shift) return;
+    
+    Modal.confirm({
+      title: 'Abort Incomplete Shift',
+      content: (
+        <Space direction="vertical">
+          <Text>Are you sure you want to abort shift #{shift.shiftNumber}?</Text>
+          <Text type="secondary" style={{ fontSize: '12px' }}>
+            This shift was created but not fully started. All incomplete data will be lost.
+          </Text>
+        </Space>
+      ),
+      okText: 'Yes, Abort Shift',
+      cancelText: 'Cancel',
+      okType: 'danger',
+      onOk: async () => {
+        setAbortingShift(true);
+        try {
+          // Call abort function from useShift hook
+          if (abortIncompleteShift) {
+            await abortIncompleteShift(shift.id);
+          } else {
+            // Fallback: manually update shift status or delete
+            await shiftService.updateShiftStatus(shift.id, 'ABORTED');
+          }
+          
+          message.success(`Shift #${shift.shiftNumber} aborted successfully`);
+          
+          // Refresh data
+          await refreshAllShifts();
+        } catch (error) {
+          console.error('Failed to abort shift:', error);
+          message.error('Failed to abort shift');
+        } finally {
+          setAbortingShift(false);
+        }
+      }
+    });
+  };
+
+  // Handle resuming a pending shift
+  const handleResumeShift = (shiftId) => {
+    const shift = shiftsHistory.find(s => s.id === shiftId);
+    if (!shift) {
+      message.error('Shift not found');
+      return;
+    }
+    
+    console.log("🔄 Resuming shift setup:", shift.shiftNumber);
+    setResumeShiftId(shift.id);
+    setWizardMode('open');
+  };
+
+  // Start a brand new shift
+  const handleStartNewShift = () => {
+    setResumeShiftId(null);
+    setWizardMode('open');
+  };
+
+  // Handle wizard success
+  const handleWizardSuccess = (result) => {
+    setWizardMode(null);
+    setResumeShiftId(null);
+    refreshAllShifts();
+    
+    if (result?.shiftNumber) {
+      message.success(`Shift ${result.shiftNumber} setup completed successfully`);
+    }
+  };
+
   // View shift reconciliation
-  const handleViewReconciliation = async (shift) => {
+  const handleViewReconciliation = async (shiftId) => {
+    const shift = shiftsHistory.find(s => s.id === shiftId);
+    if (!shift) {
+      message.error('Shift not found');
+      return;
+    }
+    
     try {
       const reconciliationData = await operationsService.getShiftReconciliation(shift.id);
       Modal.info({
@@ -311,7 +482,13 @@ const ShiftManagement = () => {
   };
 
   // View shift details
-  const handleViewShiftDetails = async (shift) => {
+  const handleViewShiftDetails = async (shiftId) => {
+    const shift = shiftsHistory.find(s => s.id === shiftId);
+    if (!shift) {
+      message.error('Shift not found');
+      return;
+    }
+    
     try {
       const shiftDetails = await operationsService.getShiftById(shift.id);
       Modal.info({
@@ -380,21 +557,31 @@ const ShiftManagement = () => {
     return `${hours}h ${minutes}m`;
   }, []);
 
-  // Memoized calculations for current shift performance
-  const shiftStats = useMemo(() => {
-    if (!openShiftData) return null;
-
+  // Get completion status for pending shift
+  const getPendingShiftStatus = useCallback((shift) => {
+    if (!shift || shift.status !== 'PENDING') return null;
+    
+    const attendants = shift._count?.shiftIslandAttendant || 0;
+    const tankReadings = shift._count?.dipReadings || 0;
+    const pumpReadings = shift._count?.meterReadings || 0;
+    
+    const stepsCompleted = [
+      attendants > 0,
+      tankReadings > 0,
+      pumpReadings > 0
+    ].filter(Boolean).length;
+    
+    const totalSteps = 3; // Personnel, Tank Readings, Pump Readings
+    
     return {
-      totalTanks: openShiftData._count?.dipReadings || 0,
-      totalPumps: openShiftData._count?.meterReadings || 0,
-      totalAttendants: openShiftData._count?.shiftIslandAttendant || 0,
-      startTime: new Date(openShiftData.startTime).toLocaleString(),
-      duration: getShiftDuration(openShiftData),
-      supervisor: openShiftData.supervisor ? 
-        `${openShiftData.supervisor.firstName} ${openShiftData.supervisor.lastName}` : 
-        'Unknown'
+      progress: Math.round((stepsCompleted / totalSteps) * 100),
+      stepsCompleted,
+      totalSteps,
+      attendants,
+      tankReadings,
+      pumpReadings
     };
-  }, [openShiftData, getShiftDuration]);
+  }, []);
 
   // Columns for shifts history table
   const shiftHistoryColumns = [
@@ -402,10 +589,12 @@ const ShiftManagement = () => {
       title: 'Shift Number',
       dataIndex: 'shiftNumber',
       key: 'shiftNumber',
+      width: 120,
       render: (number, record) => (
         <Space>
           <Text strong>{number}</Text>
           {record.status === 'OPEN' && <Badge status="processing" />}
+          {record.status === 'PENDING' && <Badge status="warning" />}
         </Space>
       )
     },
@@ -413,15 +602,37 @@ const ShiftManagement = () => {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      render: (status) => (
-        <Tag color={operationsService.getStatusColor(status)}>
-          {operationsService.getStatusDisplay(status)}
-        </Tag>
-      )
+      width: 100,
+      render: (status, record) => {
+        const statusDisplay = operationsService.getStatusDisplay(status);
+        const statusColor = operationsService.getStatusColor(status);
+        
+        if (status === 'PENDING') {
+          const progress = getPendingShiftStatus(record);
+          return (
+            <Space direction="vertical" size={2}>
+              <Tag color={statusColor}>
+                {statusDisplay}
+              </Tag>
+              {progress && (
+                <Progress 
+                  percent={progress.progress} 
+                  size="small" 
+                  showInfo={false}
+                  strokeColor="#fa8c16"
+                />
+              )}
+            </Space>
+          );
+        }
+        
+        return <Tag color={statusColor}>{statusDisplay}</Tag>;
+      }
     },
     {
       title: 'Supervisor',
       key: 'supervisor',
+      width: 150,
       render: (_, record) => (
         <Space>
           <User size={14} />
@@ -436,27 +647,41 @@ const ShiftManagement = () => {
       title: 'Start Time',
       dataIndex: 'startTime',
       key: 'startTime',
-      render: (time) => new Date(time).toLocaleString()
+      width: 150,
+      render: (time) => time ? new Date(time).toLocaleString() : '-'
     },
     {
       title: 'End Time',
       dataIndex: 'endTime',
       key: 'endTime',
+      width: 150,
       render: (time) => time ? new Date(time).toLocaleString() : '-'
     },
     {
       title: 'Duration',
       key: 'duration',
+      width: 100,
       render: (_, record) => getShiftDuration(record)
     },
     {
       title: 'Readings',
       key: 'readings',
+      width: 120,
       render: (_, record) => (
         <Space>
-          <Badge count={record._count?.dipReadings || 0} showZero size="small" />
+          <Badge 
+            count={record._count?.dipReadings || 0} 
+            showZero 
+            size="small" 
+            style={{ backgroundColor: '#1890ff' }}
+          />
           <Droplets size={12} />
-          <Badge count={record._count?.meterReadings || 0} showZero size="small" />
+          <Badge 
+            count={record._count?.meterReadings || 0} 
+            showZero 
+            size="small" 
+            style={{ backgroundColor: '#52c41a' }}
+          />
           <Fuel size={12} />
         </Space>
       )
@@ -464,25 +689,86 @@ const ShiftManagement = () => {
     {
       title: 'Actions',
       key: 'actions',
-      render: (_, record) => (
-        <Space>
-          <Tooltip title="View Details">
-            <Button 
-              icon={<Eye size={14} />} 
-              size="small"
-              onClick={() => handleViewShiftDetails(record)}
-            />
-          </Tooltip>
-          <Tooltip title="View Reconciliation">
-            <Button 
-              icon={<BarChart3 size={14} />} 
-              size="small"
-              onClick={() => handleViewReconciliation(record)}
-              disabled={record.status === 'OPEN'}
-            />
-          </Tooltip>
-        </Space>
-      )
+      width: 200,
+      render: (_, record) => {
+        const isOpenShift = record.status === 'OPEN';
+        const isPendingShift = record.status === 'PENDING';
+        
+        return (
+          <Space>
+            <Tooltip title="View Details">
+              <Button 
+                icon={<Eye size={14} />} 
+                size="small"
+                onClick={() => handleViewShiftDetails(record.id)}
+              />
+            </Tooltip>
+            
+            {/* For OPEN shifts: Show Close button */}
+            {isOpenShift && (
+              <Tooltip title="Close Shift">
+                <Button 
+                  type="primary" 
+                  danger
+                  size="small"
+                  icon={<Square size={14} />}
+                  onClick={() => handleDirectCloseShift(record.id)}
+                >
+                  Close
+                </Button>
+              </Tooltip>
+            )}
+            
+            {/* For PENDING shifts: Show Resume button */}
+            {isPendingShift && (
+              <Tooltip title="Resume Shift Setup">
+                <Button 
+                  type="primary"
+                  size="small"
+                  icon={<Play size={14} />}
+                  onClick={() => handleResumeShift(record.id)}
+                >
+                  Resume
+                </Button>
+              </Tooltip>
+            )}
+            
+            {/* Additional actions dropdown */}
+            <Dropdown
+              menu={{
+                items: [
+                  {
+                    key: 'reconciliation',
+                    label: 'View Reconciliation',
+                    icon: <BarChart3 size={14} />,
+                    onClick: () => handleViewReconciliation(record.id),
+                    disabled: record.status === 'OPEN' || record.status === 'PENDING'
+                  },
+                  {
+                    key: 'refresh',
+                    label: 'Refresh Data',
+                    icon: <RefreshCw size={14} />,
+                    onClick: refreshAllShifts
+                  },
+                  isPendingShift && {
+                    key: 'abort',
+                    label: 'Abort Shift',
+                    icon: <Trash2 size={14} />,
+                    danger: true,
+                    onClick: () => handleAbortShift(record.id)
+                  }
+                ].filter(Boolean)
+              }}
+              placement="bottomRight"
+            >
+              <Button 
+                size="small" 
+                icon={<MoreVertical size={14} />}
+              />
+            </Dropdown>
+          </Space>
+        );
+      }
     }
   ];
 
@@ -492,12 +778,10 @@ const ShiftManagement = () => {
     return (
       <ShiftCreationWizard
         onClose={handleCancelWizard}
-        onSuccess={() => {
-          handleCancelWizard();
-          checkOpenShiftStatus();
-        }}
+        onSuccess={handleWizardSuccess}
         stationId={userStationId}
         currentUser={currentUser}
+        existingShiftId={resumeShiftId} // Pass existing shift ID if resuming
       />
     );
   }
@@ -518,26 +802,47 @@ const ShiftManagement = () => {
 
   if (checkingShift) {
     return (
-      <div style={{ padding: 24 }}>
-        <Card style={{ maxWidth: 600, margin: '0 auto', textAlign: 'center' }}>
-          <div style={{ marginBottom: 16 }}>
-            <RefreshCw size={32} className="ant-spin" />
-          </div>
-          <Title level={3}>Checking Shift Status</Title>
-          <Text type="secondary">Looking for active shifts at your station</Text>
-        </Card>
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column',
+        alignItems: 'center', 
+        justifyContent: 'center',
+        height: '400px',
+        padding: '40px'
+      }}>
+        <Loader2 size={48} className="spin" style={{ 
+          color: '#1890ff',
+          animation: 'spin 1s linear infinite',
+          marginBottom: '24px'
+        }} />
+        <Title level={4} style={{ marginBottom: '8px' }}>
+          Shift Management
+        </Title>
+        <Text type="secondary">
+          Loading shift information...
+        </Text>
+        <style>{`
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+          .spin {
+            animation: spin 1s linear infinite;
+          }
+        `}</style>
       </div>
     );
   }
+
+  // Check if we have any pending shifts
+  const pendingShifts = shiftsHistory.filter(s => s.status === 'PENDING');
+  const openShifts = shiftsHistory.filter(s => s.status === 'OPEN');
 
   return (
     <div style={{ padding: 24 }}>
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: 32 }}>
-        <Title level={2}>Shift Management</Title>
-        <Text type="secondary">
-          {hasOpenShift ? 'Manage current shift operations' : 'Start new shift operations'}
-        </Text>
+        <Title level={4}>Shift Management</Title>
       </div>
 
       {error && (
@@ -557,72 +862,124 @@ const ShiftManagement = () => {
       {/* Main Content */}
       <div style={{ maxWidth: 1200, margin: '0 auto' }}>
         
-        {/* Quick Actions Card */}
-        <Card style={{ marginBottom: 24 }}>
+        {/* Quick Actions Card - ALWAYS SHOW OPEN SHIFT BUTTON */}
+        <Card>
           <Row gutter={[16, 16]} align="middle">
-            <Col span={12}>
-              <Space direction="vertical" size="small">
-                <Title level={4} style={{ margin: 0 }}>
-                  Shift Operations
-                </Title>
-                <Text type="secondary">
-                  {hasOpenShift ? 
-                    `Current Shift: ${openShiftData?.shiftNumber}` : 
-                    'No active shift running'
-                  }
-                </Text>
-              </Space>
+            <Col span={16}>
+              {/* Optional: Add station info or welcome message here */}
             </Col>
-            <Col span={12} style={{ textAlign: 'right' }}>
+            <Col span={8} style={{ textAlign: 'right' }}>
               <Space>
-                {hasOpenShift ? (
+                {/* ALWAYS show Open Shift button */}
+                <Button 
+                  type="primary" 
+                  icon={<PlusCircle size={16} />}
+                  onClick={handleStartNewShift}
+                  disabled={loading}
+                  style={{ 
+                    background: pendingShifts.length > 0 ? '#fa8c16' : '#1890ff',
+                    borderColor: pendingShifts.length > 0 ? '#fa8c16' : '#1890ff'
+                  }}
+                >
+                  {pendingShifts.length > 0 ? 'Start New Shift' : 'Open Shift'}
+                </Button>
+                
+                {/* Show Resume button if there are pending shifts */}
+                {pendingShifts.length > 0 && (
                   <Button 
-                    type="primary" 
-                    danger 
-                    icon={<Square size={16} />}
-                    onClick={handleDirectCloseShift}
-                    loading={loading}
-                  >
-                    Close Shift
-                  </Button>
-                ) : (
-                  <Button 
-                    type="primary" 
+                    type="default"
                     icon={<Play size={16} />}
-                    onClick={() => setWizardMode('open')}
-                    disabled={loading}
+                    onClick={() => handleResumeShift(pendingShifts[0].id)}
+                    style={{ borderColor: '#fa8c16', color: '#fa8c16' }}
                   >
-                    Start New Shift
+                    Resume Incomplete ({pendingShifts.length})
                   </Button>
                 )}
-                <Button 
-                  icon={<RefreshCw size={14} />}
-                  onClick={checkOpenShiftStatus}
-                  loading={checkingShift || loadingHistory}
-                >
-                  Refresh
-                </Button>
               </Space>
             </Col>
           </Row>
         </Card>
 
-        {/* SHIFTS HISTORY TABLE - Always show the history */}
+        {/* Status Summary Cards */}
+        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+          <Col span={6}>
+            <Card size="small">
+              <Statistic
+                title="Active Shifts"
+                value={openShifts.length}
+                valueStyle={{ color: openShifts.length > 0 ? '#52c41a' : '#d9d9d9' }}
+                prefix={<Play size={16} />}
+              />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card size="small">
+              <Statistic
+                title="Incomplete Shifts"
+                value={pendingShifts.length}
+                valueStyle={{ color: pendingShifts.length > 0 ? '#fa8c16' : '#d9d9d9' }}
+                prefix={<PauseCircle size={16} />}
+              />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card size="small">
+              <Statistic
+                title="Total Shifts"
+                value={shiftsHistory.length}
+                prefix={<Clock size={16} />}
+              />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card size="small">
+              <Statistic
+                title="Closed Today"
+                value={shiftsHistory.filter(s => 
+                  s.status === 'CLOSED' && 
+                  s.endTime && 
+                  new Date(s.endTime).toDateString() === new Date().toDateString()
+                ).length}
+                prefix={<CheckCircle size={16} />}
+              />
+            </Card>
+          </Col>
+        </Row>
+
+        {/* SHIFTS HISTORY TABLE */}
         <Card 
           title={
             <Space>
               <Clock size={16} />
-              Shift History
-              <Badge count={shiftsHistory.length} showZero />
+              All Shifts
+              <Badge 
+                count={shiftsHistory.length} 
+                showZero 
+                style={{ 
+                  backgroundColor: openShifts.length > 0 ? '#52c41a' : 
+                    pendingShifts.length > 0 ? '#fa8c16' : '#1890ff'
+                }} 
+              />
             </Space>
           }
           extra={
-            <Search
-              placeholder="Search shifts..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ width: 250 }}
-            />
+            <Space>
+              <Button 
+                icon={<RefreshCw size={14} />} 
+                onClick={refreshAllShifts}
+                loading={loadingHistory}
+                size="small"
+              >
+                Refresh
+              </Button>
+              <Search
+                placeholder="Search shifts..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{ width: 250 }}
+                allowClear
+              />
+            </Space>
           }
         >
           <Table
@@ -638,7 +995,49 @@ const ShiftManagement = () => {
                 `${range[0]}-${range[1]} of ${total} shifts`
             }}
             size="middle"
+            rowClassName={(record) => {
+              if (record.status === 'OPEN') return 'open-shift-row';
+              if (record.status === 'PENDING') return 'pending-shift-row';
+              return '';
+            }}
           />
+          
+          {/* Incomplete Shift Notice */}
+          {pendingShifts.length > 0 && (
+            <Alert
+              message="Incomplete Shifts"
+              description={
+                <Space direction="vertical" size="small">
+                  <Text>
+                    You have {pendingShifts.length} shift{pendingShifts.length > 1 ? 's' : ''} 
+                    that {pendingShifts.length > 1 ? 'were' : 'was'} created but not fully started.
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>
+                    Click "Resume" on the shift record to complete the setup, or "Abort" to cancel it.
+                  </Text>
+                </Space>
+              }
+              type="warning"
+              showIcon
+              style={{ marginTop: 16 }}
+              action={
+                <Space>
+                  <Button 
+                    size="small" 
+                    onClick={() => handleResumeShift(pendingShifts[0].id)}
+                  >
+                    Resume Oldest
+                  </Button>
+                  <Button 
+                    size="small" 
+                    onClick={handleStartNewShift}
+                  >
+                    Start New Instead
+                  </Button>
+                </Space>
+              }
+            />
+          )}
         </Card>
       </div>
 
@@ -650,21 +1049,49 @@ const ShiftManagement = () => {
           size="small"
         >
           <Descriptions size="small" column={3}>
-            <Descriptions.Item label="Has Open Shift">
-              {hasOpenShift ? 'Yes' : 'No'}
+            <Descriptions.Item label="Open Shifts">
+              {openShifts.length}
             </Descriptions.Item>
-            <Descriptions.Item label="Open Shift ID">
-              {openShiftData?.id || 'None'}
+            <Descriptions.Item label="Pending Shifts">
+              {pendingShifts.length}
             </Descriptions.Item>
-            <Descriptions.Item label="Total Shifts in History">
+            <Descriptions.Item label="Total Shifts">
               {shiftsHistory.length}
             </Descriptions.Item>
-            <Descriptions.Item label="Open Shift in History">
-              {shiftsHistory.find(s => s.status === 'OPEN') ? 'Yes' : 'No'}
+            <Descriptions.Item label="Open Shift IDs">
+              {openShifts.map(s => s.shiftNumber).join(', ') || 'None'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Pending Shift IDs">
+              {pendingShifts.map(s => s.shiftNumber).join(', ') || 'None'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Can Create New">
+              {openShifts.length === 0 ? 'Yes' : 'No (has open shift)'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Station ID">
+              {userStationId || 'Not set'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Has Open Shift API Error">
+              {hasOpenShift ? 'No (found open shift)' : 'Yes (or error)'}
             </Descriptions.Item>
           </Descriptions>
         </Card>
       )}
+
+      {/* Add CSS for table row styling */}
+      <style>{`
+        .open-shift-row {
+          background-color: rgba(82, 196, 26, 0.05);
+        }
+        .open-shift-row:hover {
+          background-color: rgba(82, 196, 26, 0.1);
+        }
+        .pending-shift-row {
+          background-color: rgba(250, 140, 22, 0.05);
+        }
+        .pending-shift-row:hover {
+          background-color: rgba(250, 140, 22, 0.1);
+        }
+      `}</style>
     </div>
   );
 };

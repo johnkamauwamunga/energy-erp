@@ -135,17 +135,33 @@ export const shiftService = {
   /**
    * Get open shift for a station
    */
+
   getOpenShift: async (stationId) => {
-    logger.info(`Fetching open shift for station: ${stationId}`);
+  logger.info(`Fetching open shift for station: ${stationId}`);
+  
+  try {
+    const response = await apiService.get(`/shifts/stations/${stationId}/open-shift`);
+    console.log("the shift bit response ", response);
     
-    try {
-      const response = await apiService.get(`/shifts/stations/${stationId}/open-shift`);
-      console.log("the shift bit response ",response);
-      return handleResponse(response, 'fetching open shift');
-    } catch (error) {
-      throw handleError(error, 'fetching open shift', 'Failed to fetch open shift');
+    // Check if response indicates "no open shift"
+    if (response.status === 404 || (response.data && response.data.code === 'NO_OPEN_SHIFT')) {
+      // This is not an error - it just means there's no open shift
+      logger.info(`No open shift found for station ${stationId}`);
+      return null; // Return null instead of throwing
     }
-  },
+    
+    return handleResponse(response, 'fetching open shift');
+  } catch (error) {
+    // Check if it's a 404 error (no open shift found)
+    if (error.response?.status === 404) {
+      logger.info(`No open shift found for station ${stationId}`);
+      return null; // Return null for "not found"
+    }
+    
+    // For other errors, still throw
+    throw handleError(error, 'fetching open shift', 'Failed to fetch open shift');
+  }
+},
 
   /**
    * Get open shift with full details including attendants and readings

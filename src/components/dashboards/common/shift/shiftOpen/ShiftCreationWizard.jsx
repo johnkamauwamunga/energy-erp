@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Card, Steps, Button, Space, Alert, Row, Col, Typography, notification } from 'antd';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Card, Steps, Button, Space, Alert, Row, Col, Typography, notification, Tag, Input } from 'antd';
 import { ArrowLeft, ArrowRight, CheckCircle, Users, Gauge, FileText, Play } from 'lucide-react';
 import PersonnelStep from './PersonnelStep';
 import ReadingsStep from './ReadingsStep';
@@ -7,7 +7,7 @@ import SummaryStep from './SummaryStep';
 import { useShift } from '../../../../../hooks/useShift';
 
 const { Step } = Steps;
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
   const { 
@@ -21,26 +21,23 @@ const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
   
   const [currentStep, setCurrentStep] = useState(0);
   const [wizardLoading, setWizardLoading] = useState(false);
+  const [infoAlert, setInfoAlert] = useState('');
+  const alertTimeoutRef = useRef(null);
 
   // CENTRALIZED STATE - All data lives here
   const [wizardData, setWizardData] = useState({
-    // Step 1: Personnel & Basic Info
     personnel: {
       supervisorId: null,
       attendants: [],
       islandAssignments: [],
       topologyIslands: []
     },
-    
-    // Step 2: Readings
     readings: {
       pumpReadings: [],
       tankReadings: [],
       allPumps: [],
       allTanks: []
     },
-    
-    // Shared/System Data
     shiftInfo: {
       shiftId: null,
       stationId: stationId,
@@ -48,6 +45,44 @@ const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
       status: 'PENDING'
     }
   });
+
+  // Show info alert for 3 minutes
+  const showInfoAlert = useCallback((message) => {
+    setInfoAlert(message);
+    
+    // Clear any existing timeout
+    if (alertTimeoutRef.current) {
+      clearTimeout(alertTimeoutRef.current);
+    }
+    
+    // Set timeout for 3 minutes (180000ms)
+    alertTimeoutRef.current = setTimeout(() => {
+      setInfoAlert('');
+    }, 180000);
+  }, []);
+
+  // Clear alert on unmount
+  useEffect(() => {
+    return () => {
+      if (alertTimeoutRef.current) {
+        clearTimeout(alertTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Show alert when shift is created or supervisor is selected
+  useEffect(() => {
+    if (wizardData.shiftInfo.shiftId && wizardData.personnel.supervisorId) {
+      showInfoAlert(`Shift ${wizardData.shiftInfo.shiftNumber} created. Supervisor assigned. Complete attendant assignments to proceed.`);
+    }
+  }, [wizardData.shiftInfo.shiftId, wizardData.personnel.supervisorId, showInfoAlert]);
+
+  // Show alert when attendants are assigned
+  useEffect(() => {
+    if (wizardData.personnel.attendants.length > 0) {
+      showInfoAlert(`${wizardData.personnel.attendants.length} attendant(s) assigned to islands. Proceed to next step.`);
+    }
+  }, [wizardData.personnel.attendants.length, showInfoAlert]);
 
   // Unified update function
   const updateWizardData = useCallback((updates) => {
@@ -76,14 +111,11 @@ const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
     });
   }, [wizardData.shiftInfo, updateWizardData]);
 
-  // ✅ FIXED: Handle shift creation - accept payload from child
   const handleCreateShift = useCallback(async (shiftPayload) => {
     try {
       console.log("📥 Parent received shift payload:", shiftPayload);
-
-      // Use the payload from the child component
       const result = await createShift(shiftPayload);
-
+      
       console.log("Shift create result:", result);
       
       if (result?.id) {
@@ -93,89 +125,77 @@ const ShiftCreationWizard = ({ stationId, onSuccess, onCancel }) => {
           status: result.status
         });
 
-        // ✅ IMPORTANT: Also update the supervisor in personnel data
         updatePersonnel({
           supervisorId: shiftPayload.supervisorId
         });
         
         notification.success({
           message: 'Shift Created',
-          description: `Shift ${result.data.shift.shiftNumber} created successfully`
+          description: `Shift ${result.shiftNumber} created successfully`
         });
+
+        showInfoAlert(`Shift ${result.shiftNumber} created. Please assign attendants.`);
       }
     } catch (err) {
       console.error('Failed to create shift:', err);
     }
-  }, [createShift, updateShiftInfo, updatePersonnel]);
+  }, [createShift, updateShiftInfo, updatePersonnel, showInfoAlert]);
 
-  // Handle final shift opening
-// In your ShiftCreationWizard component, update the handleOpenShift function:
+  const handleOpenShift = useCallback(async () => {
+    try {
+      console.log('🚀 Opening shift with centralized data:', wizardData);
 
-const handleOpenShift = useCallback(async () => {
-  try {
-    console.log('🚀 Opening shift with centralized data:', wizardData);
+      if (!isShiftDataComplete(wizardData)) {
+        throw new Error('Please complete all steps before starting shift');
+      }
 
-    // Validate all required data
-    if (!isShiftDataComplete(wizardData)) {
-      throw new Error('Please complete all steps before starting shift');
+      const openShiftPayload = {
+        shiftId: wizardData.shiftInfo.shiftId,
+        recordedById: wizardData.personnel.supervisorId,
+        islandAssignments: wizardData.personnel.islandAssignments.map(assignment => ({
+          attendantId: assignment.attendantId,
+          islandId: assignment.islandId,
+          assignmentType: assignment.assignmentType || 'PRIMARY'
+        })),
+        pumpReadings: wizardData.readings.pumpReadings.map(reading => ({
+          pumpId: reading.pumpId,
+          electricMeter: parseFloat(reading.electricMeter) || 0,
+          manualMeter: parseFloat(reading.manualMeter) || 0,
+          cashMeter: parseFloat(reading.cashMeter) || 0,
+          unitPrice: parseFloat(reading.unitPrice) || 0,
+          readingType: 'OPENING',
+          source: reading.source || 'MANUAL_ENTRY'
+        })),
+        tankReadings: wizardData.readings.tankReadings.map(reading => ({
+          tankId: reading.tankId,
+          volume: parseFloat(reading.volume) || 0,
+          temperature: parseFloat(reading.temperature) || 25,
+          waterLevel: parseFloat(reading.waterLevel) || 0,
+          dipValue: parseFloat(reading.dipValue) || 0,
+          readingType: 'OPENING',
+          source: reading.source || 'MANUAL_ENTRY'
+        }))
+      };
+
+      console.log('📤 Final harmonized payload for shift opening:', openShiftPayload);
+      const result = await openShift(openShiftPayload);
+      
+      notification.success({
+        message: 'Shift Started',
+        description: `Shift ${wizardData.shiftInfo.shiftNumber} opened successfully`
+      });
+
+      onSuccess?.(result);
+      
+    } catch (error) {
+      console.error('❌ Failed to open shift:', error);
+      notification.error({
+        message: 'Failed to Start Shift',
+        description: error.message
+      });
     }
+  }, [wizardData, openShift, onSuccess]);
 
-    // Harmonize all data into the final payload
-    const openShiftPayload = {
-      shiftId: wizardData.shiftInfo.shiftId,
-      recordedById: wizardData.personnel.supervisorId,
-      
-      // Personnel data
-      islandAssignments: wizardData.personnel.islandAssignments.map(assignment => ({
-        attendantId: assignment.attendantId,
-        islandId: assignment.islandId,
-        assignmentType: assignment.assignmentType || 'PRIMARY'
-      })),
-      
-      // Pump readings data
-      pumpReadings: wizardData.readings.pumpReadings.map(reading => ({
-        pumpId: reading.pumpId,
-        electricMeter: parseFloat(reading.electricMeter) || 0,
-        manualMeter: parseFloat(reading.manualMeter) || 0,
-        cashMeter: parseFloat(reading.cashMeter) || 0,
-        unitPrice: parseFloat(reading.unitPrice) || 0,
-        readingType: 'OPENING',
-        source: reading.source || 'MANUAL_ENTRY'
-      })),
-      
-      // Tank readings data
-      tankReadings: wizardData.readings.tankReadings.map(reading => ({
-        tankId: reading.tankId,
-        volume: parseFloat(reading.volume) || 0,
-        temperature: parseFloat(reading.temperature) || 25,
-        waterLevel: parseFloat(reading.waterLevel) || 0,
-        dipValue: parseFloat(reading.dipValue) || 0,
-        readingType: 'OPENING',
-        source: reading.source || 'MANUAL_ENTRY'
-      }))
-    };
-
-    console.log('📤 Final harmonized payload for shift opening:', openShiftPayload);
-
-    const result = await openShift(openShiftPayload);
-    
-    notification.success({
-      message: 'Shift Started',
-      description: `Shift ${wizardData.shiftInfo.shiftNumber} opened successfully`
-    });
-
-    onSuccess?.(result);
-    
-  } catch (error) {
-    console.error('❌ Failed to open shift:', error);
-    notification.error({
-      message: 'Failed to Start Shift',
-      description: error.message
-    });
-  }
-}, [wizardData, openShift, onSuccess]);
-
-  // Validation helper
   const isShiftDataComplete = useCallback((data) => {
     return (
       data.shiftInfo.shiftId &&
@@ -187,25 +207,21 @@ const handleOpenShift = useCallback(async () => {
     );
   }, []);
 
-  // Check if we can proceed to next step
   const canProceedToNextStep = useCallback(() => {
     switch (currentStep) {
-      case 0: // Personnel step
+      case 0:
         return !!wizardData.shiftInfo.shiftId && 
                wizardData.personnel.islandAssignments.length > 0 && 
                wizardData.personnel.attendants.length > 0;
-
-      case 1: // Readings step
+      case 1:
         const allPumpsHaveReadings = wizardData.readings.allPumps?.length === wizardData.readings.pumpReadings?.length;
         const allTanksHaveReadings = wizardData.readings.allTanks?.length === wizardData.readings.tankReadings?.length;
         return allPumpsHaveReadings && allTanksHaveReadings;
-
       default:
         return true;
     }
   }, [currentStep, wizardData]);
 
-  // Auto-check for existing open shift
   useEffect(() => {
     const initialize = async () => {
       if (stationId) {
@@ -215,7 +231,6 @@ const handleOpenShift = useCallback(async () => {
           const activeShift = await checkActiveShift();
           
           if (activeShift) {
-            // Pre-populate with existing shift data
             updateShiftInfo({
               shiftId: activeShift.id,
               shiftNumber: activeShift.shiftNumber,
@@ -239,6 +254,8 @@ const handleOpenShift = useCallback(async () => {
                 islandAssignments: existingAssignments
               });
             }
+
+            showInfoAlert(`Existing shift ${activeShift.shiftNumber} found. You can modify assignments.`);
           }
         } catch (err) {
           console.error('Wizard initialization error:', err);
@@ -249,13 +266,12 @@ const handleOpenShift = useCallback(async () => {
     };
     
     initialize();
-  }, [stationId, checkActiveShift, updateShiftInfo, updatePersonnel]);
+  }, [stationId, checkActiveShift, updateShiftInfo, updatePersonnel, showInfoAlert]);
 
   const steps = [
     {
       title: 'Personnel',
       icon: <Users size={16} />,
-     // description: 'Assign supervisor & attendants',
       content: (
         <PersonnelStep 
           stationId={stationId}
@@ -268,29 +284,28 @@ const handleOpenShift = useCallback(async () => {
           onUpdateShiftInfo={updateShiftInfo}
           onClearError={clearError}
           onCheckActiveShift={checkActiveShift}
+          compactLayout={true} // Add this prop
         />
       )
     },
-{
-  title: 'Readings',
-  icon: <Gauge size={16} />,
-  //description: 'Record opening readings',
-  content: (
-    <ReadingsStep 
-      stationId={stationId}
-      shiftId={wizardData.shiftInfo.shiftId} // ✅ CRITICAL
-      shiftInfo={wizardData.shiftInfo}
-      readingsData={wizardData.readings}
-      personnelData={wizardData.personnel} // ✅ ADD PERSONNEL DATA
-      onUpdateReadings={updateReadings}
-      readingType="START" // ✅ SPECIFY READING TYPE
-    />
-  )
-},
+    {
+      title: 'Readings',
+      icon: <Gauge size={16} />,
+      content: (
+        <ReadingsStep 
+          stationId={stationId}
+          shiftId={wizardData.shiftInfo.shiftId}
+          shiftInfo={wizardData.shiftInfo}
+          readingsData={wizardData.readings}
+          personnelData={wizardData.personnel}
+          onUpdateReadings={updateReadings}
+          readingType="START"
+        />
+      )
+    },
     {
       title: 'Summary',
       icon: <FileText size={16} />,
-     // description: 'Review & start shift',
       content: (
         <SummaryStep 
           wizardData={wizardData}
@@ -345,24 +360,37 @@ const handleOpenShift = useCallback(async () => {
       extra={
         wizardData.shiftInfo.shiftId && (
           <Space>
-            <span style={{ fontSize: 12, color: '#666' }}>Shift:</span>
-            <code style={{ background: '#f0f0f0', padding: '2px 6px', borderRadius: 3 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Shift:</Text>
+            <Tag color="blue" style={{ fontSize: 12 }}>
               {wizardData.shiftInfo.shiftNumber || wizardData.shiftInfo.shiftId}
-            </code>
-            <span style={{ 
-              fontSize: 11, 
-              padding: '2px 8px', 
-              borderRadius: 10, 
-              backgroundColor: wizardData.shiftInfo.status === 'OPEN' ? '#f6ffed' : '#fff7e6',
-              color: wizardData.shiftInfo.status === 'OPEN' ? '#52c41a' : '#fa8c16',
-              border: `1px solid ${wizardData.shiftInfo.status === 'OPEN' ? '#b7eb8f' : '#ffd591'}`
-            }}>
+            </Tag>
+            <Tag 
+              color={wizardData.shiftInfo.status === 'OPEN' ? 'green' : 'orange'}
+              style={{ fontSize: 11 }}
+            >
               {wizardData.shiftInfo.status}
-            </span>
+            </Tag>
           </Space>
         )
       }
     >
+      {/* Info Alert - Always at the top */}
+      {infoAlert && (
+        <Alert 
+          message="Information"
+          description={infoAlert}
+          type="info"
+          showIcon
+          closable
+          onClose={() => setInfoAlert('')}
+          style={{ 
+            marginBottom: 16,
+            borderLeft: '4px solid #1890ff'
+          }}
+        />
+      )}
+
+      {/* Error Alert */}
       {error && (
         <Alert 
           message={error} 
@@ -379,12 +407,12 @@ const handleOpenShift = useCallback(async () => {
         current={currentStep} 
         style={{ marginBottom: 32 }}
         status={error ? 'error' : 'process'}
+        size="small"
       >
         {steps.map((item, index) => (
           <Step 
             key={item.title}
             title={item.title}
-            description={item.description}
             icon={item.icon}
             status={getStepStatus(index)}
           />
@@ -397,7 +425,12 @@ const handleOpenShift = useCallback(async () => {
       </div>
 
       {/* Navigation Footer */}
-      <div style={{ marginTop: 24, borderTop: '1px solid #f0f0f0', paddingTop: 16 }}>
+      <div style={{ 
+        marginTop: 24, 
+        borderTop: '1px solid #f0f0f0', 
+        paddingTop: 16,
+        paddingBottom: 8 
+      }}>
         <Row justify="space-between" align="middle">
           <Col>
             {currentStep > 0 && (
@@ -463,31 +496,6 @@ const handleOpenShift = useCallback(async () => {
           {currentStep === 2 && ' - Review and start shift'}
         </div>
       </div>
-
-      {/* Debug Info - Only in development */}
-      {/* {process.env.NODE_ENV === 'development' && (
-        <details style={{ marginTop: 16, fontSize: 12 }}>
-          <summary>🔍 Debug Info</summary>
-          <div style={{ 
-            background: '#f5f5f5', 
-            padding: 8, 
-            borderRadius: 4,
-            marginTop: 8,
-            fontFamily: 'monospace'
-          }}>
-            <div><strong>Current Step:</strong> {currentStep}</div>
-            <div><strong>Can Proceed:</strong> {canProceedToNextStep().toString()}</div>
-            <div><strong>Shift ID:</strong> {wizardData.shiftInfo.shiftId || 'None'}</div>
-            <div><strong>Supervisor:</strong> {wizardData.personnel.supervisorId || 'None'}</div>
-            <div><strong>Attendants:</strong> {wizardData.personnel.attendants.length}</div>
-            <div><strong>Island Assignments:</strong> {wizardData.personnel.islandAssignments.length}</div>
-            <div><strong>Pump Readings:</strong> {wizardData.readings.pumpReadings.length}</div>
-            <div><strong>Tank Readings:</strong> {wizardData.readings.tankReadings.length}</div>
-            <div><strong>All Pumps:</strong> {wizardData.readings.allPumps.length}</div>
-            <div><strong>All Tanks:</strong> {wizardData.readings.allTanks.length}</div>
-          </div>
-        </details>
-      )} */}
     </Card>
   );
 };
