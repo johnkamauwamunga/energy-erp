@@ -48,7 +48,8 @@ const SupervisorDashboard = () => {
     financial: false,
     operations: false,
     staff: false,
-    reports: false
+    reports: false,
+    assetManagement: false
   });
 
   const handleLogout = () => {
@@ -84,8 +85,20 @@ const SupervisorDashboard = () => {
       onToggle: () => toggleMenu('staff'),
       items: [
         { id: 'staff', label: 'Staff Members', icon: Users },
-        { id: 'shifts', label: 'Shift Management', icon: Clock },
-        { id: 'staff-accounts', label: 'Staff Accounts', icon: SquareUserRound }
+        // { id: 'staff-accounts', label: 'Staff Accounts', icon: SquareUserRound }
+      ]
+    },
+      {
+      id: 'assetManagement',
+      label: 'Asset Management',
+      icon: Fuel,
+      type: 'dropdown',
+      expanded: expandedMenus.assetManagement,
+      onToggle: () => toggleMenu('assetManagement'),
+      items: [
+        { id: 'assets', label: 'Assets', icon: Building2 },
+        { id: 'warehouses', label: 'Warehouses', icon: Warehouse },
+        { id: 'fuel_tanks', label: 'Fuel Tanks', icon: Fuel },
       ]
     },
     {
@@ -96,41 +109,41 @@ const SupervisorDashboard = () => {
       expanded: expandedMenus.operations,
       onToggle: () => toggleMenu('operations'),
       items: [
-        { id: 'assets', label: 'Assets', icon: Building2 },
-        { id: 'warehouses', label: 'Warehouses', icon: Warehouse },
-        { id: 'fuel_tanks', label: 'Fuel Tanks', icon: Fuel },
+        { id: 'shifts', label: 'Shift Management', icon: Clock },
         { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
-        { id: 'cash-movement', label: 'Cash Movement', icon: LucideCoins },
-        { id: 'activity', label: 'Activity Logs', icon: ClipboardList }
+  
       ]
     },
     {
       id: 'inventory',
       label: 'Inventory & Sales',
-      icon: Package,
+      icon: ShoppingCart,
       type: 'dropdown',
       expanded: expandedMenus.inventory,
       onToggle: () => toggleMenu('inventory'),
       items: [
         { id: 'sales', label: 'Fuel Sales', icon: DollarSign },
         { id: 'wet_stock', label: 'Wet Stock', icon: FuelIcon },
+        { id: 'warehouses', label: 'Warehouses', icon: Archive },
         { id: 'pump-sales', label: 'Pump Sales', icon: ShoppingCart },
-        { id: 'warehouses', label: 'Warehouses', icon: Archive }
+        { id: 'cash-movement', label: 'Cash Movement', icon: LucideCoins },
+      
       ]
     },
     {
       id: 'financial',
       label: 'Financial',
-      icon: Wallet,
+      icon: HandCoinsIcon,
       type: 'dropdown',
       expanded: expandedMenus.financial,
       onToggle: () => toggleMenu('financial'),
       items: [
         { id: 'expenses', label: 'Expenses', icon: CoinsIcon },
-        { id: 'accounts', label: 'Accounts', icon: BookAIcon },
+        { id: 'accounts', label: 'Accounts', icon: Wallet },
         { id: 'debtor', label: 'Debtors', icon: Users2Icon },
         { id: 'debt-transfer', label: 'Payment & Transfer', icon: HandCoinsIcon },
-        { id: 'receipts', label: 'Receipts', icon: Receipt }
+        { id: 'receipts', label: 'Receipts', icon: Receipt },
+       
       ]
     },
     {
@@ -141,10 +154,11 @@ const SupervisorDashboard = () => {
       expanded: expandedMenus.reports,
       onToggle: () => toggleMenu('reports'),
       items: [
+        { id: 'activity', label: 'Activity Logs', icon: ClipboardList },
         { id: 'analytics', label: 'Analytics', icon: TrendingUp },
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'reconciliation', label: 'Reconciliation', icon: Calculator },
-        { id: 'debug', label: 'Debug', icon: Database }
+       
       ]
     }
   ];
