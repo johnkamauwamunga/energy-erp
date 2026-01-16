@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import { 
   BarChart3, Building2, MapPin, Clock, Users, FileCheck, Truck, 
   TrendingUp, FileText, Warehouse, Flame, X, Menu, DollarSign, Coins,
-  User, Settings, LogOut, UserCog,HandCoins
+  User, Settings, LogOut, UserCog, HandCoins, ChevronDown, ChevronRight,
+  Package, ShoppingCart, Fuel, Settings2, BanknoteIcon, CreditCard,
+  LineChart, PieChart, ShoppingBag, Boxes, Factory, FileBarChart,
+  Wallet, Tag, Receipt
 } from 'lucide-react';
 import { Button } from '../../ui';
 import { useApp, useAppDispatch, logout } from '../../../context/AppContext';
@@ -29,7 +32,7 @@ import FinancialDashboard from '../common/finance-manager/FinancialDashboard';
 import WarehouseManagement from '../common/warehouses/WarehouseManagement';
 import FuelSalesManagement from '../common/fuelSales/FuelSalesManagement';
 import Debug from './Debug';
-import FinanceDebugComponent from '../common/FinanceDebugComponent'; // ✅ Correct
+import FinanceDebugComponent from '../common/FinanceDebugComponent';
 
 const CompanyAdminDashboard = () => {
   const { state } = useApp();
@@ -38,6 +41,13 @@ const CompanyAdminDashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showCreateAssetModal, setShowCreateAssetModal] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [expandedMenus, setExpandedMenus] = useState({
+    operations: false,
+    inventory: false,
+    financial: false,
+    supplyChain: false,
+    analytics: false
+  });
 
   const handleLogout = () => {
     dispatch(logout());
@@ -46,21 +56,88 @@ const CompanyAdminDashboard = () => {
     window.location.href = '/login';
   };
 
-  const menuItems = [
-    { id: 'overview', label: 'Dashboard', icon: BarChart3 },
-    { id: 'stations', label: 'Service Stations', icon: Building2 },
-    { id: 'staff', label: 'Staff Management', icon: Users },
-    { id: 'assets', label: 'Assets', icon: Building2 },
-    { id: 'suppliers', label: 'Supplier', icon: Warehouse },
-    { id: 'supplier_account', label: 'Supplier Account', icon: UserCog },
-    { id: 'products_mant', label: 'Product Management', icon: MapPin },
-    { id: 'nonfuel_mant', label: 'Nonfuel Management', icon: MapPin },
-    { id: 'fuel_price', label: 'Fuel Price', icon: Coins },
-    { id: 'finance-manager', label: 'Finances', icon: HandCoins },
-    { id: 'purchase', label: 'Purchase', icon: TrendingUp },
-    { id: 'banks', label: 'Banks', icon:Coins },
-    { id: 'sales', label: 'Sales Analytics', icon: TrendingUp },
-    { id: 'reports', label: 'Reports', icon: FileText }
+  const toggleMenu = (menu) => {
+    setExpandedMenus(prev => ({
+      ...prev,
+      [menu]: !prev[menu]
+    }));
+  };
+
+  // Define nested menu structure
+  const menuStructure = [
+    {
+      id: 'overview',
+      label: 'Dashboard',
+      icon: BarChart3,
+      type: 'single'
+    },
+    {
+      id: 'operations',
+      label: 'Operations',
+      icon: Building2,
+      type: 'dropdown',
+      expanded: expandedMenus.operations,
+      onToggle: () => toggleMenu('operations'),
+      items: [
+        { id: 'stations', label: 'Service Stations', icon: Building2 },
+        { id: 'assets', label: 'Assets Management', icon: Building2 },
+        { id: 'staff', label: 'Staff Management', icon: Users }
+      ]
+    },
+    {
+      id: 'inventory',
+      label: 'Product Management',
+      icon: Package,
+      type: 'dropdown',
+      expanded: expandedMenus.inventory,
+      onToggle: () => toggleMenu('inventory'),
+      items: [
+        { id: 'products_mant', label: 'Fuel Products', icon: Fuel },
+        { id: 'nonfuel_mant', label: 'Non-Fuel Products', icon: ShoppingBag },
+        { id: 'fuel_price', label: 'Fuel Pricing', icon: Tag }
+      ]
+    },
+    {
+      id: 'supplyChain',
+      label: 'Supply Chain',
+      icon: Truck,
+      type: 'dropdown',
+      expanded: expandedMenus.supplyChain,
+      onToggle: () => toggleMenu('supplyChain'),
+      items: [
+        { id: 'suppliers', label: 'Suppliers', icon: Factory },
+        { id: 'supplier_account', label: 'Supplier Accounts', icon: UserCog },
+        { id: 'purchase', label: 'Purchases', icon: ShoppingCart },
+        { id: 'warehouses', label: 'Warehouses', icon: Warehouse }
+      ]
+    },
+    {
+      id: 'financial',
+      label: 'Financial',
+      icon: Wallet,
+      type: 'dropdown',
+      expanded: expandedMenus.financial,
+      onToggle: () => toggleMenu('financial'),
+      items: [
+        { id: 'finance-manager', label: 'Finance Dashboard', icon: LineChart },
+        { id: 'banks', label: 'Bank Accounts', icon: CreditCard },
+        { id: 'accounts', label: 'Accounts', icon: Receipt }
+      ]
+    },
+    {
+      id: 'analytics',
+      label: 'Analytics & Reports',
+      icon: FileBarChart,
+      type: 'dropdown',
+      expanded: expandedMenus.analytics,
+      onToggle: () => toggleMenu('analytics'),
+      items: [
+        { id: 'sales', label: 'Sales Analytics', icon: TrendingUp },
+        { id: 'reports', label: 'Reports', icon: FileText },
+        { id: 'analytics', label: 'Custom Analytics', icon: PieChart },
+        { id: 'debug', label: 'System Debug', icon: Settings2 }
+      ]
+    }
   ];
 
   const renderContent = () => {
@@ -93,9 +170,92 @@ const CompanyAdminDashboard = () => {
         return <FuelSalesManagement />;
       case 'reports':
         return <FinanceDebugComponent />;
+      case 'analytics':
+        return <AnalyticsDemo />;
+      case 'debug':
+        return <Debug />;
+      case 'warehouses':
+        return <WarehouseManagement />;
+      case 'accounts':
+        return <PlaceholderComponent title="Accounts Management" icon={Receipt} />;
       default:
         return <CompanyOverview />;
     }
+  };
+
+  const renderMenuItems = () => {
+    return menuStructure.map((item) => {
+      if (item.type === 'single') {
+        return (
+          <button
+            key={item.id}
+            onClick={() => {
+              setActiveSection(item.id);
+              setSidebarOpen(false);
+            }}
+            className={`w-full flex items-center px-4 py-3 rounded-lg transition-all duration-200 ${
+              activeSection === item.id 
+                ? 'bg-blue-100 text-blue-700 border-r-4 border-blue-500' 
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            <item.icon className="w-5 h-5 mr-3 flex-shrink-0" />
+            <span className="truncate flex-1 text-left">{item.label}</span>
+          </button>
+        );
+      }
+
+      if (item.type === 'dropdown') {
+        const isAnyChildActive = item.items.some(subItem => activeSection === subItem.id);
+        
+        return (
+          <div key={item.id} className="mb-1">
+            <button
+              onClick={item.onToggle}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${
+                isAnyChildActive || item.expanded
+                  ? 'bg-gray-50 text-gray-900' 
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <div className="flex items-center">
+                <item.icon className="w-5 h-5 mr-3 flex-shrink-0" />
+                <span className="truncate">{item.label}</span>
+              </div>
+              {item.expanded ? (
+                <ChevronDown className="w-4 h-4 flex-shrink-0" />
+              ) : (
+                <ChevronRight className="w-4 h-4 flex-shrink-0" />
+              )}
+            </button>
+            
+            {item.expanded && (
+              <div className="ml-6 mt-1 space-y-1 border-l border-gray-200 pl-3">
+                {item.items.map((subItem) => (
+                  <button
+                    key={subItem.id}
+                    onClick={() => {
+                      setActiveSection(subItem.id);
+                      setSidebarOpen(false);
+                    }}
+                    className={`w-full flex items-center px-3 py-2 rounded-lg transition-all duration-200 ${
+                      activeSection === subItem.id 
+                        ? 'bg-blue-50 text-blue-700 border-l-2 border-blue-500 -ml-[2px]' 
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <subItem.icon className="w-4 h-4 mr-2 flex-shrink-0" />
+                    <span className="truncate text-sm">{subItem.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      return null;
+    });
   };
 
   return (
@@ -109,7 +269,7 @@ const CompanyAdminDashboard = () => {
       )}
 
       {/* Sidebar */}
-      <div className={`w-64 bg-white shadow-xl transform transition-transform duration-300 z-50 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:z-auto fixed inset-y-0 left-0`}>
+      <div className={`w-64 bg-white shadow-xl transform transition-transform duration-300 z-50 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:z-auto fixed inset-y-0 left-0 flex flex-col`}>
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -117,7 +277,7 @@ const CompanyAdminDashboard = () => {
                 <Flame className="w-6 h-6 text-white" />
               </div>
               <div className="min-w-0 flex-1">
-                <h1 className="text-lg font-bold text-gray-900 truncate">Energy ERP</h1>
+                <h1 className="text-lg font-bold text-gray-900 truncate">Lynx Energy</h1>
                 <p className="text-xs text-gray-500 truncate">Company Admin</p>
               </div>
             </div>
@@ -130,25 +290,33 @@ const CompanyAdminDashboard = () => {
           </div>
         </div>
         
-        <nav className="p-4 space-y-2 overflow-y-auto h-full pb-20">
-          {menuItems.map(item => (
-            <button
-              key={item.id}
-              onClick={() => {
-                setActiveSection(item.id);
-                setSidebarOpen(false);
-              }}
-              className={`w-full flex items-center px-4 py-3 rounded-lg transition-all duration-200 ${
-                activeSection === item.id 
-                  ? 'bg-blue-100 text-blue-700 border-r-4 border-blue-500' 
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <item.icon className="w-5 h-5 mr-3 flex-shrink-0" />
-              <span className="truncate">{item.label}</span>
-            </button>
-          ))}
+        <nav className="p-4 space-y-1 flex-1 overflow-y-auto">
+          {renderMenuItems()}
         </nav>
+        
+        {/* Sidebar Footer */}
+        <div className="p-4 border-t border-gray-200">
+          <div className="text-xs text-gray-500 mb-2">Company Administrator</div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                {state.currentUser?.firstName?.charAt(0) || 'U'}
+              </div>
+              <div className="truncate">
+                <div className="text-sm font-medium text-gray-900 truncate">
+                  {state.currentUser?.firstName} {state.currentUser?.lastName}
+                </div>
+              </div>
+            </div>
+            <button 
+              onClick={handleLogout}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Main Content */}

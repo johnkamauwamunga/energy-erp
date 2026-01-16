@@ -1,5 +1,5 @@
 // src/components/collections/CashMovement.jsx
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Card,
   Tabs,
@@ -54,7 +54,12 @@ import {
   InfoCircleOutlined,
   SettingOutlined,
   ArrowUpOutlined,
-  ArrowDownOutlined
+  ArrowDownOutlined,
+  MoneyCollectOutlined,
+  SafetyOutlined,
+  CalculatorOutlined,
+  FieldNumberOutlined,
+  IdcardOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useApp } from '../../../../context/AppContext';
@@ -75,6 +80,7 @@ const CashMovement = () => {
   const { state } = useApp();
   const userStationId = state.currentStation?.id;
   const currentUser = state.currentUser;
+  const currentStation = state.currentStation;
   const [form] = Form.useForm();
 
   // State for all tabs
@@ -85,7 +91,6 @@ const CashMovement = () => {
   const [summary, setSummary] = useState(null);
   const [meta, setMeta] = useState(null);
   const [tableData, setTableData] = useState([]);
-  const [viewMode, setViewMode] = useState('table');
 
   // State for dropdowns
   const [shifts, setShifts] = useState([]);
@@ -108,6 +113,8 @@ const CashMovement = () => {
     islandGroupBy: 'day',
     includeDebtorTransactions: false,
     includeStaffTransactions: false,
+    includeExpenses: false,
+    includeDebts: false,
     
     // Shift Collections
     shiftId: null,
@@ -138,6 +145,17 @@ const CashMovement = () => {
   useEffect(() => {
     loadDropdownData();
   }, [userStationId]);
+
+  // Initial fetch on component mount
+  useEffect(() => {
+    if (activeTab !== 'dashboard') {
+      const timeoutId = setTimeout(() => {
+        fetchData();
+      }, 500); // Slightly longer timeout for initial load
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, []); // Empty dependency array for initial load
 
   const loadDropdownData = async () => {
     setLoadingDropdowns(true);
@@ -248,7 +266,9 @@ const CashMovement = () => {
             islandId: filters.islandId,
             attendantId: filters.attendantId,
             includeDebtorTransactions: filters.includeDebtorTransactions,
-            includeStaffTransactions: filters.includeStaffTransactions
+            includeStaffTransactions: filters.includeStaffTransactions,
+            includeExpenses: filters.includeExpenses,
+            includeDebts: filters.includeDebts
           });
           break;
 
@@ -258,14 +278,19 @@ const CashMovement = () => {
             shiftId: filters.shiftId,
             includeWalletTransactions: filters.includeWalletTransactions,
             includeIslandCollections: filters.includeIslandCollections,
-            includeDebtorTransactions: filters.includeDebtorTransactions
+            includeDebtorTransactions: filters.includeDebtorTransactions,
+            includeExpenses: true,
+            includeDebts: true
           });
           break;
 
         case 'daily':
           result = await CollectionService.getDailyReport({
             date: filters.reportDate,
-            stationId: filters.stationId
+            stationId: filters.stationId,
+            includeExpenses: true,
+            includeDebts: true,
+            includeAllDetails: true
           });
           break;
 
@@ -275,7 +300,9 @@ const CashMovement = () => {
             endDate: filters.endDate,
             stationId: filters.stationId,
             groupBy: filters.reportGroupBy,
-            period: filters.reportPeriod
+            period: filters.reportPeriod,
+            includeExpenses: true,
+            includeDebts: true
           });
           break;
 
@@ -292,9 +319,12 @@ const CashMovement = () => {
       setData(result);
       setSummary(result?.summary || result?.data?.summary || null);
       setMeta(result?.meta || null);
-      setTableData(result?.tableData || result?.data || []);
+      
+      // Use tableData if available, otherwise use data array
+      const dataArray = result?.tableData || result?.data || [];
+      setTableData(dataArray);
 
-      if ((result?.tableData || result?.data || []).length === 0) {
+      if (dataArray.length === 0) {
         message.info('No data found for the selected filters');
       }
     } catch (error) {
@@ -352,6 +382,7 @@ const CashMovement = () => {
         return 'warning';
       case 'APPROVED':
       case 'VERIFIED':
+      case 'COUNTED':
         return 'success';
       case 'REJECTED':
       case 'DISPUTED':
@@ -370,6 +401,7 @@ const CashMovement = () => {
         return <ClockCircleOutlined />;
       case 'APPROVED':
       case 'VERIFIED':
+      case 'COUNTED':
         return <CheckCircleOutlined />;
       case 'REJECTED':
       case 'DISPUTED':
@@ -391,7 +423,9 @@ const CashMovement = () => {
   const showCollectionDetails = async (collection) => {
     try {
       const result = await CollectionService.getShiftCollectionById(collection.id, {
-        includeAllDetails: true
+        includeAllDetails: true,
+        includeExpenses: true,
+        includeDebts: true
       });
       setSelectedCollection(result.data);
       setDetailModalVisible(true);
@@ -403,9 +437,10 @@ const CashMovement = () => {
 
   // Render summary cards
   const renderSummaryCards = () => {
-    if (!summary) return null;
+    if (!summary && !data?.summary) return null;
 
-    const isFormatted = summary.formatted;
+    const summaryData = summary || data.summary;
+    const isFormatted = summaryData.formatted;
 
     return (
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
@@ -413,13 +448,13 @@ const CashMovement = () => {
           <Card size="small" hoverable>
             <Statistic
               title="Total Cash"
-              value={isFormatted?.totalCash || summary.totalCash || 0}
+              value={isFormatted?.totalCash || summaryData.totalCash || 0}
               precision={0}
               valueStyle={{ color: '#52c41a' }}
               prefix={<DollarOutlined />}
             />
             <Text type="secondary">
-              {isFormatted?.totalCash || formatCurrency(summary.totalCash)}
+              {isFormatted?.totalCash || formatCurrency(summaryData.totalCash)}
             </Text>
           </Card>
         </Col>
@@ -427,7 +462,7 @@ const CashMovement = () => {
           <Card size="small" hoverable>
             <Statistic
               title="Collections"
-              value={summary.totalCollections || 0}
+              value={summaryData.totalCollections || tableData.length || 0}
               valueStyle={{ color: '#1890ff' }}
               prefix={<FileTextOutlined />}
             />
@@ -438,13 +473,13 @@ const CashMovement = () => {
           <Card size="small" hoverable>
             <Statistic
               title="Total Shortage"
-              value={isFormatted?.totalShortage || summary.totalShortage || 0}
+              value={isFormatted?.totalShortage || summaryData.totalShortage || 0}
               precision={0}
               valueStyle={{ color: '#fa8c16' }}
               prefix={<ArrowDownOutlined />}
             />
             <Text type="secondary">
-              {isFormatted?.totalShortage || formatCurrency(summary.totalShortage)}
+              {isFormatted?.totalShortage || formatCurrency(summaryData.totalShortage)}
             </Text>
           </Card>
         </Col>
@@ -452,13 +487,13 @@ const CashMovement = () => {
           <Card size="small" hoverable>
             <Statistic
               title="Total Overage"
-              value={isFormatted?.totalOverage || summary.totalOverage || 0}
+              value={isFormatted?.totalOverage || summaryData.totalOverage || 0}
               precision={0}
               valueStyle={{ color: '#722ed1' }}
               prefix={<ArrowUpOutlined />}
             />
             <Text type="secondary">
-              {isFormatted?.totalOverage || formatCurrency(summary.totalOverage)}
+              {isFormatted?.totalOverage || formatCurrency(summaryData.totalOverage)}
             </Text>
           </Card>
         </Col>
@@ -466,303 +501,436 @@ const CashMovement = () => {
     );
   };
 
-  // Get columns based on active tab
-  const getColumns = () => {
-    const baseColumns = {
-      island: [
+  // Get column definitions for different report types
+  const getColumnDefinitions = () => {
+    const commonRenderers = {
+      currency: (value) => formatCurrency(value),
+      date: (value) => formatDate(value, 'short'),
+      datetime: (value) => formatDate(value, 'datetime'),
+      status: (value) => (
+        <Tag color={getStatusVariant(value)} icon={getStatusIcon(value)}>
+          {value}
+        </Tag>
+      ),
+      boolean: (value) => value ? 'Yes' : 'No'
+    };
+
+    switch (activeTab) {
+      case 'island':
+        return [
+          {
+            title: 'Island',
+            dataIndex: 'islandName',
+            key: 'islandName',
+            type: 'text',
+            width: 120,
+            render: (value, record) => (
+              <Space direction="vertical" size={0}>
+                <Text strong>{value || 'Unknown Island'}</Text>
+                {record.islandCode && (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    Code: {record.islandCode}
+                  </Text>
+                )}
+              </Space>
+            )
+          },
+          {
+            title: 'Attendant',
+            dataIndex: 'attendantName',
+            key: 'attendantName',
+            type: 'text',
+            width: 120
+          },
+          {
+            title: 'Station',
+            dataIndex: 'stationName',
+            key: 'stationName',
+            type: 'text',
+            width: 140
+          },
+          {
+            title: 'Cash Amount',
+            dataIndex: 'cashAmount',
+            key: 'cashAmount',
+            type: 'currency',
+            width: 120,
+            render: commonRenderers.currency,
+            sorter: (a, b) => (a.cashAmount || 0) - (b.cashAmount || 0)
+          },
+          {
+            title: 'Cash Collected',
+            dataIndex: 'totalCashCollected',
+            key: 'totalCashCollected',
+            type: 'currency',
+            width: 140,
+            render: commonRenderers.currency,
+            sorter: (a, b) => (a.totalCashCollected || 0) - (b.totalCashCollected || 0)
+          },
+          {
+            title: 'Shortage',
+            dataIndex: 'shortageAmount',
+            key: 'shortageAmount',
+            type: 'currency',
+            width: 100,
+            render: (value) => <Text type="danger">{formatCurrency(value)}</Text>,
+            sorter: (a, b) => (a.shortageAmount || 0) - (b.shortageAmount || 0)
+          },
+          {
+            title: 'Overage',
+            dataIndex: 'overageAmount',
+            key: 'overageAmount',
+            type: 'currency',
+            width: 100,
+            render: (value) => <Text type="success">{formatCurrency(value)}</Text>,
+            sorter: (a, b) => (a.overageAmount || 0) - (b.overageAmount || 0)
+          },
+          {
+            title: 'Status',
+            dataIndex: 'status',
+            key: 'status',
+            type: 'status',
+            width: 100,
+            render: commonRenderers.status
+          },
+          {
+            title: 'Counted At',
+            dataIndex: 'countedAt',
+            key: 'countedAt',
+            type: 'datetime',
+            width: 140,
+            render: commonRenderers.datetime
+          }
+        ];
+
+      case 'shift':
+        return [
+          {
+            title: 'Shift',
+            dataIndex: 'shiftNumber',
+            key: 'shiftNumber',
+            type: 'text',
+            width: 80
+          },
+          {
+            title: 'Station',
+            dataIndex: 'stationName',
+            key: 'stationName',
+            type: 'text',
+            width: 120
+          },
+          {
+            title: 'Supervisor',
+            dataIndex: 'supervisorName',
+            key: 'supervisorName',
+            type: 'text',
+            width: 120
+          },
+          {
+            title: 'Cash Amount',
+            dataIndex: 'cashAmount',
+            key: 'cashAmount',
+            type: 'currency',
+            width: 120,
+            render: commonRenderers.currency,
+            sorter: (a, b) => (a.cashAmount || 0) - (b.cashAmount || 0)
+          },
+          {
+            title: 'Grand Total',
+            dataIndex: 'grandTotal',
+            key: 'grandTotal',
+            type: 'currency',
+            width: 120,
+            render: commonRenderers.currency,
+            sorter: (a, b) => (a.grandTotal || 0) - (b.grandTotal || 0)
+          },
+          {
+            title: 'Variance',
+            dataIndex: 'cashVariance',
+            key: 'cashVariance',
+            type: 'currency',
+            width: 100,
+            render: (value) => (
+              <Tag color={value >= 0 ? 'success' : 'error'}>
+                {formatCurrency(value)}
+              </Tag>
+            ),
+            sorter: (a, b) => (a.cashVariance || 0) - (b.cashVariance || 0)
+          },
+          {
+            title: 'Status',
+            dataIndex: 'status',
+            key: 'status',
+            type: 'status',
+            width: 100,
+            render: commonRenderers.status
+          },
+          {
+            title: 'Counted At',
+            dataIndex: 'countedAt',
+            key: 'countedAt',
+            type: 'datetime',
+            width: 140,
+            render: commonRenderers.datetime
+          }
+        ];
+
+      case 'daily':
+        return [
+          {
+            title: 'Date',
+            dataIndex: 'date',
+            key: 'date',
+            type: 'date',
+            width: 100,
+            render: commonRenderers.date
+          },
+          {
+            title: 'Station',
+            dataIndex: 'stationName',
+            key: 'stationName',
+            type: 'text',
+            width: 120
+          },
+          {
+            title: 'Shift Collections',
+            dataIndex: 'totalShiftCollections',
+            key: 'totalShiftCollections',
+            type: 'number',
+            width: 100
+          },
+          {
+            title: 'Total Cash',
+            dataIndex: 'totalCash',
+            key: 'totalCash',
+            type: 'currency',
+            width: 120,
+            render: commonRenderers.currency
+          },
+          {
+            title: 'Total Shortage',
+            dataIndex: 'totalShortage',
+            key: 'totalShortage',
+            type: 'currency',
+            width: 120,
+            render: (value) => <Text type="danger">{formatCurrency(value)}</Text>
+          },
+          {
+            title: 'Total Overage',
+            dataIndex: 'totalOverage',
+            key: 'totalOverage',
+            type: 'currency',
+            width: 120,
+            render: (value) => <Text type="success">{formatCurrency(value)}</Text>
+          },
+          {
+            title: 'Grand Total',
+            dataIndex: 'grandTotal',
+            key: 'grandTotal',
+            type: 'currency',
+            width: 120,
+            render: commonRenderers.currency
+          }
+        ];
+
+      case 'performance':
+        return [
+          {
+            title: 'Rank',
+            dataIndex: 'rank',
+            key: 'rank',
+            type: 'number',
+            width: 60,
+            render: (value) => (
+              <Badge
+                count={value}
+                style={{
+                  backgroundColor: value <= 3 ? 
+                    value === 1 ? '#f5222d' : 
+                    value === 2 ? '#fa8c16' : 
+                    '#52c41a' : '#d9d9d9'
+                }}
+              />
+            )
+          },
+          {
+            title: 'Name',
+            dataIndex: 'name',
+            key: 'name',
+            type: 'text',
+            width: 150
+          },
+          {
+            title: 'Collections',
+            dataIndex: 'shiftCount',
+            key: 'shiftCount',
+            type: 'number',
+            width: 100
+          },
+          {
+            title: 'Total Cash',
+            dataIndex: 'totalCash',
+            key: 'totalCash',
+            type: 'currency',
+            width: 120,
+            render: commonRenderers.currency
+          },
+          {
+            title: 'Total Debts',
+            dataIndex: 'totalDebts',
+            key: 'totalDebts',
+            type: 'currency',
+            width: 120,
+            render: commonRenderers.currency
+          },
+          {
+            title: 'Grand Total',
+            dataIndex: 'totalGrandTotal',
+            key: 'totalGrandTotal',
+            type: 'currency',
+            width: 120,
+            render: commonRenderers.currency
+          }
+        ];
+
+      default:
+        return [];
+    }
+  };
+
+  // Get table columns for display
+  const getTableColumns = () => {
+    const columns = getColumnDefinitions();
+    
+    // Add actions column for interactive tables
+    if (activeTab === 'island' || activeTab === 'shift') {
+      return [
+        ...columns,
         {
-          title: 'Island',
-          dataIndex: 'islandName',
-          key: 'islandName',
-          width: 120,
-          render: (value, record) => (
-            <Space direction="vertical" size={0}>
-              <Text strong>{value || 'Unknown Island'}</Text>
-              {record.islandCode && (
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  Code: {record.islandCode}
-                </Text>
+          title: 'Actions',
+          key: 'actions',
+          width: activeTab === 'shift' ? 120 : 100,
+          fixed: 'right',
+          render: (_, record) => (
+            <Space>
+              <Tooltip title="View Details">
+                <Button
+                  type="link"
+                  icon={<EyeOutlined />}
+                  onClick={() => 
+                    activeTab === 'island' 
+                      ? showItemDetails(record, 'island')
+                      : showCollectionDetails(record)
+                  }
+                  size="small"
+                />
+              </Tooltip>
+              {activeTab === 'shift' && (
+                <Tooltip title="Money Flow">
+                  <Button
+                    type="link"
+                    icon={<TransactionOutlined />}
+                    onClick={() => fetchMoneyFlow(record.id)}
+                    size="small"
+                  />
+                </Tooltip>
               )}
             </Space>
           )
-        },
-        {
-          title: 'Attendant',
-          dataIndex: 'attendantName',
-          key: 'attendantName',
-          width: 120,
-          render: (value) => value || 'Unknown'
-        },
-        {
-          title: 'Cash Collected',
-          dataIndex: 'totalCashCollected',
-          key: 'cashCollected',
-          width: 120,
-          render: (value) => formatCurrency(value),
-          sorter: (a, b) => (a.totalCashCollected || 0) - (b.totalCashCollected || 0)
-        },
-        {
-          title: 'Shortage',
-          dataIndex: 'shortageAmount',
-          key: 'shortage',
-          width: 100,
-          render: (value) => (
-            <Text type="danger">
-              {formatCurrency(value)}
-            </Text>
-          ),
-          sorter: (a, b) => (a.shortageAmount || 0) - (b.shortageAmount || 0)
-        },
-        {
-          title: 'Overage',
-          dataIndex: 'overageAmount',
-          key: 'overage',
-          width: 100,
-          render: (value) => (
-            <Text type="success">
-              {formatCurrency(value)}
-            </Text>
-          ),
-          sorter: (a, b) => (a.overageAmount || 0) - (b.overageAmount || 0)
-        },
-        {
-          title: 'Status',
-          dataIndex: 'status',
-          key: 'status',
-          width: 100,
-          render: (value) => (
-            <Tag color={getStatusVariant(value)} icon={getStatusIcon(value)}>
-              {value}
-            </Tag>
-          )
-        },
-        {
-          title: 'Counted At',
-          dataIndex: 'countedAt',
-          key: 'countedAt',
-          width: 140,
-          render: (value) => formatDate(value, 'datetime')
-        },
-        {
-          title: 'Actions',
-          key: 'actions',
-          width: 100,
-          fixed: 'right',
-          render: (_, record) => (
-            <Space>
-              <Tooltip title="View Details">
-                <Button
-                  type="link"
-                  icon={<EyeOutlined />}
-                  onClick={() => showItemDetails(record, 'island')}
-                  size="small"
-                />
-              </Tooltip>
-            </Space>
-          )
         }
-      ],
-      shift: [
-        {
-          title: 'Shift',
-          dataIndex: 'shiftNumber',
-          key: 'shiftNumber',
-          width: 80,
-          render: (value) => value || 'N/A'
-        },
-        {
-          title: 'Station',
-          dataIndex: 'stationName',
-          key: 'station',
-          width: 120,
-          render: (value) => value || 'Unknown Station'
-        },
-        {
-          title: 'Supervisor',
-          dataIndex: 'supervisorName',
-          key: 'supervisor',
-          width: 120,
-          render: (value) => value || 'Unknown'
-        },
-        {
-          title: 'Cash Amount',
-          dataIndex: 'cashAmount',
-          key: 'cashAmount',
-          width: 120,
-          render: (value) => formatCurrency(value),
-          sorter: (a, b) => (a.cashAmount || 0) - (b.cashAmount || 0)
-        },
-        {
-          title: 'Grand Total',
-          dataIndex: 'grandTotal',
-          key: 'grandTotal',
-          width: 120,
-          render: (value) => formatCurrency(value),
-          sorter: (a, b) => (a.grandTotal || 0) - (b.grandTotal || 0)
-        },
-        {
-          title: 'Variance',
-          dataIndex: 'cashVariance',
-          key: 'variance',
-          width: 100,
-          render: (value) => (
-            <Tag color={value >= 0 ? 'success' : 'error'}>
-              {formatCurrency(value)}
-            </Tag>
-          ),
-          sorter: (a, b) => (a.cashVariance || 0) - (b.cashVariance || 0)
-        },
-        {
-          title: 'Status',
-          dataIndex: 'status',
-          key: 'status',
-          width: 100,
-          render: (value) => (
-            <Tag color={getStatusVariant(value)} icon={getStatusIcon(value)}>
-              {value}
-            </Tag>
-          )
-        },
-        {
-          title: 'Counted At',
-          dataIndex: 'countedAt',
-          key: 'countedAt',
-          width: 140,
-          render: (value) => formatDate(value, 'datetime')
-        },
-        {
-          title: 'Actions',
-          key: 'actions',
-          width: 120,
-          fixed: 'right',
-          render: (_, record) => (
-            <Space>
-              <Tooltip title="View Details">
-                <Button
-                  type="link"
-                  icon={<EyeOutlined />}
-                  onClick={() => showCollectionDetails(record)}
-                  size="small"
-                />
-              </Tooltip>
-              <Tooltip title="Money Flow">
-                <Button
-                  type="link"
-                  icon={<TransactionOutlined />}
-                  onClick={() => fetchMoneyFlow(record.id)}
-                  size="small"
-                />
-              </Tooltip>
-            </Space>
-          )
-        }
-      ],
-      daily: [
-        {
-          title: 'Date',
-          dataIndex: 'date',
-          key: 'date',
-          width: 100,
-          render: (value) => formatDate(value, 'short')
-        },
-        {
-          title: 'Station',
-          dataIndex: 'station',
-          key: 'station',
-          width: 120
-        },
-        {
-          title: 'Shift Collections',
-          dataIndex: 'totalShiftCollections',
-          key: 'collections',
-          width: 100,
-          render: (value) => value || 0
-        },
-        {
-          title: 'Total Cash',
-          dataIndex: 'totalCash',
-          key: 'totalCash',
-          width: 120,
-          render: (value) => formatCurrency(value)
-        },
-        {
-          title: 'Total Shortage',
-          dataIndex: 'totalShortage',
-          key: 'totalShortage',
-          width: 120,
-          render: (value) => formatCurrency(value)
-        },
-        {
-          title: 'Total Overage',
-          dataIndex: 'totalOverage',
-          key: 'totalOverage',
-          width: 120,
-          render: (value) => formatCurrency(value)
-        },
-        {
-          title: 'Grand Total',
-          dataIndex: 'grandTotal',
-          key: 'grandTotal',
-          width: 120,
-          render: (value) => formatCurrency(value)
-        }
-      ],
-      performance: [
-        {
-          title: 'Rank',
-          dataIndex: 'rank',
-          key: 'rank',
-          width: 60,
-          render: (value) => (
-            <Badge
-              count={value}
-              style={{
-                backgroundColor: value <= 3 ? 
-                  value === 1 ? '#f5222d' : 
-                  value === 2 ? '#fa8c16' : 
-                  '#52c41a' : '#d9d9d9'
-              }}
-            />
-          )
-        },
-        {
-          title: 'Name',
-          dataIndex: 'name',
-          key: 'name',
-          width: 150
-        },
-        {
-          title: 'Collections',
-          dataIndex: 'shiftCount',
-          key: 'collections',
-          width: 100,
-          render: (value) => value || 0
-        },
-        {
-          title: 'Total Cash',
-          dataIndex: 'totalCash',
-          key: 'totalCash',
-          width: 120,
-          render: (value) => formatCurrency(value)
-        },
-        {
-          title: 'Total Debts',
-          dataIndex: 'totalDebts',
-          key: 'totalDebts',
-          width: 120,
-          render: (value) => formatCurrency(value)
-        },
-        {
-          title: 'Grand Total',
-          dataIndex: 'totalGrandTotal',
-          key: 'grandTotal',
-          width: 120,
-          render: (value) => formatCurrency(value)
-        }
-      ]
+      ];
+    }
+    
+    return columns;
+  };
+
+  // Calculate summary data for reports
+  const calculateSummaryData = () => {
+    if (!tableData || tableData.length === 0) return null;
+
+    const currencyColumns = getColumnDefinitions().filter(col => 
+      col.type === 'currency'
+    );
+
+    const totals = {};
+    currencyColumns.forEach(col => {
+      if (col.dataIndex) {
+        totals[col.dataIndex] = tableData.reduce((sum, record) => {
+          const value = parseFloat(record[col.dataIndex]) || 0;
+          return sum + value;
+        }, 0);
+      }
+    });
+
+    // Add record count
+    totals.totalRecords = tableData.length;
+
+    return totals;
+  };
+
+  // Render export button with AdvancedReportGenerator
+  const renderExportButton = () => {
+    if (!tableData || tableData.length === 0) {
+      return (
+        <Button icon={<DownloadOutlined />} disabled>
+          Export
+        </Button>
+      );
+    }
+
+    const columnDefinitions = getColumnDefinitions();
+    const summaryData = calculateSummaryData();
+    
+    // Get report title based on active tab
+    const getReportTitle = () => {
+      const tabNames = {
+        island: 'Island Collections',
+        shift: 'Shift Collections',
+        daily: 'Daily Report',
+        performance: 'Performance Report'
+      };
+      
+      return `${tabNames[activeTab] || 'Collections'} Report - ${filters.startDate} to ${filters.endDate}`;
     };
 
-    return baseColumns[activeTab] || baseColumns.island;
+    // Get file name
+    const getFileName = () => {
+      return `cash_movement_${activeTab}_${filters.startDate}_${filters.endDate}`;
+    };
+
+    // Get report type based on active tab
+    const getReportType = () => {
+      if (activeTab === 'island' || activeTab === 'shift' || activeTab === 'daily') {
+        return 'finance';
+      } else if (activeTab === 'performance') {
+        return 'sales';
+      }
+      return 'default';
+    };
+
+    // Get station info
+    const stationInfo = currentStation ? {
+      name: currentStation.name,
+      code: currentStation.code,
+      address: currentStation.address
+    } : null;
+
+    return (
+      <AdvancedReportGenerator
+        dataSource={tableData}
+        columns={columnDefinitions}
+        summaryData={summaryData}
+        title={getReportTitle()}
+        fileName={getFileName()}
+        reportType={getReportType()}
+        companyName="Lynx Energy System"
+        stationInfo={stationInfo}
+        showFooter={true}
+        footerText={`Generated from Lynx Energy System - ${new Date().toLocaleString()}`}
+        enableCustomization={true}
+        includeLogo={false}
+      />
+    );
   };
 
   // Render filter controls based on active tab
@@ -808,6 +976,7 @@ const CashMovement = () => {
               <Option value="PENDING">Pending</Option>
               <Option value="APPROVED">Approved</Option>
               <Option value="VERIFIED">Verified</Option>
+              <Option value="COUNTED">Counted</Option>
               <Option value="REJECTED">Rejected</Option>
               <Option value="UNDER_REVIEW">Under Review</Option>
             </Select>
@@ -884,6 +1053,18 @@ const CashMovement = () => {
                     >
                       Staff Transactions
                     </Checkbox>
+                    <Checkbox
+                      checked={filters.includeExpenses}
+                      onChange={(e) => handleFilterChange('includeExpenses', e.target.checked)}
+                    >
+                      Expenses
+                    </Checkbox>
+                    <Checkbox
+                      checked={filters.includeDebts}
+                      onChange={(e) => handleFilterChange('includeDebts', e.target.checked)}
+                    >
+                      Debts
+                    </Checkbox>
                   </Space>
                 </Form.Item>
               </Col>
@@ -939,6 +1120,12 @@ const CashMovement = () => {
                     >
                       Island Collections
                     </Checkbox>
+                    <Checkbox
+                      checked={filters.includeDebtorTransactions}
+                      onChange={(e) => handleFilterChange('includeDebtorTransactions', e.target.checked)}
+                    >
+                      Debtor Transactions
+                    </Checkbox>
                   </Space>
                 </Form.Item>
               </Col>
@@ -987,16 +1174,21 @@ const CashMovement = () => {
                 </Form.Item>
               </Col>
               <Col xs={24} sm={12} md={8}>
-                <Form.Item label="Group By" style={{ marginBottom: 0 }}>
-                  <Select
-                    value={filters.reportGroupBy}
-                    onChange={(value) => handleFilterChange('reportGroupBy', value)}
-                    style={{ width: '100%' }}
-                  >
-                    <Option value="station">By Station</Option>
-                    <Option value="shift">By Shift</Option>
-                    <Option value="attendant">By Attendant</Option>
-                  </Select>
+                <Form.Item label="Include" style={{ marginBottom: 0 }}>
+                  <Space>
+                    <Checkbox
+                      checked={filters.includeExpenses}
+                      onChange={(e) => handleFilterChange('includeExpenses', e.target.checked)}
+                    >
+                      Expenses
+                    </Checkbox>
+                    <Checkbox
+                      checked={filters.includeDebts}
+                      onChange={(e) => handleFilterChange('includeDebts', e.target.checked)}
+                    >
+                      Debts
+                    </Checkbox>
+                  </Space>
                 </Form.Item>
               </Col>
               <Col xs={24} sm={12} md={8}>
@@ -1046,16 +1238,21 @@ const CashMovement = () => {
                 </Form.Item>
               </Col>
               <Col xs={24} sm={12} md={6}>
-                <Form.Item label="Items per page" style={{ marginBottom: 0 }}>
-                  <Select
-                    value={filters.limit}
-                    onChange={(value) => handleFilterChange('limit', value)}
-                    style={{ width: '100%' }}
-                  >
-                    <Option value={10}>10 items</Option>
-                    <Option value={20}>20 items</Option>
-                    <Option value={50}>50 items</Option>
-                  </Select>
+                <Form.Item label="Include" style={{ marginBottom: 0 }}>
+                  <Space>
+                    <Checkbox
+                      checked={filters.includeExpenses}
+                      onChange={(e) => handleFilterChange('includeExpenses', e.target.checked)}
+                    >
+                      Expenses
+                    </Checkbox>
+                    <Checkbox
+                      checked={filters.includeDebts}
+                      onChange={(e) => handleFilterChange('includeDebts', e.target.checked)}
+                    >
+                      Debts
+                    </Checkbox>
+                  </Space>
                 </Form.Item>
               </Col>
               <Col xs={24} sm={12} md={6}>
@@ -1095,34 +1292,6 @@ const CashMovement = () => {
     }
   };
 
-  // Render export button
-  const renderExportButton = () => {
-    const columns = getColumns();
-    const exportData = tableData || [];
-
-    if (!exportData || exportData.length === 0) {
-      return (
-        <Button icon={<DownloadOutlined />} disabled>
-          Export
-        </Button>
-      );
-    }
-
-    const exportTitle = `${activeTab.toUpperCase()} Collections Report - ${filters.startDate} to ${filters.endDate}`;
-    const fileName = `collections_${activeTab}_${filters.startDate}_to_${filters.endDate}`;
-
-    return (
-      <AdvancedReportGenerator
-        dataSource={exportData}
-        columns={columns}
-        title={exportTitle}
-        fileName={fileName}
-        showFooter={true}
-        footerText={`Generated from Energy ERP System - ${new Date().toLocaleString()}`}
-      />
-    );
-  };
-
   // Render data table
   const renderDataTable = () => {
     if (!tableData || tableData.length === 0) {
@@ -1141,7 +1310,7 @@ const CashMovement = () => {
       );
     }
 
-    const columns = getColumns();
+    const columns = getTableColumns();
 
     return (
       <Table
@@ -1165,6 +1334,47 @@ const CashMovement = () => {
         scroll={{ x: 'max-content' }}
         loading={loading}
         bordered
+        summary={() => {
+          if (activeTab === 'daily' || activeTab === 'performance') return null;
+          
+          const summaryData = calculateSummaryData();
+          if (!summaryData) return null;
+
+          return (
+            <Table.Summary fixed>
+              <Table.Summary.Row style={{ backgroundColor: '#fafafa', fontWeight: 'bold' }}>
+                <Table.Summary.Cell index={0} colSpan={3}>
+                  <Text strong>TOTAL</Text>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={1} align="right">
+                  <Text strong style={{ color: '#1890ff' }}>
+                    {formatCurrency(summaryData.cashAmount || 0)}
+                  </Text>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={2} align="right">
+                  <Text strong style={{ color: '#1890ff' }}>
+                    {formatCurrency(summaryData.totalCashCollected || 0)}
+                  </Text>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={3} align="right">
+                  <Text strong type="danger">
+                    {formatCurrency(summaryData.shortageAmount || 0)}
+                  </Text>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={4} align="right">
+                  <Text strong type="success">
+                    {formatCurrency(summaryData.overageAmount || 0)}
+                  </Text>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={5} colSpan={2}>
+                  <Text type="secondary">
+                    {summaryData.totalRecords} records
+                  </Text>
+                </Table.Summary.Cell>
+              </Table.Summary.Row>
+            </Table.Summary>
+          );
+        }}
       />
     );
   };
@@ -1234,30 +1444,7 @@ const CashMovement = () => {
               <Card title="Recent Collections" size="small">
                 <Table
                   dataSource={dashboardData.recentCollections}
-                  columns={[
-                    {
-                      title: 'Shift',
-                      dataIndex: 'shiftNumber',
-                      key: 'shift'
-                    },
-                    {
-                      title: 'Station',
-                      dataIndex: ['station', 'name'],
-                      key: 'station'
-                    },
-                    {
-                      title: 'Amount',
-                      dataIndex: 'cashAmount',
-                      key: 'amount',
-                      render: formatCurrency
-                    },
-                    {
-                      title: 'Date',
-                      dataIndex: 'countedAt',
-                      key: 'date',
-                      render: (value) => formatDate(value, 'short')
-                    }
-                  ]}
+                  columns={getTableColumns()}
                   pagination={false}
                   size="small"
                 />
@@ -1293,34 +1480,7 @@ const CashMovement = () => {
               <Card title="Recent Shifts" size="small">
                 <Table
                   dataSource={dashboardData.recentShifts}
-                  columns={[
-                    {
-                      title: 'Shift',
-                      dataIndex: 'shiftNumber',
-                      key: 'shift'
-                    },
-                    {
-                      title: 'Station',
-                      dataIndex: ['station', 'name'],
-                      key: 'station'
-                    },
-                    {
-                      title: 'Status',
-                      dataIndex: 'status',
-                      key: 'status',
-                      render: (value) => (
-                        <Tag color={getStatusVariant(value)}>
-                          {value}
-                        </Tag>
-                      )
-                    },
-                    {
-                      title: 'Start Time',
-                      dataIndex: 'startTime',
-                      key: 'startTime',
-                      render: formatDate
-                    }
-                  ]}
+                  columns={getTableColumns()}
                   pagination={false}
                   size="small"
                 />
@@ -1334,43 +1494,44 @@ const CashMovement = () => {
 
   // Detail modal
   const renderDetailModal = () => {
-    const renderIslandDetails = () => (
-      <Descriptions bordered column={2} size="small">
-        <Descriptions.Item label="Island" span={2}>
-          <Text strong>{selectedItem?.islandName}</Text>
-        </Descriptions.Item>
-        <Descriptions.Item label="Attendant">
-          {selectedItem?.attendantName}
-        </Descriptions.Item>
-        <Descriptions.Item label="Station">
-          {selectedItem?.stationName}
-        </Descriptions.Item>
-        <Descriptions.Item label="Cash Amount">
-          {formatCurrency(selectedItem?.cashAmount)}
-        </Descriptions.Item>
-        <Descriptions.Item label="Cash Collected">
-          {formatCurrency(selectedItem?.totalCashCollected)}
-        </Descriptions.Item>
-        <Descriptions.Item label="Shortage">
-          <Text type="danger">{formatCurrency(selectedItem?.shortageAmount)}</Text>
-        </Descriptions.Item>
-        <Descriptions.Item label="Overage">
-          <Text type="success">{formatCurrency(selectedItem?.overageAmount)}</Text>
-        </Descriptions.Item>
-        <Descriptions.Item label="Status" span={2}>
-          <Tag color={getStatusVariant(selectedItem?.status)}>
-            {selectedItem?.status}
-          </Tag>
-        </Descriptions.Item>
-        <Descriptions.Item label="Counted At">
-          {formatDate(selectedItem?.countedAt, 'datetime')}
-        </Descriptions.Item>
-        <Descriptions.Item label="Verified At">
-          {selectedItem?.verifiedAt ? 
-            formatDate(selectedItem.verifiedAt, 'datetime') : 'Not Verified'}
-        </Descriptions.Item>
-      </Descriptions>
-    );
+    const renderIslandDetails = () => {
+      if (!selectedItem) return null;
+
+      const columns = getColumnDefinitions();
+      
+      return (
+        <Descriptions bordered column={2} size="small">
+          {columns.map((col) => {
+            if (!col.dataIndex) return null;
+            
+            const value = selectedItem[col.dataIndex];
+            let content = value;
+            
+            if (col.type === 'currency' && typeof value === 'number') {
+              content = formatCurrency(value);
+            } else if (col.type === 'datetime' && value) {
+              content = formatDate(value, 'datetime');
+            } else if (col.type === 'date' && value) {
+              content = formatDate(value, 'short');
+            } else if (col.type === 'status') {
+              content = (
+                <Tag color={getStatusVariant(value)}>
+                  {value}
+                </Tag>
+              );
+            } else if (value === null || value === undefined) {
+              content = '-';
+            }
+
+            return (
+              <Descriptions.Item label={col.title} key={col.dataIndex}>
+                {content}
+              </Descriptions.Item>
+            );
+          })}
+        </Descriptions>
+      );
+    };
 
     const renderShiftDetails = () => {
       if (!selectedCollection) return null;
@@ -1378,35 +1539,74 @@ const CashMovement = () => {
       return (
         <div>
           <Descriptions bordered column={2} size="small" style={{ marginBottom: 16 }}>
-            <Descriptions.Item label="Shift" span={2}>
-              <Text strong>Shift {selectedCollection.shiftInfo?.shiftNumber}</Text>
-            </Descriptions.Item>
-            <Descriptions.Item label="Station">
-              {selectedCollection.stationInfo?.name}
-            </Descriptions.Item>
-            <Descriptions.Item label="Supervisor">
-              {selectedCollection.shiftInfo?.supervisor}
-            </Descriptions.Item>
-            <Descriptions.Item label="Cash Amount">
-              {selectedCollection.formatted?.cashAmount}
-            </Descriptions.Item>
-            <Descriptions.Item label="Grand Total">
-              {selectedCollection.formatted?.grandTotal}
-            </Descriptions.Item>
-            <Descriptions.Item label="Cash Variance">
-              {selectedCollection.formatted?.cashVariance}
-            </Descriptions.Item>
-            <Descriptions.Item label="Counted By">
-              {selectedCollection.countedByInfo}
-            </Descriptions.Item>
-            <Descriptions.Item label="Status" span={2}>
-              <Tag color={getStatusVariant(selectedCollection.status)}>
-                {selectedCollection.status}
-              </Tag>
-            </Descriptions.Item>
+            {getColumnDefinitions().map((col) => {
+              if (!col.dataIndex) return null;
+              
+              const value = selectedCollection[col.dataIndex];
+              let content = value;
+              
+              if (col.type === 'currency' && typeof value === 'number') {
+                content = formatCurrency(value);
+              } else if (col.type === 'datetime' && value) {
+                content = formatDate(value, 'datetime');
+              } else if (col.type === 'status') {
+                content = (
+                  <Tag color={getStatusVariant(value)}>
+                    {value}
+                  </Tag>
+                );
+              } else if (value === null || value === undefined) {
+                content = '-';
+              }
+
+              return (
+                <Descriptions.Item label={col.title} key={col.dataIndex}>
+                  {content}
+                </Descriptions.Item>
+              );
+            })}
           </Descriptions>
 
-          {selectedCollection.islandCollections && (
+          {/* Expenses Section */}
+          {selectedCollection.expenses && selectedCollection.expenses.length > 0 && (
+            <Collapse style={{ marginBottom: 16 }}>
+              <Panel header="Expenses" key="expenses">
+                <Table
+                  dataSource={selectedCollection.expenses}
+                  columns={[
+                    { title: 'Description', dataIndex: 'description' },
+                    { title: 'Amount', dataIndex: 'amount', render: formatCurrency },
+                    { title: 'Category', dataIndex: 'category' },
+                    { title: 'Date', dataIndex: 'date', render: formatDate }
+                  ]}
+                  size="small"
+                  pagination={false}
+                />
+              </Panel>
+            </Collapse>
+          )}
+
+          {/* Debts Section */}
+          {selectedCollection.debts && selectedCollection.debts.length > 0 && (
+            <Collapse style={{ marginBottom: 16 }}>
+              <Panel header="Debts" key="debts">
+                <Table
+                  dataSource={selectedCollection.debts}
+                  columns={[
+                    { title: 'Debtor', dataIndex: 'debtorName' },
+                    { title: 'Amount', dataIndex: 'amount', render: formatCurrency },
+                    { title: 'Type', dataIndex: 'type' },
+                    { title: 'Status', dataIndex: 'status' }
+                  ]}
+                  size="small"
+                  pagination={false}
+                />
+              </Panel>
+            </Collapse>
+          )}
+
+          {/* Island Collections */}
+          {selectedCollection.islandCollections && selectedCollection.islandCollections.length > 0 && (
             <Collapse style={{ marginBottom: 16 }}>
               <Panel header="Island Collections" key="island-collections">
                 <Table
@@ -1415,7 +1615,8 @@ const CashMovement = () => {
                     { title: 'Island', dataIndex: ['island', 'name'] },
                     { title: 'Attendant', dataIndex: ['attendant', 'firstName'] },
                     { title: 'Cash', dataIndex: 'cashAmount', render: formatCurrency },
-                    { title: 'Shortage', dataIndex: 'shortageAmount', render: formatCurrency }
+                    { title: 'Shortage', dataIndex: 'shortageAmount', render: formatCurrency },
+                    { title: 'Overage', dataIndex: 'overageAmount', render: formatCurrency }
                   ]}
                   size="small"
                   pagination={false}
@@ -1507,6 +1708,7 @@ const CashMovement = () => {
                   columns={[
                     { title: 'Description', dataIndex: 'description' },
                     { title: 'Amount', dataIndex: 'amount', render: formatCurrency },
+                    { title: 'Category', dataIndex: 'category' },
                     { title: 'Date', dataIndex: 'transactionDate', render: formatDate }
                   ]}
                   size="small"
@@ -1617,7 +1819,7 @@ const CashMovement = () => {
 
             {renderSummaryCards()}
 
-            <Card
+            <Card 
               title="Island Collections"
               extra={
                 <Text type="secondary">
@@ -1666,7 +1868,15 @@ const CashMovement = () => {
 
             {renderSummaryCards()}
 
-            <Card title="Shift Collections">
+            <Card 
+              title="Shift Collections"
+              extra={
+                <Text type="secondary">
+                  Showing {tableData.length} collections
+                  {data?.pagination?.total && ` of ${data.pagination.total}`}
+                </Text>
+              }
+            >
               {renderDataTable()}
             </Card>
           </TabPane>
@@ -1706,43 +1916,43 @@ const CashMovement = () => {
             )}
 
             {data?.data && (
-            <Card title="Daily Collection Report">
-  <Descriptions bordered column={2} style={{ marginBottom: 24 }}>
-    <Descriptions.Item label="Date">
-      {data.data.formatted?.date}
-    </Descriptions.Item>
-    <Descriptions.Item label="Total Collections">
-      {data.data.summary?.totalShiftCollections}
-    </Descriptions.Item>
-    <Descriptions.Item label="Total Cash">
-      {data.data.formatted?.totalCash}
-    </Descriptions.Item>
-    <Descriptions.Item label="Total Shortage">
-      {data.data.formatted?.totalShortage}
-    </Descriptions.Item>
-    <Descriptions.Item label="Total Overage">
-      {data.data.formatted?.totalOverage}
-    </Descriptions.Item>
-    <Descriptions.Item label="Grand Total">
-      {data.data.formatted?.grandTotal}
-    </Descriptions.Item>
-  </Descriptions>
+              <Card title="Daily Collection Report">
+                <Descriptions bordered column={2} style={{ marginBottom: 24 }}>
+                  <Descriptions.Item label="Date">
+                    {data.data.formatted?.date || formatDate(data.data.date)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Total Collections">
+                    {data.data.summary?.totalShiftCollections || data.data.totalCollections || 0}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Total Cash">
+                    {data.data.formatted?.totalCash || formatCurrency(data.data.totalCash)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Total Shortage">
+                    {data.data.formatted?.totalShortage || formatCurrency(data.data.totalShortage)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Total Overage">
+                    {data.data.formatted?.totalOverage || formatCurrency(data.data.totalOverage)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Grand Total">
+                    {data.data.formatted?.grandTotal || formatCurrency(data.data.grandTotal)}
+                  </Descriptions.Item>
+                </Descriptions>
 
-  {data?.data?.shiftCollections && data.data.shiftCollections.length > 0 && (
-    <div style={{ marginTop: 16 }}>
-      <Title level={5} style={{ marginBottom: 8 }}>
-        Shift Collections
-      </Title>
-      <Table
-        dataSource={data.data.shiftCollections}
-        columns={getColumns()}
-        pagination={false}
-        size="small"
-        rowKey={(record) => record.id || Math.random()}
-      />
-    </div>
-  )}
-</Card>
+                {data.data.shiftCollections && data.data.shiftCollections.length > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <Title level={5} style={{ marginBottom: 8 }}>
+                      Shift Collections
+                    </Title>
+                    <Table
+                      dataSource={data.data.shiftCollections}
+                      columns={getTableColumns()}
+                      pagination={false}
+                      size="small"
+                      rowKey={(record) => record.id || Math.random()}
+                    />
+                  </div>
+                )}
+              </Card>
             )}
           </TabPane>
 
@@ -1784,22 +1994,22 @@ const CashMovement = () => {
               <Card title="Performance Report">
                 <Descriptions bordered column={2} style={{ marginBottom: 24 }}>
                   <Descriptions.Item label="Period">
-                    {data.data.formatted?.period}
+                    {data.data.formatted?.period || filters.reportPeriod}
                   </Descriptions.Item>
                   <Descriptions.Item label="Date Range">
-                    {data.data.formatted?.startDate} to {data.data.formatted?.endDate}
+                    {data.data.formatted?.startDate || filters.startDate} to {data.data.formatted?.endDate || filters.endDate}
                   </Descriptions.Item>
                   <Descriptions.Item label="Group By">
-                    {data.data.formatted?.groupBy}
+                    {data.data.formatted?.groupBy || filters.reportGroupBy}
                   </Descriptions.Item>
                   <Descriptions.Item label="Total Collections">
-                    {data.data.totalShiftCollections}
+                    {data.data.totalShiftCollections || data.data.totalCollections || 0}
                   </Descriptions.Item>
                   <Descriptions.Item label="Total Cash">
-                    {data.data.formatted?.totalCash}
+                    {data.data.formatted?.totalCash || formatCurrency(data.data.totalCash)}
                   </Descriptions.Item>
                   <Descriptions.Item label="Total Grand Total">
-                    {data.data.formatted?.totalGrandTotal}
+                    {data.data.formatted?.totalGrandTotal || formatCurrency(data.data.totalGrandTotal)}
                   </Descriptions.Item>
                 </Descriptions>
 

@@ -84,7 +84,7 @@ const SuperAdminDashboard = () => {
               <Flame className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-gray-900">Energy ERP</h1>
+              <h1 className="text-lg font-bold text-gray-900">Lynx Energy </h1>
               <p className="text-xs text-gray-500">Super Admin</p>
             </div>
           </div>

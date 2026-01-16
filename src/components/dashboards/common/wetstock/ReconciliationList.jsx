@@ -726,7 +726,7 @@ const ReconciliationList = ({
                   columns={exportColumns}
                   title={`Wet Stock Reconciliation Report - ${currentStation ? 'Station' : 'Company'} Level`}
                   fileName={`reconciliations_${new Date().toISOString().split('T')[0]}`}
-                  footerText={`Generated from Energy ERP System - ${currentUser ? `User: ${currentUser.firstName} ${currentUser.lastName}` : ''} - ${new Date().toLocaleDateString()}`}
+                  footerText={`Generated from Lynx Energy  System - ${currentUser ? `User: ${currentUser.firstName} ${currentUser.lastName}` : ''} - ${new Date().toLocaleDateString()}`}
                   showFooter={true}
                 />
               </Space>

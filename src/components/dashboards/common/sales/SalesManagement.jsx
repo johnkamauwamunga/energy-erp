@@ -256,7 +256,7 @@ const OverviewTab = () => {
           columns={overviewColumns}
           title={`Sales Overview Report - ${currentStation ? 'Station' : 'Company'} - ${filters.period.toUpperCase()}`}
           fileName={`sales_overview_${filters.period}_${new Date().toISOString().split('T')[0]}`}
-          footerText={`Generated from Energy ERP System - Period: ${filters.period} - ${new Date().toLocaleDateString()}`}
+          footerText={`Generated from Lynx Energy  System - Period: ${filters.period} - ${new Date().toLocaleDateString()}`}
           showFooter={true}
         />
       </div>
@@ -564,7 +564,7 @@ const ProductsTab = () => {
             columns={productColumns}
             title={`Product Sales Report - ${currentStation ? 'Station' : 'Company'} - ${filters.period.toUpperCase()}`}
             fileName={`product_sales_${filters.period}_${new Date().toISOString().split('T')[0]}`}
-            footerText={`Generated from Energy ERP System - Period: ${filters.period} - ${new Date().toLocaleDateString()}`}
+            footerText={`Generated from Lynx Energy  System - Period: ${filters.period} - ${new Date().toLocaleDateString()}`}
             showFooter={true}
           />
         }
@@ -734,7 +734,7 @@ const PumpsTab = () => {
             columns={pumpColumns}
             title={`Pump Sales Report - ${currentStation ? 'Station' : 'Company'} - ${filters.period.toUpperCase()}`}
             fileName={`pump_sales_${filters.period}_${new Date().toISOString().split('T')[0]}`}
-            footerText={`Generated from Energy ERP System - Period: ${filters.period} - ${new Date().toLocaleDateString()}`}
+            footerText={`Generated from Lynx Energy  System - Period: ${filters.period} - ${new Date().toLocaleDateString()}`}
             showFooter={true}
           />
         }

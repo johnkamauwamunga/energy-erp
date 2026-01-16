@@ -939,7 +939,7 @@ const AccountsManagement = () => {
           columns={walletColumns}
           title={`Wallet Transactions Report - ${formattedWallet?.stationDisplay || 'Station'}`}
           fileName={`wallet_transactions_${new Date().toISOString().split('T')[0]}`}
-          footerText={`Generated from Energy ERP System - ${formattedWallet?.stationDisplay || 'Station'} - ${new Date().toLocaleDateString()}`}
+          footerText={`Generated from Lynx Energy - ${formattedWallet?.stationDisplay || 'Station'} - ${new Date().toLocaleDateString()}`}
           showFooter={true}
         />
       </div>
@@ -982,7 +982,7 @@ const AccountsManagement = () => {
           columns={transferColumns}
           title={`Bank Transfers Report - ${formattedWallet?.stationDisplay || 'Station'}`}
           fileName={`bank_transfers_${new Date().toISOString().split('T')[0]}`}
-          footerText={`Generated from Energy ERP System - ${formattedWallet?.stationDisplay || 'Station'} - ${new Date().toLocaleDateString()}`}
+          footerText={`Generated from Lynx Energy - ${formattedWallet?.stationDisplay || 'Station'} - ${new Date().toLocaleDateString()}`}
           showFooter={true}
         />
       </div>

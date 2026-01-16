@@ -401,7 +401,7 @@ const TransferList = () => {
                 columns={columns}
                 title={`Debt Transfer Report - ${currentStation ? 'Station' : 'Company'} Level`}
                 fileName={`debt_transfers_${new Date().toISOString().split('T')[0]}`}
-                footerText={`Generated from Energy ERP System - User: ${currentUser?.firstName} ${currentUser?.lastName} - ${new Date().toLocaleDateString()}`}
+                footerText={`Generated from Lynx Energy System - User: ${currentUser?.firstName} ${currentUser?.lastName} - ${new Date().toLocaleDateString()}`}
                 showFooter={true}
               />
             </Space>
@@ -467,7 +467,7 @@ const TransferList = () => {
             columns={columns}
             title={`Debt Transfer Report - ${currentStation ? 'Station' : 'Company'} Level`}
             fileName={`debt_transfers_${new Date().toISOString().split('T')[0]}`}
-            footerText={`Generated from Energy ERP System - User: ${currentUser?.firstName} ${currentUser?.lastName} - ${new Date().toLocaleDateString()}`}
+            footerText={`Generated from Lynx Energy System - User: ${currentUser?.firstName} ${currentUser?.lastName} - ${new Date().toLocaleDateString()}`}
             showFooter={true}
           />
         }

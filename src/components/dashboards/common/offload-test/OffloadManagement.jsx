@@ -644,7 +644,7 @@ const OffloadManagement = () => {
                 columns={exportColumns}
                 title={`Purchase Management Report - ${currentStationName}`}
                 fileName={`purchases_${new Date().toISOString().split('T')[0]}`}
-                footerText={`Generated from Energy ERP System - Station: ${currentStationName} - User: ${state.currentUser?.firstName} ${state.currentUser?.lastName} - ${new Date().toLocaleDateString()}`}
+                footerText={`Generated from Lynx Energy  System - Station: ${currentStationName} - User: ${state.currentUser?.firstName} ${state.currentUser?.lastName} - ${new Date().toLocaleDateString()}`}
                 showFooter={true}
               />
               <Button
@@ -816,7 +816,7 @@ const OffloadManagement = () => {
                 columns={exportColumns}
                 title={`Purchase Management Report - ${currentStationName}`}
                 fileName={`purchases_${new Date().toISOString().split('T')[0]}`}
-                footerText={`Generated from Energy ERP System - Station: ${currentStationName} - ${new Date().toLocaleDateString()}`}
+                footerText={`Generated from Lynx Energy  System - Station: ${currentStationName} - ${new Date().toLocaleDateString()}`}
                 showFooter={true}
               />
               {(filters.search || filters.status || filters.type || filters.productId || filters.dateRange) && (

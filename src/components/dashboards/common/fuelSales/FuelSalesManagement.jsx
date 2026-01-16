@@ -1049,7 +1049,7 @@ const FuelSalesManagement = () => {
         title={exportTitle}
         fileName={fileName}
         showFooter={true}
-        footerText={`Generated from Energy ERP System - ${new Date().toLocaleString()}`}
+        footerText={`Generated from Lynx Energy  System - ${new Date().toLocaleString()}`}
       />
     );
   };
