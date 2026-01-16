@@ -5,7 +5,8 @@ import {
   User, Settings, LogOut, UserCog, HandCoins, ChevronDown, ChevronRight,
   Package, ShoppingCart, Fuel, Settings2, BanknoteIcon, CreditCard,
   LineChart, PieChart, ShoppingBag, Boxes, Factory, FileBarChart,
-  Wallet, Tag, Receipt
+  Wallet, Tag, Receipt,
+  FuelIcon
 } from 'lucide-react';
 import { Button } from '../../ui';
 import { useApp, useAppDispatch, logout } from '../../../context/AppContext';
@@ -71,23 +72,43 @@ const CompanyAdminDashboard = () => {
       icon: BarChart3,
       type: 'single'
     },
-    {
-      id: 'operations',
-      label: 'Operations',
-      icon: Building2,
+        {
+      id: 'service_stations',
+      label: 'Service Stations',
+      icon: FuelIcon,
       type: 'dropdown',
-      expanded: expandedMenus.operations,
-      onToggle: () => toggleMenu('operations'),
+      expanded: expandedMenus.service_stations,
+      onToggle: () => toggleMenu('service_stations'),
       items: [
-        { id: 'stations', label: 'Service Stations', icon: Building2 },
-        { id: 'assets', label: 'Assets Management', icon: Building2 },
+        { id: 'stations', label: 'Service Stations', icon: Building2 }
+      ]
+    },
+    {
+      id: 'users',
+      label: 'Users',
+      icon: Users,
+      type: 'dropdown',
+      expanded: expandedMenus.users,
+      onToggle: () => toggleMenu('users'),
+      items: [
         { id: 'staff', label: 'Staff Management', icon: Users }
+      ]
+    },
+      {
+      id: 'assets',
+      label: 'Assets',
+      icon: Package,
+      type: 'dropdown',
+      expanded: expandedMenus.assets,
+      onToggle: () => toggleMenu('assets'),
+      items: [
+        { id: 'assets', label: 'Assets Management', icon: Building2 },
       ]
     },
     {
       id: 'inventory',
       label: 'Product Management',
-      icon: Package,
+      icon: ShoppingBag,
       type: 'dropdown',
       expanded: expandedMenus.inventory,
       onToggle: () => toggleMenu('inventory'),
