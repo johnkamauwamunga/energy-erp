@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Card, 
   Button, 
@@ -13,7 +13,18 @@ import {
   Empty,
   Select,
   Row,
-  Col
+  Col,
+  Typography,
+  Badge,
+  DatePicker,
+  Input,
+  Form,
+  Modal,
+  Descriptions,
+  Divider,
+  Alert,
+  Statistic,
+  Progress
 } from 'antd';
 import { 
   UserOutlined,
@@ -21,24 +32,79 @@ import {
   EditOutlined,
   SettingOutlined,
   SafetyCertificateOutlined,
-  ShopOutlined
+  ShopOutlined,
+  TeamOutlined,
+  DownloadOutlined,
+  EyeOutlined,
+  MailOutlined,
+  PhoneOutlined,
+  CalendarOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  ClockCircleOutlined,
+  FilterOutlined,
+  ReloadOutlined,
+  FileExcelOutlined,
+  FilePdfOutlined,
+  InfoCircleOutlined,
+  IdcardOutlined,
+  SearchOutlined
 } from '@ant-design/icons';
 import { formatDate } from '../../../../utils/helpers';
 import { useApp } from '../../../../context/AppContext';
 import { userService } from '../../../../services/userService/userService';
 import { stationService } from '../../../../services/stationService/stationService';
+import AdvancedReportGenerator from '../../../dashboards/common/downloadable/AdvancedReportGenerator';
+import dayjs from 'dayjs';
 
+const { Title, Text, Paragraph } = Typography;
 const { TabPane } = Tabs;
 const { Option } = Select;
+const { Search } = Input;
+const { RangePicker } = DatePicker;
 
 const StationUserManagement = () => {
   const { state } = useApp();
+  const currentUser = state?.currentUser;
+  const currentCompany = state?.currentCompany;
+  const currentStation = state?.currentStation;
+  
   const [activeTab, setActiveTab] = useState('managers');
   const [isLoading, setIsLoading] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [stations, setStations] = useState([]);
-  const [selectedStation, setSelectedStation] = useState('');
+  
+  // Enhanced filters
+  const [filters, setFilters] = useState({
+    station: '',
+    status: '',
+    searchQuery: '',
+    startDate: dayjs().subtract(30, 'days').format('YYYY-MM-DD'),
+    endDate: dayjs().format('YYYY-MM-DD'),
+    sortBy: 'createdAt',
+    sortOrder: 'desc', // Default to descending order
+    page: 1,
+    limit: 20
+  });
+
+  // Stats
+  const [stats, setStats] = useState({
+    total: 0,
+    active: 0,
+    inactive: 0,
+    suspended: 0,
+    onLeave: 0,
+    managers: 0,
+    supervisors: 0,
+    attendants: 0,
+    avgUsersPerStation: 0,
+    recentlyAdded: 0
+  });
+
+  // Modals
+  const [userDetailsModal, setUserDetailsModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
 
   // Fetch stations and users on component mount
   useEffect(() => {
@@ -46,10 +112,10 @@ const StationUserManagement = () => {
     fetchUsers();
   }, []);
 
-  // Filter users when station selection changes
+  // Filter users when filters change
   useEffect(() => {
-    filterUsersByStation();
-  }, [selectedStation, allUsers, activeTab]);
+    filterUsers();
+  }, [filters, allUsers, activeTab]);
 
   const fetchStations = async () => {
     try {
@@ -67,31 +133,119 @@ const StationUserManagement = () => {
       const response = await userService.getUsers();
       console.log("✅ Users loaded successfully:", response);
       
+      let usersArray = [];
       if (response.success) {
-        setAllUsers(response.data || []);
-      } else {
-        message.error('Failed to fetch users');
-        setAllUsers([]);
+        usersArray = response.data || [];
+      } else if (Array.isArray(response)) {
+        usersArray = response;
+      } else if (response.data && Array.isArray(response.data)) {
+        usersArray = response.data;
       }
+      
+      // Sort users by createdAt in DESC order by default
+      const sortedUsers = [...usersArray].sort((a, b) => {
+        const dateA = new Date(a.createdAt || a.joinDate || Date.now());
+        const dateB = new Date(b.createdAt || b.joinDate || Date.now());
+        return dateB - dateA; // DESC order
+      });
+      
+      setAllUsers(sortedUsers);
+      calculateStats(sortedUsers);
     } catch (error) {
       console.error('❌ Failed to fetch users:', error);
       message.error('Failed to load users');
       setAllUsers([]);
+      setStats({
+        total: 0,
+        active: 0,
+        inactive: 0,
+        suspended: 0,
+        onLeave: 0,
+        managers: 0,
+        supervisors: 0,
+        attendants: 0,
+        avgUsersPerStation: 0,
+        recentlyAdded: 0
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Calculate statistics
+  const calculateStats = (users) => {
+    const total = users.length;
+    const active = users.filter(user => user.status === 'ACTIVE').length;
+    const inactive = users.filter(user => user.status === 'INACTIVE').length;
+    const suspended = users.filter(user => user.status === 'SUSPENDED').length;
+    const onLeave = users.filter(user => user.status === 'ON_LEAVE').length;
+    
+    const managers = users.filter(user => user.role === 'STATION_MANAGER').length;
+    const supervisors = users.filter(user => user.role === 'SUPERVISOR').length;
+    const attendants = users.filter(user => user.role === 'ATTENDANT').length;
+    
+    // Calculate average users per station
+    const stationUserCounts = {};
+    users.forEach(user => {
+      if (user.stationAssignments) {
+        user.stationAssignments.forEach(assignment => {
+          stationUserCounts[assignment.stationId] = (stationUserCounts[assignment.stationId] || 0) + 1;
+        });
+      }
+    });
+    const avgUsersPerStation = Object.keys(stationUserCounts).length > 0 
+      ? Object.values(stationUserCounts).reduce((a, b) => a + b, 0) / Object.keys(stationUserCounts).length 
+      : 0;
+    
+    // Count recently added users (last 7 days)
+    const recentlyAdded = users.filter(user => {
+      const userDate = new Date(user.createdAt || user.joinDate || Date.now());
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      return userDate >= sevenDaysAgo;
+    }).length;
+
+    setStats({ 
+      total, 
+      active, 
+      inactive, 
+      suspended, 
+      onLeave,
+      managers, 
+      supervisors, 
+      attendants,
+      avgUsersPerStation: Math.round(avgUsersPerStation * 10) / 10,
+      recentlyAdded
+    });
+  };
+
   // Filter users by station and role
-  const filterUsersByStation = () => {
-    let filtered = allUsers;
+  const filterUsers = () => {
+    let filtered = [...allUsers];
 
     // Filter by station if selected
-    if (selectedStation) {
+    if (filters.station) {
       filtered = filtered.filter(user => 
         user.stationAssignments?.some(assignment => 
-          assignment.stationId === selectedStation
+          assignment.stationId === filters.station
         )
+      );
+    }
+
+    // Filter by status if selected
+    if (filters.status) {
+      filtered = filtered.filter(user => user.status === filters.status);
+    }
+
+    // Filter by search query
+    if (filters.searchQuery) {
+      const query = filters.searchQuery.toLowerCase();
+      filtered = filtered.filter(user => 
+        (user.firstName && user.firstName.toLowerCase().includes(query)) ||
+        (user.lastName && user.lastName.toLowerCase().includes(query)) ||
+        (user.email && user.email.toLowerCase().includes(query)) ||
+        (user.phoneNumber && user.phoneNumber.includes(query)) ||
+        (user.employeeId && user.employeeId.toLowerCase().includes(query))
       );
     }
 
@@ -107,7 +261,48 @@ const StationUserManagement = () => {
       filtered = filtered.filter(user => user.role === currentRole);
     }
 
+    // Sort filtered users
+    filtered.sort((a, b) => {
+      const aValue = a[filters.sortBy] || '';
+      const bValue = b[filters.sortBy] || '';
+      
+      if (filters.sortBy === 'createdAt' || filters.sortBy === 'joinDate') {
+        const aDate = new Date(aValue).getTime();
+        const bDate = new Date(bValue).getTime();
+        return filters.sortOrder === 'desc' ? bDate - aDate : aDate - bDate;
+      }
+      
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return filters.sortOrder === 'desc' 
+          ? bValue.localeCompare(aValue)
+          : aValue.localeCompare(bValue);
+      }
+      
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return filters.sortOrder === 'desc' ? bValue - aValue : aValue - bValue;
+      }
+      
+      return 0;
+    });
+
     setFilteredUsers(filtered);
+  };
+
+  // Handle filter changes
+  const handleFilterChange = (key, value) => {
+    setFilters(prev => ({
+      ...prev,
+      [key]: value,
+      page: 1 // Reset to first page
+    }));
+  };
+
+  // Handle date range change
+  const handleDateRangeChange = (dates, dateStrings) => {
+    if (dates) {
+      handleFilterChange('startDate', dateStrings[0]);
+      handleFilterChange('endDate', dateStrings[1]);
+    }
   };
 
   // Get station name from stationId
@@ -131,167 +326,499 @@ const StationUserManagement = () => {
     return stationNames;
   };
 
-  // Get status color
-  const getStatusColor = (status) => {
-    const colorMap = {
-      'ACTIVE': 'green',
-      'INACTIVE': 'red',
-      'SUSPENDED': 'orange',
-      'ON_LEAVE': 'blue'
+  // Get status color and icon
+  const getStatusConfig = (status) => {
+    const configMap = {
+      'ACTIVE': { color: 'green', icon: <CheckCircleOutlined />, label: 'Active' },
+      'INACTIVE': { color: 'red', icon: <CloseCircleOutlined />, label: 'Inactive' },
+      'SUSPENDED': { color: 'orange', icon: <ClockCircleOutlined />, label: 'Suspended' },
+      'ON_LEAVE': { color: 'blue', icon: <CalendarOutlined />, label: 'On Leave' }
     };
-    return colorMap[status] || 'default';
+    return configMap[status] || { color: 'default', icon: <InfoCircleOutlined />, label: status };
   };
 
-  // Get role display name
-  const getRoleDisplayName = (role) => {
-    const roleMap = {
-      'STATION_MANAGER': 'Station Manager',
-      'SUPERVISOR': 'Supervisor',
-      'ATTENDANT': 'Attendant',
-      'COMPANY_ADMIN': 'Company Admin',
-      'SUPER_ADMIN': 'Super Admin'
+  // Get role display name and icon
+  const getRoleConfig = (role) => {
+    const configMap = {
+      'STATION_MANAGER': { label: 'Station Manager', icon: <SafetyCertificateOutlined />, color: 'blue' },
+      'SUPERVISOR': { label: 'Supervisor', icon: <SettingOutlined />, color: 'purple' },
+      'ATTENDANT': { label: 'Attendant', icon: <UserOutlined />, color: 'green' },
+      'COMPANY_ADMIN': { label: 'Company Admin', icon: <TeamOutlined />, color: 'red' },
+      'SUPER_ADMIN': { label: 'Super Admin', icon: <SafetyCertificateOutlined />, color: 'gold' }
     };
-    return roleMap[role] || role;
+    return configMap[role] || { label: role, icon: <UserOutlined />, color: 'default' };
   };
 
-  // Table columns
-  const columns = [
-    {
-      title: 'User',
-      key: 'name',
-      render: (user) => (
-        <Space>
-          <Avatar 
-            style={{ backgroundColor: '#1890ff' }}
-            icon={<UserOutlined />}
-          >
-            {user.firstName?.[0]}{user.lastName?.[0]}
-          </Avatar>
-          <div>
-            <div style={{ fontWeight: 500 }}>
-              {user.firstName} {user.lastName}
-            </div>
-            <div style={{ color: '#666', fontSize: '12px' }}>
-              {getRoleDisplayName(user.role)}
-            </div>
-          </div>
-        </Space>
-      )
-    },
-    {
-      title: 'Email',
-      key: 'email',
-      render: (user) => (
-        <div style={{ fontSize: '14px' }}>{user.email}</div>
-      )
-    },
-    {
-      title: 'Phone',
-      key: 'phone',
-      render: (user) => (
-        <div style={{ fontSize: '14px' }}>
-          {user.phoneNumber || 'N/A'}
-        </div>
-      )
-    },
-    {
-      title: 'Status',
-      key: 'status',
-      render: (user) => (
-        <Tag color={getStatusColor(user.status)}>
-          {user.status}
-        </Tag>
-      )
-    },
-    {
-      title: 'Joined Date',
-      key: 'joinDate',
-      render: (user) => (
-        <div style={{ fontSize: '14px' }}>
-          {formatDate(user.createdAt)}
-        </div>
-      )
-    },
-    {
-      title: 'Station',
-      key: 'station',
-      render: (user) => (
-        <div style={{ maxWidth: '200px' }}>
-          <span style={{ fontSize: '14px' }}>
-            {getStationName(user)}
-          </span>
-        </div>
-      )
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      render: (user) => (
-        <Space>
-          <Tooltip title="Edit User">
-            <Button
-              type="text"
-              icon={<EditOutlined />}
-              onClick={() => console.log('Edit', user.id)}
+  // Enhanced column definitions with sequential numbering
+  const getColumnDefinitions = () => {
+    const commonColumns = [
+      {
+        title: '#',
+        key: 'sequence',
+        width: 60,
+        fixed: 'left',
+        type: 'number',
+        render: (_, __, index) => {
+          // Calculate sequential number based on pagination for DESC order
+          const page = filters.page || 1;
+          const pageSize = filters.limit || 20;
+          const sequentialNumber = ((page - 1) * pageSize) + index + 1;
+          return (
+            <Badge
+              count={sequentialNumber}
+              style={{ 
+                backgroundColor: sequentialNumber <= 3 ? 
+                  sequentialNumber === 1 ? '#f5222d' : 
+                  sequentialNumber === 2 ? '#fa8c16' : 
+                  '#52c41a' : '#d9d9d9'
+              }}
             />
-          </Tooltip>
-        </Space>
-      )
-    }
-  ];
+          );
+        }
+      },
+      {
+        title: 'User',
+        key: 'name',
+        width: 180,
+        type: 'text',
+        render: (user) => (
+          <Space>
+            <Avatar 
+              style={{ 
+                backgroundColor: getRoleConfig(user.role).color,
+                color: '#fff'
+              }}
+              icon={getRoleConfig(user.role).icon}
+            >
+              {user.firstName?.[0]}{user.lastName?.[0]}
+            </Avatar>
+            <Space direction="vertical" size={0}>
+              <Text strong style={{ fontSize: '12px' }}>
+                {user.firstName} {user.lastName}
+              </Text>
+              <Text type="secondary" style={{ fontSize: '10px' }}>
+                {user.employeeId || 'N/A'}
+              </Text>
+            </Space>
+          </Space>
+        ),
+        sorter: (a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`)
+      },
+      {
+        title: 'Role',
+        key: 'role',
+        width: 140,
+        type: 'status',
+        render: (user) => {
+          const roleConfig = getRoleConfig(user.role);
+          return (
+            <Tag color={roleConfig.color} icon={roleConfig.icon}>
+              {roleConfig.label}
+            </Tag>
+          );
+        },
+        filters: [
+          { text: 'Station Manager', value: 'STATION_MANAGER' },
+          { text: 'Supervisor', value: 'SUPERVISOR' },
+          { text: 'Attendant', value: 'ATTENDANT' }
+        ]
+      },
+      {
+        title: 'Contact',
+        key: 'contact',
+        width: 200,
+        type: 'text',
+        render: (user) => (
+          <Space direction="vertical" size={2}>
+            <Space>
+              <MailOutlined style={{ fontSize: '12px', color: '#666' }} />
+              <Text style={{ fontSize: '12px' }}>{user.email}</Text>
+            </Space>
+            <Space>
+              <PhoneOutlined style={{ fontSize: '12px', color: '#666' }} />
+              <Text style={{ fontSize: '12px' }}>
+                {user.phoneNumber || 'N/A'}
+              </Text>
+            </Space>
+          </Space>
+        )
+      },
+      {
+        title: 'Status',
+        key: 'status',
+        width: 120,
+        type: 'status',
+        render: (user) => {
+          const statusConfig = getStatusConfig(user.status);
+          return (
+            <Tag color={statusConfig.color} icon={statusConfig.icon}>
+              {statusConfig.label}
+            </Tag>
+          );
+        },
+        filters: [
+          { text: 'Active', value: 'ACTIVE' },
+          { text: 'Inactive', value: 'INACTIVE' },
+          { text: 'Suspended', value: 'SUSPENDED' },
+          { text: 'On Leave', value: 'ON_LEAVE' }
+        ]
+      },
+      {
+        title: 'Joined Date',
+        key: 'joinDate',
+        width: 140,
+        type: 'date',
+        render: (user) => (
+          <Space direction="vertical" size={2}>
+            <Text style={{ fontSize: '12px' }}>
+              {formatDate(user.createdAt || user.joinDate)}
+            </Text>
+            <Text type="secondary" style={{ fontSize: '10px' }}>
+              {formatDate(user.createdAt || user.joinDate, 'time')}
+            </Text>
+          </Space>
+        ),
+        sorter: (a, b) => new Date(a.createdAt || a.joinDate) - new Date(b.createdAt || b.joinDate),
+        defaultSortOrder: 'descend'
+      },
+      {
+        title: 'Station',
+        key: 'station',
+        width: 200,
+        type: 'text',
+        render: (user) => (
+          <Space direction="vertical" size={2} style={{ maxWidth: '180px' }}>
+            <Text style={{ fontSize: '12px' }}>
+              {getStationName(user)}
+            </Text>
+            {user.stationAssignments && user.stationAssignments.length > 0 && (
+              <Text type="secondary" style={{ fontSize: '10px' }}>
+                {user.stationAssignments.length} assignment(s)
+              </Text>
+            )}
+          </Space>
+        )
+      }
+    ];
 
-  // Add shift column for supervisors
-  const supervisorColumns = [
-    ...columns.slice(0, 5), // All columns except station and actions
-    {
-      title: 'Shift',
-      key: 'shift',
-      render: (user) => (
-        <div style={{ fontSize: '14px' }}>
-          {user.shift || 'N/A'}
-        </div>
-      )
-    },
-    ...columns.slice(5) // Station and actions columns
-  ];
+    // Add shift column for supervisors
+    const supervisorColumns = [
+      ...commonColumns.slice(0, 5), // All columns up to status
+      {
+        title: 'Shift',
+        key: 'shift',
+        width: 100,
+        type: 'text',
+        render: (user) => (
+          <div style={{ fontSize: '12px' }}>
+            {user.shift || 'N/A'}
+          </div>
+        )
+      },
+      ...commonColumns.slice(5) // Rest of the columns
+    ];
 
-  const getCurrentColumns = () => {
-    return activeTab === 'supervisors' ? supervisorColumns : columns;
+    return activeTab === 'supervisors' ? supervisorColumns : commonColumns;
   };
 
-  const getTabItems = () => {
-    const roleCounts = {
-      managers: allUsers.filter(user => user.role === 'STATION_MANAGER').length,
-      supervisors: allUsers.filter(user => user.role === 'SUPERVISOR').length,
-      attendants: allUsers.filter(user => user.role === 'ATTENDANT').length
+  // Add actions column
+  const getColumnsWithActions = () => {
+    const baseColumns = getColumnDefinitions();
+    
+    return [
+      ...baseColumns,
+      {
+        title: 'Actions',
+        key: 'actions',
+        width: 120,
+        fixed: 'right',
+        render: (user) => (
+          <Space size="small">
+            <Tooltip title="View Details">
+              <Button
+                type="text"
+                icon={<EyeOutlined />}
+                size="small"
+                onClick={() => {
+                  setSelectedUser(user);
+                  setUserDetailsModal(true);
+                }}
+              />
+            </Tooltip>
+            <Tooltip title="Edit User">
+              <Button
+                type="text"
+                icon={<EditOutlined />}
+                size="small"
+                onClick={() => console.log('Edit', user.id)}
+              />
+            </Tooltip>
+          </Space>
+        )
+      }
+    ];
+  };
+
+  // View user details
+  const viewUserDetails = (user) => {
+    setSelectedUser(user);
+    setUserDetailsModal(true);
+  };
+
+  // Prepare data for export with sequential numbering
+  const prepareExportData = () => {
+    if (!filteredUsers || filteredUsers.length === 0) return [];
+    
+    const columnDefinitions = getColumnDefinitions();
+    
+    return filteredUsers.map((user, index) => {
+      const exportUser = { ...user };
+      
+      // Add sequential number
+      exportUser.sequenceNumber = index + 1;
+      
+      // Process each column to ensure proper values
+      columnDefinitions.forEach(col => {
+        if (col.key) {
+          let value;
+          
+          // Map key to actual data property
+          switch (col.key) {
+            case 'name':
+              value = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+              break;
+            case 'contact':
+              value = user.email;
+              exportUser.phone = user.phoneNumber || 'N/A';
+              break;
+            case 'role':
+              value = getRoleConfig(user.role).label;
+              break;
+            case 'status':
+              value = getStatusConfig(user.status).label;
+              break;
+            case 'joinDate':
+              value = formatDate(user.createdAt || user.joinDate);
+              break;
+            case 'station':
+              value = getStationName(user);
+              break;
+            case 'shift':
+              value = user.shift || 'N/A';
+              break;
+            default:
+              value = user[col.key] || '';
+          }
+          
+          exportUser[col.key] = value || 'N/A';
+        }
+      });
+      
+      return exportUser;
+    });
+  };
+
+  // Calculate summary data for reports
+  const calculateSummaryData = () => {
+    if (!filteredUsers || filteredUsers.length === 0) return null;
+
+    const totals = {
+      totalRecords: filteredUsers.length,
+      activeUsers: filteredUsers.filter(u => u.status === 'ACTIVE').length,
+      managers: filteredUsers.filter(u => u.role === 'STATION_MANAGER').length,
+      supervisors: filteredUsers.filter(u => u.role === 'SUPERVISOR').length,
+      attendants: filteredUsers.filter(u => u.role === 'ATTENDANT').length,
+      recentlyAdded: filteredUsers.filter(u => {
+        const userDate = new Date(u.createdAt || u.joinDate || Date.now());
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        return userDate >= thirtyDaysAgo;
+      }).length
+    };
+    
+    // Add summary info
+    totals.summaryInfo = {
+      'Total Users': totals.totalRecords,
+      'Active Users': totals.activeUsers,
+      'Station Managers': totals.managers,
+      'Supervisors': totals.supervisors,
+      'Attendants': totals.attendants,
+      'Recently Added (30 days)': totals.recentlyAdded,
+      'Generated At': new Date().toLocaleString(),
+      'Company': currentCompany?.name || 'All Companies',
+      'Report Type': 'Station User Management Report',
+      'User Role Filter': activeTab.charAt(0).toUpperCase() + activeTab.slice(1)
+    };
+    
+    return totals;
+  };
+
+  // Render export button with AdvancedReportGenerator
+  const renderExportButton = () => {
+    if (!filteredUsers || filteredUsers.length === 0) {
+      return (
+        <Button icon={<DownloadOutlined />} disabled>
+          Export
+        </Button>
+      );
+    }
+
+    const columnDefinitions = getColumnDefinitions();
+    const summaryData = calculateSummaryData();
+    const exportDataSource = prepareExportData();
+    
+    // Get report title
+    const getReportTitle = () => {
+      const roleNames = {
+        managers: 'Station Managers',
+        supervisors: 'Supervisors',
+        attendants: 'Attendants'
+      };
+      const companyName = currentCompany?.name || 'All Companies';
+      
+      return `${roleNames[activeTab] || 'Users'} Report - ${companyName}`;
     };
 
+    // Get file name
+    const getFileName = () => {
+      const companyCode = currentCompany?.code ? `_${currentCompany.code}` : '';
+      const stationCode = filters.station ? `_${stations.find(s => s.id === filters.station)?.code || 'filtered'}` : '';
+      return `users_${activeTab}${stationCode}${companyCode}_${new Date().toISOString().split('T')[0]}`;
+    };
+
+    // Enhanced column configuration for export
+    const enhancedExportColumns = columnDefinitions.map(col => {
+      const enhancedCol = { ...col };
+      
+      // Add dataIndex for export
+      if (!enhancedCol.dataIndex) {
+        enhancedCol.dataIndex = enhancedCol.key;
+      }
+      
+      // Override render functions to ensure consistent values for export
+      if (enhancedCol.type === 'text') {
+        enhancedCol.render = (value, record) => {
+          if (enhancedCol.key === 'name') {
+            return `${record.firstName || ''} ${record.lastName || ''}`.trim();
+          }
+          if (enhancedCol.key === 'contact') {
+            return record.email || 'N/A';
+          }
+          if (enhancedCol.key === 'station') {
+            return getStationName(record);
+          }
+          if (enhancedCol.key === 'role') {
+            return getRoleConfig(record.role).label;
+          }
+          if (enhancedCol.key === 'status') {
+            return getStatusConfig(record.status).label;
+          }
+          if (enhancedCol.key === 'joinDate') {
+            return formatDate(record.createdAt || record.joinDate);
+          }
+          return value || 'N/A';
+        };
+      }
+      
+      return enhancedCol;
+    });
+
+    return (
+      <AdvancedReportGenerator
+        dataSource={exportDataSource}
+        columns={enhancedExportColumns}
+        summaryData={summaryData}
+        title={getReportTitle()}
+        fileName={getFileName()}
+        reportType="operations"
+        companyName={currentCompany?.name || "Lynx Energy System"}
+        stationInfo={currentStation ? {
+          name: currentStation.name,
+          code: currentStation.code,
+          address: currentStation.address
+        } : null}
+        showFooter={true}
+        footerText={`Generated from Lynx Energy System | User: ${currentUser?.firstName || ''} ${currentUser?.lastName || ''} | ${new Date().toLocaleString()}`}
+        enableCustomization={true}
+        includeLogo={false}
+        onReportGenerate={(format) => {
+          console.log(`Exporting ${exportDataSource.length} user records as ${format}`);
+          message.success(`${activeTab} report generated successfully with ${exportDataSource.length} records`);
+        }}
+        customStyles={{
+          fontSize: 9,
+          cellPadding: 3,
+          showGridLines: true,
+          alternateRowColors: true,
+          includeTimestamp: true,
+          includeStationInfo: !!currentStation,
+          autoWrapText: true,
+          pageOrientation: 'landscape'
+        }}
+      />
+    );
+  };
+
+  // Handle table sort change
+  const handleTableChange = (pagination, _, sorter) => {
+    if (sorter.field || sorter.columnKey) {
+      const sortField = sorter.field || sorter.columnKey;
+      handleFilterChange('sortBy', sortField);
+      handleFilterChange('sortOrder', sorter.order === 'ascend' ? 'asc' : 'desc');
+    }
+    
+    if (pagination.current !== filters.page) {
+      handleFilterChange('page', pagination.current);
+    }
+    
+    if (pagination.pageSize !== filters.limit) {
+      handleFilterChange('limit', pagination.pageSize);
+    }
+  };
+
+  // Get tab items with counts
+  const getTabItems = () => {
     return [
       {
         key: 'managers',
         label: (
-          <span>
+          <Space>
             <SafetyCertificateOutlined />
-            Managers ({roleCounts.managers})
-          </span>
+            <span>Managers</span>
+            <Badge 
+              count={stats.managers} 
+              style={{ backgroundColor: '#1890ff' }}
+              overflowCount={999}
+            />
+          </Space>
         )
       },
       {
         key: 'supervisors',
         label: (
-          <span>
+          <Space>
             <SettingOutlined />
-            Supervisors ({roleCounts.supervisors})
-          </span>
+            <span>Supervisors</span>
+            <Badge 
+              count={stats.supervisors} 
+              style={{ backgroundColor: '#722ed1' }}
+              overflowCount={999}
+            />
+          </Space>
         )
       },
       {
         key: 'attendants',
         label: (
-          <span>
+          <Space>
             <UserOutlined />
-            Attendants ({roleCounts.attendants})
-          </span>
+            <span>Attendants</span>
+            <Badge 
+              count={stats.attendants} 
+              style={{ backgroundColor: '#52c41a' }}
+              overflowCount={999}
+            />
+          </Space>
         )
       }
     ];
@@ -299,30 +826,173 @@ const StationUserManagement = () => {
 
   return (
     <div style={{ padding: '24px' }}>
-      <Card
-        title={
-          <Space>
-            <ShopOutlined />
-            Station User Management
-          </Space>
-        }
-        extra={
-          <Button 
-            type="primary" 
-            icon={<PlusOutlined />}
-          >
-            Add New Staff
-          </Button>
-        }
-      >
-        {/* Station Filter */}
-        <Row gutter={16} style={{ marginBottom: '16px' }}>
-          <Col span={8}>
+      <Space direction="vertical" style={{ width: '100%' }}>
+        <Title level={2} style={{ margin: 0 }}>
+          <ShopOutlined /> Station User Management
+        </Title>
+        <Text type="secondary">
+          Manage station staff, assign roles, and track user activity
+        </Text>
+      </Space>
+
+      {/* Action Buttons */}
+      <Space style={{ margin: '24px 0' }}>
+        <Button 
+          type="primary" 
+          icon={<PlusOutlined />}
+        >
+          Add New Staff
+        </Button>
+        {renderExportButton()}
+        <Button 
+          icon={<ReloadOutlined />}
+          onClick={fetchUsers}
+          loading={isLoading}
+        >
+          Refresh
+        </Button>
+      </Space>
+
+      {/* Statistics Section */}
+      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
+        <Col xs={24} sm={12} md={6}>
+          <Card size="small" hoverable>
+            <Statistic
+              title="Total Users"
+              value={stats.total}
+              prefix={<TeamOutlined />}
+              valueStyle={{ color: '#1890ff' }}
+            />
+            <Text type="secondary">
+              Active: {stats.active} ({((stats.active / stats.total) * 100 || 0).toFixed(1)}%)
+            </Text>
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Card size="small" hoverable>
+            <Statistic
+              title="Active Users"
+              value={stats.active}
+              prefix={<CheckCircleOutlined />}
+              valueStyle={{ color: '#52c41a' }}
+            />
+            <Progress 
+              percent={((stats.active / stats.total) * 100) || 0} 
+              size="small" 
+              status="active"
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Card size="small" hoverable>
+            <Statistic
+              title="Recent Additions"
+              value={stats.recentlyAdded}
+              prefix={<CalendarOutlined />}
+              valueStyle={{ color: '#fa8c16' }}
+            />
+            <Text type="secondary">Last 7 days</Text>
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Card size="small" hoverable>
+            <Statistic
+              title="Avg per Station"
+              value={stats.avgUsersPerStation}
+              precision={1}
+              prefix={<ShopOutlined />}
+              valueStyle={{ color: '#722ed1' }}
+            />
+            <Text type="secondary">Average staff per station</Text>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Status Summary */}
+      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
+        <Col span={24}>
+          <Card size="small" title="User Status Summary">
+            <Row gutter={[16, 16]}>
+              <Col xs={12} sm={6} md={3}>
+                <div style={{ textAlign: 'center' }}>
+                  <Tag color="green" style={{ marginBottom: 8 }}>
+                    Active
+                  </Tag>
+                  <Text strong style={{ fontSize: '18px' }}>{stats.active}</Text>
+                </div>
+              </Col>
+              <Col xs={12} sm={6} md={3}>
+                <div style={{ textAlign: 'center' }}>
+                  <Tag color="red" style={{ marginBottom: 8 }}>
+                    Inactive
+                  </Tag>
+                  <Text strong style={{ fontSize: '18px' }}>{stats.inactive}</Text>
+                </div>
+              </Col>
+              <Col xs={12} sm={6} md={3}>
+                <div style={{ textAlign: 'center' }}>
+                  <Tag color="orange" style={{ marginBottom: 8 }}>
+                    Suspended
+                  </Tag>
+                  <Text strong style={{ fontSize: '18px' }}>{stats.suspended}</Text>
+                </div>
+              </Col>
+              <Col xs={12} sm={6} md={3}>
+                <div style={{ textAlign: 'center' }}>
+                  <Tag color="blue" style={{ marginBottom: 8 }}>
+                    On Leave
+                  </Tag>
+                  <Text strong style={{ fontSize: '18px' }}>{stats.onLeave}</Text>
+                </div>
+              </Col>
+              <Col xs={12} sm={6} md={3}>
+                <div style={{ textAlign: 'center' }}>
+                  <Tag color="blue" style={{ marginBottom: 8 }}>
+                    Managers
+                  </Tag>
+                  <Text strong style={{ fontSize: '18px' }}>{stats.managers}</Text>
+                </div>
+              </Col>
+              <Col xs={12} sm={6} md={3}>
+                <div style={{ textAlign: 'center' }}>
+                  <Tag color="purple" style={{ marginBottom: 8 }}>
+                    Supervisors
+                  </Tag>
+                  <Text strong style={{ fontSize: '18px' }}>{stats.supervisors}</Text>
+                </div>
+              </Col>
+              <Col xs={12} sm={6} md={3}>
+                <div style={{ textAlign: 'center' }}>
+                  <Tag color="green" style={{ marginBottom: 8 }}>
+                    Attendants
+                  </Tag>
+                  <Text strong style={{ fontSize: '18px' }}>{stats.attendants}</Text>
+                </div>
+              </Col>
+            </Row>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Filters Section */}
+      <Card style={{ marginBottom: '24px' }} size="small">
+        <Row gutter={[16, 16]} align="middle">
+          <Col xs={24} sm={12} md={6}>
+            <Search
+              placeholder="Search users..."
+              value={filters.searchQuery}
+              onChange={(e) => handleFilterChange('searchQuery', e.target.value)}
+              onSearch={() => filterUsers()}
+              enterButton={<SearchOutlined />}
+              allowClear
+            />
+          </Col>
+          <Col xs={24} sm={12} md={5}>
             <Select
-              value={selectedStation}
-              onChange={setSelectedStation}
-              placeholder="Filter by station"
               style={{ width: '100%' }}
+              placeholder="Filter by station"
+              value={filters.station}
+              onChange={(value) => handleFilterChange('station', value)}
               allowClear
             >
               {stations.map(station => (
@@ -332,13 +1002,70 @@ const StationUserManagement = () => {
               ))}
             </Select>
           </Col>
+          <Col xs={24} sm={12} md={5}>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="Filter by status"
+              value={filters.status}
+              onChange={(value) => handleFilterChange('status', value)}
+              allowClear
+            >
+              <Option value="ACTIVE">Active</Option>
+              <Option value="INACTIVE">Inactive</Option>
+              <Option value="SUSPENDED">Suspended</Option>
+              <Option value="ON_LEAVE">On Leave</Option>
+            </Select>
+          </Col>
+          <Col xs={24} sm={12} md={4}>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="Sort Order"
+              value={filters.sortOrder}
+              onChange={(value) => handleFilterChange('sortOrder', value)}
+            >
+              <Option value="desc">Newest First (DESC)</Option>
+              <Option value="asc">Oldest First (ASC)</Option>
+            </Select>
+          </Col>
+          <Col xs={24} sm={12} md={4}>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="Per Page"
+              value={filters.limit}
+              onChange={(value) => handleFilterChange('limit', value)}
+            >
+              <Option value={10}>10</Option>
+              <Option value={20}>20</Option>
+              <Option value={50}>50</Option>
+              <Option value={100}>100</Option>
+            </Select>
+          </Col>
         </Row>
+        
+        <Divider style={{ margin: '16px 0' }} />
+        
+        <Row gutter={[16, 16]}>
+          <Col xs={24} sm={12} md={8}>
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <Text strong>Date Range</Text>
+              <RangePicker
+                value={[dayjs(filters.startDate), dayjs(filters.endDate)]}
+                onChange={handleDateRangeChange}
+                style={{ width: '100%' }}
+                format="YYYY-MM-DD"
+              />
+            </Space>
+          </Col>
+        </Row>
+      </Card>
 
-        {/* Tabs */}
+      {/* Main Content */}
+      <Card>
         <Tabs
           activeKey={activeTab}
           onChange={setActiveTab}
           items={getTabItems()}
+          style={{ marginBottom: '16px' }}
         />
 
         {/* Users Table */}
@@ -359,27 +1086,154 @@ const StationUserManagement = () => {
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={
-                selectedStation 
-                  ? `No ${activeTab} found for selected station`
-                  : `No ${activeTab} found`
+                <Space direction="vertical">
+                  <Text>
+                    {filters.searchQuery || filters.station || filters.status
+                      ? 'No users match your search criteria'
+                      : `No ${activeTab} found`}
+                  </Text>
+                  <Button type="link" onClick={() => {
+                    handleFilterChange('searchQuery', '');
+                    handleFilterChange('station', '');
+                    handleFilterChange('status', '');
+                  }}>
+                    Clear filters
+                  </Button>
+                </Space>
               }
             />
           ) : (
             <Table
-              columns={getCurrentColumns()}
+              columns={getColumnsWithActions()}
               dataSource={filteredUsers}
               rowKey="id"
               pagination={{
-                pageSize: 10,
+                current: filters.page,
+                pageSize: filters.limit,
+                total: filteredUsers.length,
+                onChange: (page, pageSize) => {
+                  handleFilterChange('page', page);
+                  if (pageSize !== filters.limit) {
+                    handleFilterChange('limit', pageSize);
+                  }
+                },
                 showSizeChanger: true,
+                showQuickJumper: true,
                 showTotal: (total, range) => 
-                  `${range[0]}-${range[1]} of ${total} items`
+                  `${range[0]}-${range[1]} of ${total} users (Sorted: ${filters.sortBy} ${filters.sortOrder === 'desc' ? 'DESC' : 'ASC'})`
               }}
-              scroll={{ x: 800 }}
+              onChange={handleTableChange}
+              scroll={{ x: 1200 }}
+              summary={() => {
+                if (filteredUsers.length === 0) return null;
+                
+                const summaryData = calculateSummaryData();
+                if (!summaryData) return null;
+
+                return (
+                  <Table.Summary fixed>
+                    <Table.Summary.Row style={{ backgroundColor: '#fafafa', fontWeight: 'bold' }}>
+                      <Table.Summary.Cell index={0} colSpan={3}>
+                        <Text strong>TOTAL ({filteredUsers.length} users)</Text>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={1} colSpan={2}>
+                        <Text type="secondary">
+                          Active: {summaryData.activeUsers} | 
+                          Managers: {summaryData.managers} | 
+                          Supervisors: {summaryData.supervisors} | 
+                          Attendants: {summaryData.attendants}
+                        </Text>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={2} colSpan={5}>
+                        <Text type="secondary">
+                          Sorted by: {filters.sortBy} ({filters.sortOrder === 'desc' ? 'Descending' : 'Ascending'})
+                        </Text>
+                      </Table.Summary.Cell>
+                    </Table.Summary.Row>
+                  </Table.Summary>
+                );
+              }}
             />
           )}
         </div>
       </Card>
+
+      {/* Info Section */}
+      {filteredUsers.length > 0 && (
+        <Alert
+          message="User Management Information"
+          description={
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <Text>
+                • Total {activeTab}: <Text strong>{filteredUsers.length}</Text>
+              </Text>
+              <Text>
+                • Active users: <Text strong>{stats.active}</Text> ({((stats.active / stats.total) * 100 || 0).toFixed(1)}%)
+              </Text>
+              <Text>
+                • Average users per station: <Text strong>{stats.avgUsersPerStation}</Text>
+              </Text>
+              <Text>
+                • Recently added (7 days): <Text strong>{stats.recentlyAdded}</Text>
+              </Text>
+            </Space>
+          }
+          type="info"
+          showIcon
+          style={{ marginTop: 16 }}
+        />
+      )}
+
+      {/* User Details Modal */}
+      <Modal
+        title="User Details"
+        open={userDetailsModal}
+        onCancel={() => setUserDetailsModal(false)}
+        footer={[
+          <Button key="close" onClick={() => setUserDetailsModal(false)}>
+            Close
+          </Button>
+        ]}
+        width={700}
+      >
+        {selectedUser && (
+          <Descriptions bordered column={2} size="small">
+            <Descriptions.Item label="Name" span={2}>
+              {selectedUser.firstName} {selectedUser.lastName}
+            </Descriptions.Item>
+            <Descriptions.Item label="Employee ID">
+              {selectedUser.employeeId || 'N/A'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Role">
+              <Tag color={getRoleConfig(selectedUser.role).color}>
+                {getRoleConfig(selectedUser.role).label}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="Email">
+              {selectedUser.email}
+            </Descriptions.Item>
+            <Descriptions.Item label="Phone">
+              {selectedUser.phoneNumber || 'N/A'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Status">
+              <Tag color={getStatusConfig(selectedUser.status).color}>
+                {getStatusConfig(selectedUser.status).label}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="Joined Date">
+              {formatDate(selectedUser.createdAt || selectedUser.joinDate, 'datetime')}
+            </Descriptions.Item>
+            <Descriptions.Item label="Assigned Stations" span={2}>
+              {getStationName(selectedUser)}
+            </Descriptions.Item>
+            {selectedUser.shift && (
+              <Descriptions.Item label="Shift">
+                {selectedUser.shift}
+              </Descriptions.Item>
+            )}
+          </Descriptions>
+        )}
+      </Modal>
     </div>
   );
 };

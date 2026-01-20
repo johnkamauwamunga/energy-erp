@@ -21,7 +21,11 @@ import {
   Drawer,
   Typography,
   Popconfirm,
-  Empty
+  Empty,
+  Divider,
+  Alert,
+  Descriptions,
+  InputNumber
 } from 'antd';
 import {
   PlusOutlined,
@@ -37,13 +41,23 @@ import {
   EnvironmentOutlined,
   AppstoreOutlined,
   EyeOutlined,
-  ReloadOutlined
+  ReloadOutlined,
+  DownloadOutlined,
+  SettingOutlined,
+  SortDescendingOutlined,
+  FileTextOutlined,
+  UserOutlined,
+  IdcardOutlined,
+  CalendarOutlined,
+  BarChartOutlined,
+  SortAscendingOutlined
 } from '@ant-design/icons';
 import { supplierService } from '../../../../services/supplierService/supplierService';
 import CreateSupplierModal from './create/CreateSupplierModal';
 import UpdateSupplierModal from './edit/UpdateSupplierModal';
 import CreateSupplierProductModal from './create/CreateSupplierProductModal';
 import SupplierProductsModal from './products/SupplierProductsModal';
+import AdvancedReportGenerator from '../../../dashboards/common/downloadable/AdvancedReportGenerator';
 import './SupplierManagement.css';
 
 const { Search } = Input;
@@ -69,6 +83,10 @@ const SupplierManagement = () => {
   });
   const [filterDrawerVisible, setFilterDrawerVisible] = useState(false);
   const [mobileView, setMobileView] = useState('list');
+  const [sortOrder, setSortOrder] = useState({
+    field: 'createdAt',
+    order: 'descend'
+  });
   const screens = useBreakpoint();
   const [pagination, setPagination] = useState({
     current: 1,
@@ -83,7 +101,9 @@ const SupplierManagement = () => {
       const response = await supplierService.getSuppliers({
         ...filters,
         page: pagination.current,
-        limit: pagination.pageSize
+        limit: pagination.pageSize,
+        sortBy: sortOrder.field,
+        sortOrder: sortOrder.order === 'descend' ? 'desc' : 'asc'
       });
 
       console.log('Fetched suppliers response:', response);
@@ -110,7 +130,7 @@ const SupplierManagement = () => {
 
   useEffect(() => {
     fetchData();
-  }, [filters, pagination.current, pagination.pageSize]);
+  }, [filters, pagination.current, pagination.pageSize, sortOrder]);
 
   // Handle filter changes
   const handleFilterChange = (key, value) => {
@@ -122,8 +142,96 @@ const SupplierManagement = () => {
   };
 
   // Handle pagination change
-  const handleTableChange = (paginationConfig) => {
+  const handleTableChange = (paginationConfig, filters, sorter) => {
     setPagination(paginationConfig);
+    if (sorter && sorter.field) {
+      setSortOrder({
+        field: sorter.field,
+        order: sorter.order || 'descend'
+      });
+    }
+  };
+
+  // Enhanced suppliers data for reporting WITH SEQUENTIAL NUMBERING
+  const enhancedSuppliers = useMemo(() => 
+    suppliers.map((supplier, index) => ({
+      ...supplier,
+      // Add sequential number
+      sequentialNumber: index + 1,
+      // Enhanced contact info
+      formattedContact: `${supplier.contactPerson || 'N/A'} (${supplier.email || 'No email'})`,
+      formattedPhone: supplier.phone || 'N/A',
+      formattedEmail: supplier.email || 'N/A',
+      // Enhanced location
+      formattedLocation: `${supplier.address || ''}${supplier.address && supplier.city ? ', ' : ''}${supplier.city || ''}${(supplier.address || supplier.city) && supplier.country ? ', ' : ''}${supplier.country || ''}`.trim() || 'N/A',
+      // Status and type display
+      statusDisplay: getStatusConfig(supplier.status).text,
+      typeDisplay: getTypeConfig(supplier.supplierType).text,
+      // Product counts
+      productsCount: supplier.supplierProducts ? supplier.supplierProducts.length : 0,
+      activeProductsCount: supplier.supplierProducts ? supplier.supplierProducts.filter(p => p.status === 'ACTIVE').length : 0,
+      // Dates
+      formattedCreatedAt: supplier.createdAt ? new Date(supplier.createdAt).toLocaleDateString() : 'N/A',
+      formattedUpdatedAt: supplier.updatedAt ? new Date(supplier.updatedAt).toLocaleDateString() : 'N/A',
+      // Financial info
+      creditLimit: supplier.creditLimit || 0,
+      paymentTerms: supplier.paymentTerms || 'N/A',
+      // Company info
+      companyName: supplier.company?.name || 'N/A',
+      companyCode: supplier.company?.code || 'N/A',
+      // Ratings
+      rating: supplier.rating || 0,
+      performanceScore: supplier.performanceScore || 0,
+      // Timestamp for sorting
+      timestamp: new Date(supplier.createdAt).getTime()
+    })),
+  [suppliers]);
+
+  // Calculate summary statistics
+  const summaryStats = useMemo(() => {
+    const totalSuppliers = enhancedSuppliers.length;
+    const activeSuppliers = enhancedSuppliers.filter(s => s.status === 'ACTIVE').length;
+    const suppliersWithProducts = enhancedSuppliers.filter(s => s.productsCount > 0).length;
+    const totalProducts = enhancedSuppliers.reduce((sum, s) => sum + s.productsCount, 0);
+    const totalCreditLimit = enhancedSuppliers.reduce((sum, s) => sum + (s.creditLimit || 0), 0);
+    const avgRating = enhancedSuppliers.length > 0 ? 
+      enhancedSuppliers.reduce((sum, s) => sum + (s.rating || 0), 0) / enhancedSuppliers.length : 0;
+    
+    // Group by type
+    const typeDistribution = enhancedSuppliers.reduce((acc, supplier) => {
+      const type = supplier.typeDisplay;
+      acc[type] = (acc[type] || 0) + 1;
+      return acc;
+    }, {});
+
+    // Top suppliers by products
+    const topSuppliersByProducts = [...enhancedSuppliers]
+      .sort((a, b) => b.productsCount - a.productsCount)
+      .slice(0, 3);
+
+    return {
+      totalSuppliers,
+      activeSuppliers,
+      suppliersWithProducts,
+      totalProducts,
+      totalCreditLimit,
+      avgRating,
+      typeDistribution,
+      topSuppliersByProducts
+    };
+  }, [enhancedSuppliers]);
+
+  // Summary data for report header
+  const summaryData = {
+    'Total Suppliers': summaryStats.totalSuppliers,
+    'Active Suppliers': summaryStats.activeSuppliers,
+    'Suppliers with Products': summaryStats.suppliersWithProducts,
+    'Total Products Offered': summaryStats.totalProducts,
+    'Average Rating': summaryStats.avgRating.toFixed(1),
+    'Total Credit Limit': supplierService.formatCurrency?.(summaryStats.totalCreditLimit) || `KES ${summaryStats.totalCreditLimit.toLocaleString()}`,
+    'Top Supplier by Products': summaryStats.topSuppliersByProducts[0]?.name || 'N/A',
+    'Report Generated': new Date().toLocaleString(),
+    'Generated By': 'System User'
   };
 
   // Handle supplier actions
@@ -202,24 +310,52 @@ const SupplierManagement = () => {
     return typeConfig[type] || { color: 'default', text: type };
   };
 
-  // Table columns for desktop
+  // Table columns for desktop WITH SEQUENTIAL NUMBERING AND DEFAULT DESC ORDER
   const columns = [
+    {
+      title: '#',
+      key: 'sequence',
+      render: (_, __, index) => (
+        <Text type="secondary" style={{ fontSize: '11px', fontWeight: 'bold' }}>
+          {((pagination.current - 1) * pagination.pageSize) + index + 1}
+        </Text>
+      ),
+      width: 50,
+      fixed: 'left'
+    },
     {
       title: 'Supplier',
       key: 'supplier',
       render: (_, record) => (
         <Space>
-          <Avatar size="small" style={{ backgroundColor: '#1890ff' }}>
+          <Avatar 
+            size="small" 
+            style={{ 
+              backgroundColor: getStatusConfig(record.status).color,
+              color: '#fff',
+              fontWeight: 'bold'
+            }}
+          >
             {record.name?.charAt(0).toUpperCase()}
           </Avatar>
           <div>
-            <div style={{ fontWeight: 500 }}>{record.name}</div>
-            <Text type="secondary" style={{ fontSize: '12px' }}>
-              {record.code}
-            </Text>
+            <div style={{ fontWeight: 500, fontSize: '14px' }}>{record.name}</div>
+            <Space size={4}>
+              <Text type="secondary" style={{ fontSize: '11px' }}>
+                {record.code}
+              </Text>
+              {record.contactPerson && (
+                <Text type="secondary" style={{ fontSize: '10px' }}>
+                  • {record.contactPerson}
+                </Text>
+              )}
+            </Space>
           </div>
         </Space>
-      )
+      ),
+      sorter: (a, b) => a.name.localeCompare(b.name),
+      defaultSortOrder: 'descend',
+      sortDirections: ['descend', 'ascend']
     },
     {
       title: 'Contact',
@@ -227,12 +363,12 @@ const SupplierManagement = () => {
       render: (_, record) => (
         <Space direction="vertical" size={0}>
           <div style={{ fontSize: '12px' }}>
-            <MailOutlined style={{ marginRight: 4, fontSize: '11px' }} />
-            {record.email || 'N/A'}
+            <MailOutlined style={{ marginRight: 4, fontSize: '11px', color: '#1890ff' }} />
+            <a href={`mailto:${record.email}`}>{record.email || 'N/A'}</a>
           </div>
           <div style={{ fontSize: '12px' }}>
-            <PhoneOutlined style={{ marginRight: 4, fontSize: '11px' }} />
-            {record.phone || 'N/A'}
+            <PhoneOutlined style={{ marginRight: 4, fontSize: '11px', color: '#52c41a' }} />
+            <a href={`tel:${record.phone}`}>{record.phone || 'N/A'}</a>
           </div>
         </Space>
       ),
@@ -244,15 +380,17 @@ const SupplierManagement = () => {
       render: (_, record) => (
         <Space direction="vertical" size={0}>
           <div style={{ fontSize: '12px' }}>
-            <EnvironmentOutlined style={{ marginRight: 4, fontSize: '11px' }} />
-            {record.city || 'N/A'}
+            <EnvironmentOutlined style={{ marginRight: 4, fontSize: '11px', color: '#fa8c16' }} />
+            <Text>{record.city || 'N/A'}</Text>
           </div>
           <Text type="secondary" style={{ fontSize: '11px', marginLeft: 18 }}>
-            {record.country}
+            {record.country || ''}
           </Text>
         </Space>
       ),
       responsive: ['md'],
+      sorter: (a, b) => (a.city || '').localeCompare(b.city || ''),
+      defaultSortOrder: 'descend'
     },
     {
       title: 'Type',
@@ -260,9 +398,11 @@ const SupplierManagement = () => {
       key: 'supplierType',
       render: (type) => {
         const config = getTypeConfig(type);
-        return <Tag color={config.color}>{config.text}</Tag>;
+        return <Tag color={config.color} style={{ fontSize: '11px' }}>{config.text}</Tag>;
       },
       responsive: ['sm'],
+      sorter: (a, b) => a.supplierType.localeCompare(b.supplierType),
+      defaultSortOrder: 'descend'
     },
     {
       title: 'Status',
@@ -270,8 +410,11 @@ const SupplierManagement = () => {
       key: 'status',
       render: (status) => {
         const config = getStatusConfig(status);
-        return <Tag color={config.color}>{config.text}</Tag>;
-      }
+        return <Tag color={config.color} style={{ fontSize: '11px' }}>{config.text}</Tag>;
+      },
+      sorter: (a, b) => a.status.localeCompare(b.status),
+      defaultSortOrder: 'descend',
+      sortDirections: ['descend', 'ascend']
     },
     {
       title: 'Products',
@@ -281,17 +424,63 @@ const SupplierManagement = () => {
         <Badge 
           count={record.supplierProducts ? record.supplierProducts.length : 0} 
           showZero 
-          color={record.supplierProducts && record.supplierProducts.length > 0 ? 'blue' : 'default'}
+          style={{ 
+            backgroundColor: record.supplierProducts && record.supplierProducts.length > 0 ? '#1890ff' : '#d9d9d9',
+            fontSize: '10px'
+          }}
         >
-          <ShoppingOutlined style={{ fontSize: '16px', cursor: 'pointer' }} />
+          <ShoppingOutlined 
+            style={{ 
+              fontSize: '16px', 
+              cursor: 'pointer',
+              color: record.supplierProducts && record.supplierProducts.length > 0 ? '#1890ff' : '#999'
+            }} 
+          />
         </Badge>
       ),
       responsive: ['sm'],
+      sorter: (a, b) => {
+        const aCount = a.supplierProducts ? a.supplierProducts.length : 0;
+        const bCount = b.supplierProducts ? b.supplierProducts.length : 0;
+        return bCount - aCount;
+      },
+      defaultSortOrder: 'descend',
+      sortDirections: ['descend', 'ascend']
+    },
+    {
+      title: 'Credit Limit',
+      key: 'creditLimit',
+      render: (_, record) => (
+        <Text style={{ fontSize: '12px' }}>
+          {supplierService.formatCurrency?.(record.creditLimit) || `KES ${(record.creditLimit || 0).toLocaleString()}`}
+        </Text>
+      ),
+      responsive: ['lg'],
+      sorter: (a, b) => (b.creditLimit || 0) - (a.creditLimit || 0),
+      defaultSortOrder: 'descend'
+    },
+    {
+      title: 'Rating',
+      key: 'rating',
+      render: (_, record) => (
+        <Badge 
+          count={record.rating || 0} 
+          style={{ 
+            backgroundColor: record.rating >= 4 ? '#52c41a' : 
+                           record.rating >= 3 ? '#faad14' : 
+                           record.rating >= 2 ? '#fa8c16' : '#ff4d4f'
+          }}
+        />
+      ),
+      responsive: ['lg'],
+      sorter: (a, b) => (b.rating || 0) - (a.rating || 0),
+      defaultSortOrder: 'descend'
     },
     {
       title: 'Actions',
       key: 'actions',
       width: 120,
+      fixed: 'right',
       render: (_, record) => (
         <Dropdown
           menu={{
@@ -340,8 +529,217 @@ const SupplierManagement = () => {
     }
   ];
 
+  // Export columns for reports - COMPREHENSIVE WITH ALL IMPORTANT FIELDS
+  const exportColumns = [
+    {
+      title: '#',
+      key: 'sequence',
+      render: (_, __, index) => index + 1,
+      type: 'number',
+      width: 50
+    },
+    {
+      title: 'Supplier Code',
+      dataIndex: 'code',
+      key: 'supplierCode',
+      type: 'text'
+    },
+    {
+      title: 'Supplier Name',
+      dataIndex: 'name',
+      key: 'supplierName',
+      type: 'text'
+    },
+    {
+      title: 'Supplier Type',
+      dataIndex: 'supplierType',
+      key: 'supplierType',
+      render: (type) => getTypeConfig(type).text,
+      type: 'text'
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status) => getStatusConfig(status).text,
+      type: 'status'
+    },
+    {
+      title: 'Contact Person',
+      dataIndex: 'contactPerson',
+      key: 'contactPerson',
+      render: (person) => person || 'N/A',
+      type: 'text'
+    },
+    {
+      title: 'Email Address',
+      dataIndex: 'email',
+      key: 'email',
+      type: 'text'
+    },
+    {
+      title: 'Phone Number',
+      dataIndex: 'phone',
+      key: 'phone',
+      type: 'text'
+    },
+    {
+      title: 'Address',
+      key: 'address',
+      render: (_, record) => record.address || 'N/A',
+      type: 'text'
+    },
+    {
+      title: 'City',
+      dataIndex: 'city',
+      key: 'city',
+      type: 'text'
+    },
+    {
+      title: 'Country',
+      dataIndex: 'country',
+      key: 'country',
+      type: 'text'
+    },
+    {
+      title: 'Full Location',
+      key: 'fullLocation',
+      render: (_, record) => `${record.address || ''}${record.address && record.city ? ', ' : ''}${record.city || ''}${(record.address || record.city) && record.country ? ', ' : ''}${record.country || ''}`.trim() || 'N/A',
+      type: 'text'
+    },
+    {
+      title: 'Total Products',
+      key: 'totalProducts',
+      render: (_, record) => record.supplierProducts ? record.supplierProducts.length : 0,
+      type: 'number'
+    },
+    {
+      title: 'Active Products',
+      key: 'activeProducts',
+      render: (_, record) => record.supplierProducts ? record.supplierProducts.filter(p => p.status === 'ACTIVE').length : 0,
+      type: 'number'
+    },
+    {
+      title: 'Credit Limit',
+      dataIndex: 'creditLimit',
+      key: 'creditLimit',
+      render: (amount) => amount || 0,
+      type: 'currency'
+    },
+    {
+      title: 'Payment Terms',
+      dataIndex: 'paymentTerms',
+      key: 'paymentTerms',
+      render: (terms) => terms || 'N/A',
+      type: 'text'
+    },
+    {
+      title: 'Rating',
+      dataIndex: 'rating',
+      key: 'rating',
+      render: (rating) => rating || 0,
+      type: 'number'
+    },
+    {
+      title: 'Performance Score',
+      dataIndex: 'performanceScore',
+      key: 'performanceScore',
+      render: (score) => score || 0,
+      type: 'number'
+    },
+    {
+      title: 'Tax ID/Number',
+      dataIndex: 'taxId',
+      key: 'taxId',
+      render: (taxId) => taxId || 'N/A',
+      type: 'text'
+    },
+    {
+      title: 'Company Registration',
+      dataIndex: 'registrationNumber',
+      key: 'registrationNumber',
+      render: (reg) => reg || 'N/A',
+      type: 'text'
+    },
+    {
+      title: 'Account Number',
+      dataIndex: 'accountNumber',
+      key: 'accountNumber',
+      render: (account) => account || 'N/A',
+      type: 'text'
+    },
+    {
+      title: 'Bank Name',
+      dataIndex: 'bankName',
+      key: 'bankName',
+      render: (bank) => bank || 'N/A',
+      type: 'text'
+    },
+    {
+      title: 'Payment Method',
+      dataIndex: 'preferredPaymentMethod',
+      key: 'paymentMethod',
+      render: (method) => method || 'N/A',
+      type: 'text'
+    },
+    {
+      title: 'Lead Time (Days)',
+      dataIndex: 'leadTime',
+      key: 'leadTime',
+      render: (days) => days || 'N/A',
+      type: 'number'
+    },
+    {
+      title: 'Minimum Order Quantity',
+      dataIndex: 'minimumOrderQuantity',
+      key: 'minOrderQuantity',
+      render: (qty) => qty || 'N/A',
+      type: 'number'
+    },
+    {
+      title: 'Delivery Terms',
+      dataIndex: 'deliveryTerms',
+      key: 'deliveryTerms',
+      render: (terms) => terms || 'N/A',
+      type: 'text'
+    },
+    {
+      title: 'Created Date',
+      dataIndex: 'createdAt',
+      key: 'createdDate',
+      render: (date) => date ? new Date(date).toLocaleDateString() : 'N/A',
+      type: 'date'
+    },
+    {
+      title: 'Last Updated',
+      dataIndex: 'updatedAt',
+      key: 'lastUpdated',
+      render: (date) => date ? new Date(date).toLocaleDateString() : 'N/A',
+      type: 'date'
+    },
+    {
+      title: 'Notes/Comments',
+      dataIndex: 'notes',
+      key: 'notes',
+      render: (notes) => notes || 'N/A',
+      type: 'text'
+    },
+    {
+      title: 'Company',
+      key: 'company',
+      render: (_, record) => record.company?.name || 'N/A',
+      type: 'text'
+    },
+    {
+      title: 'Company Code',
+      key: 'companyCode',
+      render: (_, record) => record.company?.code || 'N/A',
+      type: 'text'
+    }
+  ];
+
   // Mobile card view
-  const renderMobileCard = (supplier) => (
+  const renderMobileCard = (supplier, index) => (
     <Card 
       key={supplier.id} 
       size="small" 
@@ -364,6 +762,14 @@ const SupplierManagement = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <Space direction="vertical" size="small" style={{ flex: 1 }}>
           <Space>
+            <Badge 
+              count={index + 1}
+              style={{ 
+                backgroundColor: '#1890ff',
+                fontSize: '10px',
+                marginRight: 4
+              }}
+            />
             <Avatar size="small" style={{ backgroundColor: '#1890ff' }}>
               {supplier.name?.charAt(0).toUpperCase()}
             </Avatar>
@@ -402,9 +808,15 @@ const SupplierManagement = () => {
                 </Text>
               </div>
             )}
+            {supplier.contactPerson && (
+              <div style={{ fontSize: '11px' }}>
+                <UserOutlined style={{ marginRight: 4, fontSize: '10px', color: '#722ed1' }} />
+                <Text type="secondary">{supplier.contactPerson}</Text>
+              </div>
+            )}
           </Space>
           
-          <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Badge 
               count={supplier.supplierProducts ? supplier.supplierProducts.length : 0} 
               showZero 
@@ -413,6 +825,11 @@ const SupplierManagement = () => {
             >
               <Text type="secondary" style={{ fontSize: '11px' }}>Products</Text>
             </Badge>
+            {supplier.creditLimit > 0 && (
+              <Text type="secondary" style={{ fontSize: '10px' }}>
+                Limit: {supplierService.formatCurrency?.(supplier.creditLimit) || `KES ${supplier.creditLimit}`}
+              </Text>
+            )}
           </div>
         </Space>
       </div>
@@ -428,6 +845,10 @@ const SupplierManagement = () => {
       sortBy: 'name',
       sortOrder: 'asc'
     });
+    setSortOrder({
+      field: 'createdAt',
+      order: 'descend'
+    });
     setPagination(prev => ({ ...prev, current: 1 }));
     setFilterDrawerVisible(false);
   };
@@ -438,15 +859,23 @@ const SupplierManagement = () => {
     message.success('Data refreshed successfully');
   };
 
+  // Handle export
+  const handleExport = (format) => {
+    console.log(`Exporting ${enhancedSuppliers.length} suppliers as ${format}`);
+  };
+
   return (
     <div className="supplier-management">
       {/* Header with Stats and Actions */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={12} md={18}>
-          <Title level={2} style={{ margin: 0 }}>Supplier Management</Title>
+        <Col xs={24} sm={12} md={16}>
+          <Title level={2} style={{ margin: 0 }}>
+            <TeamOutlined style={{ marginRight: 8 }} /> 
+            Supplier Management
+          </Title>
           <Text type="secondary">Manage your suppliers and their products</Text>
         </Col>
-        <Col xs={24} sm={12} md={6}>
+        <Col xs={24} sm={12} md={8}>
           <Space style={{ width: '100%', justifyContent: screens.xs ? 'flex-start' : 'flex-end' }}>
             <Tooltip title="Refresh">
               <Button
@@ -455,6 +884,18 @@ const SupplierManagement = () => {
                 loading={loading}
               />
             </Tooltip>
+            <AdvancedReportGenerator
+              dataSource={enhancedSuppliers}
+              columns={exportColumns}
+              title="Supplier Management Report"
+              fileName={`suppliers_report_${new Date().toISOString().split('T')[0]}`}
+              summaryData={summaryData}
+              reportType="operations"
+              showFooter={true}
+              footerText={`Generated from Lynx Energy System - ${new Date().toLocaleDateString()}`}
+              enableCustomization={true}
+              onReportGenerate={handleExport}
+            />
             <Button
               type="primary"
               icon={<PlusOutlined />}
@@ -470,10 +911,38 @@ const SupplierManagement = () => {
       {/* Statistics Cards */}
       <Row gutter={[16, 16]} className="stats-row" style={{ marginBottom: 24 }}>
         {[
-          { key: 'total', title: 'Total Suppliers', value: stats.totalSuppliers || 0, icon: <TeamOutlined />, color: '#1890ff' },
-          { key: 'active', title: 'Active', value: stats.activeSuppliers || 0, color: '#52c41a' },
-          { key: 'withProducts', title: 'With Products', value: stats.suppliersWithProducts || 0, color: '#722ed1' },
-          { key: 'onHold', title: 'On Hold', value: stats.onHoldSuppliers || 0, color: '#fa8c16' },
+          { 
+            key: 'total', 
+            title: 'Total Suppliers', 
+            value: stats.totalSuppliers || 0, 
+            icon: <TeamOutlined />, 
+            color: '#1890ff',
+            suffix: `${summaryStats.totalProducts} products`
+          },
+          { 
+            key: 'active', 
+            title: 'Active', 
+            value: stats.activeSuppliers || 0, 
+            icon: <IdcardOutlined />,
+            color: '#52c41a',
+            suffix: `${Math.round((summaryStats.activeSuppliers / (summaryStats.totalSuppliers || 1)) * 100)}% of total`
+          },
+          { 
+            key: 'withProducts', 
+            title: 'With Products', 
+            value: stats.suppliersWithProducts || 0, 
+            icon: <ShoppingOutlined />,
+            color: '#722ed1',
+            suffix: `${Math.round((summaryStats.suppliersWithProducts / (summaryStats.totalSuppliers || 1)) * 100)}% coverage`
+          },
+          { 
+            key: 'onHold', 
+            title: 'On Hold', 
+            value: stats.onHoldSuppliers || 0, 
+            icon: <CalendarOutlined />,
+            color: '#fa8c16',
+            suffix: 'Review needed'
+          },
         ].map(stat => (
           <Col xs={12} sm={6} key={stat.key}>
             <Card size="small" hoverable>
@@ -482,6 +951,7 @@ const SupplierManagement = () => {
                 value={stat.value}
                 prefix={stat.icon}
                 valueStyle={{ color: stat.color, fontSize: '24px' }}
+                suffix={stat.suffix && <div style={{ fontSize: '10px', color: '#999', marginTop: 2 }}>{stat.suffix}</div>}
               />
             </Card>
           </Col>
@@ -592,6 +1062,10 @@ const SupplierManagement = () => {
         extra={
           <Space>
             <Text type="secondary">
+              <SortDescendingOutlined style={{ marginRight: 4, color: sortOrder.order === 'descend' ? '#1890ff' : '#999' }} />
+              Sorted by: {sortOrder.field} ({sortOrder.order === 'descend' ? 'Desc' : 'Asc'})
+            </Text>
+            <Text type="secondary">
               Showing {((pagination.current - 1) * pagination.pageSize) + 1}-
               {Math.min(pagination.current * pagination.pageSize, pagination.total)} of {pagination.total}
             </Text>
@@ -624,7 +1098,7 @@ const SupplierManagement = () => {
               pageSizeOptions: ['10', '20', '50', '100']
             }}
             onChange={handleTableChange}
-            scroll={{ x: 800 }}
+            scroll={{ x: 1200 }}
             locale={{
               emptyText: (
                 <Empty
@@ -644,12 +1118,50 @@ const SupplierManagement = () => {
                 />
               )
             }}
+            summary={() => (
+              <Table.Summary fixed>
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0} colSpan={3}>
+                    <Space>
+                      <SortDescendingOutlined style={{ color: '#1890ff' }} />
+                      <Text strong>Sorted by: {sortOrder.field}</Text>
+                      <Text type="secondary">({sortOrder.order === 'descend' ? 'Descending' : 'Ascending'})</Text>
+                    </Space>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={1}>
+                    <Text strong>Total: {summaryStats.totalSuppliers} suppliers</Text>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={2} colSpan={3}>
+                    <Text type="secondary">
+                      {summaryStats.activeSuppliers} active • {summaryStats.suppliersWithProducts} with products • {summaryStats.totalProducts} total products
+                    </Text>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={3}>
+                    <AdvancedReportGenerator
+                      dataSource={enhancedSuppliers}
+                      columns={exportColumns}
+                      title="Detailed Supplier Report"
+                      fileName={`detailed_suppliers_${new Date().toISOString().split('T')[0]}`}
+                      summaryData={summaryData}
+                      reportType="operations"
+                      showFooter={true}
+                      customStyles={{
+                        fontSize: 8,
+                        rowHeight: 5,
+                        alternateRowColors: true
+                      }}
+                      enableCustomization={false}
+                    />
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+              </Table.Summary>
+            )}
           />
         ) : (
           // Mobile Card/List View
           <div>
             {suppliers.length > 0 ? (
-              suppliers.map(renderMobileCard)
+              suppliers.map((supplier, index) => renderMobileCard(supplier, index))
             ) : (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -727,6 +1239,8 @@ const SupplierManagement = () => {
               <Option value="name">Name</Option>
               <Option value="code">Code</Option>
               <Option value="createdAt">Date Added</Option>
+              <Option value="products">Number of Products</Option>
+              <Option value="rating">Rating</Option>
             </Select>
           </div>
 
@@ -737,8 +1251,8 @@ const SupplierManagement = () => {
               value={filters.sortOrder}
               onChange={(value) => handleFilterChange('sortOrder', value)}
             >
-              <Option value="asc">Ascending</Option>
-              <Option value="desc">Descending</Option>
+              <Option value="desc">Descending (Z-A)</Option>
+              <Option value="asc">Ascending (A-Z)</Option>
             </Select>
           </div>
 

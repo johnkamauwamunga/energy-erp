@@ -35,7 +35,7 @@ import EventLogManagement from '../common/events/EventLogManagement';
 import PumpSalesManagement from '../common/enhanced-sales/PumpSalesManagement';
 import StaffAccountManagement from '../common/staff-accounts/StaffAccountManagement';
 import WarehouseManagement from '../common/warehouses/WarehouseManagement';
-import FuelSalesManagement from '../common/fuelSales/FuelSalesManagement';
+import StationFuelSales from '../common/fuelSales/StationFuelSales';
 import CashMovement from '../common/cashMovement/CashMovement';
 
 const StationManagerDashboard = () => {
@@ -185,7 +185,7 @@ const StationManagerDashboard = () => {
       case 'accounts':
         return <AccountsManagement />;
       case 'sales':
-        return <FuelSalesManagement />;
+        return <StationFuelSales />;
       case 'debtor':
         return <DebtorManagementTabs />;
       case 'debt-transfer':

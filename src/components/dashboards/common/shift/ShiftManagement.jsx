@@ -1,3 +1,4 @@
+// src/components/dashboards/common/shiftManagement/ShiftManagement.jsx
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Card, 
@@ -48,7 +49,8 @@ import {
   ChevronRight,
   Loader2,
   PlusCircle,
-  PauseCircle
+  PauseCircle,
+  Download
 } from 'lucide-react';
 import { useApp } from '../../../../context/AppContext';
 import { useShift } from '../../../../hooks/useShift';
@@ -56,6 +58,7 @@ import ShiftCreationWizard from './shiftOpen/ShiftCreationWizard';
 import CloseWizard from './shiftClose/CloseWizard';
 import { shiftService } from '../../../../services/shiftService/shiftService';
 import { operationsService } from '../../../../services/operationService/operationService';
+import AdvancedReportGenerator from '../downloadable/AdvancedReportGenerator';
 
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
@@ -532,18 +535,6 @@ const ShiftManagement = () => {
     }
   };
 
-  // Filter shifts based on search term
-  const filteredShifts = useMemo(() => {
-    if (!searchTerm) return shiftsHistory;
-    
-    return shiftsHistory.filter(shift => 
-      shift.shiftNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      shift.supervisor?.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      shift.supervisor?.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      shift.status.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [shiftsHistory, searchTerm]);
-
   // Calculate shift duration
   const getShiftDuration = useCallback((shift) => {
     if (!shift?.startTime) return '0h 0m';
@@ -583,6 +574,185 @@ const ShiftManagement = () => {
     };
   }, []);
 
+  // Format date for reports
+  const formatDateForReport = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleString('en-KE', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // Get status display for reports
+  const getStatusDisplay = (status) => {
+    const statusMap = {
+      'OPEN': 'Open',
+      'PENDING': 'Pending',
+      'CLOSED': 'Closed',
+      'ABORTED': 'Aborted',
+      'CANCELLED': 'Cancelled'
+    };
+    return statusMap[status] || status;
+  };
+
+  // Get status color for reports
+  const getStatusColor = (status) => {
+    const colorMap = {
+      'OPEN': 'green',
+      'PENDING': 'orange',
+      'CLOSED': 'blue',
+      'ABORTED': 'red',
+      'CANCELLED': 'red'
+    };
+    return colorMap[status] || 'default';
+  };
+
+  // Enhanced shifts data for reporting
+  const enhancedShifts = useMemo(() => 
+    shiftsHistory.map((shift, index) => ({
+      ...shift,
+      sequentialNumber: index + 1,
+      statusDisplay: getStatusDisplay(shift.status),
+      statusColor: getStatusColor(shift.status),
+      formattedStartTime: formatDateForReport(shift.startTime),
+      formattedEndTime: formatDateForReport(shift.endTime),
+      duration: getShiftDuration(shift),
+      supervisorName: shift.supervisor ? 
+        `${shift.supervisor.firstName} ${shift.supervisor.lastName}` : 
+        'Unknown',
+      stationName: shift.station?.name || 'Unknown Station',
+      tankReadingsCount: shift._count?.dipReadings || 0,
+      pumpReadingsCount: shift._count?.meterReadings || 0,
+      attendantsCount: shift._count?.shiftIslandAttendant || 0,
+      isOpen: shift.status === 'OPEN',
+      isPending: shift.status === 'PENDING',
+      isClosed: shift.status === 'CLOSED'
+    })),
+  [shiftsHistory]);
+
+  // Export columns for shift reports
+  const exportColumns = [
+    {
+      title: '#',
+      key: 'sequence',
+      render: (_, record, index) => index + 1,
+      type: 'number',
+      width: 50
+    },
+    {
+      title: 'Shift Number',
+      dataIndex: 'shiftNumber',
+      key: 'shiftNumber',
+      type: 'text'
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status) => getStatusDisplay(status),
+      type: 'status'
+    },
+    {
+      title: 'Supervisor',
+      key: 'supervisor',
+      render: (_, record) => record.supervisorName,
+      type: 'text'
+    },
+    {
+      title: 'Station',
+      key: 'station',
+      render: (_, record) => record.stationName,
+      type: 'text'
+    },
+    {
+      title: 'Start Time',
+      key: 'startTime',
+      render: (_, record) => record.formattedStartTime,
+      type: 'datetime'
+    },
+    {
+      title: 'End Time',
+      key: 'endTime',
+      render: (_, record) => record.formattedEndTime,
+      type: 'datetime'
+    },
+    {
+      title: 'Duration',
+      key: 'duration',
+      render: (_, record) => record.duration,
+      type: 'text'
+    },
+    {
+      title: 'Tank Readings',
+      key: 'tankReadings',
+      render: (_, record) => record.tankReadingsCount,
+      type: 'number'
+    },
+    {
+      title: 'Pump Readings',
+      key: 'pumpReadings',
+      render: (_, record) => record.pumpReadingsCount,
+      type: 'number'
+    },
+    {
+      title: 'Attendants',
+      key: 'attendants',
+      render: (_, record) => record.attendantsCount,
+      type: 'number'
+    },
+    {
+      title: 'Created At',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      render: (date) => formatDateForReport(date),
+      type: 'datetime'
+    },
+    {
+      title: 'Updated At',
+      dataIndex: 'updatedAt',
+      key: 'updatedAt',
+      render: (date) => formatDateForReport(date),
+      type: 'datetime'
+    }
+  ];
+
+  // Summary data for report header
+  const summaryData = useMemo(() => {
+    const totalShifts = enhancedShifts.length;
+    const openShifts = enhancedShifts.filter(s => s.isOpen).length;
+    const pendingShifts = enhancedShifts.filter(s => s.isPending).length;
+    const closedShifts = enhancedShifts.filter(s => s.isClosed).length;
+    const totalTankReadings = enhancedShifts.reduce((sum, shift) => sum + shift.tankReadingsCount, 0);
+    const totalPumpReadings = enhancedShifts.reduce((sum, shift) => sum + shift.pumpReadingsCount, 0);
+    const totalAttendants = enhancedShifts.reduce((sum, shift) => sum + shift.attendantsCount, 0);
+
+    return {
+      'Total Shifts': totalShifts,
+      'Open Shifts': openShifts,
+      'Pending Shifts': pendingShifts,
+      'Closed Shifts': closedShifts,
+      'Total Tank Readings': totalTankReadings,
+      'Total Pump Readings': totalPumpReadings,
+      'Total Attendants Assigned': totalAttendants
+    };
+  }, [enhancedShifts]);
+
+  // Filter shifts based on search term
+  const filteredShifts = useMemo(() => {
+    if (!searchTerm) return enhancedShifts;
+    
+    return enhancedShifts.filter(shift => 
+      shift.shiftNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      shift.supervisorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      shift.status.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      shift.stationName.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [enhancedShifts, searchTerm]);
+
   // Columns for shifts history table
   const shiftHistoryColumns = [
     {
@@ -604,8 +774,8 @@ const ShiftManagement = () => {
       key: 'status',
       width: 100,
       render: (status, record) => {
-        const statusDisplay = operationsService.getStatusDisplay(status);
-        const statusColor = operationsService.getStatusColor(status);
+        const statusDisplay = getStatusDisplay(status);
+        const statusColor = getStatusColor(status);
         
         if (status === 'PENDING') {
           const progress = getPendingShiftStatus(record);
@@ -636,10 +806,7 @@ const ShiftManagement = () => {
       render: (_, record) => (
         <Space>
           <User size={14} />
-          {record.supervisor ? 
-            `${record.supervisor.firstName} ${record.supervisor.lastName}` : 
-            'Unknown'
-          }
+          {record.supervisorName}
         </Space>
       )
     },
@@ -648,14 +815,14 @@ const ShiftManagement = () => {
       dataIndex: 'startTime',
       key: 'startTime',
       width: 150,
-      render: (time) => time ? new Date(time).toLocaleString() : '-'
+      render: (time) => formatDateForReport(time)
     },
     {
       title: 'End Time',
       dataIndex: 'endTime',
       key: 'endTime',
       width: 150,
-      render: (time) => time ? new Date(time).toLocaleString() : '-'
+      render: (time) => time ? formatDateForReport(time) : '-'
     },
     {
       title: 'Duration',
@@ -670,14 +837,14 @@ const ShiftManagement = () => {
       render: (_, record) => (
         <Space>
           <Badge 
-            count={record._count?.dipReadings || 0} 
+            count={record.tankReadingsCount || 0} 
             showZero 
             size="small" 
             style={{ backgroundColor: '#1890ff' }}
           />
           <Droplets size={12} />
           <Badge 
-            count={record._count?.meterReadings || 0} 
+            count={record.pumpReadingsCount || 0} 
             showZero 
             size="small" 
             style={{ backgroundColor: '#52c41a' }}
@@ -835,8 +1002,13 @@ const ShiftManagement = () => {
   }
 
   // Check if we have any pending shifts
-  const pendingShifts = shiftsHistory.filter(s => s.status === 'PENDING');
-  const openShifts = shiftsHistory.filter(s => s.status === 'OPEN');
+  const pendingShifts = enhancedShifts.filter(s => s.status === 'PENDING');
+  const openShifts = enhancedShifts.filter(s => s.status === 'OPEN');
+
+  // Main export handler
+  const handleExport = (format) => {
+    console.log(`Exporting ${enhancedShifts.length} shifts as ${format}`);
+  };
 
   return (
     <div style={{ padding: 24 }}>
@@ -926,7 +1098,7 @@ const ShiftManagement = () => {
             <Card size="small">
               <Statistic
                 title="Total Shifts"
-                value={shiftsHistory.length}
+                value={enhancedShifts.length}
                 prefix={<Clock size={16} />}
               />
             </Card>
@@ -935,7 +1107,7 @@ const ShiftManagement = () => {
             <Card size="small">
               <Statistic
                 title="Closed Today"
-                value={shiftsHistory.filter(s => 
+                value={enhancedShifts.filter(s => 
                   s.status === 'CLOSED' && 
                   s.endTime && 
                   new Date(s.endTime).toDateString() === new Date().toDateString()
@@ -953,7 +1125,7 @@ const ShiftManagement = () => {
               <Clock size={16} />
               All Shifts
               <Badge 
-                count={shiftsHistory.length} 
+                count={enhancedShifts.length} 
                 showZero 
                 style={{ 
                   backgroundColor: openShifts.length > 0 ? '#52c41a' : 
@@ -964,6 +1136,13 @@ const ShiftManagement = () => {
           }
           extra={
             <Space>
+              <Search
+                placeholder="Search shifts..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{ width: 250 }}
+                allowClear
+              />
               <Button 
                 icon={<RefreshCw size={14} />} 
                 onClick={refreshAllShifts}
@@ -972,12 +1151,19 @@ const ShiftManagement = () => {
               >
                 Refresh
               </Button>
-              <Search
-                placeholder="Search shifts..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{ width: 250 }}
-                allowClear
+              {/* Export Button */}
+              <AdvancedReportGenerator
+                dataSource={enhancedShifts}
+                columns={exportColumns}
+                title={`Shift Management Report - ${state.currentStation?.name || 'System'} Level`}
+                fileName={`shifts_report_${new Date().toISOString().split('T')[0]}`}
+                summaryData={summaryData}
+                reportType="operations"
+                stationInfo={state.currentStation}
+                footerText={`Generated from Lynx Energy System - ${currentUser ? `User: ${currentUser.firstName} ${currentUser.lastName}` : ''} - ${new Date().toLocaleDateString()}`}
+                showFooter={true}
+                enableCustomization={true}
+                onReportGenerate={handleExport}
               />
             </Space>
           }
@@ -1000,6 +1186,40 @@ const ShiftManagement = () => {
               if (record.status === 'PENDING') return 'pending-shift-row';
               return '';
             }}
+            summary={() => (
+              <Table.Summary fixed>
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0} colSpan={3}>
+                    <Text strong>
+                      Showing {filteredShifts.length} of {enhancedShifts.length} shifts
+                    </Text>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={1} colSpan={3}>
+                    <Text type="secondary">
+                      {openShifts.length} active • {pendingShifts.length} pending • {enhancedShifts.filter(s => s.status === 'CLOSED').length} closed
+                    </Text>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={2}>
+                    {/* Secondary Export Button in Table Footer */}
+                    <AdvancedReportGenerator
+                      dataSource={enhancedShifts}
+                      columns={exportColumns}
+                      title={`Detailed Shifts Report - ${state.currentStation?.name || 'System'}`}
+                      fileName={`detailed_shifts_${new Date().toISOString().split('T')[0]}`}
+                      summaryData={summaryData}
+                      reportType="operations"
+                      showFooter={true}
+                      customStyles={{
+                        fontSize: 8,
+                        rowHeight: 5,
+                        alternateRowColors: true
+                      }}
+                      enableCustomization={false}
+                    />
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+              </Table.Summary>
+            )}
           />
           
           {/* Incomplete Shift Notice */}
@@ -1056,7 +1276,7 @@ const ShiftManagement = () => {
               {pendingShifts.length}
             </Descriptions.Item>
             <Descriptions.Item label="Total Shifts">
-              {shiftsHistory.length}
+              {enhancedShifts.length}
             </Descriptions.Item>
             <Descriptions.Item label="Open Shift IDs">
               {openShifts.map(s => s.shiftNumber).join(', ') || 'None'}

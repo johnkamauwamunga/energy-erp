@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button, Card, Table, Badge, Alert, Tab } from '../../../ui';
 import { useApp } from '../../../../context/AppContext';
 import { assetService } from '../../../../services/assetService/assetService';
 import { assetConnectionService } from '../../../../services/assetConnection/assetConnectionService';
-import {fuelService} from '../../../../services/fuelService/fuelService'
-import { Fuel, Zap, Package, Link, Unlink, Warehouse, Edit } from 'lucide-react';
+import { fuelService } from '../../../../services/fuelService/fuelService';
+import { Fuel, Zap, Package, Link, Unlink, Warehouse, Edit, Download, BarChart3 } from 'lucide-react';
+import AdvancedReportGenerator from '../../../dashboards/common/downloadable/AdvancedReportGenerator';
 
 // Edit Asset Modal Component
 const EditAssetModal = ({ asset, onSave, onClose, userRole }) => {
@@ -160,13 +161,16 @@ const StationAssetManagement = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [editingAsset, setEditingAsset] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [sortConfig, setSortConfig] = useState({
+    field: 'createdAt',
+    direction: 'desc'
+  });
 
   // fetch products
   useEffect(() => {
-   const response= fuelService.getFuelProducts()
-
+   const response= fuelService.getFuelProducts();
    console.log("the products are ",response);
-  },[]);
+  }, []);
 
   // Load assets and connections
   const loadAssetsAndConnections = useCallback(async (currentUser) => {
@@ -246,6 +250,166 @@ const StationAssetManagement = () => {
       loadAssetsAndConnections(userInfo);
     }
   }, [userInfo, loadAssetsAndConnections]);
+
+  // Enhanced assets data for reporting WITH SEQUENTIAL NUMBERING
+  const enhancedAssets = useMemo(() => {
+    const getAssetTypeLabel = (type) => {
+      const types = {
+        'STORAGE_TANK': 'Tank',
+        'FUEL_PUMP': 'Pump',
+        'ISLAND': 'Island',
+        'WAREHOUSE': 'Warehouse'
+      };
+      return types[type] || type;
+    };
+
+    const getStatusLabel = (status) => {
+      const statuses = {
+        'REGISTERED': 'Registered',
+        'ASSIGNED': 'Assigned',
+        'ACTIVE': 'Active',
+        'INACTIVE': 'Inactive',
+        'MAINTENANCE': 'Maintenance'
+      };
+      return statuses[status] || status;
+    };
+
+    const getConnectionStatus = (asset, connections) => {
+      if (!connections || connections.length === 0) return 'Unconnected';
+      
+      const hasTankConnection = connections.some(conn => 
+        (conn.type === 'TANK_TO_PUMP' && conn.assetB.id === asset.id) ||
+        (conn.type === 'TANK_TO_ISLAND' && conn.assetA.id === asset.id)
+      );
+      
+      const hasPumpConnection = connections.some(conn => 
+        (conn.type === 'PUMP_TO_ISLAND' && conn.assetA.id === asset.id) ||
+        (conn.type === 'TANK_TO_PUMP' && conn.assetA.id === asset.id)
+      );
+      
+      const hasIslandConnection = connections.some(conn => 
+        (conn.type === 'TANK_TO_ISLAND' && conn.assetB.id === asset.id) ||
+        (conn.type === 'PUMP_TO_ISLAND' && conn.assetB.id === asset.id)
+      );
+
+      if (asset.type === 'STORAGE_TANK') {
+        return hasTankConnection ? 'Connected' : 'Unconnected';
+      } else if (asset.type === 'FUEL_PUMP') {
+        return (hasPumpConnection || hasTankConnection) ? 'Connected' : 'Unconnected';
+      } else if (asset.type === 'ISLAND') {
+        return (hasIslandConnection) ? 'Connected' : 'Unconnected';
+      }
+      return 'N/A';
+    };
+
+    return assets.map((asset, index) => ({
+      ...asset,
+      // Add sequential number
+      sequentialNumber: index + 1,
+      // Enhanced fields
+      assetTypeDisplay: getAssetTypeLabel(asset.type),
+      statusDisplay: getStatusLabel(asset.status),
+      stationName: asset.station?.name || 'Unassigned',
+      stationCode: asset.station?.code || 'N/A',
+      companyName: asset.company?.name || 'N/A',
+      // Tank-specific fields
+      capacity: asset.tank?.capacity || 0,
+      productName: asset.tank?.product?.name || 'N/A',
+      // Connection status
+      connectionStatus: getConnectionStatus(asset, connections),
+      // Timestamps
+      formattedCreatedAt: asset.createdAt ? new Date(asset.createdAt).toLocaleDateString() : 'N/A',
+      formattedUpdatedAt: asset.updatedAt ? new Date(asset.updatedAt).toLocaleDateString() : 'N/A',
+      // Sortable timestamp
+      timestamp: new Date(asset.createdAt).getTime()
+    }));
+  }, [assets, connections]);
+
+  // Calculate summary statistics
+  const summaryStats = useMemo(() => {
+    const totalAssets = enhancedAssets.length;
+    const stationAssets = enhancedAssets.filter(asset => asset.stationId === userInfo?.station?.id);
+    const totalStationAssets = stationAssets.length;
+    
+    // Count by type
+    const tanks = stationAssets.filter(a => a.type === 'STORAGE_TANK');
+    const pumps = stationAssets.filter(a => a.type === 'FUEL_PUMP');
+    const islands = stationAssets.filter(a => a.type === 'ISLAND');
+    const warehouses = stationAssets.filter(a => a.type === 'WAREHOUSE');
+    
+    // Count by status
+    const activeAssets = stationAssets.filter(a => a.status === 'ACTIVE');
+    const inactiveAssets = stationAssets.filter(a => a.status === 'INACTIVE');
+    const maintenanceAssets = stationAssets.filter(a => a.status === 'MAINTENANCE');
+    
+    // Count by connection status
+    const connectedAssets = stationAssets.filter(a => a.connectionStatus === 'Connected');
+    const unconnectedAssets = stationAssets.filter(a => a.connectionStatus === 'Unconnected');
+    
+    // Total capacity
+    const totalCapacity = tanks.reduce((sum, tank) => sum + (tank.capacity || 0), 0);
+    
+    return {
+      totalAssets,
+      totalStationAssets,
+      tanksCount: tanks.length,
+      pumpsCount: pumps.length,
+      islandsCount: islands.length,
+      warehousesCount: warehouses.length,
+      activeAssetsCount: activeAssets.length,
+      inactiveAssetsCount: inactiveAssets.length,
+      maintenanceAssetsCount: maintenanceAssets.length,
+      connectedAssetsCount: connectedAssets.length,
+      unconnectedAssetsCount: unconnectedAssets.length,
+      totalCapacity,
+      availableAssetsCount: enhancedAssets.filter(a => !a.stationId).length
+    };
+  }, [enhancedAssets, userInfo]);
+
+  // Enhanced station assets by type
+  const enhancedStationTanks = useMemo(() => 
+    enhancedAssets.filter(asset => 
+      asset.type === 'STORAGE_TANK' && asset.stationId === userInfo?.station?.id
+    ),
+  [enhancedAssets, userInfo]);
+
+  const enhancedStationPumps = useMemo(() => 
+    enhancedAssets.filter(asset => 
+      asset.type === 'FUEL_PUMP' && asset.stationId === userInfo?.station?.id
+    ),
+  [enhancedAssets, userInfo]);
+
+  const enhancedStationIslands = useMemo(() => 
+    enhancedAssets.filter(asset => 
+      asset.type === 'ISLAND' && asset.stationId === userInfo?.station?.id
+    ),
+  [enhancedAssets, userInfo]);
+
+  const enhancedStationWarehouses = useMemo(() => 
+    enhancedAssets.filter(asset => 
+      asset.type === 'WAREHOUSE' && asset.stationId === userInfo?.station?.id
+    ),
+  [enhancedAssets, userInfo]);
+
+  // Summary data for report header
+  const summaryData = {
+    'Station Name': userInfo?.station?.name || 'N/A',
+    'Station Code': userInfo?.station?.code || 'N/A',
+    'Total Assets': summaryStats.totalStationAssets,
+    'Tanks': summaryStats.tanksCount,
+    'Pumps': summaryStats.pumpsCount,
+    'Islands': summaryStats.islandsCount,
+    'Warehouses': summaryStats.warehousesCount,
+    'Active Assets': summaryStats.activeAssetsCount,
+    'Inactive Assets': summaryStats.inactiveAssetsCount,
+    'Maintenance Assets': summaryStats.maintenanceAssetsCount,
+    'Connected Assets': summaryStats.connectedAssetsCount,
+    'Unconnected Assets': summaryStats.unconnectedAssetsCount,
+    'Total Capacity': `${summaryStats.totalCapacity}L`,
+    'Available Assets': summaryStats.availableAssetsCount,
+    'Report Generated': new Date().toLocaleString(),
+    'Generated By': userInfo?.user ? `${userInfo.user.firstName} ${userInfo.user.lastName}` : 'System'
+  };
 
   // Handle updating asset
   const handleUpdateAsset = async (assetId, updateData) => {
@@ -367,6 +531,473 @@ const StationAssetManagement = () => {
     }
   };
 
+  // Get data source for export based on active tab
+  const getExportDataSource = () => {
+    switch (activeTab) {
+      case 'tanks': return enhancedStationTanks;
+      case 'pumps': return enhancedStationPumps;
+      case 'islands': return enhancedStationIslands;
+      case 'warehouses': return enhancedStationWarehouses;
+      case 'relationships': return enhancedAssets.filter(a => a.stationId === userInfo?.station?.id);
+      default: return enhancedStationTanks;
+    }
+  };
+
+  // Get export columns based on active tab
+  const getExportColumns = () => {
+    const commonColumns = [
+      {
+        title: '#',
+        key: 'sequence',
+        render: (_, record, index) => index + 1,
+        type: 'number',
+        width: 50
+      },
+      {
+        title: 'Asset ID',
+        dataIndex: 'id',
+        key: 'assetId',
+        type: 'text'
+      },
+      {
+        title: 'Asset Name',
+        dataIndex: 'name',
+        key: 'assetName',
+        type: 'text'
+      },
+      {
+        title: 'Asset Type',
+        key: 'assetType',
+        render: (_, record) => record.assetTypeDisplay,
+        type: 'text'
+      },
+      {
+        title: 'Station Label',
+        dataIndex: 'stationLabel',
+        key: 'stationLabel',
+        render: (label) => label || 'Not set',
+        type: 'text'
+      },
+      {
+        title: 'Status',
+        key: 'status',
+        render: (_, record) => record.statusDisplay,
+        type: 'text'
+      },
+      {
+        title: 'Connection Status',
+        key: 'connectionStatus',
+        render: (_, record) => record.connectionStatus,
+        type: 'text'
+      },
+      {
+        title: 'Station Name',
+        key: 'stationName',
+        render: (_, record) => record.stationName,
+        type: 'text'
+      },
+      {
+        title: 'Station Code',
+        key: 'stationCode',
+        render: (_, record) => record.stationCode,
+        type: 'text'
+      },
+      {
+        title: 'Company Name',
+        key: 'companyName',
+        render: (_, record) => record.companyName,
+        type: 'text'
+      },
+      {
+        title: 'Created Date',
+        key: 'createdDate',
+        render: (_, record) => record.formattedCreatedAt,
+        type: 'date'
+      },
+      {
+        title: 'Last Updated',
+        key: 'lastUpdated',
+        render: (_, record) => record.formattedUpdatedAt,
+        type: 'date'
+      },
+      {
+        title: 'Asset Code',
+        dataIndex: 'code',
+        key: 'assetCode',
+        render: (code) => code || 'N/A',
+        type: 'text'
+      },
+      {
+        title: 'Description',
+        dataIndex: 'description',
+        key: 'description',
+        render: (desc) => desc || 'N/A',
+        type: 'text'
+      },
+      {
+        title: 'Serial Number',
+        dataIndex: 'serialNumber',
+        key: 'serialNumber',
+        render: (serial) => serial || 'N/A',
+        type: 'text'
+      },
+      {
+        title: 'Manufacturer',
+        dataIndex: 'manufacturer',
+        key: 'manufacturer',
+        render: (mfg) => mfg || 'N/A',
+        type: 'text'
+      },
+      {
+        title: 'Model',
+        dataIndex: 'model',
+        key: 'model',
+        render: (model) => model || 'N/A',
+        type: 'text'
+      },
+      {
+        title: 'Installation Date',
+        dataIndex: 'installationDate',
+        key: 'installationDate',
+        render: (date) => date ? new Date(date).toLocaleDateString() : 'N/A',
+        type: 'date'
+      },
+      {
+        title: 'Warranty Expiry',
+        dataIndex: 'warrantyExpiry',
+        key: 'warrantyExpiry',
+        render: (date) => date ? new Date(date).toLocaleDateString() : 'N/A',
+        type: 'date'
+      },
+      {
+        title: 'Purchase Date',
+        dataIndex: 'purchaseDate',
+        key: 'purchaseDate',
+        render: (date) => date ? new Date(date).toLocaleDateString() : 'N/A',
+        type: 'date'
+      },
+      {
+        title: 'Purchase Price',
+        dataIndex: 'purchasePrice',
+        key: 'purchasePrice',
+        render: (price) => price ? `KES ${price.toLocaleString()}` : 'N/A',
+        type: 'currency'
+      },
+      {
+        title: 'Current Value',
+        dataIndex: 'currentValue',
+        key: 'currentValue',
+        render: (value) => value ? `KES ${value.toLocaleString()}` : 'N/A',
+        type: 'currency'
+      },
+      {
+        title: 'Depreciation Rate',
+        dataIndex: 'depreciationRate',
+        key: 'depreciationRate',
+        render: (rate) => rate ? `${rate}%` : 'N/A',
+        type: 'percentage'
+      },
+      {
+        title: 'Location Notes',
+        dataIndex: 'locationNotes',
+        key: 'locationNotes',
+        render: (notes) => notes || 'N/A',
+        type: 'text'
+      },
+      {
+        title: 'Maintenance Schedule',
+        dataIndex: 'maintenanceSchedule',
+        key: 'maintenanceSchedule',
+        render: (schedule) => schedule || 'N/A',
+        type: 'text'
+      },
+      {
+        title: 'Last Maintenance Date',
+        dataIndex: 'lastMaintenanceDate',
+        key: 'lastMaintenanceDate',
+        render: (date) => date ? new Date(date).toLocaleDateString() : 'N/A',
+        type: 'date'
+      },
+      {
+        title: 'Next Maintenance Due',
+        dataIndex: 'nextMaintenanceDue',
+        key: 'nextMaintenanceDue',
+        render: (date) => date ? new Date(date).toLocaleDateString() : 'N/A',
+        type: 'date'
+      },
+      {
+        title: 'Operational Hours',
+        dataIndex: 'operationalHours',
+        key: 'operationalHours',
+        render: (hours) => hours || 0,
+        type: 'number'
+      },
+      {
+        title: 'Energy Consumption',
+        dataIndex: 'energyConsumption',
+        key: 'energyConsumption',
+        render: (consumption) => consumption ? `${consumption} kWh` : 'N/A',
+        type: 'text'
+      },
+      {
+        title: 'Environmental Rating',
+        dataIndex: 'environmentalRating',
+        key: 'environmentalRating',
+        render: (rating) => rating || 'N/A',
+        type: 'text'
+      },
+      {
+        title: 'Safety Rating',
+        dataIndex: 'safetyRating',
+        key: 'safetyRating',
+        render: (rating) => rating || 'N/A',
+        type: 'text'
+      },
+      {
+        title: 'Notes/Comments',
+        dataIndex: 'notes',
+        key: 'notes',
+        render: (notes) => notes || 'N/A',
+        type: 'text'
+      }
+    ];
+
+    const typeSpecificColumns = {
+      tanks: [
+        {
+          title: 'Capacity (Liters)',
+          key: 'capacity',
+          render: (_, record) => record.capacity || 0,
+          type: 'number'
+        },
+        {
+          title: 'Product Name',
+          key: 'productName',
+          render: (_, record) => record.productName,
+          type: 'text'
+        },
+        {
+          title: 'Current Level',
+          dataIndex: 'currentLevel',
+          key: 'currentLevel',
+          render: (level) => level ? `${level}%` : 'N/A',
+          type: 'percentage'
+        },
+        {
+          title: 'Min Level Threshold',
+          dataIndex: 'minLevelThreshold',
+          key: 'minLevelThreshold',
+          render: (threshold) => threshold ? `${threshold}%` : 'N/A',
+          type: 'percentage'
+        },
+        {
+          title: 'Max Level Threshold',
+          dataIndex: 'maxLevelThreshold',
+          key: 'maxLevelThreshold',
+          render: (threshold) => threshold ? `${threshold}%` : 'N/A',
+          type: 'percentage'
+        },
+        {
+          title: 'Material Type',
+          dataIndex: 'materialType',
+          key: 'materialType',
+          render: (material) => material || 'N/A',
+          type: 'text'
+        },
+        {
+          title: 'Tank Type',
+          dataIndex: 'tankType',
+          key: 'tankType',
+          render: (type) => type || 'N/A',
+          type: 'text'
+        },
+        {
+          title: 'Diameter',
+          dataIndex: 'diameter',
+          key: 'diameter',
+          render: (diameter) => diameter ? `${diameter}m` : 'N/A',
+          type: 'text'
+        },
+        {
+          title: 'Height',
+          dataIndex: 'height',
+          key: 'height',
+          render: (height) => height ? `${height}m` : 'N/A',
+          type: 'text'
+        }
+      ],
+      pumps: [
+        {
+          title: 'Flow Rate',
+          dataIndex: 'flowRate',
+          key: 'flowRate',
+          render: (rate) => rate ? `${rate} L/min` : 'N/A',
+          type: 'text'
+        },
+        {
+          title: 'Pressure Rating',
+          dataIndex: 'pressureRating',
+          key: 'pressureRating',
+          render: (rating) => rating ? `${rating} psi` : 'N/A',
+          type: 'text'
+        },
+        {
+          title: 'Power Rating',
+          dataIndex: 'powerRating',
+          key: 'powerRating',
+          render: (rating) => rating ? `${rating} kW` : 'N/A',
+          type: 'text'
+        },
+        {
+          title: 'Nozzle Type',
+          dataIndex: 'nozzleType',
+          key: 'nozzleType',
+          render: (type) => type || 'N/A',
+          type: 'text'
+        },
+        {
+          title: 'Nozzle Count',
+          dataIndex: 'nozzleCount',
+          key: 'nozzleCount',
+          render: (count) => count || 0,
+          type: 'number'
+        },
+        {
+          title: 'Hose Length',
+          dataIndex: 'hoseLength',
+          key: 'hoseLength',
+          render: (length) => length ? `${length}m` : 'N/A',
+          type: 'text'
+        }
+      ],
+      islands: [
+        {
+          title: 'Island Number',
+          dataIndex: 'islandNumber',
+          key: 'islandNumber',
+          render: (number) => number || 'N/A',
+          type: 'text'
+        },
+        {
+          title: 'Canopy Type',
+          dataIndex: 'canopyType',
+          key: 'canopyType',
+          render: (type) => type || 'N/A',
+          type: 'text'
+        },
+        {
+          title: 'Lighting Type',
+          dataIndex: 'lightingType',
+          key: 'lightingType',
+          render: (type) => type || 'N/A',
+          type: 'text'
+        },
+        {
+          title: 'Payment Terminal Type',
+          dataIndex: 'paymentTerminalType',
+          key: 'paymentTerminalType',
+          render: (type) => type || 'N/A',
+          type: 'text'
+        },
+        {
+          title: 'Island Position',
+          dataIndex: 'position',
+          key: 'position',
+          render: (pos) => pos || 'N/A',
+          type: 'text'
+        }
+      ],
+      warehouses: [
+        {
+          title: 'Warehouse Type',
+          dataIndex: 'warehouseType',
+          key: 'warehouseType',
+          render: (type) => type || 'N/A',
+          type: 'text'
+        },
+        {
+          title: 'Area (sqm)',
+          dataIndex: 'area',
+          key: 'area',
+          render: (area) => area ? `${area} sqm` : 'N/A',
+          type: 'number'
+        },
+        {
+          title: 'Storage Capacity',
+          dataIndex: 'storageCapacity',
+          key: 'storageCapacity',
+          render: (capacity) => capacity ? `${capacity} units` : 'N/A',
+          type: 'number'
+        },
+        {
+          title: 'Temperature Control',
+          dataIndex: 'temperatureControl',
+          key: 'temperatureControl',
+          render: (control) => control ? 'Yes' : 'No',
+          type: 'boolean'
+        },
+        {
+          title: 'Security Level',
+          dataIndex: 'securityLevel',
+          key: 'securityLevel',
+          render: (level) => level || 'N/A',
+          type: 'text'
+        }
+      ],
+      relationships: [
+        {
+          title: 'Connected Assets Count',
+          key: 'connectedAssetsCount',
+          render: (_, record) => {
+            const connectionsCount = connections.filter(conn => 
+              conn.assetA.id === record.id || conn.assetB.id === record.id
+            ).length;
+            return connectionsCount;
+          },
+          type: 'number'
+        },
+        {
+          title: 'Connection Types',
+          key: 'connectionTypes',
+          render: (_, record) => {
+            const connTypes = connections
+              .filter(conn => conn.assetA.id === record.id || conn.assetB.id === record.id)
+              .map(conn => conn.type)
+              .join(', ');
+            return connTypes || 'None';
+          },
+          type: 'text'
+        }
+      ]
+    };
+
+    return [...commonColumns, ...(typeSpecificColumns[activeTab] || [])];
+  };
+
+  // Get tab title
+  const getTabTitle = () => {
+    const titles = {
+      'tanks': 'Storage Tanks',
+      'pumps': 'Fuel Pumps',
+      'islands': 'Allocation Islands',
+      'warehouses': 'Warehouses',
+      'relationships': 'Asset Relationships'
+    };
+    return titles[activeTab] || 'Assets';
+  };
+
+  // Get file name
+  const getFileName = () => {
+    const dateStr = new Date().toISOString().split('T')[0];
+    const stationCode = userInfo?.station?.code || 'station';
+    return `station_assets_${activeTab}_${stationCode}_${dateStr}`;
+  };
+
+  // Handle export
+  const handleExport = (format) => {
+    console.log(`Exporting ${getExportDataSource().length} ${activeTab} assets as ${format}`);
+  };
+
   if (!userInfo) {
     return (
       <div className="p-6">
@@ -459,8 +1090,16 @@ const StationAssetManagement = () => {
     !tanksConnectedToIslands.has(tank.id)
   );
 
-  // Enhanced pump columns
+  // Enhanced pump columns WITH SEQUENTIAL NUMBERING
   const pumpColumns = [
+    { 
+      header: '#', 
+      accessor: 'id',
+      render: (_, __, index) => (
+        <span className="text-sm font-medium text-gray-600">{index + 1}</span>
+      ),
+      width: '50px'
+    },
     { header: 'Name', accessor: 'name' },
     { 
       header: 'Station Label', 
@@ -552,8 +1191,16 @@ const StationAssetManagement = () => {
     }
   ];
 
-  // Enhanced tank columns
+  // Enhanced tank columns WITH SEQUENTIAL NUMBERING
   const tankColumns = [
+    { 
+      header: '#', 
+      accessor: 'id',
+      render: (_, __, index) => (
+        <span className="text-sm font-medium text-gray-600">{index + 1}</span>
+      ),
+      width: '50px'
+    },
     { header: 'Name', accessor: 'name' },
     { 
       header: 'Station Label', 
@@ -638,8 +1285,16 @@ const StationAssetManagement = () => {
     }
   ];
 
-  // Enhanced island columns
+  // Enhanced island columns WITH SEQUENTIAL NUMBERING
   const islandColumns = [
+    { 
+      header: '#', 
+      accessor: 'id',
+      render: (_, __, index) => (
+        <span className="text-sm font-medium text-gray-600">{index + 1}</span>
+      ),
+      width: '50px'
+    },
     { header: 'Name', accessor: 'name' },
     { 
       header: 'Station Label', 
@@ -723,8 +1378,16 @@ const StationAssetManagement = () => {
     }
   ];
 
-  // Warehouse columns
+  // Warehouse columns WITH SEQUENTIAL NUMBERING
   const warehouseColumns = [
+    { 
+      header: '#', 
+      accessor: 'id',
+      render: (_, __, index) => (
+        <span className="text-sm font-medium text-gray-600">{index + 1}</span>
+      ),
+      width: '50px'
+    },
     { header: 'Name', accessor: 'name' },
     { 
       header: 'Station Label', 
@@ -791,9 +1454,79 @@ const StationAssetManagement = () => {
             Manage tanks, pumps, islands, and warehouses for this station
           </p>
         </div>
-        <Badge variant="outline" className="text-sm">
-          Station Manager: {userInfo.user?.firstName} {userInfo.user?.lastName}
-        </Badge>
+        <div className="flex items-center space-x-4">
+          <AdvancedReportGenerator
+            dataSource={getExportDataSource()}
+            columns={getExportColumns()}
+            title={`${getTabTitle()} Report - ${userInfo.station?.name}`}
+            fileName={getFileName()}
+            summaryData={summaryData}
+            reportType="operations"
+            stationInfo={userInfo.station}
+            footerText={`Generated from Lynx Energy System - ${userInfo.user ? `User: ${userInfo.user.firstName} ${userInfo.user.lastName}` : ''} - ${new Date().toLocaleDateString()}`}
+            showFooter={true}
+            enableCustomization={true}
+            onReportGenerate={handleExport}
+          />
+          <Badge variant="outline" className="text-sm">
+            Station Manager: {userInfo.user?.firstName} {userInfo.user?.lastName}
+          </Badge>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <Card className="bg-blue-50">
+          <div className="p-4">
+            <div className="flex items-center">
+              <Fuel className="w-8 h-8 text-blue-500 mr-3" />
+              <div>
+                <div className="text-2xl font-bold">{summaryStats.tanksCount}</div>
+                <div className="text-sm text-gray-600">Storage Tanks</div>
+                <div className="text-xs text-gray-500">{summaryStats.totalCapacity}L total capacity</div>
+              </div>
+            </div>
+          </div>
+        </Card>
+        
+        <Card className="bg-yellow-50">
+          <div className="p-4">
+            <div className="flex items-center">
+              <Zap className="w-8 h-8 text-yellow-500 mr-3" />
+              <div>
+                <div className="text-2xl font-bold">{summaryStats.pumpsCount}</div>
+                <div className="text-sm text-gray-600">Fuel Pumps</div>
+                <div className="text-xs text-gray-500">{summaryStats.connectedAssetsCount} connected</div>
+              </div>
+            </div>
+          </div>
+        </Card>
+        
+        <Card className="bg-green-50">
+          <div className="p-4">
+            <div className="flex items-center">
+              <Package className="w-8 h-8 text-green-500 mr-3" />
+              <div>
+                <div className="text-2xl font-bold">{summaryStats.islandsCount}</div>
+                <div className="text-sm text-gray-600">Allocation Islands</div>
+                <div className="text-xs text-gray-500">Service points</div>
+              </div>
+            </div>
+          </div>
+        </Card>
+        
+        <Card className="bg-purple-50">
+          <div className="p-4">
+            <div className="flex items-center">
+              <Warehouse className="w-8 h-8 text-purple-500 mr-3" />
+              <div>
+                <div className="text-2xl font-bold">{summaryStats.warehousesCount}</div>
+                <div className="text-sm text-gray-600">Warehouses</div>
+                <div className="text-xs text-gray-500">Storage facilities</div>
+              </div>
+            </div>
+          </div>
+        </Card>
       </div>
 
       {error && (
@@ -806,11 +1539,11 @@ const StationAssetManagement = () => {
       <div className="border-b border-gray-200 mb-6">
         <nav className="flex space-x-8">
           {[
-            { id: 'tanks', label: 'Tanks', icon: Fuel },
-            { id: 'pumps', label: 'Pumps', icon: Zap },
-            { id: 'islands', label: 'Islands', icon: Package },
-            { id: 'warehouses', label: 'Warehouses', icon: Warehouse },
-            { id: 'relationships', label: 'Relationships', icon: Link }
+            { id: 'tanks', label: 'Tanks', icon: Fuel, count: summaryStats.tanksCount },
+            { id: 'pumps', label: 'Pumps', icon: Zap, count: summaryStats.pumpsCount },
+            { id: 'islands', label: 'Islands', icon: Package, count: summaryStats.islandsCount },
+            { id: 'warehouses', label: 'Warehouses', icon: Warehouse, count: summaryStats.warehousesCount },
+            { id: 'relationships', label: 'Relationships', icon: Link, count: summaryStats.connectedAssetsCount }
           ].map(tab => (
             <Tab
               key={tab.id}
@@ -819,7 +1552,12 @@ const StationAssetManagement = () => {
               isActive={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id)}
             >
-              {tab.label}
+              <div className="flex items-center">
+                {tab.label}
+                <Badge variant="outline" className="ml-2 text-xs">
+                  {tab.count}
+                </Badge>
+              </div>
             </Tab>
           ))}
         </nav>
@@ -828,7 +1566,7 @@ const StationAssetManagement = () => {
       {/* Tanks Tab */}
       <TabPanel value={activeTab} tabId="tanks">
         <div className="space-y-6">
-          <Card title="Station Tanks">
+          <Card title={`Station Tanks (${stationTanks.length})`}>
             <Table
               columns={tankColumns}
               data={stationTanks}
@@ -840,6 +1578,13 @@ const StationAssetManagement = () => {
             <Card title="Available Tanks" className="bg-blue-50">
               <Table
                 columns={[
+                  { 
+                    header: '#', 
+                    render: (_, __, index) => (
+                      <span className="text-sm font-medium text-gray-600">{index + 1}</span>
+                    ),
+                    width: '50px'
+                  },
                   { header: 'Name', accessor: 'name' },
                   { header: 'Capacity', 
                     render: (_, tank) => tank.tank?.capacity ? `${tank.tank.capacity}L` : 'N/A'
@@ -869,7 +1614,7 @@ const StationAssetManagement = () => {
       {/* Pumps Tab */}
       <TabPanel value={activeTab} tabId="pumps">
         <div className="space-y-6">
-          <Card title="Station Pumps">
+          <Card title={`Station Pumps (${stationPumps.length})`}>
             <Table
               columns={pumpColumns}
               data={stationPumps}
@@ -881,6 +1626,13 @@ const StationAssetManagement = () => {
             <Card title="Available Pumps" className="bg-yellow-50">
               <Table
                 columns={[
+                  { 
+                    header: '#', 
+                    render: (_, __, index) => (
+                      <span className="text-sm font-medium text-gray-600">{index + 1}</span>
+                    ),
+                    width: '50px'
+                  },
                   { header: 'Name', accessor: 'name' },
                   { header: 'Actions', 
                     render: (_, pump) => (
@@ -904,7 +1656,7 @@ const StationAssetManagement = () => {
       {/* Islands Tab */}
       <TabPanel value={activeTab} tabId="islands">
         <div className="space-y-6">
-          <Card title="Allocation Points (Islands)">
+          <Card title={`Allocation Points (${stationIslands.length})`}>
             <Table
               columns={islandColumns}
               data={stationIslands}
@@ -916,6 +1668,13 @@ const StationAssetManagement = () => {
             <Card title="Available Allocation Points" className="bg-green-50">
               <Table
                 columns={[
+                  { 
+                    header: '#', 
+                    render: (_, __, index) => (
+                      <span className="text-sm font-medium text-gray-600">{index + 1}</span>
+                    ),
+                    width: '50px'
+                  },
                   { header: 'Name', accessor: 'name' },
                   { header: 'Actions', 
                     render: (_, island) => (
@@ -939,7 +1698,7 @@ const StationAssetManagement = () => {
       {/* Warehouses Tab */}
       <TabPanel value={activeTab} tabId="warehouses">
         <div className="space-y-6">
-          <Card title="Station Warehouses">
+          <Card title={`Station Warehouses (${stationWarehouses.length})`}>
             <Table
               columns={warehouseColumns}
               data={stationWarehouses}
@@ -951,6 +1710,13 @@ const StationAssetManagement = () => {
             <Card title="Available Warehouses" className="bg-purple-50">
               <Table
                 columns={[
+                  { 
+                    header: '#', 
+                    render: (_, __, index) => (
+                      <span className="text-sm font-medium text-gray-600">{index + 1}</span>
+                    ),
+                    width: '50px'
+                  },
                   { header: 'Name', accessor: 'name' },
                   { header: 'Actions', 
                     render: (_, warehouse) => (
@@ -980,7 +1746,7 @@ const StationAssetManagement = () => {
               <div>
                 <h3 className="font-medium mb-3">Select Tank</h3>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {stationTanks.map(tank => (
+                  {stationTanks.map((tank, index) => (
                     <div
                       key={tank.id}
                       className={`p-3 rounded-lg cursor-pointer ${
@@ -991,6 +1757,7 @@ const StationAssetManagement = () => {
                       onClick={() => setSelectedTank(tank.id)}
                     >
                       <div className="flex items-center">
+                        <div className="mr-2 text-sm font-medium text-gray-600">{index + 1}</div>
                         <Fuel className="w-5 h-5 text-blue-500 mr-2" />
                         <div>
                           <div className="font-medium">{tank.name}</div>
@@ -1019,7 +1786,7 @@ const StationAssetManagement = () => {
                   )}
                 </div>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {pumpsAvailableForTankConnection.map(pump => (
+                  {pumpsAvailableForTankConnection.map((pump, index) => (
                     <div
                       key={pump.id}
                       className={`p-3 rounded-lg cursor-pointer ${
@@ -1037,6 +1804,7 @@ const StationAssetManagement = () => {
                     >
                       <div className="flex justify-between items-center">
                         <div className="flex items-center">
+                          <div className="mr-2 text-sm font-medium text-gray-600">{index + 1}</div>
                           <Zap className="w-5 h-5 text-yellow-500 mr-2" />
                           <div>
                             <div className="font-medium">{pump.name}</div>
@@ -1068,7 +1836,7 @@ const StationAssetManagement = () => {
               <div>
                 <h3 className="font-medium mb-3">Select Island</h3>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {stationIslands.map(island => (
+                  {stationIslands.map((island, index) => (
                     <div
                       key={island.id}
                       className={`p-3 rounded-lg cursor-pointer ${
@@ -1079,6 +1847,7 @@ const StationAssetManagement = () => {
                       onClick={() => setSelectedIsland(island.id)}
                     >
                       <div className="flex items-center">
+                        <div className="mr-2 text-sm font-medium text-gray-600">{index + 1}</div>
                         <Package className="w-5 h-5 text-green-500 mr-2" />
                         <div>
                           <div className="font-medium">{island.name}</div>
@@ -1093,7 +1862,7 @@ const StationAssetManagement = () => {
               <div>
                 <h3 className="font-medium mb-3">Select Tanks</h3>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {tanksAvailableForIslandConnection.map(tank => (
+                  {tanksAvailableForIslandConnection.map((tank, index) => (
                     <div
                       key={tank.id}
                       className={`p-3 rounded-lg cursor-pointer ${
@@ -1112,6 +1881,7 @@ const StationAssetManagement = () => {
                     >
                       <div className="flex justify-between items-center">
                         <div className="flex items-center">
+                          <div className="mr-2 text-sm font-medium text-gray-600">{index + 1}</div>
                           <Fuel className="w-5 h-5 text-blue-500 mr-2" />
                           <div>
                             <div className="font-medium">{tank.name}</div>
@@ -1146,7 +1916,7 @@ const StationAssetManagement = () => {
                   )}
                 </div>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {pumpsAvailableForIslandConnection.map(pump => (
+                  {pumpsAvailableForIslandConnection.map((pump, index) => (
                     <div
                       key={pump.id}
                       className={`p-3 rounded-lg cursor-pointer ${
@@ -1165,6 +1935,7 @@ const StationAssetManagement = () => {
                     >
                       <div className="flex justify-between items-center">
                         <div className="flex items-center">
+                          <div className="mr-2 text-sm font-medium text-gray-600">{index + 1}</div>
                           <Zap className="w-5 h-5 text-yellow-500 mr-2" />
                           <div>
                             <div className="font-medium">{pump.name}</div>

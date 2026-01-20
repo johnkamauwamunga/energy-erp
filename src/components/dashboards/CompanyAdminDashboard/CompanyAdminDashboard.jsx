@@ -31,7 +31,7 @@ import SupplierAccountManagement from './supplier/accounts/SupplierAccountManage
 import BankManagementTabs from '../common/banks/BankManagementTabs';
 import FinancialDashboard from '../common/finance-manager/FinancialDashboard';
 import WarehouseManagement from '../common/warehouses/WarehouseManagement';
-import FuelSalesManagement from '../common/fuelSales/FuelSalesManagement';
+import CompanyFuelSales from '../common/fuelSales/CompanyFuelSales';
 import Debug from './Debug';
 import FinanceDebugComponent from '../common/FinanceDebugComponent';
 
@@ -190,7 +190,7 @@ const CompanyAdminDashboard = () => {
       case 'finance-manager':
         return <FinancialDashboard />;
       case 'sales':
-        return <FuelSalesManagement />;
+        return <CompanyFuelSales />;
       case 'reports':
         return <FinanceDebugComponent />;
       case 'analytics':

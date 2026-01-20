@@ -99,7 +99,7 @@ const CashMovement = () => {
   const [attendants, setAttendants] = useState([]);
   const [loadingDropdowns, setLoadingDropdowns] = useState(false);
 
-  // State for filters
+  // State for filters - FIXED: Default to DESC order
   const [filters, setFilters] = useState({
     // Common filters
     startDate: dayjs().subtract(30, 'days').format('YYYY-MM-DD'),
@@ -127,11 +127,11 @@ const CashMovement = () => {
     reportGroupBy: 'station',
     reportPeriod: 'monthly',
     
-    // Pagination
+    // Pagination and sorting - FIXED: Default to DESC
     page: 1,
     limit: 20,
     sortBy: 'countedAt',
-    sortOrder: 'desc'
+    sortOrder: 'desc' // Changed to 'desc' for descending order
   });
 
   // Modal states
@@ -151,11 +151,11 @@ const CashMovement = () => {
     if (activeTab !== 'dashboard') {
       const timeoutId = setTimeout(() => {
         fetchData();
-      }, 500); // Slightly longer timeout for initial load
+      }, 500);
 
       return () => clearTimeout(timeoutId);
     }
-  }, []); // Empty dependency array for initial load
+  }, []);
 
   const loadDropdownData = async () => {
     setLoadingDropdowns(true);
@@ -184,7 +184,7 @@ const CashMovement = () => {
         );
       }
 
-      // Load shifts
+      // Load shifts - FIXED: Sort shifts in DESC order by default
       if (userStationId) {
         promises.push(
           operationsService.getShifts({
@@ -193,8 +193,14 @@ const CashMovement = () => {
             status: 'CLOSED'
           }).then(shiftsData => {
             const shiftsArray = Array.isArray(shiftsData) ? shiftsData : (shiftsData?.shifts || []);
-            setShifts(shiftsArray);
-            return shiftsArray;
+            // Sort shifts by shiftNumber in DESC order
+            const sortedShifts = [...shiftsArray].sort((a, b) => {
+              const aNum = parseInt(a.shiftNumber) || 0;
+              const bNum = parseInt(b.shiftNumber) || 0;
+              return bNum - aNum; // DESC order
+            });
+            setShifts(sortedShifts);
+            return sortedShifts;
           })
         );
       }
@@ -227,7 +233,7 @@ const CashMovement = () => {
     setFilters(prev => ({
       ...prev,
       [key]: value,
-      page: 1 // Reset to first page on filter change
+      page: 1
     }));
   };
 
@@ -320,11 +326,56 @@ const CashMovement = () => {
       setSummary(result?.summary || result?.data?.summary || null);
       setMeta(result?.meta || null);
       
-      // Use tableData if available, otherwise use data array
+      // Sort table data in DESC order by default for display
       const dataArray = result?.tableData || result?.data || [];
-      setTableData(dataArray);
+      
+      // Enhanced sorting logic
+      let sortedData = [...dataArray];
+      if (sortedData.length > 0) {
+        // Default sort by countedAt or startTime in DESC order
+        const sortField = filters.sortBy || 'countedAt' || 'startTime' || 'date' || 'createdAt';
+        sortedData.sort((a, b) => {
+          const aValue = a[sortField];
+          const bValue = b[sortField];
+          
+          // Handle dates
+          if (aValue && bValue) {
+            const aDate = new Date(aValue).getTime();
+            const bDate = new Date(bValue).getTime();
+            
+            // Sort in DESC order (most recent first)
+            if (filters.sortOrder === 'desc') {
+              return bDate - aDate;
+            } else {
+              return aDate - bDate;
+            }
+          }
+          
+          // Handle numeric values
+          if (typeof aValue === 'number' && typeof bValue === 'number') {
+            if (filters.sortOrder === 'desc') {
+              return bValue - aValue;
+            } else {
+              return aValue - bValue;
+            }
+          }
+          
+          // Handle strings
+          if (typeof aValue === 'string' && typeof bValue === 'string') {
+            if (filters.sortOrder === 'desc') {
+              return bValue.localeCompare(aValue);
+            } else {
+              return aValue.localeCompare(bValue);
+            }
+          }
+          
+          return 0;
+        });
+      }
+      
+      setTableData(sortedData);
 
-      if (dataArray.length === 0) {
+      if (sortedData.length === 0) {
         message.info('No data found for the selected filters');
       }
     } catch (error) {
@@ -501,10 +552,17 @@ const CashMovement = () => {
     );
   };
 
-  // Get column definitions for different report types
+  // Get column definitions for different report types with SEQUENTIAL NUMBERING
   const getColumnDefinitions = () => {
     const commonRenderers = {
-      currency: (value) => formatCurrency(value),
+      currency: (value) => {
+        // FIX: Ensure values are properly formatted for display and export
+        if (value === null || value === undefined || value === '') {
+          return 'KES 0.00';
+        }
+        const numValue = parseFloat(value);
+        return isNaN(numValue) ? 'KES 0.00' : formatCurrency(numValue);
+      },
       date: (value) => formatDate(value, 'short'),
       datetime: (value) => formatDate(value, 'datetime'),
       status: (value) => (
@@ -515,9 +573,32 @@ const CashMovement = () => {
       boolean: (value) => value ? 'Yes' : 'No'
     };
 
+    // Common columns with sequential numbering
+    const commonColumns = [
+      {
+        title: '#',
+        key: 'sequence',
+        width: 50,
+        fixed: 'left',
+        type: 'number',
+        render: (_, __, index) => {
+          // Calculate sequential number based on pagination
+          const page = filters.page || 1;
+          const pageSize = filters.limit || 20;
+          const sequentialNumber = ((page - 1) * pageSize) + index + 1;
+          return (
+            <Text type="secondary" style={{ fontSize: '11px' }}>
+              {sequentialNumber}
+            </Text>
+          );
+        }
+      }
+    ];
+
     switch (activeTab) {
       case 'island':
         return [
+          ...commonColumns,
           {
             title: 'Island',
             dataIndex: 'islandName',
@@ -540,14 +621,16 @@ const CashMovement = () => {
             dataIndex: 'attendantName',
             key: 'attendantName',
             type: 'text',
-            width: 120
+            width: 120,
+            render: (value) => value || 'N/A'
           },
           {
             title: 'Station',
             dataIndex: 'stationName',
             key: 'stationName',
             type: 'text',
-            width: 140
+            width: 140,
+            render: (value) => value || 'N/A'
           },
           {
             title: 'Cash Amount',
@@ -555,8 +638,10 @@ const CashMovement = () => {
             key: 'cashAmount',
             type: 'currency',
             width: 120,
-            render: commonRenderers.currency,
-            sorter: (a, b) => (a.cashAmount || 0) - (b.cashAmount || 0)
+            // FIX: Ensure proper value extraction
+            render: (value) => commonRenderers.currency(value || 0),
+            sorter: (a, b) => (parseFloat(a.cashAmount) || 0) - (parseFloat(b.cashAmount) || 0),
+            defaultSortOrder: 'descend'
           },
           {
             title: 'Cash Collected',
@@ -564,8 +649,9 @@ const CashMovement = () => {
             key: 'totalCashCollected',
             type: 'currency',
             width: 140,
-            render: commonRenderers.currency,
-            sorter: (a, b) => (a.totalCashCollected || 0) - (b.totalCashCollected || 0)
+            // FIX: Ensure proper value extraction
+            render: (value) => commonRenderers.currency(value || 0),
+            sorter: (a, b) => (parseFloat(a.totalCashCollected) || 0) - (parseFloat(b.totalCashCollected) || 0)
           },
           {
             title: 'Shortage',
@@ -573,8 +659,9 @@ const CashMovement = () => {
             key: 'shortageAmount',
             type: 'currency',
             width: 100,
-            render: (value) => <Text type="danger">{formatCurrency(value)}</Text>,
-            sorter: (a, b) => (a.shortageAmount || 0) - (b.shortageAmount || 0)
+            // FIX: Ensure proper value extraction
+            render: (value) => <Text type="danger">{commonRenderers.currency(value || 0)}</Text>,
+            sorter: (a, b) => (parseFloat(a.shortageAmount) || 0) - (parseFloat(b.shortageAmount) || 0)
           },
           {
             title: 'Overage',
@@ -582,8 +669,9 @@ const CashMovement = () => {
             key: 'overageAmount',
             type: 'currency',
             width: 100,
-            render: (value) => <Text type="success">{formatCurrency(value)}</Text>,
-            sorter: (a, b) => (a.overageAmount || 0) - (b.overageAmount || 0)
+            // FIX: Ensure proper value extraction
+            render: (value) => <Text type="success">{commonRenderers.currency(value || 0)}</Text>,
+            sorter: (a, b) => (parseFloat(a.overageAmount) || 0) - (parseFloat(b.overageAmount) || 0)
           },
           {
             title: 'Status',
@@ -599,32 +687,37 @@ const CashMovement = () => {
             key: 'countedAt',
             type: 'datetime',
             width: 140,
-            render: commonRenderers.datetime
+            render: commonRenderers.datetime,
+            defaultSortOrder: 'descend' // Default DESC sort
           }
         ];
 
       case 'shift':
         return [
+          ...commonColumns,
           {
             title: 'Shift',
             dataIndex: 'shiftNumber',
             key: 'shiftNumber',
             type: 'text',
-            width: 80
+            width: 80,
+            render: (value) => value || 'N/A'
           },
           {
             title: 'Station',
             dataIndex: 'stationName',
             key: 'stationName',
             type: 'text',
-            width: 120
+            width: 120,
+            render: (value) => value || 'N/A'
           },
           {
             title: 'Supervisor',
             dataIndex: 'supervisorName',
             key: 'supervisorName',
             type: 'text',
-            width: 120
+            width: 120,
+            render: (value) => value || 'N/A'
           },
           {
             title: 'Cash Amount',
@@ -632,8 +725,10 @@ const CashMovement = () => {
             key: 'cashAmount',
             type: 'currency',
             width: 120,
-            render: commonRenderers.currency,
-            sorter: (a, b) => (a.cashAmount || 0) - (b.cashAmount || 0)
+            // FIX: Ensure proper value extraction
+            render: (value) => commonRenderers.currency(value || 0),
+            sorter: (a, b) => (parseFloat(a.cashAmount) || 0) - (parseFloat(b.cashAmount) || 0),
+            defaultSortOrder: 'descend'
           },
           {
             title: 'Grand Total',
@@ -641,8 +736,9 @@ const CashMovement = () => {
             key: 'grandTotal',
             type: 'currency',
             width: 120,
-            render: commonRenderers.currency,
-            sorter: (a, b) => (a.grandTotal || 0) - (b.grandTotal || 0)
+            // FIX: Ensure proper value extraction
+            render: (value) => commonRenderers.currency(value || 0),
+            sorter: (a, b) => (parseFloat(a.grandTotal) || 0) - (parseFloat(b.grandTotal) || 0)
           },
           {
             title: 'Variance',
@@ -650,12 +746,16 @@ const CashMovement = () => {
             key: 'cashVariance',
             type: 'currency',
             width: 100,
-            render: (value) => (
-              <Tag color={value >= 0 ? 'success' : 'error'}>
-                {formatCurrency(value)}
-              </Tag>
-            ),
-            sorter: (a, b) => (a.cashVariance || 0) - (b.cashVariance || 0)
+            // FIX: Ensure proper value extraction
+            render: (value) => {
+              const numValue = parseFloat(value) || 0;
+              return (
+                <Tag color={numValue >= 0 ? 'success' : 'error'}>
+                  {commonRenderers.currency(numValue)}
+                </Tag>
+              );
+            },
+            sorter: (a, b) => (parseFloat(a.cashVariance) || 0) - (parseFloat(b.cashVariance) || 0)
           },
           {
             title: 'Status',
@@ -671,12 +771,14 @@ const CashMovement = () => {
             key: 'countedAt',
             type: 'datetime',
             width: 140,
-            render: commonRenderers.datetime
+            render: commonRenderers.datetime,
+            defaultSortOrder: 'descend' // Default DESC sort
           }
         ];
 
       case 'daily':
         return [
+          ...commonColumns,
           {
             title: 'Date',
             dataIndex: 'date',
@@ -690,14 +792,16 @@ const CashMovement = () => {
             dataIndex: 'stationName',
             key: 'stationName',
             type: 'text',
-            width: 120
+            width: 120,
+            render: (value) => value || 'N/A'
           },
           {
             title: 'Shift Collections',
             dataIndex: 'totalShiftCollections',
             key: 'totalShiftCollections',
             type: 'number',
-            width: 100
+            width: 100,
+            render: (value) => value || 0
           },
           {
             title: 'Total Cash',
@@ -705,7 +809,8 @@ const CashMovement = () => {
             key: 'totalCash',
             type: 'currency',
             width: 120,
-            render: commonRenderers.currency
+            // FIX: Ensure proper value extraction
+            render: (value) => commonRenderers.currency(value || 0)
           },
           {
             title: 'Total Shortage',
@@ -713,7 +818,8 @@ const CashMovement = () => {
             key: 'totalShortage',
             type: 'currency',
             width: 120,
-            render: (value) => <Text type="danger">{formatCurrency(value)}</Text>
+            // FIX: Ensure proper value extraction
+            render: (value) => <Text type="danger">{commonRenderers.currency(value || 0)}</Text>
           },
           {
             title: 'Total Overage',
@@ -721,7 +827,8 @@ const CashMovement = () => {
             key: 'totalOverage',
             type: 'currency',
             width: 120,
-            render: (value) => <Text type="success">{formatCurrency(value)}</Text>
+            // FIX: Ensure proper value extraction
+            render: (value) => <Text type="success">{commonRenderers.currency(value || 0)}</Text>
           },
           {
             title: 'Grand Total',
@@ -729,12 +836,14 @@ const CashMovement = () => {
             key: 'grandTotal',
             type: 'currency',
             width: 120,
-            render: commonRenderers.currency
+            // FIX: Ensure proper value extraction
+            render: (value) => commonRenderers.currency(value || 0)
           }
         ];
 
       case 'performance':
         return [
+          ...commonColumns,
           {
             title: 'Rank',
             dataIndex: 'rank',
@@ -758,14 +867,16 @@ const CashMovement = () => {
             dataIndex: 'name',
             key: 'name',
             type: 'text',
-            width: 150
+            width: 150,
+            render: (value) => value || 'N/A'
           },
           {
             title: 'Collections',
             dataIndex: 'shiftCount',
             key: 'shiftCount',
             type: 'number',
-            width: 100
+            width: 100,
+            render: (value) => value || 0
           },
           {
             title: 'Total Cash',
@@ -773,7 +884,8 @@ const CashMovement = () => {
             key: 'totalCash',
             type: 'currency',
             width: 120,
-            render: commonRenderers.currency
+            // FIX: Ensure proper value extraction
+            render: (value) => commonRenderers.currency(value || 0)
           },
           {
             title: 'Total Debts',
@@ -781,7 +893,8 @@ const CashMovement = () => {
             key: 'totalDebts',
             type: 'currency',
             width: 120,
-            render: commonRenderers.currency
+            // FIX: Ensure proper value extraction
+            render: (value) => commonRenderers.currency(value || 0)
           },
           {
             title: 'Grand Total',
@@ -789,7 +902,8 @@ const CashMovement = () => {
             key: 'totalGrandTotal',
             type: 'currency',
             width: 120,
-            render: commonRenderers.currency
+            // FIX: Ensure proper value extraction
+            render: (value) => commonRenderers.currency(value || 0)
           }
         ];
 
@@ -848,24 +962,114 @@ const CashMovement = () => {
   const calculateSummaryData = () => {
     if (!tableData || tableData.length === 0) return null;
 
-    const currencyColumns = getColumnDefinitions().filter(col => 
+    const columnDefinitions = getColumnDefinitions();
+    const currencyColumns = columnDefinitions.filter(col => 
       col.type === 'currency'
     );
 
     const totals = {};
+    
+    // Initialize all currency totals
     currencyColumns.forEach(col => {
       if (col.dataIndex) {
-        totals[col.dataIndex] = tableData.reduce((sum, record) => {
-          const value = parseFloat(record[col.dataIndex]) || 0;
-          return sum + value;
-        }, 0);
+        totals[col.dataIndex] = 0;
       }
+    });
+    
+    // Calculate totals
+    tableData.forEach(record => {
+      currencyColumns.forEach(col => {
+        if (col.dataIndex) {
+          const value = parseFloat(record[col.dataIndex]) || 0;
+          totals[col.dataIndex] += value;
+        }
+      });
     });
 
     // Add record count
     totals.totalRecords = tableData.length;
+    
+    // Add summary info
+    totals.summaryInfo = {
+      'Total Collections': totals.totalRecords,
+      'Generated At': new Date().toLocaleString(),
+      'Station': currentStation?.name || 'All Stations',
+      'Date Range': `${formatDate(filters.startDate, 'short')} to ${formatDate(filters.endDate, 'short')}`,
+      'Report Type': activeTab.charAt(0).toUpperCase() + activeTab.slice(1) + ' Report'
+    };
+    
+    // Format totals for display
+    const formattedTotals = {};
+    Object.entries(totals).forEach(([key, value]) => {
+      if (typeof value === 'number') {
+        formattedTotals[key] = {
+          raw: value,
+          formatted: formatCurrency(value)
+        };
+      } else {
+        formattedTotals[key] = value;
+      }
+    });
 
-    return totals;
+    return formattedTotals;
+  };
+
+  // ENHANCED: Data preparation for export to ensure no empty values
+  const prepareExportData = () => {
+    if (!tableData || tableData.length === 0) return [];
+    
+    const columnDefinitions = getColumnDefinitions();
+    
+    return tableData.map((record, index) => {
+      const exportRecord = { ...record };
+      
+      // Add sequential number
+      exportRecord.sequenceNumber = index + 1;
+      
+      // Process each column to ensure proper values
+      columnDefinitions.forEach(col => {
+        if (col.dataIndex) {
+          const value = record[col.dataIndex];
+          
+          // Handle missing or null values for currency columns
+          if (col.type === 'currency') {
+            if (value === null || value === undefined || value === '') {
+              exportRecord[col.dataIndex] = 0; // Set to 0 instead of empty
+            } else {
+              exportRecord[col.dataIndex] = parseFloat(value) || 0;
+            }
+          }
+          // Handle missing values for number columns
+          else if (col.type === 'number') {
+            if (value === null || value === undefined || value === '') {
+              exportRecord[col.dataIndex] = 0; // Set to 0 instead of empty
+            } else {
+              exportRecord[col.dataIndex] = parseFloat(value) || 0;
+            }
+          }
+          // Handle missing text values
+          else if (col.type === 'text') {
+            if (value === null || value === undefined) {
+              exportRecord[col.dataIndex] = 'N/A';
+            }
+          }
+          // Handle missing status values
+          else if (col.type === 'status') {
+            if (value === null || value === undefined) {
+              exportRecord[col.dataIndex] = 'Unknown';
+            }
+          }
+          // Handle missing date values
+          else if (col.type === 'date' || col.type === 'datetime') {
+            if (value === null || value === undefined) {
+              exportRecord[col.dataIndex] = 'N/A';
+            }
+          }
+        }
+      });
+      
+      return exportRecord;
+    });
   };
 
   // Render export button with AdvancedReportGenerator
@@ -880,6 +1084,7 @@ const CashMovement = () => {
 
     const columnDefinitions = getColumnDefinitions();
     const summaryData = calculateSummaryData();
+    const exportDataSource = prepareExportData();
     
     // Get report title based on active tab
     const getReportTitle = () => {
@@ -890,12 +1095,18 @@ const CashMovement = () => {
         performance: 'Performance Report'
       };
       
-      return `${tabNames[activeTab] || 'Collections'} Report - ${filters.startDate} to ${filters.endDate}`;
+      const stationName = currentStation?.name || 'All Stations';
+      const dateRange = activeTab === 'daily' 
+        ? formatDate(filters.reportDate, 'long')
+        : `${formatDate(filters.startDate, 'short')} to ${formatDate(filters.endDate, 'short')}`;
+      
+      return `${tabNames[activeTab] || 'Collections'} Report - ${stationName} - ${dateRange}`;
     };
 
     // Get file name
     const getFileName = () => {
-      return `cash_movement_${activeTab}_${filters.startDate}_${filters.endDate}`;
+      const stationCode = currentStation?.code ? `_${currentStation.code}` : '';
+      return `cash_movement_${activeTab}${stationCode}_${new Date().toISOString().split('T')[0]}`;
     };
 
     // Get report type based on active tab
@@ -915,10 +1126,60 @@ const CashMovement = () => {
       address: currentStation.address
     } : null;
 
+    // ENHANCED: Column configuration with proper value extractors
+    const enhancedExportColumns = columnDefinitions.map(col => {
+      const enhancedCol = { ...col };
+      
+      // Override render functions to ensure consistent values for export
+      if (col.type === 'currency') {
+        enhancedCol.render = (value, record) => {
+          // Ensure we always return a number for currency columns
+          if (value === null || value === undefined || value === '') {
+            return 0;
+          }
+          return parseFloat(value) || 0;
+        };
+      } else if (col.type === 'number') {
+        enhancedCol.render = (value) => {
+          if (value === null || value === undefined || value === '') {
+            return 0;
+          }
+          return parseFloat(value) || 0;
+        };
+      } else if (col.type === 'text') {
+        enhancedCol.render = (value) => {
+          if (value === null || value === undefined) {
+            return 'N/A';
+          }
+          return String(value);
+        };
+      } else if (col.type === 'status') {
+        enhancedCol.render = (value) => {
+          if (value === null || value === undefined) {
+            return 'Unknown';
+          }
+          return String(value);
+        };
+      } else if (col.type === 'date' || col.type === 'datetime') {
+        enhancedCol.render = (value) => {
+          if (value === null || value === undefined) {
+            return 'N/A';
+          }
+          if (col.type === 'date') {
+            return formatDate(value, 'short');
+          } else {
+            return formatDate(value, 'datetime');
+          }
+        };
+      }
+      
+      return enhancedCol;
+    });
+
     return (
       <AdvancedReportGenerator
-        dataSource={tableData}
-        columns={columnDefinitions}
+        dataSource={exportDataSource}
+        columns={enhancedExportColumns}
         summaryData={summaryData}
         title={getReportTitle()}
         fileName={getFileName()}
@@ -926,9 +1187,23 @@ const CashMovement = () => {
         companyName="Lynx Energy System"
         stationInfo={stationInfo}
         showFooter={true}
-        footerText={`Generated from Lynx Energy System - ${new Date().toLocaleString()}`}
+        footerText={`Generated from Lynx Energy System | User: ${currentUser?.firstName || ''} ${currentUser?.lastName || ''} | ${new Date().toLocaleString()}`}
         enableCustomization={true}
         includeLogo={false}
+        onReportGenerate={(format) => {
+          console.log(`Exporting ${exportDataSource.length} records as ${format}`);
+          message.success(`Report generated successfully with ${exportDataSource.length} records`);
+        }}
+        // FIX: Add custom formatting to ensure no empty cells
+        customStyles={{
+          fontSize: 9,
+          cellPadding: 3,
+          showGridLines: true,
+          alternateRowColors: true,
+          includeTimestamp: true,
+          includeStationInfo: true,
+          autoWrapText: true
+        }}
       />
     );
   };
@@ -983,16 +1258,14 @@ const CashMovement = () => {
           </Form.Item>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Form.Item label="Items per page" style={{ marginBottom: 0 }}>
+          <Form.Item label="Sort Order" style={{ marginBottom: 0 }}>
             <Select
-              value={filters.limit}
-              onChange={(value) => handleFilterChange('limit', value)}
+              value={filters.sortOrder}
+              onChange={(value) => handleFilterChange('sortOrder', value)}
               style={{ width: '100%' }}
             >
-              <Option value={10}>10 items</Option>
-              <Option value={20}>20 items</Option>
-              <Option value={50}>50 items</Option>
-              <Option value={100}>100 items</Option>
+              <Option value="desc">Newest First (Desc)</Option>
+              <Option value="asc">Oldest First (Asc)</Option>
             </Select>
           </Form.Item>
         </Col>
@@ -1144,15 +1417,15 @@ const CashMovement = () => {
                 </Form.Item>
               </Col>
               <Col xs={24} sm={12} md={6}>
-                <Form.Item label="Order" style={{ marginBottom: 0 }}>
-                  <Radio.Group
-                    value={filters.sortOrder}
-                    onChange={(e) => handleFilterChange('sortOrder', e.target.value)}
-                  >
-                    <Radio.Button value="desc">Descending</Radio.Button>
-                    <Radio.Button value="asc">Ascending</Radio.Button>
-                  </Radio.Group>
-                </Form.Item>
+                <Button
+                  type="primary"
+                  onClick={fetchData}
+                  loading={loading}
+                  icon={<ReloadOutlined />}
+                  style={{ width: '100%', marginTop: 24 }}
+                >
+                  Load Data
+                </Button>
               </Col>
             </Row>
             {commonFilters}
@@ -1292,7 +1565,25 @@ const CashMovement = () => {
     }
   };
 
-  // Render data table
+  // Handle table sort change
+  const handleTableChange = (pagination, filters, sorter) => {
+    console.log('Table sort changed:', sorter);
+    
+    if (sorter.field) {
+      handleFilterChange('sortBy', sorter.field);
+      handleFilterChange('sortOrder', sorter.order === 'ascend' ? 'asc' : 'desc');
+    }
+    
+    if (pagination.current !== filters.page) {
+      handleFilterChange('page', pagination.current);
+    }
+    
+    if (pagination.pageSize !== filters.limit) {
+      handleFilterChange('limit', pagination.pageSize);
+    }
+  };
+
+  // Render data table with proper sorting and pagination
   const renderDataTable = () => {
     if (!tableData || tableData.length === 0) {
       return (
@@ -1334,6 +1625,7 @@ const CashMovement = () => {
         scroll={{ x: 'max-content' }}
         loading={loading}
         bordered
+        onChange={handleTableChange}
         summary={() => {
           if (activeTab === 'daily' || activeTab === 'performance') return null;
           
@@ -1343,32 +1635,32 @@ const CashMovement = () => {
           return (
             <Table.Summary fixed>
               <Table.Summary.Row style={{ backgroundColor: '#fafafa', fontWeight: 'bold' }}>
-                <Table.Summary.Cell index={0} colSpan={3}>
-                  <Text strong>TOTAL</Text>
+                <Table.Summary.Cell index={0} colSpan={4}>
+                  <Text strong>TOTAL ({tableData.length} records)</Text>
                 </Table.Summary.Cell>
                 <Table.Summary.Cell index={1} align="right">
                   <Text strong style={{ color: '#1890ff' }}>
-                    {formatCurrency(summaryData.cashAmount || 0)}
+                    {formatCurrency(summaryData.cashAmount?.raw || 0)}
                   </Text>
                 </Table.Summary.Cell>
                 <Table.Summary.Cell index={2} align="right">
                   <Text strong style={{ color: '#1890ff' }}>
-                    {formatCurrency(summaryData.totalCashCollected || 0)}
+                    {formatCurrency(summaryData.totalCashCollected?.raw || 0)}
                   </Text>
                 </Table.Summary.Cell>
                 <Table.Summary.Cell index={3} align="right">
                   <Text strong type="danger">
-                    {formatCurrency(summaryData.shortageAmount || 0)}
+                    {formatCurrency(summaryData.shortageAmount?.raw || 0)}
                   </Text>
                 </Table.Summary.Cell>
                 <Table.Summary.Cell index={4} align="right">
                   <Text strong type="success">
-                    {formatCurrency(summaryData.overageAmount || 0)}
+                    {formatCurrency(summaryData.overageAmount?.raw || 0)}
                   </Text>
                 </Table.Summary.Cell>
-                <Table.Summary.Cell index={5} colSpan={2}>
+                <Table.Summary.Cell index={5} colSpan={activeTab === 'shift' ? 4 : 3}>
                   <Text type="secondary">
-                    {summaryData.totalRecords} records
+                    Sorted by: {filters.sortBy} ({filters.sortOrder === 'desc' ? 'Descending' : 'Ascending'})
                   </Text>
                 </Table.Summary.Cell>
               </Table.Summary.Row>
@@ -1447,6 +1739,7 @@ const CashMovement = () => {
                   columns={getTableColumns()}
                   pagination={false}
                   size="small"
+                  rowKey={(record) => record.id || Math.random()}
                 />
               </Card>
             </Col>
@@ -1483,6 +1776,7 @@ const CashMovement = () => {
                   columns={getTableColumns()}
                   pagination={false}
                   size="small"
+                  rowKey={(record) => record.id || Math.random()}
                 />
               </Card>
             </Col>
@@ -1581,6 +1875,7 @@ const CashMovement = () => {
                   ]}
                   size="small"
                   pagination={false}
+                  rowKey={(record) => record.id || Math.random()}
                 />
               </Panel>
             </Collapse>
@@ -1600,6 +1895,7 @@ const CashMovement = () => {
                   ]}
                   size="small"
                   pagination={false}
+                  rowKey={(record) => record.id || Math.random()}
                 />
               </Panel>
             </Collapse>
@@ -1620,6 +1916,7 @@ const CashMovement = () => {
                   ]}
                   size="small"
                   pagination={false}
+                  rowKey={(record) => record.id || Math.random()}
                 />
               </Panel>
             </Collapse>
@@ -1700,6 +1997,7 @@ const CashMovement = () => {
                   ]}
                   size="small"
                   pagination={false}
+                  rowKey={(record) => record.id || Math.random()}
                 />
               </Panel>
               <Panel header="Expenses from Wallet" key="expenses">
@@ -1713,6 +2011,7 @@ const CashMovement = () => {
                   ]}
                   size="small"
                   pagination={false}
+                  rowKey={(record) => record.id || Math.random()}
                 />
               </Panel>
               <Panel header="Debt Transactions" key="debts">
@@ -1726,6 +2025,7 @@ const CashMovement = () => {
                   ]}
                   size="small"
                   pagination={false}
+                  rowKey={(record) => record.id || Math.random()}
                 />
               </Panel>
             </Collapse>
