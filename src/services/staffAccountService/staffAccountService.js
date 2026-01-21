@@ -1,4 +1,4 @@
-// src/services/staff/staffAccountService.js
+// src/services/staff/staffAccountService.js - COMPLETE FIXED VERSION
 import { apiService } from '../apiService';
 
 const STAFF_ACCOUNTS_BASE_URL = '/staff-accounts';
@@ -22,15 +22,28 @@ const debugResponse = (method, url, response) => {
 
 // Enhanced response handler utility
 const handleResponse = (response, operation) => {
-  // Handle backend response structure: { success, message, data }
-  if (response && response.success) {
-    logger.debug(`${operation} successful`);
-    return response.data; // Return the actual data payload
+  logger.debug(`${operation} response:`, response);
+  
+  // Check for error response
+  if (response && response.success === false) {
+    throw new Error(response.message || `Failed to ${operation}`);
   }
   
-  // Handle case where backend returns data directly
+  // Backend returns { success, message, data, ... }
+  if (response && response.success === true) {
+    logger.debug(`${operation} successful`);
+    return response.data || response;
+  }
+  
+  // If no success field but has data (fallback)
+  if (response && response.data !== undefined) {
+    logger.debug(`${operation} successful (data field)`);
+    return response.data;
+  }
+  
+  // Direct data response (some endpoints return array or object directly)
   if (response) {
-    logger.debug(`${operation} successful (direct data)`);
+    logger.debug(`${operation} successful (direct)`);
     return response;
   }
   
@@ -42,30 +55,38 @@ const handleResponse = (response, operation) => {
 const handleError = (error, operation, defaultMessage) => {
   logger.error(`Error during ${operation}:`, error);
   
-  if (error.message && error.message.includes('401')) {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('user');
-    window.location.href = '/login';
-    throw new Error('Authentication failed. Please login again.');
+  let errorMessage = defaultMessage || 'An unexpected error occurred';
+  
+  if (error.response) {
+    // Axios error response
+    const { data, status } = error.response;
+    
+    if (status === 401) {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+      errorMessage = 'Authentication failed. Please login again.';
+    } else if (status === 403) {
+      errorMessage = 'You do not have permission to perform this action';
+    } else if (status === 404) {
+      errorMessage = 'Requested resource not found';
+    } else if (status === 400) {
+      errorMessage = data?.message || data?.error || 'Bad request';
+      
+      if (data?.errors && Array.isArray(data.errors)) {
+        const validationMessages = data.errors.map(err => `${err.field}: ${err.message}`).join(', ');
+        errorMessage = validationMessages;
+      }
+    } else if (data?.message) {
+      errorMessage = data.message;
+    } else if (data?.error) {
+      errorMessage = data.error;
+    }
+  } else if (error.message) {
+    errorMessage = error.message;
   }
   
-  if (error.message && error.message.includes('403')) {
-    throw new Error('You do not have permission to perform this action');
-  }
-  
-  if (error.message && error.message.includes('404')) {
-    throw new Error('Requested resource not found');
-  }
-  
-  if (error.message && error.message.includes('400')) {
-    throw new Error(error.message);
-  }
-  
-  if (error.message) {
-    throw new Error(error.message);
-  }
-  
-  throw new Error(defaultMessage || 'An unexpected error occurred');
+  throw new Error(errorMessage);
 };
 
 // =====================
@@ -85,7 +106,7 @@ const getPaymentScheduleLabel = (schedule) => {
 
 const getPayrollMethodLabel = (method) => {
   const labels = {
-    STATION_WALLET: 'Station Wallet',
+    STAFF_WALLET: 'Staff Wallet',
     BANK_TRANSFER: 'Bank Transfer',
     MOBILE_MONEY: 'Mobile Money',
     CASH: 'Cash'
@@ -124,7 +145,36 @@ const formatDateTime = (date) => {
 };
 
 // =====================
-// VALIDATION UTILITIES
+// QUERY PARAM BUILDER
+// =====================
+
+const buildQueryParams = (filters) => {
+  if (!filters || Object.keys(filters).length === 0) return '';
+  
+  const params = new URLSearchParams();
+  
+  Object.keys(filters).forEach(key => {
+    const value = filters[key];
+    if (value !== undefined && value !== null && value !== '') {
+      if (typeof value === 'boolean') {
+        params.append(key, value.toString());
+      } else if (value instanceof Date) {
+        params.append(key, value.toISOString());
+      } else if (Array.isArray(value)) {
+        // Handle array parameters
+        value.forEach(item => params.append(`${key}[]`, item));
+      } else {
+        params.append(key, value.toString());
+      }
+    }
+  });
+  
+  const paramString = params.toString();
+  return paramString ? `?${paramString}` : '';
+};
+
+// =====================
+// VALIDATION
 // =====================
 
 const validateStaffAccount = (accountData) => {
@@ -146,24 +196,28 @@ const validateStaffAccount = (accountData) => {
     errors.push('Credit limit must be positive');
   }
 
-  // Validate payroll method
-  const validPayrollMethods = ['STATION_WALLET', 'BANK_TRANSFER', 'MOBILE_MONEY', 'CASH'];
+  if (accountData.creditLimit !== undefined && accountData.creditLimit > 100000) {
+    errors.push('Credit limit cannot exceed 100,000');
+  }
+
+  if (accountData.salaryAmount !== undefined && accountData.salaryAmount > 500000) {
+    errors.push('Salary amount cannot exceed 500,000');
+  }
+
+  const validPayrollMethods = ['STAFF_WALLET', 'BANK_TRANSFER', 'MOBILE_MONEY', 'CASH'];
   if (accountData.payrollMethod && !validPayrollMethods.includes(accountData.payrollMethod)) {
     errors.push('Invalid payroll method');
   }
 
-  // Validate payment schedule
   const validSchedules = ['DAILY', 'WEEKLY', 'BI_WEEKLY', 'MONTHLY', 'QUARTERLY'];
   if (accountData.paymentSchedule && !validSchedules.includes(accountData.paymentSchedule)) {
     errors.push('Invalid payment schedule');
   }
 
-  // Bank account validation if payroll method is BANK_TRANSFER
   if (accountData.payrollMethod === 'BANK_TRANSFER' && !accountData.bankAccountNumber) {
     errors.push('Bank account number is required for bank transfers');
   }
 
-  // Mobile money validation if payroll method is MOBILE_MONEY
   if (accountData.payrollMethod === 'MOBILE_MONEY' && !accountData.mobileMoneyNumber) {
     errors.push('Mobile money number is required for mobile money payments');
   }
@@ -178,16 +232,22 @@ const validateStaffAccount = (accountData) => {
 const formatStaffAccount = (account) => {
   if (!account) return null;
   
+  const creditLimit = account.creditLimit || 5000;
+  const utilization = account.currentBalance < 0 ? 
+    (Math.abs(account.currentBalance) / creditLimit) * 100 : 0;
+  
   return {
     ...account,
     // User information
     userDisplayName: account.user ? `${account.user.firstName} ${account.user.lastName}` : 'Unknown User',
     userEmail: account.user?.email || 'N/A',
-    userPhone: account.user?.phoneNumber || 'N/A',
     
     // Station information
     stationDisplayName: account.station?.name || 'Unknown Station',
     stationLocation: account.station?.location || 'N/A',
+    
+    // Company information
+    companyName: account.company?.name || 'N/A',
     
     // Balance formatting
     currentBalanceDisplay: formatCurrency(account.currentBalance),
@@ -196,7 +256,10 @@ const formatStaffAccount = (account) => {
     
     // Financial displays
     salaryAmountDisplay: account.salaryAmount ? formatCurrency(account.salaryAmount) : 'Not Set',
-    creditLimitDisplay: account.creditLimit ? formatCurrency(account.creditLimit) : 'No Limit',
+    creditLimitDisplay: formatCurrency(creditLimit),
+    availableCredit: formatCurrency(creditLimit + Math.min(account.currentBalance, 0)),
+    creditUtilization: `${utilization.toFixed(1)}%`,
+    creditUtilizationColor: utilization > 70 ? 'error' : utilization > 40 ? 'warning' : 'success',
     
     // Shortage displays
     totalShortagesDisplay: formatCurrency(account.totalShortages || 0),
@@ -220,15 +283,14 @@ const formatStaffAccount = (account) => {
     // Dates
     createdAtDisplay: formatDateTime(account.createdAt),
     updatedAtDisplay: formatDateTime(account.updatedAt),
-    lastPaymentDateDisplay: account.lastPaymentDate ? formatDate(account.lastPaymentDate) : 'Never',
-    lastShortageDateDisplay: account.lastShortageDate ? formatDate(account.lastShortageDate) : 'Never',
-    lastDeductionDateDisplay: account.lastDeductionDate ? formatDate(account.lastDeductionDate) : 'Never',
     nextPaymentDateDisplay: account.nextPaymentDate ? formatDate(account.nextPaymentDate) : 'Not Set',
+    daysUntilPayment: account.nextPaymentDate ? 
+      Math.ceil((new Date(account.nextPaymentDate) - new Date()) / (1000 * 60 * 60 * 24)) : null,
     
     // Quick status checks
-    hasShortages: account.totalShortages > 0,
-    hasAdvances: account.totalAdvances > 0,
-    hasBonuses: account.totalBonuses > 0,
+    hasShortages: (account.totalShortages || 0) > 0,
+    hasAdvances: (account.totalAdvances || 0) > 0,
+    hasBonuses: (account.totalBonuses || 0) > 0,
     isDueForPayment: account.nextPaymentDate ? new Date(account.nextPaymentDate) <= new Date() : false,
     
     // Display properties
@@ -241,12 +303,18 @@ const formatStaffAccount = (account) => {
       recordedCount: account.shortageLedger.totalShortagesRecorded || 0
     } : null,
     
-    // Action flags
+    // Action flags (based on business rules from backend)
     canEdit: true,
-    canDeactivate: account.isActive,
+    canDeactivate: account.isActive && account.currentBalance >= -100,
     canActivate: !account.isActive,
-    canPutOnHold: !account.isOnHold,
-    canRemoveFromHold: account.isOnHold
+    canPutOnHold: !account.isOnHold && account.isActive,
+    canRemoveFromHold: account.isOnHold,
+    canDelete: account.currentBalance === 0 && 
+               (account.totalShortages || 0) === 0 && 
+               (!account.transactions || account.transactions.length === 0) &&
+               (!account.salaryPayments || account.salaryPayments.length === 0),
+    canReceiveAdvance: account.isActive && !account.isOnHold && utilization < 80,
+    canReceiveSalary: account.isActive && !account.isOnHold && account.currentBalance >= 0
   };
 };
 
@@ -260,7 +328,9 @@ const formatStaffAccountSummary = (summary) => {
       ...summary.totals,
       totalPositiveBalanceDisplay: formatCurrency(summary.totals?.totalPositiveBalance || 0),
       totalNegativeBalanceDisplay: formatCurrency(summary.totals?.totalNegativeBalance || 0),
-      averageBalanceDisplay: formatCurrency(summary.totals?.averageBalance || 0)
+      averageBalanceDisplay: formatCurrency(summary.totals?.averageBalance || 0),
+      totalCreditLimitDisplay: formatCurrency(summary.totals?.totalCreditLimit || 0),
+      creditUtilizationDisplay: `${(summary.totals?.creditUtilization || 0).toFixed(1)}%`
     },
     
     // Format by station
@@ -287,7 +357,8 @@ const formatStaffAccountSummary = (summary) => {
       ...account,
       balanceDisplay: formatCurrency(account.balance),
       creditLimitDisplay: formatCurrency(account.creditLimit),
-      utilizationDisplay: `${Math.round(account.utilization * 100)}%`
+      utilizationDisplay: `${Math.round(account.utilization)}%`,
+      utilizationColor: account.utilization > 90 ? 'error' : account.utilization > 70 ? 'warning' : 'info'
     })),
     
     // Format upcoming payments
@@ -310,30 +381,22 @@ const formatUserWithoutAccount = (user) => {
   
   return {
     ...user,
-    // User information
     displayName: `${user.firstName} ${user.lastName}`,
     fullName: `${user.firstName} ${user.lastName}`,
-    
-    // Company info
     companyName: user.company?.name || 'N/A',
     
-    // Station assignments
     stationAssignmentsDisplay: user.stationAssignments?.map(assignment => ({
       stationName: assignment.station?.name || 'Unknown',
       role: assignment.role,
       stationId: assignment.station?.id
     })) || [],
     
-    // Status
     statusColor: user.status === 'ACTIVE' ? 'success' : 
                  user.status === 'INACTIVE' ? 'error' : 
                  user.status === 'PENDING' ? 'warning' : 'default',
     
-    // Dates
     createdAtDisplay: formatDate(user.createdAt),
-    
-    // Action flags
-    canCreateAccount: user.status === 'ACTIVE'
+    canCreateAccount: user.status === 'ACTIVE' && user.isActive
   };
 };
 
@@ -348,10 +411,10 @@ export const staffAccountService = {
   createStaffAccount: async (accountData) => {
     logger.info('Creating staff account:', accountData);
     debugRequest('POST', STAFF_ACCOUNTS_BASE_URL, accountData);
-    
+    const url= `${STAFF_ACCOUNTS_BASE_URL}/staff-accounts`;
     try {
-      const response = await apiService.post(STAFF_ACCOUNTS_BASE_URL, accountData);
-      debugResponse('POST', STAFF_ACCOUNTS_BASE_URL, response);
+      const response = await apiService.post(url, accountData);
+      debugResponse('POST', url, response);
       const account = handleResponse(response, 'creating staff account');
       return formatStaffAccount(account);
     } catch (error) {
@@ -361,11 +424,12 @@ export const staffAccountService = {
 
   // ========== GET ACCOUNTS ==========
   
-  getStaffAccount: async (accountId) => {
-    logger.info(`Fetching staff account: ${accountId}`);
+  getStaffAccount: async (accountId, options = {}) => {
+    logger.info(`Fetching staff account: ${accountId}`, { options });
     
     try {
-      const url = `${STAFF_ACCOUNTS_BASE_URL}/${accountId}`;
+      const queryParams = buildQueryParams(options);
+      const url = `${STAFF_ACCOUNTS_BASE_URL}/${accountId}${queryParams}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
@@ -383,7 +447,8 @@ export const staffAccountService = {
       const params = new URLSearchParams();
       if (stationId) params.append('stationId', stationId);
       
-      const url = `/users/${userId}/staff-account${params.toString() ? `?${params.toString()}` : ''}`;
+      // Updated to match backend endpoint: GET /api/staff-accounts/by-user/:userId
+      const url = `${STAFF_ACCOUNTS_BASE_URL}/by-user/${userId}${params.toString() ? `?${params.toString()}` : ''}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
@@ -398,24 +463,32 @@ export const staffAccountService = {
     logger.info(`Fetching staff accounts for station: ${stationId}`, filters);
     
     try {
-      const params = new URLSearchParams();
-      
-      Object.keys(filters).forEach(key => {
-        const value = filters[key];
-        if (value !== undefined && value !== null && value !== '') {
-          params.append(key, value);
-        }
-      });
-      
-      const url = `/stations/${stationId}/staff-accounts?${params.toString()}`;
+      const queryParams = buildQueryParams(filters);
+      // Fixed URL to match backend: GET /api/staff-accounts/station/:stationId
+     //  const url = `${STAFF_ACCOUNTS_BASE_URL}/stations/${stationId}/staff-accounts${queryParams}`;
+      const url = `${STAFF_ACCOUNTS_BASE_URL}/stations/${stationId}/staff-accounts`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
       
       const result = handleResponse(response, 'fetching staff accounts by station');
       
-      if (result.accounts) {
-        result.accounts = result.accounts.map(account => formatStaffAccount(account));
+      // Handle different response formats
+      if (Array.isArray(result)) {
+        return {
+          accounts: result.map(account => formatStaffAccount(account)),
+          pagination: {
+            page: 1,
+            limit: result.length,
+            total: result.length,
+            pages: 1
+          }
+        };
+      } else if (result.accounts) {
+        return {
+          ...result,
+          accounts: result.accounts.map(account => formatStaffAccount(account))
+        };
       }
       
       return result;
@@ -428,16 +501,9 @@ export const staffAccountService = {
     logger.info(`Fetching staff accounts for company: ${companyId}`, filters);
     
     try {
-      const params = new URLSearchParams();
-      
-      Object.keys(filters).forEach(key => {
-        const value = filters[key];
-        if (value !== undefined && value !== null && value !== '') {
-          params.append(key, value);
-        }
-      });
-      
-      const url = `/companies/${companyId}/staff-accounts?${params.toString()}`;
+      const queryParams = buildQueryParams(filters);
+      // Updated to match backend: GET /api/staff-accounts/company/:companyId
+      const url = `${STAFF_ACCOUNTS_BASE_URL}/company/${companyId}${queryParams}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
@@ -458,16 +524,8 @@ export const staffAccountService = {
     logger.info('Fetching all staff accounts with filters:', filters);
     
     try {
-      const params = new URLSearchParams();
-      
-      Object.keys(filters).forEach(key => {
-        const value = filters[key];
-        if (value !== undefined && value !== null && value !== '') {
-          params.append(key, value);
-        }
-      });
-      
-      const url = `${STAFF_ACCOUNTS_BASE_URL}?${params.toString()}`;
+      const queryParams = buildQueryParams(filters);
+      const url = `${STAFF_ACCOUNTS_BASE_URL}${queryParams}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
@@ -476,6 +534,16 @@ export const staffAccountService = {
       
       if (result.accounts) {
         result.accounts = result.accounts.map(account => formatStaffAccount(account));
+      } else if (Array.isArray(result)) {
+        return {
+          accounts: result.map(account => formatStaffAccount(account)),
+          pagination: {
+            page: 1,
+            limit: result.length,
+            total: result.length,
+            pages: 1
+          }
+        };
       }
       
       return result;
@@ -493,13 +561,16 @@ export const staffAccountService = {
       const params = new URLSearchParams();
       if (stationId) params.append('stationId', stationId);
       
-      const url = `/companies/${companyId}/users-without-accounts${params.toString() ? `?${params.toString()}` : ''}`;
+      // Updated to match backend: GET /api/staff-accounts/users-without-accounts
+      const url = `${STAFF_ACCOUNTS_BASE_URL}/companies/${companyId}/users-without-accounts`;
       debugRequest('GET', url);
+      console.log("users without accounts url:", url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
+        console.log("users without accounts response:", response);
       
       const users = handleResponse(response, 'fetching users without accounts');
-      return users.map(user => formatUserWithoutAccount(user));
+      return Array.isArray(users) ? users.map(user => formatUserWithoutAccount(user)) : [];
     } catch (error) {
       throw handleError(error, 'fetching users without accounts', 'Failed to fetch users without accounts');
     }
@@ -524,15 +595,17 @@ export const staffAccountService = {
 
   // ========== DELETE ACCOUNT ==========
   
-  deleteStaffAccount: async (accountId) => {
-    logger.info(`Deleting staff account: ${accountId}`);
+  deleteStaffAccount: async (accountId, reason = null) => {
+    logger.info(`Deleting staff account: ${accountId}`, { reason });
     
     try {
       const url = `${STAFF_ACCOUNTS_BASE_URL}/${accountId}`;
-      debugRequest('DELETE', url);
-      const response = await apiService.delete(url);
+      const data = { reason };
+      debugRequest('DELETE', url, data);
+      const response = await apiService.delete(url, { data });
       debugResponse('DELETE', url, response);
-      return handleResponse(response, 'deleting staff account');
+      const deletedAccount = handleResponse(response, 'deleting staff account');
+      return formatStaffAccount(deletedAccount);
     } catch (error) {
       throw handleError(error, 'deleting staff account', 'Failed to delete staff account');
     }
@@ -555,13 +628,14 @@ export const staffAccountService = {
     }
   },
 
-  deactivateStaffAccount: async (accountId) => {
-    logger.info(`Deactivating staff account: ${accountId}`);
+  deactivateStaffAccount: async (accountId, reason = null) => {
+    logger.info(`Deactivating staff account: ${accountId}`, { reason });
     
     try {
       const url = `${STAFF_ACCOUNTS_BASE_URL}/${accountId}/deactivate`;
-      debugRequest('POST', url);
-      const response = await apiService.post(url);
+      const data = reason ? { reason } : {};
+      debugRequest('POST', url, data);
+      const response = await apiService.post(url, data);
       debugResponse('POST', url, response);
       const account = handleResponse(response, 'deactivating staff account');
       return formatStaffAccount(account);
@@ -570,13 +644,18 @@ export const staffAccountService = {
     }
   },
 
-  putAccountOnHold: async (accountId, reason = null) => {
+  putAccountOnHold: async (accountId, reason) => {
     logger.info(`Putting staff account on hold: ${accountId}`, { reason });
+    
+    if (!reason || reason.trim().length === 0) {
+      throw new Error('Reason is required when putting account on hold');
+    }
     
     try {
       const url = `${STAFF_ACCOUNTS_BASE_URL}/${accountId}/put-on-hold`;
-      debugRequest('POST', url, { reason });
-      const response = await apiService.post(url, { reason });
+      const data = { reason };
+      debugRequest('POST', url, data);
+      const response = await apiService.post(url, data);
       debugResponse('POST', url, response);
       const account = handleResponse(response, 'putting account on hold');
       return formatStaffAccount(account);
@@ -585,13 +664,14 @@ export const staffAccountService = {
     }
   },
 
-  removeAccountFromHold: async (accountId) => {
-    logger.info(`Removing staff account from hold: ${accountId}`);
+  removeAccountFromHold: async (accountId, reason = null) => {
+    logger.info(`Removing staff account from hold: ${accountId}`, { reason });
     
     try {
       const url = `${STAFF_ACCOUNTS_BASE_URL}/${accountId}/remove-from-hold`;
-      debugRequest('POST', url);
-      const response = await apiService.post(url);
+      const data = reason ? { reason } : {};
+      debugRequest('POST', url, data);
+      const response = await apiService.post(url, data);
       debugResponse('POST', url, response);
       const account = handleResponse(response, 'removing account from hold');
       return formatStaffAccount(account);
@@ -622,6 +702,59 @@ export const staffAccountService = {
     }
   },
 
+  // ========== ADDITIONAL METHODS ==========
+  
+  getStaffBalance: async (accountId) => {
+    logger.info(`Fetching staff balance for account: ${accountId}`);
+    
+    try {
+      const url = `${STAFF_ACCOUNTS_BASE_URL}/${accountId}/balance`;
+      debugRequest('GET', url);
+      const response = await apiService.get(url);
+      debugResponse('GET', url, response);
+      return handleResponse(response, 'fetching staff balance');
+    } catch (error) {
+      throw handleError(error, 'fetching staff balance', 'Failed to fetch staff balance');
+    }
+  },
+
+  bulkUpdateCreditLimits: async (updates) => {
+    logger.info('Bulk updating credit limits:', { count: updates.length });
+    
+    if (updates.length > 50) {
+      throw new Error('Cannot update more than 50 accounts at once');
+    }
+    
+    try {
+      const url = `${STAFF_ACCOUNTS_BASE_URL}/bulk/credit-limits`;
+      debugRequest('POST', url, { updates });
+      const response = await apiService.post(url, { updates });
+      debugResponse('POST', url, response);
+      return handleResponse(response, 'bulk updating credit limits');
+    } catch (error) {
+      throw handleError(error, 'bulk updating credit limits', 'Failed to update credit limits');
+    }
+  },
+
+  getAccountStatistics: async (companyId, startDate, endDate) => {
+    logger.info(`Fetching account statistics for company: ${companyId}`, { startDate, endDate });
+    
+    try {
+      const params = new URLSearchParams();
+      params.append('companyId', companyId);
+      if (startDate) params.append('startDate', startDate.toISOString());
+      if (endDate) params.append('endDate', endDate.toISOString());
+      
+      const url = `${STAFF_ACCOUNTS_BASE_URL}/statistics${params.toString() ? `?${params.toString()}` : ''}`;
+      debugRequest('GET', url);
+      const response = await apiService.get(url);
+      debugResponse('GET', url, response);
+      return handleResponse(response, 'fetching account statistics');
+    } catch (error) {
+      throw handleError(error, 'fetching account statistics', 'Failed to fetch account statistics');
+    }
+  },
+
   // =====================
   // VALIDATION UTILITIES
   // =====================
@@ -641,5 +774,6 @@ export const staffAccountService = {
   getPayrollMethodLabel,
   formatCurrency,
   formatDate,
-  formatDateTime
+  formatDateTime,
+  buildQueryParams
 };

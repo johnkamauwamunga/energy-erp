@@ -55,7 +55,7 @@ import {
 import { purchaseService } from '../../../../services/purchaseService/purchaseService';
 import { supplierService } from '../../../../services/supplierService/supplierService';
 import CreateEditPurchaseModal from './create/CreateEditPurchaseModal';
-import AdvancedReportGenerator from '../downloadable/AdvancedReportGenerator';
+import AdvancedReportGenerator from '../../common/downloadable/AdvancedReportGenerator';
 import { useApp } from '../../../../context/AppContext';
 import dayjs from 'dayjs';
 

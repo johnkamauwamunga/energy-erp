@@ -1,7 +1,7 @@
 // src/services/shortage/shortageService.js
 import { apiService } from '../apiService';
 
-const SHORTAGE_BASE_URL = '/shortages';
+const SHORTAGE_BASE_URL = '/api/shortages';
 
 // Enhanced logging utility
 const logger = {
@@ -236,6 +236,8 @@ const formatShortage = (shortage) => {
     dueDateDisplay: shortage.dueDate ? formatDate(shortage.dueDate) : 'No due date',
     daysUntilDueDisplay: formatDaysUntilDue(shortage.dueDate),
     recordedAtDisplay: formatDateTime(shortage.recordedAt),
+    createdAtDisplay: formatDateTime(shortage.createdAt),
+    updatedAtDisplay: formatDateTime(shortage.updatedAt),
     
     // Staff information
     staffDisplayName: shortage.staffAccount?.user ? 
@@ -244,7 +246,12 @@ const formatShortage = (shortage) => {
     
     // Station information
     stationDisplayName: shortage.staffAccount?.station?.name || 'Unknown Station',
-    stationCompanyName: shortage.staffAccount?.station?.company?.name || 'N/A',
+    stationLocation: shortage.staffAccount?.station?.location || 'N/A',
+    companyName: shortage.staffAccount?.station?.company?.name || 'N/A',
+    
+    // Recorded by information
+    recordedByDisplay: shortage.recordedBy ? 
+      `${shortage.recordedBy.firstName} ${shortage.recordedBy.lastName}` : 'Unknown',
     
     // Status badges and colors
     statusBadge: shortage.status === 'ACTIVE' ? 'warning' :
@@ -335,20 +342,6 @@ const formatShortageStats = (stats) => {
         ((item.count / stats.overview.totalShortages) * 100).toFixed(1) : 0
     })),
     
-    // Format trends if present
-    trends: (stats.trends || []).map(trend => ({
-      ...trend,
-      periodDisplay: formatDate(trend.period),
-      totalAmountDisplay: formatCurrency(trend.totalAmount)
-    })),
-    
-    // Format top staff if present
-    topStaff: (stats.topStaff || []).map(staff => ({
-      ...staff,
-      staffName: staff.staffName || 'Unknown',
-      totalAmountDisplay: formatCurrency(staff.totalAmount)
-    })),
-    
     // Add computed metrics
     computedMetrics: {
       // Percentage of shortages that are outstanding
@@ -381,8 +374,8 @@ export const shortageService = {
     try {
       const response = await apiService.post(SHORTAGE_BASE_URL, shortageData);
       debugResponse('POST', SHORTAGE_BASE_URL, response);
-      const shortage = handleResponse(response, 'creating shortage');
-      return formatShortage(shortage);
+      const result = handleResponse(response, 'creating shortage');
+      return formatShortage(result);
     } catch (error) {
       throw handleError(error, 'creating shortage', 'Failed to create shortage');
     }
@@ -398,8 +391,8 @@ export const shortageService = {
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
-      const shortage = handleResponse(response, 'fetching shortage');
-      return formatShortage(shortage);
+      const result = handleResponse(response, 'fetching shortage');
+      return formatShortage(result);
     } catch (error) {
       throw handleError(error, 'fetching shortage', 'Failed to fetch shortage');
     }
@@ -420,15 +413,18 @@ export const shortageService = {
         }
       });
       
-      const url = `${SHORTAGE_BASE_URL}/staff/${staffAccountId}?${params.toString()}`;
+      const url = `${SHORTAGE_BASE_URL}/staff-account/${staffAccountId}?${params.toString()}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
       
       const result = handleResponse(response, 'fetching shortages by staff account');
       
-      if (result.shortages) {
-        result.shortages = result.shortages.map(shortage => formatShortage(shortage));
+      if (result && result.shortages) {
+        return {
+          ...result,
+          shortages: formatShortageList(result.shortages)
+        };
       }
       
       return result;
@@ -453,15 +449,18 @@ export const shortageService = {
         }
       });
       
-      const url = `${SHORTAGE_BASE_URL}/my/shortages?${params.toString()}`;
+      const url = `${SHORTAGE_BASE_URL}/my-shortages?${params.toString()}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
       
       const result = handleResponse(response, 'fetching my shortages');
       
-      if (result.shortages) {
-        result.shortages = result.shortages.map(shortage => formatShortage(shortage));
+      if (result && result.shortages) {
+        return {
+          ...result,
+          shortages: formatShortageList(result.shortages)
+        };
       }
       
       return result;
@@ -484,15 +483,18 @@ export const shortageService = {
         }
       });
       
-      const url = `${SHORTAGE_BASE_URL}/station/shortages?${params.toString()}`;
+      const url = `${SHORTAGE_BASE_URL}/station?${params.toString()}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
       
       const result = handleResponse(response, 'fetching station shortages');
       
-      if (result.shortages) {
-        result.shortages = result.shortages.map(shortage => formatShortage(shortage));
+      if (result && result.shortages) {
+        return {
+          ...result,
+          shortages: formatShortageList(result.shortages)
+        };
       }
       
       return result;
@@ -515,15 +517,18 @@ export const shortageService = {
         }
       });
       
-      const url = `${SHORTAGE_BASE_URL}/company/shortages?${params.toString()}`;
+      const url = `${SHORTAGE_BASE_URL}/company?${params.toString()}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
       
       const result = handleResponse(response, 'fetching company shortages');
       
-      if (result.shortages) {
-        result.shortages = result.shortages.map(shortage => formatShortage(shortage));
+      if (result && result.shortages) {
+        return {
+          ...result,
+          shortages: formatShortageList(result.shortages)
+        };
       }
       
       return result;
@@ -532,7 +537,7 @@ export const shortageService = {
     }
   },
 
-  // Get all shortages (for super admin)
+  // Get all shortages (for super admin or filtered view)
   getAllShortages: async (filters = {}) => {
     logger.info('Fetching all shortages with filters:', filters);
     
@@ -546,15 +551,18 @@ export const shortageService = {
         }
       });
       
-      const url = `${SHORTAGE_BASE_URL}/all/shortages?${params.toString()}`;
+      const url = `${SHORTAGE_BASE_URL}?${params.toString()}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
       
       const result = handleResponse(response, 'fetching all shortages');
       
-      if (result.shortages) {
-        result.shortages = result.shortages.map(shortage => formatShortage(shortage));
+      if (result && result.shortages) {
+        return {
+          ...result,
+          shortages: formatShortageList(result.shortages)
+        };
       }
       
       return result;
@@ -573,8 +581,8 @@ export const shortageService = {
       debugRequest('PUT', url, updateData);
       const response = await apiService.put(url, updateData);
       debugResponse('PUT', url, response);
-      const updatedShortage = handleResponse(response, 'updating shortage');
-      return formatShortage(updatedShortage);
+      const result = handleResponse(response, 'updating shortage');
+      return formatShortage(result);
     } catch (error) {
       throw handleError(error, 'updating shortage', 'Failed to update shortage');
     }
@@ -611,13 +619,13 @@ export const shortageService = {
         }
       });
       
-      const url = `${SHORTAGE_BASE_URL}/stats/overview?${params.toString()}`;
+      const url = `${SHORTAGE_BASE_URL}/stats/shortage?${params.toString()}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
       
-      const stats = handleResponse(response, 'fetching shortage statistics');
-      return formatShortageStats(stats);
+      const result = handleResponse(response, 'fetching shortage statistics');
+      return formatShortageStats(result);
     } catch (error) {
       throw handleError(error, 'fetching shortage statistics', 'Failed to fetch shortage statistics');
     }
@@ -641,8 +649,8 @@ export const shortageService = {
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
       
-      const stats = handleResponse(response, 'fetching station shortage statistics');
-      return formatShortageStats(stats);
+      const result = handleResponse(response, 'fetching station shortage statistics');
+      return result; // Already formatted by backend
     } catch (error) {
       throw handleError(error, 'fetching station shortage statistics', 'Failed to fetch station shortage statistics');
     }
@@ -666,8 +674,8 @@ export const shortageService = {
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
       
-      const stats = handleResponse(response, 'fetching company shortage statistics');
-      return formatShortageStats(stats);
+      const result = handleResponse(response, 'fetching company shortage statistics');
+      return result; // Already formatted by backend
     } catch (error) {
       throw handleError(error, 'fetching company shortage statistics', 'Failed to fetch company shortage statistics');
     }
@@ -708,6 +716,24 @@ export const shortageService = {
       debugResponse('GET', url, response);
       
       const result = handleResponse(response, 'fetching deductions by shortage');
+      
+      if (result && result.deductions) {
+        // Format deduction dates
+        const formattedDeductions = result.deductions.map(deduction => ({
+          ...deduction,
+          deductionDateDisplay: formatDate(deduction.deductionDate),
+          deductionDateTimeDisplay: formatDateTime(deduction.deductionDate),
+          amountDisplay: formatCurrency(deduction.amount),
+          recordedByDisplay: deduction.recordedBy ? 
+            `${deduction.recordedBy.firstName} ${deduction.recordedBy.lastName}` : 'Unknown'
+        }));
+        
+        return {
+          ...result,
+          deductions: formattedDeductions
+        };
+      }
+      
       return result;
     } catch (error) {
       throw handleError(error, 'fetching deductions', 'Failed to fetch deductions');
@@ -716,15 +742,50 @@ export const shortageService = {
 
   // ========== UTILITY ENDPOINTS ==========
   
-  getShortageSummary: async () => {
+  getShortageSummary: async (filters = {}) => {
     logger.info('Fetching shortage summary');
     
     try {
-      const url = `${SHORTAGE_BASE_URL}/summary/overview`;
+      const params = new URLSearchParams();
+      
+      Object.keys(filters).forEach(key => {
+        const value = filters[key];
+        if (value !== undefined && value !== null && value !== '') {
+          params.append(key, value);
+        }
+      });
+      
+      const url = `${SHORTAGE_BASE_URL}/summary/shortage?${params.toString()}`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
-      return handleResponse(response, 'fetching shortage summary');
+      
+      const result = handleResponse(response, 'fetching shortage summary');
+      
+      // Format the summary data
+      if (result) {
+        return {
+          ...result,
+          overview: result.overview ? {
+            ...result.overview,
+            totalAmountDisplay: formatCurrency(result.overview.totalAmount),
+            outstandingAmountDisplay: formatCurrency(result.overview.outstandingAmount)
+          } : result.overview,
+          recentOutstanding: (result.recentOutstanding || []).map(item => ({
+            ...item,
+            amountDisplay: formatCurrency(item.amount),
+            amountRemainingDisplay: formatCurrency(item.amountRemaining),
+            shortageDateDisplay: formatDate(item.shortageDate)
+          })),
+          upcomingDue: (result.upcomingDue || []).map(item => ({
+            ...item,
+            amountRemainingDisplay: formatCurrency(item.amountRemaining),
+            dueDateDisplay: formatDate(item.dueDate)
+          }))
+        };
+      }
+      
+      return result;
     } catch (error) {
       throw handleError(error, 'fetching shortage summary', 'Failed to fetch shortage summary');
     }
@@ -743,23 +804,28 @@ export const shortageService = {
         }
       });
       
-      const url = `${SHORTAGE_BASE_URL}/export/data?${params.toString()}`;
+      const url = `${SHORTAGE_BASE_URL}/export/shortages?${params.toString()}`;
       debugRequest('GET', url);
-      const response = await apiService.get(url, { responseType: 'blob' });
+      const response = await apiService.get(url);
       
-      // Handle blob response for download
-      const blob = new Blob([response], { type: 'text/csv' });
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = `shortages_export_${new Date().toISOString().split('T')[0]}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(downloadUrl);
-      
-      logger.info('Export successful');
-      return { success: true };
+      if (response && response.success) {
+        const exportData = response.data || response;
+        const dataStr = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = `shortages-export-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(downloadUrl);
+        
+        logger.info('Export successful');
+        return { success: true };
+      } else {
+        throw new Error(response?.message || 'Export failed');
+      }
     } catch (error) {
       throw handleError(error, 'exporting shortages', 'Failed to export shortages');
     }
@@ -776,20 +842,57 @@ export const shortageService = {
   },
 
   getOverdueShortages: async (filters = {}) => {
+    const today = new Date().toISOString();
     return shortageService.getStationShortages({
       ...filters,
       status: 'ACTIVE',
       hasOutstanding: true,
-      dueBefore: new Date().toISOString()
+      dueBefore: today
     });
   },
 
   getHighSeverityShortages: async (filters = {}) => {
     return shortageService.getStationShortages({
       ...filters,
-      severity: ['MAJOR', 'CRITICAL'],
+      severity: ['MAJOR', 'CRITICAL'].join(','),
       hasOutstanding: true
     });
+  },
+
+  // ========== HELPER METHODS FOR UI ==========
+  
+  // Get shortages based on user role
+  getShortagesByRole: async (userRole, filters = {}) => {
+    switch (userRole) {
+      case 'ATTENDANT':
+        return await shortageService.getMyShortages(filters);
+      case 'STATION_MANAGER':
+      case 'LINES_MANAGER':
+      case 'SUPERVISOR':
+        return await shortageService.getStationShortages(filters);
+      case 'COMPANY_ADMIN':
+        return await shortageService.getCompanyShortages(filters);
+      case 'SUPER_ADMIN':
+        return await shortageService.getAllShortages(filters);
+      default:
+        return await shortageService.getMyShortages(filters);
+    }
+  },
+
+  // Get stats based on user role
+  getStatsByRole: async (userRole, filters = {}) => {
+    switch (userRole) {
+      case 'ATTENDANT':
+        return await shortageService.getShortageStats(filters);
+      case 'STATION_MANAGER':
+      case 'LINES_MANAGER':
+      case 'SUPERVISOR':
+        return await shortageService.getStationShortageStats(filters);
+      case 'COMPANY_ADMIN':
+        return await shortageService.getCompanyShortageStats(filters);
+      default:
+        return await shortageService.getShortageStats(filters);
+    }
   },
 
   // =====================
@@ -814,5 +917,13 @@ export const shortageService = {
   formatCurrency,
   formatDate,
   formatDateTime,
-  formatDaysUntilDue
+  formatDaysUntilDue,
+
+  // =====================
+  // CONSTANTS
+  // =====================
+  SHORTAGE_TYPES: ['CASH', 'INVENTORY', 'PRODUCT', 'EQUIPMENT', 'OTHER'],
+  RESPONSIBLE_PARTIES: ['ATTENDANT', 'SUPERVISOR', 'SHIFT_LEADER', 'STATION', 'OTHER'],
+  SHORTAGE_SEVERITY: ['MINOR', 'MODERATE', 'MAJOR', 'CRITICAL'],
+  SHORTAGE_STATUS: ['ACTIVE', 'PARTIALLY_DEDUCTED', 'FULLY_DEDUCTED', 'WRITTEN_OFF']
 };

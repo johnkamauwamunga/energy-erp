@@ -37,6 +37,8 @@ import StaffAccountManagement from '../common/staff-accounts/StaffAccountManagem
 import WarehouseManagement from '../common/warehouses/WarehouseManagement';
 import StationFuelSales from '../common/fuelSales/StationFuelSales';
 import CashMovement from '../common/cashMovement/CashMovement';
+import ShortageManagement from '../common/shortages/ShortageManagement';
+import { FallOutlined } from '@ant-design/icons';
 
 const StationManagerDashboard = () => {
   const { state } = useApp();
@@ -85,6 +87,7 @@ const StationManagerDashboard = () => {
       onToggle: () => toggleMenu('staff'),
       items: [
         { id: 'staff', label: 'Staff Members', icon: Users },
+        { id: 'staff-accounts', label: 'Staff Accounts', icon: SquareUserRound },
   
       ]
     },
@@ -111,8 +114,6 @@ const StationManagerDashboard = () => {
       onToggle: () => toggleMenu('operations'),
       items: [
         { id: 'shifts', label: 'Shift Management', icon: Clock },
-        { id: 'warehouses', label: 'Warehouses', icon: Warehouse },
-        { id: 'fuel_tanks', label: 'Fuel Tanks', icon: Fuel },
         { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
      
       ]
@@ -141,7 +142,7 @@ const StationManagerDashboard = () => {
       items: [
         { id: 'expenses', label: 'Expenses', icon: CoinsIcon },
         { id: 'accounts', label: 'Accounts', icon: Wallet },
-        { id: 'staff-accounts', label: 'Staff Accounts', icon: SquareUserRound },
+        {  id: 'shortages', label: 'Shortages', icon: FallOutlined },
         { id: 'debtor', label: 'Debtors', icon: Users2Icon },
         { id: 'debt-transfer', label: 'Payment & Transfer', icon: HandCoinsIcon },
         { id: 'receipts', label: 'Receipts', icon: Receipt }
@@ -200,6 +201,8 @@ const StationManagerDashboard = () => {
         return <WetStockManagement />;
       case 'staff-accounts':
         return <StaffAccountManagement />;
+        case 'shortages':
+        return <ShortageManagement />;
       case 'pump-sales':
         return <PumpSalesManagement />;
       case 'analytics':

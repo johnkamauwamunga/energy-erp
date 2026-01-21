@@ -7,6 +7,13 @@ import { fuelService } from '../../../../services/fuelService/fuelService';
 import { Fuel, Zap, Package, Link, Unlink, Warehouse, Edit, Download, BarChart3 } from 'lucide-react';
 import AdvancedReportGenerator from '../../../dashboards/common/downloadable/AdvancedReportGenerator';
 
+// Helper function to add sequential numbers to data
+const addSequenceNumbers = (data) => 
+  data.map((item, index) => ({
+    ...item,
+    _sequence: index + 1
+  }));
+
 // Edit Asset Modal Component
 const EditAssetModal = ({ asset, onSave, onClose, userRole }) => {
   const [formData, setFormData] = useState({
@@ -17,7 +24,6 @@ const EditAssetModal = ({ asset, onSave, onClose, userRole }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Determine which fields the user can edit based on role
   const canEditName = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'LINES_MANAGER'].includes(userRole);
   const canEditStatus = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'LINES_MANAGER'].includes(userRole);
   const canEditStationLabel = asset.stationId && ['SUPER_ADMIN', 'COMPANY_ADMIN', 'LINES_MANAGER', 'STATION_MANAGER', 'SUPERVISOR'].includes(userRole);
@@ -28,9 +34,7 @@ const EditAssetModal = ({ asset, onSave, onClose, userRole }) => {
     setError('');
 
     try {
-      // Prepare update data based on permissions
       const updateData = {};
-      
       if (canEditName) updateData.name = formData.name;
       if (canEditStatus) updateData.status = formData.status;
       if (canEditStationLabel) updateData.stationLabel = formData.stationLabel;
@@ -49,18 +53,12 @@ const EditAssetModal = ({ asset, onSave, onClose, userRole }) => {
       <div className="bg-white rounded-lg w-full max-w-md">
         <div className="p-6">
           <h2 className="text-xl font-bold mb-4">Edit Asset</h2>
-          {error && (
-            <Alert variant="error" className="mb-4">
-              {error}
-            </Alert>
-          )}
+          {error && <Alert variant="error" className="mb-4">{error}</Alert>}
           
           <form onSubmit={handleSubmit}>
             {canEditName && (
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Asset Name
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Asset Name</label>
                 <input
                   type="text"
                   value={formData.name}
@@ -75,9 +73,7 @@ const EditAssetModal = ({ asset, onSave, onClose, userRole }) => {
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Station Label
-                  <span className="text-xs text-gray-500 ml-2">
-                    (Local name for this station)
-                  </span>
+                  <span className="text-xs text-gray-500 ml-2">(Local name for this station)</span>
                 </label>
                 <input
                   type="text"
@@ -87,9 +83,7 @@ const EditAssetModal = ({ asset, onSave, onClose, userRole }) => {
                   placeholder={`e.g., ${asset.name}#shell@${asset.station?.name?.toLowerCase()}`}
                   maxLength={100}
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  This label will be used within this station only
-                </p>
+                <p className="text-xs text-gray-500 mt-1">This label will be used within this station only</p>
               </div>
             )}
 
@@ -103,9 +97,7 @@ const EditAssetModal = ({ asset, onSave, onClose, userRole }) => {
 
             {canEditStatus && (
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                 <select
                   value={formData.status}
                   onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
@@ -121,20 +113,8 @@ const EditAssetModal = ({ asset, onSave, onClose, userRole }) => {
             )}
 
             <div className="flex justify-end space-x-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onClose}
-                disabled={loading}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={loading}
-              >
-                {loading ? 'Saving...' : 'Save Changes'}
-              </Button>
+              <Button type="button" variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
+              <Button type="submit" disabled={loading}>{loading ? 'Saving...' : 'Save Changes'}</Button>
             </div>
           </form>
         </div>
@@ -154,22 +134,15 @@ const StationAssetManagement = () => {
   const [connections, setConnections] = useState([]);
   const [topology, setTopology] = useState(null);
   const [error, setError] = useState('');
-  const [assetsForIsland, setAssetsForIsland] = useState({
-    tanks: [],
-    pumps: []
-  });
+  const [assetsForIsland, setAssetsForIsland] = useState({ tanks: [], pumps: [] });
   const [userInfo, setUserInfo] = useState(null);
   const [editingAsset, setEditingAsset] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [sortConfig, setSortConfig] = useState({
-    field: 'createdAt',
-    direction: 'desc'
-  });
 
-  // fetch products
+  // Fetch products
   useEffect(() => {
-   const response= fuelService.getFuelProducts();
-   console.log("the products are ",response);
+    const response = fuelService.getFuelProducts();
+    console.log("the products are ", response);
   }, []);
 
   // Load assets and connections
@@ -182,18 +155,11 @@ const StationAssetManagement = () => {
       let stationId = currentUser?.station?.id;
       let assetsData;
       
-      // Load assets based on role
       if (currentUser?.user?.role === "SUPER_ADMIN") {
         assetsData = await assetService.getAssets();
-      } else if (
-        currentUser?.user?.role === "COMPANY_ADMIN" ||
-        currentUser?.user?.role === "COMPANY_MANAGER"
-      ) {
+      } else if (['COMPANY_ADMIN', 'COMPANY_MANAGER'].includes(currentUser?.user?.role)) {
         assetsData = await assetService.getCompanyAssets(currentUser.company.id);
-      } else if (
-        currentUser?.user?.role === "STATION_MANAGER" ||
-        currentUser?.user?.role === "SUPERVISOR"
-      ) {
+      } else if (['STATION_MANAGER', 'SUPERVISOR'].includes(currentUser?.user?.role)) {
         assetsData = await assetService.getStationAssets(stationId);
       } else {
         assetsData = await assetService.getAssets();
@@ -203,7 +169,6 @@ const StationAssetManagement = () => {
       setAssets(assetsArray);
       dispatch({ type: "SET_ASSETS", payload: assetsArray });
 
-      // Load station topology if we have a station
       if (stationId) {
         try {
           const topologyData = await assetConnectionService.getStationTopology(stationId);
@@ -214,7 +179,6 @@ const StationAssetManagement = () => {
           console.warn("Could not load topology data:", topologyError.message);
         }
       }
-
     } catch (error) {
       console.error("❌ Failed to load data:", error);
       setError(error.message || "Failed to load data. Please try again.");
@@ -302,25 +266,20 @@ const StationAssetManagement = () => {
       return 'N/A';
     };
 
+    // Add sequence numbers while enhancing
     return assets.map((asset, index) => ({
       ...asset,
-      // Add sequential number
-      sequentialNumber: index + 1,
-      // Enhanced fields
+      sequenceNumber: index + 1, // Add sequence number here
       assetTypeDisplay: getAssetTypeLabel(asset.type),
       statusDisplay: getStatusLabel(asset.status),
       stationName: asset.station?.name || 'Unassigned',
       stationCode: asset.station?.code || 'N/A',
       companyName: asset.company?.name || 'N/A',
-      // Tank-specific fields
       capacity: asset.tank?.capacity || 0,
       productName: asset.tank?.product?.name || 'N/A',
-      // Connection status
       connectionStatus: getConnectionStatus(asset, connections),
-      // Timestamps
       formattedCreatedAt: asset.createdAt ? new Date(asset.createdAt).toLocaleDateString() : 'N/A',
       formattedUpdatedAt: asset.updatedAt ? new Date(asset.updatedAt).toLocaleDateString() : 'N/A',
-      // Sortable timestamp
       timestamp: new Date(asset.createdAt).getTime()
     }));
   }, [assets, connections]);
@@ -331,22 +290,18 @@ const StationAssetManagement = () => {
     const stationAssets = enhancedAssets.filter(asset => asset.stationId === userInfo?.station?.id);
     const totalStationAssets = stationAssets.length;
     
-    // Count by type
     const tanks = stationAssets.filter(a => a.type === 'STORAGE_TANK');
     const pumps = stationAssets.filter(a => a.type === 'FUEL_PUMP');
     const islands = stationAssets.filter(a => a.type === 'ISLAND');
     const warehouses = stationAssets.filter(a => a.type === 'WAREHOUSE');
     
-    // Count by status
     const activeAssets = stationAssets.filter(a => a.status === 'ACTIVE');
     const inactiveAssets = stationAssets.filter(a => a.status === 'INACTIVE');
     const maintenanceAssets = stationAssets.filter(a => a.status === 'MAINTENANCE');
     
-    // Count by connection status
     const connectedAssets = stationAssets.filter(a => a.connectionStatus === 'Connected');
     const unconnectedAssets = stationAssets.filter(a => a.connectionStatus === 'Unconnected');
     
-    // Total capacity
     const totalCapacity = tanks.reduce((sum, tank) => sum + (tank.capacity || 0), 0);
     
     return {
@@ -366,29 +321,29 @@ const StationAssetManagement = () => {
     };
   }, [enhancedAssets, userInfo]);
 
-  // Enhanced station assets by type
+  // Enhanced station assets by type WITH SEQUENCE NUMBERS
   const enhancedStationTanks = useMemo(() => 
-    enhancedAssets.filter(asset => 
+    addSequenceNumbers(enhancedAssets.filter(asset => 
       asset.type === 'STORAGE_TANK' && asset.stationId === userInfo?.station?.id
-    ),
+    )),
   [enhancedAssets, userInfo]);
 
   const enhancedStationPumps = useMemo(() => 
-    enhancedAssets.filter(asset => 
+    addSequenceNumbers(enhancedAssets.filter(asset => 
       asset.type === 'FUEL_PUMP' && asset.stationId === userInfo?.station?.id
-    ),
+    )),
   [enhancedAssets, userInfo]);
 
   const enhancedStationIslands = useMemo(() => 
-    enhancedAssets.filter(asset => 
+    addSequenceNumbers(enhancedAssets.filter(asset => 
       asset.type === 'ISLAND' && asset.stationId === userInfo?.station?.id
-    ),
+    )),
   [enhancedAssets, userInfo]);
 
   const enhancedStationWarehouses = useMemo(() => 
-    enhancedAssets.filter(asset => 
+    addSequenceNumbers(enhancedAssets.filter(asset => 
       asset.type === 'WAREHOUSE' && asset.stationId === userInfo?.station?.id
-    ),
+    )),
   [enhancedAssets, userInfo]);
 
   // Summary data for report header
@@ -453,7 +408,6 @@ const StationAssetManagement = () => {
 
     try {
       setError('');
-      
       const connectionPromises = selectedPumps.map(pumpId => 
         assetConnectionService.createConnection({
           type: 'TANK_TO_PUMP',
@@ -468,7 +422,6 @@ const StationAssetManagement = () => {
       
       setSelectedTank(null);
       setSelectedPumps([]);
-      
       console.log('✅ Tank to pump connections created successfully');
     } catch (error) {
       console.error('❌ Failed to create tank-pump connections:', error);
@@ -511,7 +464,6 @@ const StationAssetManagement = () => {
       
       setSelectedIsland(null);
       setAssetsForIsland({ tanks: [], pumps: [] });
-      
       console.log('✅ Island connections created successfully');
     } catch (error) {
       console.error('❌ Failed to create island connections:', error);
@@ -543,13 +495,13 @@ const StationAssetManagement = () => {
     }
   };
 
-  // Get export columns based on active tab
+  // Get export columns based on active tab - FIXED with proper sequence column
   const getExportColumns = () => {
     const commonColumns = [
       {
         title: '#',
+        dataIndex: 'sequenceNumber',
         key: 'sequence',
-        render: (_, record, index) => index + 1,
         type: 'number',
         width: 50
       },
@@ -619,146 +571,6 @@ const StationAssetManagement = () => {
         key: 'lastUpdated',
         render: (_, record) => record.formattedUpdatedAt,
         type: 'date'
-      },
-      {
-        title: 'Asset Code',
-        dataIndex: 'code',
-        key: 'assetCode',
-        render: (code) => code || 'N/A',
-        type: 'text'
-      },
-      {
-        title: 'Description',
-        dataIndex: 'description',
-        key: 'description',
-        render: (desc) => desc || 'N/A',
-        type: 'text'
-      },
-      {
-        title: 'Serial Number',
-        dataIndex: 'serialNumber',
-        key: 'serialNumber',
-        render: (serial) => serial || 'N/A',
-        type: 'text'
-      },
-      {
-        title: 'Manufacturer',
-        dataIndex: 'manufacturer',
-        key: 'manufacturer',
-        render: (mfg) => mfg || 'N/A',
-        type: 'text'
-      },
-      {
-        title: 'Model',
-        dataIndex: 'model',
-        key: 'model',
-        render: (model) => model || 'N/A',
-        type: 'text'
-      },
-      {
-        title: 'Installation Date',
-        dataIndex: 'installationDate',
-        key: 'installationDate',
-        render: (date) => date ? new Date(date).toLocaleDateString() : 'N/A',
-        type: 'date'
-      },
-      {
-        title: 'Warranty Expiry',
-        dataIndex: 'warrantyExpiry',
-        key: 'warrantyExpiry',
-        render: (date) => date ? new Date(date).toLocaleDateString() : 'N/A',
-        type: 'date'
-      },
-      {
-        title: 'Purchase Date',
-        dataIndex: 'purchaseDate',
-        key: 'purchaseDate',
-        render: (date) => date ? new Date(date).toLocaleDateString() : 'N/A',
-        type: 'date'
-      },
-      {
-        title: 'Purchase Price',
-        dataIndex: 'purchasePrice',
-        key: 'purchasePrice',
-        render: (price) => price ? `KES ${price.toLocaleString()}` : 'N/A',
-        type: 'currency'
-      },
-      {
-        title: 'Current Value',
-        dataIndex: 'currentValue',
-        key: 'currentValue',
-        render: (value) => value ? `KES ${value.toLocaleString()}` : 'N/A',
-        type: 'currency'
-      },
-      {
-        title: 'Depreciation Rate',
-        dataIndex: 'depreciationRate',
-        key: 'depreciationRate',
-        render: (rate) => rate ? `${rate}%` : 'N/A',
-        type: 'percentage'
-      },
-      {
-        title: 'Location Notes',
-        dataIndex: 'locationNotes',
-        key: 'locationNotes',
-        render: (notes) => notes || 'N/A',
-        type: 'text'
-      },
-      {
-        title: 'Maintenance Schedule',
-        dataIndex: 'maintenanceSchedule',
-        key: 'maintenanceSchedule',
-        render: (schedule) => schedule || 'N/A',
-        type: 'text'
-      },
-      {
-        title: 'Last Maintenance Date',
-        dataIndex: 'lastMaintenanceDate',
-        key: 'lastMaintenanceDate',
-        render: (date) => date ? new Date(date).toLocaleDateString() : 'N/A',
-        type: 'date'
-      },
-      {
-        title: 'Next Maintenance Due',
-        dataIndex: 'nextMaintenanceDue',
-        key: 'nextMaintenanceDue',
-        render: (date) => date ? new Date(date).toLocaleDateString() : 'N/A',
-        type: 'date'
-      },
-      {
-        title: 'Operational Hours',
-        dataIndex: 'operationalHours',
-        key: 'operationalHours',
-        render: (hours) => hours || 0,
-        type: 'number'
-      },
-      {
-        title: 'Energy Consumption',
-        dataIndex: 'energyConsumption',
-        key: 'energyConsumption',
-        render: (consumption) => consumption ? `${consumption} kWh` : 'N/A',
-        type: 'text'
-      },
-      {
-        title: 'Environmental Rating',
-        dataIndex: 'environmentalRating',
-        key: 'environmentalRating',
-        render: (rating) => rating || 'N/A',
-        type: 'text'
-      },
-      {
-        title: 'Safety Rating',
-        dataIndex: 'safetyRating',
-        key: 'safetyRating',
-        render: (rating) => rating || 'N/A',
-        type: 'text'
-      },
-      {
-        title: 'Notes/Comments',
-        dataIndex: 'notes',
-        key: 'notes',
-        render: (notes) => notes || 'N/A',
-        type: 'text'
       }
     ];
 
@@ -775,55 +587,6 @@ const StationAssetManagement = () => {
           key: 'productName',
           render: (_, record) => record.productName,
           type: 'text'
-        },
-        {
-          title: 'Current Level',
-          dataIndex: 'currentLevel',
-          key: 'currentLevel',
-          render: (level) => level ? `${level}%` : 'N/A',
-          type: 'percentage'
-        },
-        {
-          title: 'Min Level Threshold',
-          dataIndex: 'minLevelThreshold',
-          key: 'minLevelThreshold',
-          render: (threshold) => threshold ? `${threshold}%` : 'N/A',
-          type: 'percentage'
-        },
-        {
-          title: 'Max Level Threshold',
-          dataIndex: 'maxLevelThreshold',
-          key: 'maxLevelThreshold',
-          render: (threshold) => threshold ? `${threshold}%` : 'N/A',
-          type: 'percentage'
-        },
-        {
-          title: 'Material Type',
-          dataIndex: 'materialType',
-          key: 'materialType',
-          render: (material) => material || 'N/A',
-          type: 'text'
-        },
-        {
-          title: 'Tank Type',
-          dataIndex: 'tankType',
-          key: 'tankType',
-          render: (type) => type || 'N/A',
-          type: 'text'
-        },
-        {
-          title: 'Diameter',
-          dataIndex: 'diameter',
-          key: 'diameter',
-          render: (diameter) => diameter ? `${diameter}m` : 'N/A',
-          type: 'text'
-        },
-        {
-          title: 'Height',
-          dataIndex: 'height',
-          key: 'height',
-          render: (height) => height ? `${height}m` : 'N/A',
-          type: 'text'
         }
       ],
       pumps: [
@@ -832,41 +595,6 @@ const StationAssetManagement = () => {
           dataIndex: 'flowRate',
           key: 'flowRate',
           render: (rate) => rate ? `${rate} L/min` : 'N/A',
-          type: 'text'
-        },
-        {
-          title: 'Pressure Rating',
-          dataIndex: 'pressureRating',
-          key: 'pressureRating',
-          render: (rating) => rating ? `${rating} psi` : 'N/A',
-          type: 'text'
-        },
-        {
-          title: 'Power Rating',
-          dataIndex: 'powerRating',
-          key: 'powerRating',
-          render: (rating) => rating ? `${rating} kW` : 'N/A',
-          type: 'text'
-        },
-        {
-          title: 'Nozzle Type',
-          dataIndex: 'nozzleType',
-          key: 'nozzleType',
-          render: (type) => type || 'N/A',
-          type: 'text'
-        },
-        {
-          title: 'Nozzle Count',
-          dataIndex: 'nozzleCount',
-          key: 'nozzleCount',
-          render: (count) => count || 0,
-          type: 'number'
-        },
-        {
-          title: 'Hose Length',
-          dataIndex: 'hoseLength',
-          key: 'hoseLength',
-          render: (length) => length ? `${length}m` : 'N/A',
           type: 'text'
         }
       ],
@@ -877,34 +605,6 @@ const StationAssetManagement = () => {
           key: 'islandNumber',
           render: (number) => number || 'N/A',
           type: 'text'
-        },
-        {
-          title: 'Canopy Type',
-          dataIndex: 'canopyType',
-          key: 'canopyType',
-          render: (type) => type || 'N/A',
-          type: 'text'
-        },
-        {
-          title: 'Lighting Type',
-          dataIndex: 'lightingType',
-          key: 'lightingType',
-          render: (type) => type || 'N/A',
-          type: 'text'
-        },
-        {
-          title: 'Payment Terminal Type',
-          dataIndex: 'paymentTerminalType',
-          key: 'paymentTerminalType',
-          render: (type) => type || 'N/A',
-          type: 'text'
-        },
-        {
-          title: 'Island Position',
-          dataIndex: 'position',
-          key: 'position',
-          render: (pos) => pos || 'N/A',
-          type: 'text'
         }
       ],
       warehouses: [
@@ -913,34 +613,6 @@ const StationAssetManagement = () => {
           dataIndex: 'warehouseType',
           key: 'warehouseType',
           render: (type) => type || 'N/A',
-          type: 'text'
-        },
-        {
-          title: 'Area (sqm)',
-          dataIndex: 'area',
-          key: 'area',
-          render: (area) => area ? `${area} sqm` : 'N/A',
-          type: 'number'
-        },
-        {
-          title: 'Storage Capacity',
-          dataIndex: 'storageCapacity',
-          key: 'storageCapacity',
-          render: (capacity) => capacity ? `${capacity} units` : 'N/A',
-          type: 'number'
-        },
-        {
-          title: 'Temperature Control',
-          dataIndex: 'temperatureControl',
-          key: 'temperatureControl',
-          render: (control) => control ? 'Yes' : 'No',
-          type: 'boolean'
-        },
-        {
-          title: 'Security Level',
-          dataIndex: 'securityLevel',
-          key: 'securityLevel',
-          render: (level) => level || 'N/A',
           type: 'text'
         }
       ],
@@ -955,18 +627,6 @@ const StationAssetManagement = () => {
             return connectionsCount;
           },
           type: 'number'
-        },
-        {
-          title: 'Connection Types',
-          key: 'connectionTypes',
-          render: (_, record) => {
-            const connTypes = connections
-              .filter(conn => conn.assetA.id === record.id || conn.assetB.id === record.id)
-              .map(conn => conn.type)
-              .join(', ');
-            return connTypes || 'None';
-          },
-          type: 'text'
         }
       ]
     };
@@ -998,106 +658,11 @@ const StationAssetManagement = () => {
     console.log(`Exporting ${getExportDataSource().length} ${activeTab} assets as ${format}`);
   };
 
-  if (!userInfo) {
-    return (
-      <div className="p-6">
-        <Alert variant="error">Unable to load user information. Please try logging in again.</Alert>
-      </div>
-    );
-  }
-
-  const userStationId = userInfo.station?.id;
-  const userCompanyId = userInfo.company?.id;
-
-  if (!userStationId) {
-    return (
-      <div className="p-6">
-        <Alert variant="warning">No station assigned to your account. Please contact your administrator.</Alert>
-      </div>
-    );
-  }
-
-  // Get assets attached to this user's station
-  const stationTanks = assets.filter(asset => 
-    asset.type === 'STORAGE_TANK' && asset.stationId === userStationId
-  );
-  
-  const stationPumps = assets.filter(asset => 
-    asset.type === 'FUEL_PUMP' && asset.stationId === userStationId
-  );
-  
-  const stationIslands = assets.filter(asset => 
-    asset.type === 'ISLAND' && asset.stationId === userStationId
-  );
-  
-  const stationWarehouses = assets.filter(asset => 
-    asset.type === 'WAREHOUSE' && asset.stationId === userStationId
-  );
-
-  // Get unattached assets in the same company
-  const unattachedTanks = assets.filter(asset => 
-    asset.type === 'STORAGE_TANK' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
-  );
-  
-  const unattachedPumps = assets.filter(asset => 
-    asset.type === 'FUEL_PUMP' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
-  );
-  
-  const unattachedIslands = assets.filter(asset => 
-    asset.type === 'ISLAND' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
-  );
-  
-  const unattachedWarehouses = assets.filter(asset => 
-    asset.type === 'WAREHOUSE' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
-  );
-
-  // Enhanced asset filtering using connection data
-  const getConnectedAssets = (connectionType) => {
-    if (!connections || connections.length === 0) return new Set();
-    
-    const connectedAssetIds = new Set();
-    connections.forEach(connection => {
-      if (connection.type === connectionType) {
-        if (connectionType === 'TANK_TO_PUMP') {
-          connectedAssetIds.add(connection.assetB.id);
-        } else if (connectionType === 'TANK_TO_ISLAND') {
-          connectedAssetIds.add(connection.assetA.id);
-        } else if (connectionType === 'PUMP_TO_ISLAND') {
-          connectedAssetIds.add(connection.assetA.id);
-        }
-      }
-    });
-    return connectedAssetIds;
-  };
-
-  // Get sets of connected asset IDs
-  const pumpsConnectedToTanks = getConnectedAssets('TANK_TO_PUMP');
-  const tanksConnectedToIslands = getConnectedAssets('TANK_TO_ISLAND');
-  const pumpsConnectedToIslands = getConnectedAssets('PUMP_TO_ISLAND');
-
-  // Pumps that are available for tank connection (not connected to any tank)
-  const pumpsAvailableForTankConnection = stationPumps.filter(pump => 
-    !pumpsConnectedToTanks.has(pump.id)
-  );
-
-  // Pumps that are available for island connection (not connected to any island)
-  const pumpsAvailableForIslandConnection = stationPumps.filter(pump => 
-    !pumpsConnectedToIslands.has(pump.id)
-  );
-
-  // Tanks that are available for island connection (not connected to any island)
-  const tanksAvailableForIslandConnection = stationTanks.filter(tank => 
-    !tanksConnectedToIslands.has(tank.id)
-  );
-
-  // Enhanced pump columns WITH SEQUENTIAL NUMBERING
+  // Column definitions WITH FIXED SEQUENCE NUMBERS
   const pumpColumns = [
     { 
       header: '#', 
-      accessor: 'id',
-      render: (_, __, index) => (
-        <span className="text-sm font-medium text-gray-600">{index + 1}</span>
-      ),
+      accessor: '_sequence',
       width: '50px'
     },
     { header: 'Name', accessor: 'name' },
@@ -1113,7 +678,8 @@ const StationAssetManagement = () => {
         </div>
       )
     },
-    { header: 'Tank Attachment', 
+    { 
+      header: 'Tank Attachment', 
       render: (_, pump) => {
         const tankConnection = connections ? 
           connections.find(conn => 
@@ -1130,7 +696,8 @@ const StationAssetManagement = () => {
         );
       }
     },
-    { header: 'Island Attachment', 
+    { 
+      header: 'Island Attachment', 
       render: (_, pump) => {
         const islandConnection = connections ? 
           connections.find(conn => 
@@ -1147,7 +714,8 @@ const StationAssetManagement = () => {
         );
       }
     },
-    { header: 'Status', 
+    { 
+      header: 'Status', 
       render: (_, pump) => {
         const hasTank = connections?.some(conn => 
           conn.type === 'TANK_TO_PUMP' && conn.assetB.id === pump.id
@@ -1191,14 +759,10 @@ const StationAssetManagement = () => {
     }
   ];
 
-  // Enhanced tank columns WITH SEQUENTIAL NUMBERING
   const tankColumns = [
     { 
       header: '#', 
-      accessor: 'id',
-      render: (_, __, index) => (
-        <span className="text-sm font-medium text-gray-600">{index + 1}</span>
-      ),
+      accessor: '_sequence',
       width: '50px'
     },
     { header: 'Name', accessor: 'name' },
@@ -1214,7 +778,8 @@ const StationAssetManagement = () => {
         </div>
       )
     },
-    { header: 'Pumps Attached', 
+    { 
+      header: 'Pumps Attached', 
       render: (_, tank) => {
         const pumpConnections = connections ? 
           connections.filter(conn => 
@@ -1229,14 +794,13 @@ const StationAssetManagement = () => {
                 {connection.assetB.name}
               </Badge>
             ))}
-            {pumpConnections.length === 0 && (
-              <Badge variant="outline">No pumps</Badge>
-            )}
+            {pumpConnections.length === 0 && <Badge variant="outline">No pumps</Badge>}
           </div>
         );
       }
     },
-    { header: 'Island Attachment', 
+    { 
+      header: 'Island Attachment', 
       render: (_, tank) => {
         const islandConnection = connections ? 
           connections.find(conn => 
@@ -1253,10 +817,12 @@ const StationAssetManagement = () => {
         );
       }
     },
-    { header: 'Product', 
+    { 
+      header: 'Product', 
       render: (_, tank) => tank.tank?.product?.name || 'No product'
     },
-    { header: 'Capacity', 
+    { 
+      header: 'Capacity', 
       render: (_, tank) => tank.tank?.capacity ? `${tank.tank.capacity}L` : 'N/A'
     },
     { 
@@ -1285,14 +851,10 @@ const StationAssetManagement = () => {
     }
   ];
 
-  // Enhanced island columns WITH SEQUENTIAL NUMBERING
   const islandColumns = [
     { 
       header: '#', 
-      accessor: 'id',
-      render: (_, __, index) => (
-        <span className="text-sm font-medium text-gray-600">{index + 1}</span>
-      ),
+      accessor: '_sequence',
       width: '50px'
     },
     { header: 'Name', accessor: 'name' },
@@ -1308,7 +870,8 @@ const StationAssetManagement = () => {
         </div>
       )
     },
-    { header: 'Tanks Attached', 
+    { 
+      header: 'Tanks Attached', 
       render: (_, island) => {
         const tankConnections = connections ? 
           connections.filter(conn => 
@@ -1323,14 +886,13 @@ const StationAssetManagement = () => {
                 {connection.assetA.name}
               </Badge>
             ))}
-            {tankConnections.length === 0 && (
-              <Badge variant="outline">No tanks</Badge>
-            )}
+            {tankConnections.length === 0 && <Badge variant="outline">No tanks</Badge>}
           </div>
         );
       }
     },
-    { header: 'Pumps Attached', 
+    { 
+      header: 'Pumps Attached', 
       render: (_, island) => {
         const pumpConnections = connections ? 
           connections.filter(conn => 
@@ -1345,9 +907,7 @@ const StationAssetManagement = () => {
                 {connection.assetA.name}
               </Badge>
             ))}
-            {pumpConnections.length === 0 && (
-              <Badge variant="outline">No pumps</Badge>
-            )}
+            {pumpConnections.length === 0 && <Badge variant="outline">No pumps</Badge>}
           </div>
         );
       }
@@ -1378,14 +938,10 @@ const StationAssetManagement = () => {
     }
   ];
 
-  // Warehouse columns WITH SEQUENTIAL NUMBERING
   const warehouseColumns = [
     { 
       header: '#', 
-      accessor: 'id',
-      render: (_, __, index) => (
-        <span className="text-sm font-medium text-gray-600">{index + 1}</span>
-      ),
+      accessor: '_sequence',
       width: '50px'
     },
     { header: 'Name', accessor: 'name' },
@@ -1426,6 +982,99 @@ const StationAssetManagement = () => {
       )
     }
   ];
+
+  // Get assets for current user
+  const userStationId = userInfo?.station?.id;
+  const userCompanyId = userInfo?.company?.id;
+
+  if (!userInfo) {
+    return (
+      <div className="p-6">
+        <Alert variant="error">Unable to load user information. Please try logging in again.</Alert>
+      </div>
+    );
+  }
+
+  if (!userStationId) {
+    return (
+      <div className="p-6">
+        <Alert variant="warning">No station assigned to your account. Please contact your administrator.</Alert>
+      </div>
+    );
+  }
+
+  // Get assets attached to this user's station
+  const stationTanks = addSequenceNumbers(assets.filter(asset => 
+    asset.type === 'STORAGE_TANK' && asset.stationId === userStationId
+  ));
+  
+  const stationPumps = addSequenceNumbers(assets.filter(asset => 
+    asset.type === 'FUEL_PUMP' && asset.stationId === userStationId
+  ));
+  
+  const stationIslands = addSequenceNumbers(assets.filter(asset => 
+    asset.type === 'ISLAND' && asset.stationId === userStationId
+  ));
+  
+  const stationWarehouses = addSequenceNumbers(assets.filter(asset => 
+    asset.type === 'WAREHOUSE' && asset.stationId === userStationId
+  ));
+
+  // Get unattached assets in the same company WITH SEQUENCE NUMBERS
+  const unattachedTanks = addSequenceNumbers(assets.filter(asset => 
+    asset.type === 'STORAGE_TANK' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
+  ));
+  
+  const unattachedPumps = addSequenceNumbers(assets.filter(asset => 
+    asset.type === 'FUEL_PUMP' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
+  ));
+  
+  const unattachedIslands = addSequenceNumbers(assets.filter(asset => 
+    asset.type === 'ISLAND' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
+  ));
+  
+  const unattachedWarehouses = addSequenceNumbers(assets.filter(asset => 
+    asset.type === 'WAREHOUSE' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
+  ));
+
+  // Enhanced asset filtering using connection data
+  const getConnectedAssets = (connectionType) => {
+    if (!connections || connections.length === 0) return new Set();
+    
+    const connectedAssetIds = new Set();
+    connections.forEach(connection => {
+      if (connection.type === connectionType) {
+        if (connectionType === 'TANK_TO_PUMP') {
+          connectedAssetIds.add(connection.assetB.id);
+        } else if (connectionType === 'TANK_TO_ISLAND') {
+          connectedAssetIds.add(connection.assetA.id);
+        } else if (connectionType === 'PUMP_TO_ISLAND') {
+          connectedAssetIds.add(connection.assetA.id);
+        }
+      }
+    });
+    return connectedAssetIds;
+  };
+
+  // Get sets of connected asset IDs
+  const pumpsConnectedToTanks = getConnectedAssets('TANK_TO_PUMP');
+  const tanksConnectedToIslands = getConnectedAssets('TANK_TO_ISLAND');
+  const pumpsConnectedToIslands = getConnectedAssets('PUMP_TO_ISLAND');
+
+  // Pumps that are available for tank connection (not connected to any tank)
+  const pumpsAvailableForTankConnection = stationPumps.filter(pump => 
+    !pumpsConnectedToTanks.has(pump.id)
+  );
+
+  // Pumps that are available for island connection (not connected to any island)
+  const pumpsAvailableForIslandConnection = stationPumps.filter(pump => 
+    !pumpsConnectedToIslands.has(pump.id)
+  );
+
+  // Tanks that are available for island connection (not connected to any island)
+  const tanksAvailableForIslandConnection = stationTanks.filter(tank => 
+    !tanksConnectedToIslands.has(tank.id)
+  );
 
   // Simple tab panel component
   const TabPanel = ({ value, tabId, children }) => {
@@ -1529,11 +1178,7 @@ const StationAssetManagement = () => {
         </Card>
       </div>
 
-      {error && (
-        <Alert variant="error" className="mb-6">
-          {error}
-        </Alert>
-      )}
+      {error && <Alert variant="error" className="mb-6">{error}</Alert>}
 
       {/* Asset Type Tabs */}
       <div className="border-b border-gray-200 mb-6">
@@ -1554,9 +1199,7 @@ const StationAssetManagement = () => {
             >
               <div className="flex items-center">
                 {tab.label}
-                <Badge variant="outline" className="ml-2 text-xs">
-                  {tab.count}
-                </Badge>
+                <Badge variant="outline" className="ml-2 text-xs">{tab.count}</Badge>
               </div>
             </Tab>
           ))}
@@ -1580,19 +1223,20 @@ const StationAssetManagement = () => {
                 columns={[
                   { 
                     header: '#', 
-                    render: (_, __, index) => (
-                      <span className="text-sm font-medium text-gray-600">{index + 1}</span>
-                    ),
+                    accessor: '_sequence',
                     width: '50px'
                   },
                   { header: 'Name', accessor: 'name' },
-                  { header: 'Capacity', 
+                  { 
+                    header: 'Capacity', 
                     render: (_, tank) => tank.tank?.capacity ? `${tank.tank.capacity}L` : 'N/A'
                   },
-                  { header: 'Product', 
+                  { 
+                    header: 'Product', 
                     render: (_, tank) => tank.tank?.product?.name || 'No product'
                   },
-                  { header: 'Actions', 
+                  { 
+                    header: 'Actions', 
                     render: (_, tank) => (
                       <Button 
                         variant="success"
@@ -1628,13 +1272,12 @@ const StationAssetManagement = () => {
                 columns={[
                   { 
                     header: '#', 
-                    render: (_, __, index) => (
-                      <span className="text-sm font-medium text-gray-600">{index + 1}</span>
-                    ),
+                    accessor: '_sequence',
                     width: '50px'
                   },
                   { header: 'Name', accessor: 'name' },
-                  { header: 'Actions', 
+                  { 
+                    header: 'Actions', 
                     render: (_, pump) => (
                       <Button 
                         variant="success"
@@ -1670,13 +1313,12 @@ const StationAssetManagement = () => {
                 columns={[
                   { 
                     header: '#', 
-                    render: (_, __, index) => (
-                      <span className="text-sm font-medium text-gray-600">{index + 1}</span>
-                    ),
+                    accessor: '_sequence',
                     width: '50px'
                   },
                   { header: 'Name', accessor: 'name' },
-                  { header: 'Actions', 
+                  { 
+                    header: 'Actions', 
                     render: (_, island) => (
                       <Button 
                         variant="success"
@@ -1712,13 +1354,12 @@ const StationAssetManagement = () => {
                 columns={[
                   { 
                     header: '#', 
-                    render: (_, __, index) => (
-                      <span className="text-sm font-medium text-gray-600">{index + 1}</span>
-                    ),
+                    accessor: '_sequence',
                     width: '50px'
                   },
                   { header: 'Name', accessor: 'name' },
-                  { header: 'Actions', 
+                  { 
+                    header: 'Actions', 
                     render: (_, warehouse) => (
                       <Button 
                         variant="success"
@@ -1746,7 +1387,7 @@ const StationAssetManagement = () => {
               <div>
                 <h3 className="font-medium mb-3">Select Tank</h3>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {stationTanks.map((tank, index) => (
+                  {stationTanks.map((tank) => (
                     <div
                       key={tank.id}
                       className={`p-3 rounded-lg cursor-pointer ${
@@ -1757,7 +1398,7 @@ const StationAssetManagement = () => {
                       onClick={() => setSelectedTank(tank.id)}
                     >
                       <div className="flex items-center">
-                        <div className="mr-2 text-sm font-medium text-gray-600">{index + 1}</div>
+                        <div className="mr-2 text-sm font-medium text-gray-600">{tank._sequence}</div>
                         <Fuel className="w-5 h-5 text-blue-500 mr-2" />
                         <div>
                           <div className="font-medium">{tank.name}</div>
@@ -1786,7 +1427,7 @@ const StationAssetManagement = () => {
                   )}
                 </div>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {pumpsAvailableForTankConnection.map((pump, index) => (
+                  {pumpsAvailableForTankConnection.map((pump) => (
                     <div
                       key={pump.id}
                       className={`p-3 rounded-lg cursor-pointer ${
@@ -1804,7 +1445,7 @@ const StationAssetManagement = () => {
                     >
                       <div className="flex justify-between items-center">
                         <div className="flex items-center">
-                          <div className="mr-2 text-sm font-medium text-gray-600">{index + 1}</div>
+                          <div className="mr-2 text-sm font-medium text-gray-600">{pump._sequence}</div>
                           <Zap className="w-5 h-5 text-yellow-500 mr-2" />
                           <div>
                             <div className="font-medium">{pump.name}</div>
@@ -1814,16 +1455,12 @@ const StationAssetManagement = () => {
                             )}
                           </div>
                         </div>
-                        {selectedPumps.includes(pump.id) && (
-                          <Badge variant="yellow">Selected</Badge>
-                        )}
+                        {selectedPumps.includes(pump.id) && <Badge variant="yellow">Selected</Badge>}
                       </div>
                     </div>
                   ))}
                   {pumpsAvailableForTankConnection.length === 0 && (
-                    <div className="text-center text-gray-500 py-4">
-                      All pumps are already connected to tanks
-                    </div>
+                    <div className="text-center text-gray-500 py-4">All pumps are already connected to tanks</div>
                   )}
                 </div>
               </div>
@@ -1836,7 +1473,7 @@ const StationAssetManagement = () => {
               <div>
                 <h3 className="font-medium mb-3">Select Island</h3>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {stationIslands.map((island, index) => (
+                  {stationIslands.map((island) => (
                     <div
                       key={island.id}
                       className={`p-3 rounded-lg cursor-pointer ${
@@ -1847,7 +1484,7 @@ const StationAssetManagement = () => {
                       onClick={() => setSelectedIsland(island.id)}
                     >
                       <div className="flex items-center">
-                        <div className="mr-2 text-sm font-medium text-gray-600">{index + 1}</div>
+                        <div className="mr-2 text-sm font-medium text-gray-600">{island._sequence}</div>
                         <Package className="w-5 h-5 text-green-500 mr-2" />
                         <div>
                           <div className="font-medium">{island.name}</div>
@@ -1862,7 +1499,7 @@ const StationAssetManagement = () => {
               <div>
                 <h3 className="font-medium mb-3">Select Tanks</h3>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {tanksAvailableForIslandConnection.map((tank, index) => (
+                  {tanksAvailableForIslandConnection.map((tank) => (
                     <div
                       key={tank.id}
                       className={`p-3 rounded-lg cursor-pointer ${
@@ -1881,23 +1518,19 @@ const StationAssetManagement = () => {
                     >
                       <div className="flex justify-between items-center">
                         <div className="flex items-center">
-                          <div className="mr-2 text-sm font-medium text-gray-600">{index + 1}</div>
+                          <div className="mr-2 text-sm font-medium text-gray-600">{tank._sequence}</div>
                           <Fuel className="w-5 h-5 text-blue-500 mr-2" />
                           <div>
                             <div className="font-medium">{tank.name}</div>
                             <div className="text-sm text-gray-500">Tank</div>
                           </div>
                         </div>
-                        {assetsForIsland.tanks.includes(tank.id) && (
-                          <Badge variant="blue">Selected</Badge>
-                        )}
+                        {assetsForIsland.tanks.includes(tank.id) && <Badge variant="blue">Selected</Badge>}
                       </div>
                     </div>
                   ))}
                   {tanksAvailableForIslandConnection.length === 0 && (
-                    <div className="text-center text-gray-500 py-4">
-                      All tanks are already connected to islands
-                    </div>
+                    <div className="text-center text-gray-500 py-4">All tanks are already connected to islands</div>
                   )}
                 </div>
               </div>
@@ -1916,7 +1549,7 @@ const StationAssetManagement = () => {
                   )}
                 </div>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {pumpsAvailableForIslandConnection.map((pump, index) => (
+                  {pumpsAvailableForIslandConnection.map((pump) => (
                     <div
                       key={pump.id}
                       className={`p-3 rounded-lg cursor-pointer ${
@@ -1935,7 +1568,7 @@ const StationAssetManagement = () => {
                     >
                       <div className="flex justify-between items-center">
                         <div className="flex items-center">
-                          <div className="mr-2 text-sm font-medium text-gray-600">{index + 1}</div>
+                          <div className="mr-2 text-sm font-medium text-gray-600">{pump._sequence}</div>
                           <Zap className="w-5 h-5 text-yellow-500 mr-2" />
                           <div>
                             <div className="font-medium">{pump.name}</div>
@@ -1945,16 +1578,12 @@ const StationAssetManagement = () => {
                             )}
                           </div>
                         </div>
-                        {assetsForIsland.pumps.includes(pump.id) && (
-                          <Badge variant="yellow">Selected</Badge>
-                        )}
+                        {assetsForIsland.pumps.includes(pump.id) && <Badge variant="yellow">Selected</Badge>}
                       </div>
                     </div>
                   ))}
                   {pumpsAvailableForIslandConnection.length === 0 && (
-                    <div className="text-center text-gray-500 py-4">
-                      All pumps are already connected to islands
-                    </div>
+                    <div className="text-center text-gray-500 py-4">All pumps are already connected to islands</div>
                   )}
                 </div>
               </div>

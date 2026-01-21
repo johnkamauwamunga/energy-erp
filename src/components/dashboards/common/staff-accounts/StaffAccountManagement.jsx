@@ -1,4 +1,3 @@
-// src/components/StaffAccounts/StaffAccountManagement.jsx
 import React, { useState, useEffect } from 'react';
 import {
   Card,
@@ -23,7 +22,9 @@ import {
   Dropdown,
   Typography,
   Descriptions,
-  Divider
+  Divider,
+  DatePicker,
+  Switch
 } from 'antd';
 import {
   UserOutlined,
@@ -53,12 +54,14 @@ import {
   ReloadOutlined,
   BarChartOutlined,
   HistoryOutlined,
-  SettingOutlined
+  SettingOutlined,
+  PhoneOutlined
 } from '@ant-design/icons';
-import { staffAccountService } from '../../../../services/staff/staffAccountService';
+import { staffAccountService } from '../../../../services/staffAccountService/staffAccountService';
 import { userService } from '../../../../services/userService/userService';
 import { stationService } from '../../../../services/stationService/stationService';
 import { useApp } from '../../../../context/AppContext';
+import dayjs from 'dayjs';
 
 const { Option } = Select;
 const { Title, Text } = Typography;
@@ -76,14 +79,13 @@ const StaffAccountManagement = () => {
     createAccount: false,
     updateAccount: false,
     viewDetails: false,
-    createTransaction: false,
     accountActions: false
   });
-  const [forms, setForms] = useState({
-    createAccount: Form.useForm()[0],
-    updateAccount: Form.useForm()[0],
-    createTransaction: Form.useForm()[0]
-  });
+  const [holdReason, setHoldReason] = useState('');
+  const [deactivateReason, setDeactivateReason] = useState('');
+  const [forms] = Form.useForm();
+  const [createForm] = Form.useForm();
+  const [updateForm] = Form.useForm();
   const [filters, setFilters] = useState({
     search: '',
     isActive: 'all', // 'all', 'active', 'inactive'
@@ -95,6 +97,11 @@ const StaffAccountManagement = () => {
     includeShortages: false
   });
   const [accountSummary, setAccountSummary] = useState(null);
+  const [pagination, setPagination] = useState({
+    current: 1,
+    pageSize: 10,
+    total: 0
+  });
 
   const currentUser = state?.currentUser;
   const isCompanyAdmin = ['SUPER_ADMIN', 'COMPANY_ADMIN'].includes(currentUser?.role);
@@ -109,42 +116,57 @@ const StaffAccountManagement = () => {
       setStations(response || []);
     } catch (error) {
       console.error('Failed to fetch stations:', error);
+      message.error('Failed to fetch stations');
     }
   };
 
   // Fetch staff accounts
-  const fetchStaffAccounts = async () => {
+  const fetchStaffAccounts = async (page = 1, pageSize = 10) => {
     try {
       setLoading(true);
       let accounts = [];
+      let total = 0;
+      
+      const filterParams = {
+        page,
+        limit: pageSize,
+        ...filters
+      };
+      
+      // Remove 'all' values from filters
+      Object.keys(filterParams).forEach(key => {
+        if (filterParams[key] === 'all') {
+          delete filterParams[key];
+        }
+      });
       
       if (isCompanyAdmin && currentCompanyId) {
         // Company admin can see all accounts in the company
-        const result = await staffAccountService.getStaffAccountsByCompany(currentCompanyId, {
-          page: 1,
-          limit: 100,
-          ...filters
-        });
+        const result = await staffAccountService.getStaffAccountsByCompany(currentCompanyId, filterParams);
         accounts = result?.accounts || [];
-      } else if (currentStationId) {
+        total = result?.pagination?.total || 0;
+      } else if (isStationManager && currentStationId) {
         // Station manager sees only accounts in their station
-        const result = await staffAccountService.getStaffAccountsByStation(currentStationId, {
-          page: 1,
-          limit: 100,
-          ...filters
-        });
+        const result = await staffAccountService.getStaffAccountsByStation(currentStationId, filterParams);
         accounts = result?.accounts || [];
+        total = result?.pagination?.total || 0;
+      } else {
+        // Fallback to all accounts with proper permissions
+        const result = await staffAccountService.getAllStaffAccounts(filterParams);
+        accounts = result?.accounts || [];
+        total = result?.pagination?.total || 0;
       }
       
-      // Format accounts for display
-      const formattedAccounts = accounts.map(account => 
-        staffAccountService.formatStaffAccount(account)
-      );
+      setStaffAccounts(accounts);
+      setPagination({
+        current: page,
+        pageSize,
+        total
+      });
       
-      setStaffAccounts(formattedAccounts);
     } catch (error) {
       console.error('Error loading staff accounts:', error);
-      message.error('Failed to load staff accounts');
+      message.error(error.message || 'Failed to load staff accounts');
       setStaffAccounts([]);
     } finally {
       setLoading(false);
@@ -157,13 +179,11 @@ const StaffAccountManagement = () => {
       if (currentCompanyId) {
         const stationId = isStationManager ? currentStationId : null;
         const users = await staffAccountService.getUsersWithoutAccounts(currentCompanyId, stationId);
-        const formattedUsers = users.map(user => 
-          staffAccountService.formatUserWithoutAccount(user)
-        );
-        setUsersWithoutAccounts(formattedUsers);
+        setUsersWithoutAccounts(users);
       }
     } catch (error) {
       console.error('Failed to fetch users without accounts:', error);
+      message.error('Failed to fetch users without accounts');
     }
   };
 
@@ -176,6 +196,7 @@ const StaffAccountManagement = () => {
       setAccountSummary(summary);
     } catch (error) {
       console.error('Failed to fetch account summary:', error);
+      message.error('Failed to fetch account summary');
     }
   };
 
@@ -184,6 +205,12 @@ const StaffAccountManagement = () => {
     setSubmitting(true);
     
     try {
+      // Fix payroll method if STATION_WALLET is selected (should be STAFF_WALLET)
+      if (values.payrollMethod === 'STATION_WALLET') {
+        values.payrollMethod = 'STAFF_WALLET';
+      }
+      
+      // Validate using service
       const validationErrors = staffAccountService.validateStaffAccount(values);
       if (validationErrors.length > 0) {
         throw new Error(validationErrors.join(', '));
@@ -193,7 +220,7 @@ const StaffAccountManagement = () => {
       message.success('Staff account created successfully');
       
       setModalVisible(prev => ({ ...prev, createAccount: false }));
-      forms.createAccount.resetFields();
+      createForm.resetFields();
       await refreshData();
       
     } catch (error) {
@@ -211,11 +238,16 @@ const StaffAccountManagement = () => {
     setSubmitting(true);
     
     try {
+      // Fix payroll method if STATION_WALLET is selected (should be STAFF_WALLET)
+      if (values.payrollMethod === 'STATION_WALLET') {
+        values.payrollMethod = 'STAFF_WALLET';
+      }
+      
       const updatedAccount = await staffAccountService.updateStaffAccount(selectedAccount.id, values);
       message.success('Staff account updated successfully');
       
       setModalVisible(prev => ({ ...prev, updateAccount: false }));
-      forms.updateAccount.resetFields();
+      updateForm.resetFields();
       setSelectedAccount(null);
       await refreshData();
       
@@ -244,11 +276,11 @@ const StaffAccountManagement = () => {
   };
 
   // Handle deactivate account
-  const handleDeactivateAccount = async (accountId) => {
+  const handleDeactivateAccount = async (accountId, reason) => {
     setSubmitting(true);
     
     try {
-      const account = await staffAccountService.deactivateStaffAccount(accountId);
+      const account = await staffAccountService.deactivateStaffAccount(accountId, reason);
       message.success('Staff account deactivated successfully');
       await refreshData();
     } catch (error) {
@@ -260,25 +292,31 @@ const StaffAccountManagement = () => {
   };
 
   // Handle put account on hold
-  const handlePutOnHold = async (accountId) => {
+  const handlePutOnHold = (accountId) => {
     Modal.confirm({
       title: 'Put Account On Hold',
       content: (
         <div>
-          <p>Are you sure you want to put this account on hold?</p>
+          <p>Please provide a reason for putting this account on hold:</p>
           <TextArea 
-            placeholder="Enter reason (optional)"
+            placeholder="Enter reason (required)"
             rows={3}
             onChange={(e) => setHoldReason(e.target.value)}
+            value={holdReason}
           />
         </div>
       ),
       onOk: async () => {
+        if (!holdReason.trim()) {
+          message.error('Reason is required when putting account on hold');
+          return;
+        }
+        
         try {
           setSubmitting(true);
-          const reason = document.querySelector('textarea')?.value || null;
-          const account = await staffAccountService.putAccountOnHold(accountId, reason);
+          const account = await staffAccountService.putAccountOnHold(accountId, holdReason);
           message.success('Account put on hold successfully');
+          setHoldReason('');
           await refreshData();
         } catch (error) {
           console.error('Failed to put account on hold:', error);
@@ -308,38 +346,42 @@ const StaffAccountManagement = () => {
 
   // Handle delete account
   const handleDeleteAccount = async (accountId) => {
-    setSubmitting(true);
-    
-    try {
-      await staffAccountService.deleteStaffAccount(accountId);
-      message.success('Staff account deleted successfully');
-      await refreshData();
-    } catch (error) {
-      console.error('Failed to delete account:', error);
-      message.error(error.message || 'Failed to delete staff account');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Handle create transaction
-  const handleCreateTransaction = async (values) => {
-    setSubmitting(true);
-    
-    try {
-      const transaction = await staffAccountService.createStaffTransaction(values);
-      message.success('Transaction recorded successfully');
-      
-      setModalVisible(prev => ({ ...prev, createTransaction: false }));
-      forms.createTransaction.resetFields();
-      await refreshData();
-      
-    } catch (error) {
-      console.error('Failed to create transaction:', error);
-      message.error(error.message || 'Failed to create transaction');
-    } finally {
-      setSubmitting(false);
-    }
+    Modal.confirm({
+      title: 'Delete Staff Account',
+      content: (
+        <div>
+          <Alert
+            message="Warning"
+            description="This action will permanently delete the staff account. Please confirm with a reason:"
+            type="warning"
+            showIcon
+          />
+          <TextArea 
+            placeholder="Enter reason for deletion"
+            rows={3}
+            style={{ marginTop: 16 }}
+            onChange={(e) => setDeactivateReason(e.target.value)}
+            value={deactivateReason}
+          />
+        </div>
+      ),
+      okText: 'Delete',
+      okType: 'danger',
+      onOk: async () => {
+        setSubmitting(true);
+        try {
+          await staffAccountService.deleteStaffAccount(accountId, deactivateReason);
+          message.success('Staff account deleted successfully');
+          setDeactivateReason('');
+          await refreshData();
+        } catch (error) {
+          console.error('Failed to delete account:', error);
+          message.error(error.message || 'Failed to delete staff account');
+        } finally {
+          setSubmitting(false);
+        }
+      }
+    });
   };
 
   // Main refresh function
@@ -349,7 +391,7 @@ const StaffAccountManagement = () => {
       
       await Promise.all([
         fetchStations(),
-        fetchStaffAccounts(),
+        fetchStaffAccounts(pagination.current, pagination.pageSize),
         fetchUsersWithoutAccounts(),
         fetchAccountSummary()
       ]);
@@ -367,14 +409,19 @@ const StaffAccountManagement = () => {
     }
   };
 
+  // Handle table pagination
+  const handleTableChange = (newPagination) => {
+    fetchStaffAccounts(newPagination.current, newPagination.pageSize);
+  };
+
   // Apply filters
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
-      fetchStaffAccounts();
-    }, 300);
+      fetchStaffAccounts(1, pagination.pageSize);
+    }, 500);
     
     return () => clearTimeout(debounceTimer);
-  }, [filters.search, filters.isActive, filters.isOnHold, filters.payrollMethod]);
+  }, [filters]);
 
   // Initial load
   useEffect(() => {
@@ -392,39 +439,45 @@ const StaffAccountManagement = () => {
             style={{ backgroundColor: '#1890ff' }}
             icon={<UserOutlined />}
           >
-            {account.userDisplayName?.[0] || account.user?.firstName?.[0] || 'U'}
+            {(account.user?.firstName?.[0] || account.userDisplayName?.[0] || 'U').toUpperCase()}
           </Avatar>
           <div>
             <div style={{ fontWeight: 'bold' }}>
-              {account.userDisplayName}
+              {account.userDisplayName || `${account.user?.firstName} ${account.user?.lastName}`}
             </div>
             <div style={{ fontSize: '12px', color: '#666' }}>
-              {account.userEmail}
+              {account.userEmail || account.user?.email || 'No email'}
             </div>
             <div style={{ fontSize: '12px', color: '#999' }}>
-              {account.stationDisplayName}
+              {account.stationDisplayName || account.station?.name || 'No station'}
             </div>
           </div>
         </Space>
       ),
-      sorter: (a, b) => a.userDisplayName.localeCompare(b.userDisplayName)
+      sorter: (a, b) => (a.userDisplayName || '').localeCompare(b.userDisplayName || '')
     },
     {
       title: 'Status',
       key: 'status',
-      render: (account) => (
-        <Space direction="vertical" size={2}>
-          <Badge 
-            status={account.statusBadge} 
-            text={account.statusText}
-          />
-          {account.isOnHold && (
-            <Tag color="orange" icon={<LockOutlined />}>
-              On Hold
+      render: (account) => {
+        const statusColor = account.isActive ? 'success' : 'default';
+        const statusText = account.isActive ? 'Active' : 'Inactive';
+        const holdColor = account.isOnHold ? 'warning' : 'default';
+        const holdText = account.isOnHold ? 'On Hold' : 'Normal';
+        
+        return (
+          <Space direction="vertical" size={2}>
+            <Tag color={statusColor}>
+              {statusText}
             </Tag>
-          )}
-        </Space>
-      ),
+            {account.isOnHold && (
+              <Tag color={holdColor} icon={<LockOutlined />}>
+                {holdText}
+              </Tag>
+            )}
+          </Space>
+        );
+      },
       filters: [
         { text: 'Active', value: 'active' },
         { text: 'Inactive', value: 'inactive' },
@@ -440,54 +493,49 @@ const StaffAccountManagement = () => {
     {
       title: 'Balance',
       key: 'balance',
-      render: (account) => (
-        <Space direction="vertical" size={0}>
-          <Text 
-            strong 
-            style={{ 
-              color: account.currentBalanceColor,
-              fontSize: '16px'
-            }}
-          >
-            {account.currentBalanceDisplay}
-          </Text>
-          <Text type="secondary" style={{ fontSize: '12px' }}>
-            {account.currentBalanceStatus}
-          </Text>
-        </Space>
-      ),
-      sorter: (a, b) => a.currentBalance - b.currentBalance
+      render: (account) => {
+        const balance = account.currentBalance || 0;
+        const color = balance < 0 ? '#ff4d4f' : balance > 0 ? '#52c41a' : '#666';
+        const status = balance < 0 ? 'Owes' : balance > 0 ? 'Credit' : 'Zero';
+        
+        return (
+          <Space direction="vertical" size={0}>
+            <Text 
+              strong 
+              style={{ 
+                color,
+                fontSize: '16px'
+              }}
+            >
+              {staffAccountService.formatCurrency(balance)}
+            </Text>
+            <Text type="secondary" style={{ fontSize: '12px' }}>
+              {status}
+            </Text>
+            {account.creditLimit && (
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                Limit: {staffAccountService.formatCurrency(account.creditLimit)}
+              </Text>
+            )}
+          </Space>
+        );
+      },
+      sorter: (a, b) => (a.currentBalance || 0) - (b.currentBalance || 0)
     },
     {
-      title: 'Salary & Credit',
-      key: 'salaryCredit',
+      title: 'Salary',
+      key: 'salary',
       render: (account) => (
         <Space direction="vertical" size={0}>
           <div style={{ fontSize: '12px' }}>
-            <Text type="secondary">Salary: </Text>
-            <Text strong>{account.salaryAmountDisplay}</Text>
-          </div>
-          <div style={{ fontSize: '12px' }}>
-            <Text type="secondary">Credit Limit: </Text>
-            <Text>{account.creditLimitDisplay}</Text>
-          </div>
-        </Space>
-      )
-    },
-    {
-      title: 'Shortages & Advances',
-      key: 'shortagesAdvances',
-      render: (account) => (
-        <Space direction="vertical" size={0}>
-          <div style={{ fontSize: '12px' }}>
-            <Text type="secondary">Shortages: </Text>
-            <Text strong style={{ color: account.totalShortages > 0 ? '#ff4d4f' : '#52c41a' }}>
-              {account.totalShortagesDisplay}
+            <Text strong>
+              {account.salaryAmount ? staffAccountService.formatCurrency(account.salaryAmount) : 'Not Set'}
             </Text>
           </div>
           <div style={{ fontSize: '12px' }}>
-            <Text type="secondary">Advances: </Text>
-            <Text>{account.totalAdvancesDisplay}</Text>
+            <Text type="secondary">
+              {account.paymentSchedule ? staffAccountService.getPaymentScheduleLabel(account.paymentSchedule) : 'Monthly'}
+            </Text>
           </div>
         </Space>
       )
@@ -495,26 +543,59 @@ const StaffAccountManagement = () => {
     {
       title: 'Payment Method',
       key: 'paymentMethod',
-      render: (account) => (
-        <Space>
-          {account.payrollMethod === 'BANK_TRANSFER' ? <BankOutlined /> :
-           account.payrollMethod === 'MOBILE_MONEY' ? <CreditCardOutlined /> :
-           account.payrollMethod === 'CASH' ? <DollarOutlined /> :
-           <WalletOutlined />}
-          <span>{account.payrollMethodDisplay}</span>
-          <br />
-          <Text type="secondary" style={{ fontSize: '12px' }}>
-            {account.paymentScheduleDisplay}
-          </Text>
-        </Space>
-      ),
+      render: (account) => {
+        const method = account.payrollMethod || 'STAFF_WALLET';
+        const methodLabel = staffAccountService.getPayrollMethodLabel(method);
+        
+        return (
+          <Space direction="vertical" size={0}>
+            <div>
+              {method === 'BANK_TRANSFER' ? <BankOutlined /> :
+               method === 'MOBILE_MONEY' ? <PhoneOutlined /> :
+               method === 'CASH' ? <DollarOutlined /> :
+               <WalletOutlined />}
+              <span style={{ marginLeft: 8 }}>{methodLabel}</span>
+            </div>
+            {method === 'BANK_TRANSFER' && account.bankAccountNumber && (
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                {account.bankAccountNumber}
+              </Text>
+            )}
+            {method === 'MOBILE_MONEY' && account.mobileMoneyNumber && (
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                {account.mobileMoneyNumber}
+              </Text>
+            )}
+          </Space>
+        );
+      },
       filters: [
-        { text: 'Station Wallet', value: 'STATION_WALLET' },
+        { text: 'Staff Wallet', value: 'STAFF_WALLET' },
         { text: 'Bank Transfer', value: 'BANK_TRANSFER' },
         { text: 'Mobile Money', value: 'MOBILE_MONEY' },
         { text: 'Cash', value: 'CASH' }
       ],
       onFilter: (value, account) => account.payrollMethod === value
+    },
+    {
+      title: 'Shortages',
+      key: 'shortages',
+      render: (account) => {
+        const shortages = account.totalShortages || 0;
+        const shortagesDisplay = shortages > 0 ? 
+          staffAccountService.formatCurrency(shortages) : 'None';
+        
+        return (
+          <Text 
+            style={{ 
+              color: shortages > 0 ? '#ff4d4f' : '#52c41a',
+              fontWeight: shortages > 0 ? 'bold' : 'normal'
+            }}
+          >
+            {shortagesDisplay}
+          </Text>
+        );
+      }
     },
     {
       title: 'Actions',
@@ -536,56 +617,62 @@ const StaffAccountManagement = () => {
             icon: <EditOutlined />,
             onClick: () => {
               setSelectedAccount(account);
-              forms.updateAccount.setFieldsValue({
+              updateForm.setFieldsValue({
                 creditLimit: account.creditLimit,
                 salaryAmount: account.salaryAmount,
-                payrollMethod: account.payrollMethod,
-                paymentSchedule: account.paymentSchedule,
+                payrollMethod: account.payrollMethod || 'STAFF_WALLET',
+                paymentSchedule: account.paymentSchedule || 'MONTHLY',
                 bankAccountNumber: account.bankAccountNumber,
                 bankName: account.bankName,
                 mobileMoneyNumber: account.mobileMoneyNumber,
-                nextPaymentDate: account.nextPaymentDate,
+                nextPaymentDate: account.nextPaymentDate ? dayjs(account.nextPaymentDate) : null,
+                isActive: account.isActive,
                 notes: account.notes
               });
               setModalVisible(prev => ({ ...prev, updateAccount: true }));
             }
           },
           {
-            key: 'transaction',
-            label: 'Record Transaction',
-            icon: <MoneyCollectOutlined />,
-            onClick: () => {
-              forms.createTransaction.setFieldsValue({ staffAccountId: account.id });
-              setModalVisible(prev => ({ ...prev, createTransaction: true }));
-            }
-          },
-          {
             type: 'divider'
           },
-          {
-            key: account.isActive ? 'deactivate' : 'activate',
-            label: account.isActive ? 'Deactivate' : 'Activate',
-            icon: account.isActive ? <PauseCircleOutlined /> : <PlayCircleOutlined />,
-            danger: account.isActive,
+          account.isActive ? {
+            key: 'deactivate',
+            label: 'Deactivate',
+            icon: <PauseCircleOutlined />,
+            danger: true,
             onClick: () => {
-              if (account.isActive) {
-                handleDeactivateAccount(account.id);
-              } else {
-                handleActivateAccount(account.id);
-              }
+              Modal.confirm({
+                title: 'Deactivate Account',
+                content: (
+                  <div>
+                    <p>Please provide a reason for deactivating this account:</p>
+                    <TextArea 
+                      placeholder="Enter reason"
+                      rows={3}
+                      onChange={(e) => setDeactivateReason(e.target.value)}
+                      value={deactivateReason}
+                    />
+                  </div>
+                ),
+                onOk: () => handleDeactivateAccount(account.id, deactivateReason)
+              });
             }
+          } : {
+            key: 'activate',
+            label: 'Activate',
+            icon: <PlayCircleOutlined />,
+            onClick: () => handleActivateAccount(account.id)
           },
-          {
-            key: account.isOnHold ? 'removeHold' : 'putOnHold',
-            label: account.isOnHold ? 'Remove from Hold' : 'Put on Hold',
-            icon: account.isOnHold ? <UnlockOutlined /> : <LockOutlined />,
-            onClick: () => {
-              if (account.isOnHold) {
-                handleRemoveFromHold(account.id);
-              } else {
-                handlePutOnHold(account.id);
-              }
-            }
+          account.isOnHold ? {
+            key: 'removeHold',
+            label: 'Remove from Hold',
+            icon: <UnlockOutlined />,
+            onClick: () => handleRemoveFromHold(account.id)
+          } : {
+            key: 'putOnHold',
+            label: 'Put on Hold',
+            icon: <LockOutlined />,
+            onClick: () => handlePutOnHold(account.id)
           },
           {
             type: 'divider'
@@ -595,32 +682,12 @@ const StaffAccountManagement = () => {
             label: 'Delete Account',
             icon: <DeleteOutlined />,
             danger: true,
-            onClick: () => {
-              Modal.confirm({
-                title: 'Delete Staff Account',
-                content: 'Are you sure you want to delete this staff account? This action cannot be undone.',
-                okText: 'Delete',
-                okType: 'danger',
-                onOk: () => handleDeleteAccount(account.id)
-              });
-            }
+            onClick: () => handleDeleteAccount(account.id)
           }
-        ];
+        ].filter(item => item); // Remove null items
 
         return (
           <Space size="small">
-            <Tooltip title="Record Transaction">
-              <Button
-                icon={<MoneyCollectOutlined />}
-                size="small"
-                onClick={() => {
-                  forms.createTransaction.setFieldsValue({ staffAccountId: account.id });
-                  setModalVisible(prev => ({ ...prev, createTransaction: true }));
-                }}
-                disabled={!account.isActive || account.isOnHold}
-              />
-            </Tooltip>
-            
             <Dropdown
               menu={{ items: actionItems }}
               trigger={['click']}
@@ -645,11 +712,11 @@ const StaffAccountManagement = () => {
       render: (user) => (
         <Space>
           <Avatar icon={<UserOutlined />}>
-            {user.firstName?.[0] || user.displayName?.[0]}
+            {(user.firstName?.[0] || user.displayName?.[0] || 'U').toUpperCase()}
           </Avatar>
           <div>
             <div style={{ fontWeight: 'bold' }}>
-              {user.displayName}
+              {user.displayName || `${user.firstName} ${user.lastName}`}
             </div>
             <div style={{ fontSize: '12px', color: '#666' }}>
               {user.email}
@@ -665,7 +732,9 @@ const StaffAccountManagement = () => {
       title: 'Status',
       key: 'status',
       render: (user) => (
-        <Badge status={user.statusColor} text={user.status} />
+        <Tag color={user.statusColor || 'default'}>
+          {user.status || 'Unknown'}
+        </Tag>
       )
     },
     {
@@ -677,7 +746,7 @@ const StaffAccountManagement = () => {
             <Tag key={index} color="blue">
               {assignment.stationName} ({assignment.role})
             </Tag>
-          ))}
+          )) || <Text type="secondary">No assignments</Text>}
         </Space>
       )
     },
@@ -690,13 +759,12 @@ const StaffAccountManagement = () => {
             type="primary"
             size="small"
             onClick={() => {
-              setSelectedAccount({ userId: user.id });
-              forms.createAccount.setFieldsValue({
+              createForm.setFieldsValue({
                 userId: user.id,
                 stationId: user.stationAssignmentsDisplay?.[0]?.stationId || currentStationId,
                 salaryAmount: 20000,
                 creditLimit: 5000,
-                payrollMethod: 'STATION_WALLET',
+                payrollMethod: 'STAFF_WALLET',
                 paymentSchedule: 'MONTHLY',
                 isActive: true
               });
@@ -712,17 +780,10 @@ const StaffAccountManagement = () => {
     }
   ];
 
-  const filteredAccounts = staffAccounts.filter(account => {
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      return (
-        account.userDisplayName.toLowerCase().includes(searchLower) ||
-        account.userEmail.toLowerCase().includes(searchLower) ||
-        account.stationDisplayName.toLowerCase().includes(searchLower)
-      );
-    }
-    return true;
-  });
+  // Handle filter changes
+  const handleFilterChange = (key, value) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+  };
 
   return (
     <div className="space-y-6 p-6">
@@ -758,9 +819,10 @@ const StaffAccountManagement = () => {
                   type="primary"
                   icon={<PlusOutlined />}
                   onClick={() => {
-                    forms.createAccount.resetFields();
+                    createForm.resetFields();
                     setModalVisible(prev => ({ ...prev, createAccount: true }));
                   }}
+                  disabled={usersWithoutAccounts.length === 0}
                 >
                   Create Account
                 </Button>
@@ -808,13 +870,14 @@ const StaffAccountManagement = () => {
               <Statistic
                 title="Negative Balance"
                 value={accountSummary.totals?.totalNegativeBalanceDisplay || '$0'}
+                valueStyle={{ color: '#ff4d4f' }}
                 prefix={<AccountBookOutlined />}
               />
             </Col>
             <Col xs={24} sm={8} md={4}>
               <Statistic
-                title="Average Balance"
-                value={accountSummary.totals?.averageBalanceDisplay || '$0'}
+                title="Credit Utilization"
+                value={accountSummary.totals?.creditUtilizationDisplay || '0%'}
                 prefix={<BarChartOutlined />}
               />
             </Col>
@@ -829,7 +892,7 @@ const StaffAccountManagement = () => {
             <Input
               placeholder="Search by name, email, or station..."
               value={filters.search}
-              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+              onChange={(e) => handleFilterChange('search', e.target.value)}
               prefix={<UserOutlined />}
               allowClear
             />
@@ -839,7 +902,7 @@ const StaffAccountManagement = () => {
               style={{ width: '100%' }}
               placeholder="Account Status"
               value={filters.isActive}
-              onChange={(value) => setFilters(prev => ({ ...prev, isActive: value }))}
+              onChange={(value) => handleFilterChange('isActive', value)}
             >
               <Option value="all">All Status</Option>
               <Option value="active">Active</Option>
@@ -851,7 +914,7 @@ const StaffAccountManagement = () => {
               style={{ width: '100%' }}
               placeholder="Hold Status"
               value={filters.isOnHold}
-              onChange={(value) => setFilters(prev => ({ ...prev, isOnHold: value }))}
+              onChange={(value) => handleFilterChange('isOnHold', value)}
             >
               <Option value="all">All</Option>
               <Option value="onHold">On Hold</Option>
@@ -863,10 +926,10 @@ const StaffAccountManagement = () => {
               style={{ width: '100%' }}
               placeholder="Payment Method"
               value={filters.payrollMethod}
-              onChange={(value) => setFilters(prev => ({ ...prev, payrollMethod: value }))}
+              onChange={(value) => handleFilterChange('payrollMethod', value)}
               allowClear
             >
-              <Option value="STATION_WALLET">Station Wallet</Option>
+              <Option value="STAFF_WALLET">Staff Wallet</Option>
               <Option value="BANK_TRANSFER">Bank Transfer</Option>
               <Option value="MOBILE_MONEY">Mobile Money</Option>
               <Option value="CASH">Cash</Option>
@@ -877,7 +940,7 @@ const StaffAccountManagement = () => {
               style={{ width: '100%' }}
               placeholder="Sort By"
               value={filters.sortBy}
-              onChange={(value) => setFilters(prev => ({ ...prev, sortBy: value }))}
+              onChange={(value) => handleFilterChange('sortBy', value)}
             >
               <Option value="createdAt">Created Date</Option>
               <Option value="currentBalance">Balance</Option>
@@ -892,7 +955,7 @@ const StaffAccountManagement = () => {
         title={
           <Space>
             <TeamOutlined />
-            <span>Staff Accounts ({filteredAccounts.length})</span>
+            <span>Staff Accounts ({staffAccounts.length})</span>
           </Space>
         }
         className="shadow-sm"
@@ -909,22 +972,22 @@ const StaffAccountManagement = () => {
           </Space>
         }
       >
-        {filteredAccounts.length === 0 ? (
+        {staffAccounts.length === 0 ? (
           <Alert
             message="No Staff Accounts Found"
             description={
-              staffAccounts.length === 0 ? 
-                "No staff accounts have been created yet. Create your first staff account." :
-                "No accounts match your search criteria. Try different filters."
+              loading ? 
+                "Loading accounts..." :
+                "No staff accounts have been created yet. Create your first staff account."
             }
-            type="info"
+            type={loading ? "info" : "warning"}
             showIcon
             action={
               <Button 
                 type="primary" 
                 size="small"
                 onClick={() => {
-                  forms.createAccount.resetFields();
+                  createForm.resetFields();
                   setModalVisible(prev => ({ ...prev, createAccount: true }));
                 }}
               >
@@ -935,15 +998,19 @@ const StaffAccountManagement = () => {
         ) : (
           <Table
             columns={accountColumns}
-            dataSource={filteredAccounts}
+            dataSource={staffAccounts}
             loading={loading}
             rowKey="id"
             pagination={{
-              pageSize: 10,
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total: pagination.total,
               showSizeChanger: true,
               showQuickJumper: true,
-              showTotal: (total) => `Showing ${Math.min(10, total)} of ${total} accounts`
+              showTotal: (total, range) => 
+                `Showing ${range[0]}-${range[1]} of ${total} accounts`
             }}
+            onChange={handleTableChange}
           />
         )}
       </Card>
@@ -980,7 +1047,7 @@ const StaffAccountManagement = () => {
             message="High Risk Accounts Detected"
             description={
               <Space direction="vertical" size={2}>
-                <Text>These accounts have exceeded 80% of their credit limit:</Text>
+                <Text>These accounts have exceeded 70% of their credit limit:</Text>
                 {accountSummary.highRiskAccounts.slice(0, 3).map(account => (
                   <Text key={account.id}>
                     • {account.name}: {account.balanceDisplay} ({account.utilizationDisplay})
@@ -1005,15 +1072,15 @@ const StaffAccountManagement = () => {
         open={modalVisible.createAccount}
         onCancel={() => {
           setModalVisible(prev => ({ ...prev, createAccount: false }));
-          forms.createAccount.resetFields();
+          createForm.resetFields();
         }}
-        onOk={() => forms.createAccount.submit()}
+        onOk={() => createForm.submit()}
         okText="Create Account"
         cancelText="Cancel"
         width={600}
         confirmLoading={submitting}
       >
-        <Form form={forms.createAccount} layout="vertical" onFinish={handleCreateAccount}>
+        <Form form={createForm} layout="vertical" onFinish={handleCreateAccount}>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
@@ -1026,7 +1093,7 @@ const StaffAccountManagement = () => {
                   showSearch
                   optionFilterProp="children"
                   filterOption={(input, option) =>
-                    option.children.toLowerCase().includes(input.toLowerCase())
+                    (option?.children || '').toLowerCase().includes(input.toLowerCase())
                   }
                 >
                   {usersWithoutAccounts.map(user => (
@@ -1068,7 +1135,8 @@ const StaffAccountManagement = () => {
                   style={{ width: '100%' }}
                   placeholder="Enter salary amount"
                   min={0}
-                  formatter={value => `$ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                  max={500000}
+                  formatter={value => `Ksh ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                   parser={value => value.replace(/\$\s?|(,*)/g, '')}
                 />
               </Form.Item>
@@ -1083,7 +1151,8 @@ const StaffAccountManagement = () => {
                   style={{ width: '100%' }}
                   placeholder="Enter credit limit"
                   min={0}
-                  formatter={value => `$ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                  max={100000}
+                  formatter={value => `Ksh ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                   parser={value => value.replace(/\$\s?|(,*)/g, '')}
                 />
               </Form.Item>
@@ -1095,10 +1164,10 @@ const StaffAccountManagement = () => {
               <Form.Item
                 name="payrollMethod"
                 label="Payroll Method"
-                initialValue="STATION_WALLET"
+                initialValue="STAFF_WALLET"
               >
                 <Select>
-                  <Option value="STATION_WALLET">Station Wallet</Option>
+                  <Option value="STAFF_WALLET">Staff Wallet</Option>
                   <Option value="BANK_TRANSFER">Bank Transfer</Option>
                   <Option value="MOBILE_MONEY">Mobile Money</Option>
                   <Option value="CASH">Cash</Option>
@@ -1122,6 +1191,35 @@ const StaffAccountManagement = () => {
             </Col>
           </Row>
 
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="bankAccountNumber"
+                label="Bank Account (if bank transfer)"
+              >
+                <Input placeholder="Enter bank account number" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="mobileMoneyNumber"
+                label="Mobile Money (if mobile money)"
+              >
+                <Input placeholder="Enter mobile money number" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item
+            name="nextPaymentDate"
+            label="Next Payment Date"
+          >
+            <DatePicker 
+              style={{ width: '100%' }} 
+              placeholder="Select next payment date"
+            />
+          </Form.Item>
+
           <Form.Item
             name="notes"
             label="Notes"
@@ -1141,16 +1239,16 @@ const StaffAccountManagement = () => {
         onCancel={() => {
           setModalVisible(prev => ({ ...prev, updateAccount: false }));
           setSelectedAccount(null);
-          forms.updateAccount.resetFields();
+          updateForm.resetFields();
         }}
-        onOk={() => forms.updateAccount.submit()}
+        onOk={() => updateForm.submit()}
         okText="Update Account"
         cancelText="Cancel"
         width={600}
         confirmLoading={submitting}
       >
         {selectedAccount && (
-          <Form form={forms.updateAccount} layout="vertical" onFinish={handleUpdateAccount}>
+          <Form form={updateForm} layout="vertical" onFinish={handleUpdateAccount}>
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item
@@ -1161,6 +1259,7 @@ const StaffAccountManagement = () => {
                     style={{ width: '100%' }}
                     placeholder="Enter credit limit"
                     min={0}
+                    max={100000}
                     formatter={value => `$ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                     parser={value => value.replace(/\$\s?|(,*)/g, '')}
                   />
@@ -1175,6 +1274,7 @@ const StaffAccountManagement = () => {
                     style={{ width: '100%' }}
                     placeholder="Enter salary amount"
                     min={0}
+                    max={500000}
                     formatter={value => `$ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                     parser={value => value.replace(/\$\s?|(,*)/g, '')}
                   />
@@ -1189,7 +1289,7 @@ const StaffAccountManagement = () => {
                   label="Payroll Method"
                 >
                   <Select>
-                    <Option value="STATION_WALLET">Station Wallet</Option>
+                    <Option value="STAFF_WALLET">Staff Wallet</Option>
                     <Option value="BANK_TRANSFER">Bank Transfer</Option>
                     <Option value="MOBILE_MONEY">Mobile Money</Option>
                     <Option value="CASH">Cash</Option>
@@ -1211,6 +1311,35 @@ const StaffAccountManagement = () => {
                 </Form.Item>
               </Col>
             </Row>
+
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  name="bankAccountNumber"
+                  label="Bank Account Number"
+                >
+                  <Input placeholder="Enter bank account number" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="mobileMoneyNumber"
+                  label="Mobile Money Number"
+                >
+                  <Input placeholder="Enter mobile money number" />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Form.Item
+              name="nextPaymentDate"
+              label="Next Payment Date"
+            >
+              <DatePicker 
+                style={{ width: '100%' }} 
+                placeholder="Select next payment date"
+              />
+            </Form.Item>
 
             <Form.Item
               name="notes"
@@ -1234,14 +1363,21 @@ const StaffAccountManagement = () => {
           setSelectedAccount(null);
         }}
         footer={[
-          <Button key="close" onClick={() => setModalVisible(prev => ({ ...prev, viewDetails: false }))}>
+          <Button 
+            key="close" 
+            onClick={() => setModalVisible(prev => ({ ...prev, viewDetails: false }))}
+          >
             Close
           </Button>,
           <Button
             key="edit"
             type="primary"
             onClick={() => {
-              setModalVisible(prev => ({ ...prev, viewDetails: false, updateAccount: true }));
+              setModalVisible(prev => ({ 
+                ...prev, 
+                viewDetails: false, 
+                updateAccount: true 
+              }));
             }}
           >
             Edit Account
@@ -1253,21 +1389,38 @@ const StaffAccountManagement = () => {
           <div>
             <Descriptions title="Account Information" bordered size="small" column={2}>
               <Descriptions.Item label="Staff Member">
-                {selectedAccount.userDisplayName}
-                <br />
-                <Text type="secondary">{selectedAccount.userEmail}</Text>
+                <Space direction="vertical" size={0}>
+                  <Text strong>{selectedAccount.userDisplayName}</Text>
+                  <Text type="secondary">{selectedAccount.userEmail}</Text>
+                  <Text type="secondary">ID: {selectedAccount.user?.id?.substring(0, 8)}...</Text>
+                </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Station">
-                {selectedAccount.stationDisplayName}
+                <Space direction="vertical" size={0}>
+                  <Text strong>{selectedAccount.stationDisplayName}</Text>
+                  <Text type="secondary">{selectedAccount.station?.location || 'No location'}</Text>
+                </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Account Status">
-                <Badge status={selectedAccount.statusBadge} text={selectedAccount.statusText} />
-                {selectedAccount.isOnHold && (
-                  <Tag color="orange" style={{ marginLeft: 8 }}>On Hold</Tag>
-                )}
+                <Space>
+                  <Tag color={selectedAccount.isActive ? 'success' : 'default'}>
+                    {selectedAccount.isActive ? 'Active' : 'Inactive'}
+                  </Tag>
+                  {selectedAccount.isOnHold && (
+                    <Tag color="orange" icon={<LockOutlined />}>
+                      On Hold
+                    </Tag>
+                  )}
+                </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Created">
-                {selectedAccount.createdAtDisplay}
+                {staffAccountService.formatDateTime(selectedAccount.createdAt)}
+              </Descriptions.Item>
+              <Descriptions.Item label="Account ID">
+                <Text copyable>{selectedAccount.id}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Last Updated">
+                {staffAccountService.formatDateTime(selectedAccount.updatedAt)}
               </Descriptions.Item>
             </Descriptions>
 
@@ -1275,26 +1428,51 @@ const StaffAccountManagement = () => {
 
             <Descriptions title="Financial Information" bordered size="small" column={2}>
               <Descriptions.Item label="Current Balance">
-                <Text strong style={{ color: selectedAccount.currentBalanceColor }}>
-                  {selectedAccount.currentBalanceDisplay}
-                </Text>
-                <br />
-                <Text type="secondary">{selectedAccount.currentBalanceStatus}</Text>
+                <Space direction="vertical" size={0}>
+                  <Text 
+                    strong 
+                    style={{ 
+                      color: selectedAccount.currentBalance < 0 ? '#ff4d4f' : 
+                             selectedAccount.currentBalance > 0 ? '#52c41a' : '#666',
+                      fontSize: '18px'
+                    }}
+                  >
+                    {staffAccountService.formatCurrency(selectedAccount.currentBalance)}
+                  </Text>
+                  <Text type="secondary">
+                    {selectedAccount.currentBalance < 0 ? 'Owes Station' : 
+                     selectedAccount.currentBalance > 0 ? 'Station Owes' : 'Settled'}
+                  </Text>
+                </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Credit Limit">
-                {selectedAccount.creditLimitDisplay}
+                <Space direction="vertical" size={0}>
+                  <Text strong>
+                    {staffAccountService.formatCurrency(selectedAccount.creditLimit || 5000)}
+                  </Text>
+                  <Text type="secondary">
+                    Available: {staffAccountService.formatCurrency(
+                      (selectedAccount.creditLimit || 5000) + 
+                      Math.min(selectedAccount.currentBalance, 0)
+                    )}
+                  </Text>
+                </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Salary Amount">
-                {selectedAccount.salaryAmountDisplay}
+                {selectedAccount.salaryAmount ? 
+                  staffAccountService.formatCurrency(selectedAccount.salaryAmount) : 
+                  'Not Set'}
               </Descriptions.Item>
-              <Descriptions.Item label="Last Payment">
-                {selectedAccount.lastPaymentDateDisplay}
+              <Descriptions.Item label="Next Payment Date">
+                {selectedAccount.nextPaymentDate ? 
+                  staffAccountService.formatDate(selectedAccount.nextPaymentDate) : 
+                  'Not Set'}
               </Descriptions.Item>
               <Descriptions.Item label="Total Shortages">
-                {selectedAccount.totalShortagesDisplay}
+                {staffAccountService.formatCurrency(selectedAccount.totalShortages || 0)}
               </Descriptions.Item>
               <Descriptions.Item label="Total Advances">
-                {selectedAccount.totalAdvancesDisplay}
+                {staffAccountService.formatCurrency(selectedAccount.totalAdvances || 0)}
               </Descriptions.Item>
             </Descriptions>
 
@@ -1302,91 +1480,50 @@ const StaffAccountManagement = () => {
 
             <Descriptions title="Payroll Settings" bordered size="small" column={2}>
               <Descriptions.Item label="Payroll Method">
-                {selectedAccount.payrollMethodDisplay}
+                {staffAccountService.getPayrollMethodLabel(selectedAccount.payrollMethod)}
               </Descriptions.Item>
               <Descriptions.Item label="Payment Schedule">
-                {selectedAccount.paymentScheduleDisplay}
+                {staffAccountService.getPaymentScheduleLabel(selectedAccount.paymentSchedule)}
               </Descriptions.Item>
-              <Descriptions.Item label="Next Payment">
-                {selectedAccount.nextPaymentDateDisplay}
+              <Descriptions.Item label="Bank Account" span={2}>
+                {selectedAccount.bankAccountNumber ? (
+                  <Space direction="vertical" size={0}>
+                    <Text>{selectedAccount.bankAccountNumber}</Text>
+                    {selectedAccount.bankName && (
+                      <Text type="secondary">{selectedAccount.bankName}</Text>
+                    )}
+                  </Space>
+                ) : 'Not set'}
               </Descriptions.Item>
-              <Descriptions.Item label="Bank Account">
-                {selectedAccount.bankAccountNumber || 'Not set'}
+              <Descriptions.Item label="Mobile Money" span={2}>
+                {selectedAccount.mobileMoneyNumber || 'Not set'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Notes" span={2}>
+                {selectedAccount.notes || 'No notes'}
               </Descriptions.Item>
             </Descriptions>
+
+            {selectedAccount.shortageLedger && (
+              <>
+                <Divider />
+                <Descriptions title="Shortage Ledger" bordered size="small" column={2}>
+                  <Descriptions.Item label="Net Outstanding">
+                    {staffAccountService.formatCurrency(selectedAccount.shortageLedger.netOutstanding || 0)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Total Deducted">
+                    {staffAccountService.formatCurrency(selectedAccount.shortageLedger.totalDeductedAmount || 0)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Shortages Recorded">
+                    {selectedAccount.shortageLedger.totalShortagesRecorded || 0}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Deductions Made">
+                    {selectedAccount.shortageLedger.totalDeductionsMade || 0}
+                  </Descriptions.Item>
+                </Descriptions>
+              </>
+            )}
           </div>
         )}
-      </Modal>
-
-      {/* Create Transaction Modal */}
-      <Modal
-        title="Record Transaction"
-        open={modalVisible.createTransaction}
-        onCancel={() => {
-          setModalVisible(prev => ({ ...prev, createTransaction: false }));
-          forms.createTransaction.resetFields();
-        }}
-        onOk={() => forms.createTransaction.submit()}
-        okText="Record Transaction"
-        cancelText="Cancel"
-        width={500}
-        confirmLoading={submitting}
-      >
-        <Form form={forms.createTransaction} layout="vertical" onFinish={handleCreateTransaction}>
-          <Form.Item
-            name="type"
-            label="Transaction Type"
-            rules={[{ required: true, message: 'Please select transaction type' }]}
-          >
-            <Select placeholder="Select type">
-              <Option value="ADVANCE">Advance</Option>
-              <Option value="SHORTAGE">Shortage</Option>
-              <Option value="BONUS">Bonus</Option>
-              <Option value="FINE">Fine</Option>
-              <Option value="ADJUSTMENT">Adjustment</Option>
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            name="amount"
-            label="Amount"
-            rules={[
-              { required: true, message: 'Please enter amount' },
-              { type: 'number', min: 1, message: 'Amount must be positive' }
-            ]}
-          >
-            <InputNumber
-              style={{ width: '100%' }}
-              placeholder="Enter amount"
-              min={1}
-              formatter={value => `$ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-              parser={value => value.replace(/\$\s?|(,*)/g, '')}
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="description"
-            label="Description"
-            rules={[{ required: true, message: 'Please enter description' }]}
-          >
-            <TextArea
-              placeholder="Enter transaction description"
-              rows={3}
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="paymentMethod"
-            label="Payment Method"
-          >
-            <Select placeholder="Select payment method">
-              <Option value="STATION_WALLET">Station Wallet</Option>
-              <Option value="BANK_TRANSFER">Bank Transfer</Option>
-              <Option value="MOBILE_MONEY">Mobile Money</Option>
-              <Option value="CASH">Cash</Option>
-            </Select>
-          </Form.Item>
-        </Form>
       </Modal>
     </div>
   );

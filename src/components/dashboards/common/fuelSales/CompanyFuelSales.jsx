@@ -44,7 +44,7 @@ import {
   CrownOutlined,
   TeamOutlined,
   BarChartOutlined as ChartOutlined,
-  CompareOutlined,
+  SwapOutlined ,
   ExportOutlined,
   EyeOutlined,
   InfoCircleOutlined
@@ -91,7 +91,7 @@ const TABS = {
   comparison: {
     key: 'comparison',
     label: 'Company Comparison',
-    icon: <CompareOutlined />,
+    icon: <SwapOutlined />,
     description: 'Compare stations/products',
     allowedRoles: [ROLE.SUPER_ADMIN, ROLE.COMPANY_ADMIN, ROLE.LINES_MANAGER]
   },
