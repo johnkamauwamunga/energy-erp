@@ -21,7 +21,6 @@ import CompanyStationsManagement from './stations/CompanyStationsManagement';
 import FuelPurchaseManagement from './purchases/PurchaseManagement';
 import ProductManagement from './products/ProductManagement';
 import NonFuelManagement from './products/nonfuel/NonFuelManagement';
-import ShiftCreationWizard from '../common/shiftWizard/ShiftCreationWizard';
 import CompanyDashboardOverview from '../common/CompanyDashboardOverview';
 import AnalyticsDemo from '../common/analytics/AnalyticsDemo';
 import CustomDashboard from '../common/analytics/CustomDashboard';

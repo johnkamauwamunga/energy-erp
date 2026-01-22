@@ -55,7 +55,8 @@ import {
 import { useApp } from '../../../../context/AppContext';
 import { useShift } from '../../../../hooks/useShift';
 import ShiftCreationWizard from './shiftOpen/ShiftCreationWizard';
-import CloseWizard from './shiftClose/CloseWizard';
+//import CloseWizard from './shiftClose/CloseWizard';
+import CloseWizard from './closeDev/IntegratedShiftClose';
 import { shiftService } from '../../../../services/shiftService/shiftService';
 import { operationsService } from '../../../../services/operationService/operationService';
 import AdvancedReportGenerator from '../downloadable/AdvancedReportGenerator';
