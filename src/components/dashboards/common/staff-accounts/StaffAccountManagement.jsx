@@ -83,7 +83,6 @@ const StaffAccountManagement = () => {
   });
   const [holdReason, setHoldReason] = useState('');
   const [deactivateReason, setDeactivateReason] = useState('');
-  const [forms] = Form.useForm();
   const [createForm] = Form.useForm();
   const [updateForm] = Form.useForm();
   const [filters, setFilters] = useState({
@@ -202,30 +201,54 @@ const StaffAccountManagement = () => {
 
   // Handle create account
   const handleCreateAccount = async (values) => {
+    console.log('Form submission started with values:', values);
     setSubmitting(true);
     
     try {
-      // Fix payroll method if STATION_WALLET is selected (should be STAFF_WALLET)
-      if (values.payrollMethod === 'STATION_WALLET') {
-        values.payrollMethod = 'STAFF_WALLET';
-      }
+      // Format the values for API submission
+      const formattedValues = {
+        userId: values.userId,
+        stationId: values.stationId,
+        creditLimit: values.creditLimit || 5000,
+        salaryAmount: values.salaryAmount || 30000,
+        payrollMethod: values.payrollMethod || 'STATION_WALLET',
+        paymentSchedule: values.paymentSchedule || 'MONTHLY',
+        bankAccountNumber: values.bankAccountNumber || '001110001100',
+        bankName: values.bankName || 'Baclays Bank',
+        mobileMoneyNumber: values.mobileMoneyNumber || '0712345678',
+        nextPaymentDate: values.nextPaymentDate ? 
+        values.nextPaymentDate.startOf('day').toISOString() : // Convert to start of day in ISO format
+        null,
+        notes: values.notes || '',
+        isActive: values.isActive !== undefined ? values.isActive : true
+      };
       
-      // Validate using service
-      const validationErrors = staffAccountService.validateStaffAccount(values);
-      if (validationErrors.length > 0) {
-        throw new Error(validationErrors.join(', '));
-      }
-
-      const account = await staffAccountService.createStaffAccount(values);
+      console.log('Formatted values for API:', formattedValues);
+      
+      // Call the service
+      const account = await staffAccountService.createStaffAccount(formattedValues);
+      console.log('API response:', account);
+      
       message.success('Staff account created successfully');
       
+      // Close modal and reset
       setModalVisible(prev => ({ ...prev, createAccount: false }));
       createForm.resetFields();
+      
+      // Refresh data
       await refreshData();
       
     } catch (error) {
       console.error('Failed to create account:', error);
-      message.error(error.message || 'Failed to create staff account');
+      console.error('Error response:', error.response?.data || error.message);
+      
+      // Show detailed error message
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.errors?.map(e => e.message).join(', ') || 
+                          error.message || 
+                          'Failed to create staff account';
+      
+      message.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -235,15 +258,29 @@ const StaffAccountManagement = () => {
   const handleUpdateAccount = async (values) => {
     if (!selectedAccount) return;
     
+    console.log('Updating account with values:', values);
     setSubmitting(true);
     
     try {
-      // Fix payroll method if STATION_WALLET is selected (should be STAFF_WALLET)
-      if (values.payrollMethod === 'STATION_WALLET') {
-        values.payrollMethod = 'STAFF_WALLET';
-      }
+      // Format values for API
+      const updateData = {};
       
-      const updatedAccount = await staffAccountService.updateStaffAccount(selectedAccount.id, values);
+      if (values.creditLimit !== undefined) updateData.creditLimit = values.creditLimit;
+      if (values.salaryAmount !== undefined) updateData.salaryAmount = values.salaryAmount;
+      if (values.payrollMethod) updateData.payrollMethod = values.payrollMethod;
+      if (values.paymentSchedule) updateData.paymentSchedule = values.paymentSchedule;
+      if (values.bankAccountNumber !== undefined) updateData.bankAccountNumber = values.bankAccountNumber;
+      if (values.bankName !== undefined) updateData.bankName = values.bankName;
+      if (values.mobileMoneyNumber !== undefined) updateData.mobileMoneyNumber = values.mobileMoneyNumber;
+      if (values.nextPaymentDate) updateData.nextPaymentDate = values.nextPaymentDate.format('YYYY-MM-DD');
+      if (values.notes !== undefined) updateData.notes = values.notes;
+      if (values.isActive !== undefined) updateData.isActive = values.isActive;
+      
+      console.log('Update data:', updateData);
+      
+      const updatedAccount = await staffAccountService.updateStaffAccount(selectedAccount.id, updateData);
+      console.log('Update response:', updatedAccount);
+      
       message.success('Staff account updated successfully');
       
       setModalVisible(prev => ({ ...prev, updateAccount: false }));
@@ -253,7 +290,14 @@ const StaffAccountManagement = () => {
       
     } catch (error) {
       console.error('Failed to update account:', error);
-      message.error(error.message || 'Failed to update staff account');
+      console.error('Error response:', error.response?.data || error.message);
+      
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.errors?.map(e => e.message).join(', ') || 
+                          error.message || 
+                          'Failed to update staff account';
+      
+      message.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -384,6 +428,18 @@ const StaffAccountManagement = () => {
     });
   };
 
+  // Custom formatter and parser for currency input
+  const currencyFormatter = (value) => {
+    if (!value && value !== 0) return '';
+    return `Ksh ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  };
+
+  const currencyParser = (value) => {
+    if (!value) return '';
+    // Remove Ksh, spaces, and commas
+    return value.replace(/Ksh\s?|,/g, '');
+  };
+
   // Main refresh function
   const refreshData = async (showMessage = false) => {
     try {
@@ -507,14 +563,14 @@ const StaffAccountManagement = () => {
                 fontSize: '16px'
               }}
             >
-              {staffAccountService.formatCurrency(balance)}
+              {staffAccountService.formatCurrency ? staffAccountService.formatCurrency(balance) : `Ksh ${balance}`}
             </Text>
             <Text type="secondary" style={{ fontSize: '12px' }}>
               {status}
             </Text>
             {account.creditLimit && (
               <Text type="secondary" style={{ fontSize: '12px' }}>
-                Limit: {staffAccountService.formatCurrency(account.creditLimit)}
+                Limit: {staffAccountService.formatCurrency ? staffAccountService.formatCurrency(account.creditLimit) : `Ksh ${account.creditLimit}`}
               </Text>
             )}
           </Space>
@@ -529,12 +585,12 @@ const StaffAccountManagement = () => {
         <Space direction="vertical" size={0}>
           <div style={{ fontSize: '12px' }}>
             <Text strong>
-              {account.salaryAmount ? staffAccountService.formatCurrency(account.salaryAmount) : 'Not Set'}
+              {account.salaryAmount ? (staffAccountService.formatCurrency ? staffAccountService.formatCurrency(account.salaryAmount) : `Ksh ${account.salaryAmount}`) : 'Not Set'}
             </Text>
           </div>
           <div style={{ fontSize: '12px' }}>
             <Text type="secondary">
-              {account.paymentSchedule ? staffAccountService.getPaymentScheduleLabel(account.paymentSchedule) : 'Monthly'}
+              {account.paymentSchedule ? (staffAccountService.getPaymentScheduleLabel ? staffAccountService.getPaymentScheduleLabel(account.paymentSchedule) : account.paymentSchedule) : 'Monthly'}
             </Text>
           </div>
         </Space>
@@ -544,8 +600,10 @@ const StaffAccountManagement = () => {
       title: 'Payment Method',
       key: 'paymentMethod',
       render: (account) => {
-        const method = account.payrollMethod || 'STAFF_WALLET';
-        const methodLabel = staffAccountService.getPayrollMethodLabel(method);
+        const method = account.payrollMethod || 'STATION_WALLET';
+        const methodLabel = staffAccountService.getPayrollMethodLabel ? 
+          staffAccountService.getPayrollMethodLabel(method) : 
+          method;
         
         return (
           <Space direction="vertical" size={0}>
@@ -570,7 +628,7 @@ const StaffAccountManagement = () => {
         );
       },
       filters: [
-        { text: 'Staff Wallet', value: 'STAFF_WALLET' },
+        { text: 'Station Wallet', value: 'STATION_WALLET' },
         { text: 'Bank Transfer', value: 'BANK_TRANSFER' },
         { text: 'Mobile Money', value: 'MOBILE_MONEY' },
         { text: 'Cash', value: 'CASH' }
@@ -583,7 +641,7 @@ const StaffAccountManagement = () => {
       render: (account) => {
         const shortages = account.totalShortages || 0;
         const shortagesDisplay = shortages > 0 ? 
-          staffAccountService.formatCurrency(shortages) : 'None';
+          (staffAccountService.formatCurrency ? staffAccountService.formatCurrency(shortages) : `Ksh ${shortages}`) : 'None';
         
         return (
           <Text 
@@ -620,7 +678,7 @@ const StaffAccountManagement = () => {
               updateForm.setFieldsValue({
                 creditLimit: account.creditLimit,
                 salaryAmount: account.salaryAmount,
-                payrollMethod: account.payrollMethod || 'STAFF_WALLET',
+                payrollMethod: account.payrollMethod || 'STATION_WALLET',
                 paymentSchedule: account.paymentSchedule || 'MONTHLY',
                 bankAccountNumber: account.bankAccountNumber,
                 bankName: account.bankName,
@@ -684,7 +742,7 @@ const StaffAccountManagement = () => {
             danger: true,
             onClick: () => handleDeleteAccount(account.id)
           }
-        ].filter(item => item); // Remove null items
+        ].filter(item => item);
 
         return (
           <Space size="small">
@@ -762,10 +820,13 @@ const StaffAccountManagement = () => {
               createForm.setFieldsValue({
                 userId: user.id,
                 stationId: user.stationAssignmentsDisplay?.[0]?.stationId || currentStationId,
-                salaryAmount: 20000,
+                salaryAmount: 30000,
                 creditLimit: 5000,
-                payrollMethod: 'STAFF_WALLET',
+                payrollMethod: 'STATION_WALLET',
                 paymentSchedule: 'MONTHLY',
+                bankName: 'Baclays Bank',
+                bankAccountNumber: '001110001100',
+                mobileMoneyNumber: '0712345678',
                 isActive: true
               });
               setModalVisible(prev => ({ ...prev, createAccount: true }));
@@ -862,14 +923,14 @@ const StaffAccountManagement = () => {
             <Col xs={24} sm={8} md={4}>
               <Statistic
                 title="Positive Balance"
-                value={accountSummary.totals?.totalPositiveBalanceDisplay || '$0'}
+                value={accountSummary.totals?.totalPositiveBalanceDisplay || 'Ksh 0'}
                 prefix={<DollarOutlined />}
               />
             </Col>
             <Col xs={24} sm={8} md={4}>
               <Statistic
                 title="Negative Balance"
-                value={accountSummary.totals?.totalNegativeBalanceDisplay || '$0'}
+                value={accountSummary.totals?.totalNegativeBalanceDisplay || 'Ksh 0'}
                 valueStyle={{ color: '#ff4d4f' }}
                 prefix={<AccountBookOutlined />}
               />
@@ -929,7 +990,7 @@ const StaffAccountManagement = () => {
               onChange={(value) => handleFilterChange('payrollMethod', value)}
               allowClear
             >
-              <Option value="STAFF_WALLET">Staff Wallet</Option>
+              <Option value="STATION_WALLET">Station Wallet</Option>
               <Option value="BANK_TRANSFER">Bank Transfer</Option>
               <Option value="MOBILE_MONEY">Mobile Money</Option>
               <Option value="CASH">Cash</Option>
@@ -1074,19 +1135,41 @@ const StaffAccountManagement = () => {
           setModalVisible(prev => ({ ...prev, createAccount: false }));
           createForm.resetFields();
         }}
-        onOk={() => createForm.submit()}
+        onOk={() => {
+          console.log('Modal OK button clicked');
+          // FIXED: Just call submit() - it doesn't return a promise
+          createForm.submit();
+        }}
         okText="Create Account"
         cancelText="Cancel"
         width={600}
         confirmLoading={submitting}
+        destroyOnClose
       >
-        <Form form={createForm} layout="vertical" onFinish={handleCreateAccount}>
+        <Form 
+          form={createForm} 
+          layout="vertical" 
+          onFinish={handleCreateAccount}
+          onFinishFailed={(errorInfo) => {
+            console.log('Form validation failed:', errorInfo);
+            // Show user-friendly error messages
+            if (errorInfo.errorFields && errorInfo.errorFields.length > 0) {
+              const firstError = errorInfo.errorFields[0];
+              if (firstError.errors && firstError.errors.length > 0) {
+                message.error(firstError.errors[0]);
+              }
+            }
+          }}
+          preserve={false}
+        >
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
                 name="userId"
                 label="User"
-                rules={[{ required: true, message: 'Please select a user' }]}
+                rules={[
+                  { required: true, message: 'Please select a user' }
+                ]}
               >
                 <Select
                   placeholder="Select user"
@@ -1108,7 +1191,9 @@ const StaffAccountManagement = () => {
               <Form.Item
                 name="stationId"
                 label="Station"
-                rules={[{ required: true, message: 'Please select a station' }]}
+                rules={[
+                  { required: true, message: 'Please select a station' }
+                ]}
               >
                 <Select
                   placeholder="Select station"
@@ -1130,14 +1215,16 @@ const StaffAccountManagement = () => {
               <Form.Item
                 name="salaryAmount"
                 label="Salary Amount"
+                initialValue={30000}
               >
                 <InputNumber
                   style={{ width: '100%' }}
                   placeholder="Enter salary amount"
                   min={0}
                   max={500000}
-                  formatter={value => `Ksh ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={value => value.replace(/\$\s?|(,*)/g, '')}
+                  step={1000}
+                  formatter={currencyFormatter}
+                  parser={currencyParser}
                 />
               </Form.Item>
             </Col>
@@ -1152,8 +1239,9 @@ const StaffAccountManagement = () => {
                   placeholder="Enter credit limit"
                   min={0}
                   max={100000}
-                  formatter={value => `Ksh ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={value => value.replace(/\$\s?|(,*)/g, '')}
+                  step={1000}
+                  formatter={currencyFormatter}
+                  parser={currencyParser}
                 />
               </Form.Item>
             </Col>
@@ -1164,10 +1252,26 @@ const StaffAccountManagement = () => {
               <Form.Item
                 name="payrollMethod"
                 label="Payroll Method"
-                initialValue="STAFF_WALLET"
+                initialValue="STATION_WALLET"
               >
-                <Select>
-                  <Option value="STAFF_WALLET">Staff Wallet</Option>
+                <Select 
+                  placeholder="Select payroll method"
+                  onChange={(value) => {
+                    // Reset bank/mobile fields when changing payroll method
+                    if (value !== 'BANK_TRANSFER') {
+                      createForm.setFieldsValue({
+                        bankAccountNumber: undefined,
+                        bankName: undefined
+                      });
+                    }
+                    if (value !== 'MOBILE_MONEY') {
+                      createForm.setFieldsValue({
+                        mobileMoneyNumber: undefined
+                      });
+                    }
+                  }}
+                >
+                  <Option value="STATION_WALLET">Station Wallet</Option>
                   <Option value="BANK_TRANSFER">Bank Transfer</Option>
                   <Option value="MOBILE_MONEY">Mobile Money</Option>
                   <Option value="CASH">Cash</Option>
@@ -1180,7 +1284,7 @@ const StaffAccountManagement = () => {
                 label="Payment Schedule"
                 initialValue="MONTHLY"
               >
-                <Select>
+                <Select placeholder="Select payment schedule">
                   <Option value="DAILY">Daily</Option>
                   <Option value="WEEKLY">Weekly</Option>
                   <Option value="BI_WEEKLY">Bi-Weekly</Option>
@@ -1194,29 +1298,58 @@ const StaffAccountManagement = () => {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
-                name="bankAccountNumber"
-                label="Bank Account (if bank transfer)"
+                name="bankName"
+                label="Bank Name"
+                initialValue="Baclays Bank"
               >
-                <Input placeholder="Enter bank account number" />
+                <Input placeholder="Enter bank name" />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item
+                name="bankAccountNumber"
+                label="Bank Account Number"
+                initialValue="001110001100"
+              >
+                <Input placeholder="Enter bank account number" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
                 name="mobileMoneyNumber"
-                label="Mobile Money (if mobile money)"
+                label="Mobile Money Number"
+                initialValue="0712345678"
               >
                 <Input placeholder="Enter mobile money number" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="nextPaymentDate"
+                label="Next Payment Date"
+              >
+                <DatePicker 
+                  style={{ width: '100%' }} 
+                  placeholder="Select next payment date"
+                  format="YYYY-MM-DD"
+                />
               </Form.Item>
             </Col>
           </Row>
 
           <Form.Item
-            name="nextPaymentDate"
-            label="Next Payment Date"
+            name="isActive"
+            label="Account Status"
+            valuePropName="checked"
+            initialValue={true}
           >
-            <DatePicker 
-              style={{ width: '100%' }} 
-              placeholder="Select next payment date"
+            <Switch 
+              checkedChildren="Active" 
+              unCheckedChildren="Inactive" 
+              defaultChecked
             />
           </Form.Item>
 
@@ -1241,14 +1374,32 @@ const StaffAccountManagement = () => {
           setSelectedAccount(null);
           updateForm.resetFields();
         }}
-        onOk={() => updateForm.submit()}
+        onOk={() => {
+          // FIXED: Just call submit() - it doesn't return a promise
+          updateForm.submit();
+        }}
         okText="Update Account"
         cancelText="Cancel"
         width={600}
         confirmLoading={submitting}
+        destroyOnClose
       >
         {selectedAccount && (
-          <Form form={updateForm} layout="vertical" onFinish={handleUpdateAccount}>
+          <Form 
+            form={updateForm} 
+            layout="vertical" 
+            onFinish={handleUpdateAccount}
+            onFinishFailed={(errorInfo) => {
+              console.log('Update form validation failed:', errorInfo);
+              if (errorInfo.errorFields && errorInfo.errorFields.length > 0) {
+                const firstError = errorInfo.errorFields[0];
+                if (firstError.errors && firstError.errors.length > 0) {
+                  message.error(firstError.errors[0]);
+                }
+              }
+            }}
+            preserve={false}
+          >
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item
@@ -1260,8 +1411,9 @@ const StaffAccountManagement = () => {
                     placeholder="Enter credit limit"
                     min={0}
                     max={100000}
-                    formatter={value => `$ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                    parser={value => value.replace(/\$\s?|(,*)/g, '')}
+                    step={1000}
+                    formatter={currencyFormatter}
+                    parser={currencyParser}
                   />
                 </Form.Item>
               </Col>
@@ -1275,8 +1427,9 @@ const StaffAccountManagement = () => {
                     placeholder="Enter salary amount"
                     min={0}
                     max={500000}
-                    formatter={value => `$ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                    parser={value => value.replace(/\$\s?|(,*)/g, '')}
+                    step={1000}
+                    formatter={currencyFormatter}
+                    parser={currencyParser}
                   />
                 </Form.Item>
               </Col>
@@ -1288,8 +1441,23 @@ const StaffAccountManagement = () => {
                   name="payrollMethod"
                   label="Payroll Method"
                 >
-                  <Select>
-                    <Option value="STAFF_WALLET">Staff Wallet</Option>
+                  <Select 
+                    placeholder="Select payroll method"
+                    onChange={(value) => {
+                      if (value !== 'BANK_TRANSFER') {
+                        updateForm.setFieldsValue({
+                          bankAccountNumber: undefined,
+                          bankName: undefined
+                        });
+                      }
+                      if (value !== 'MOBILE_MONEY') {
+                        updateForm.setFieldsValue({
+                          mobileMoneyNumber: undefined
+                        });
+                      }
+                    }}
+                  >
+                    <Option value="STATION_WALLET">Station Wallet</Option>
                     <Option value="BANK_TRANSFER">Bank Transfer</Option>
                     <Option value="MOBILE_MONEY">Mobile Money</Option>
                     <Option value="CASH">Cash</Option>
@@ -1301,7 +1469,7 @@ const StaffAccountManagement = () => {
                   name="paymentSchedule"
                   label="Payment Schedule"
                 >
-                  <Select>
+                  <Select placeholder="Select payment schedule">
                     <Option value="DAILY">Daily</Option>
                     <Option value="WEEKLY">Weekly</Option>
                     <Option value="BI_WEEKLY">Bi-Weekly</Option>
@@ -1315,12 +1483,23 @@ const StaffAccountManagement = () => {
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item
+                  name="bankName"
+                  label="Bank Name"
+                >
+                  <Input placeholder="Enter bank name" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
                   name="bankAccountNumber"
                   label="Bank Account Number"
                 >
                   <Input placeholder="Enter bank account number" />
                 </Form.Item>
               </Col>
+            </Row>
+
+            <Row gutter={16}>
               <Col span={12}>
                 <Form.Item
                   name="mobileMoneyNumber"
@@ -1329,15 +1508,28 @@ const StaffAccountManagement = () => {
                   <Input placeholder="Enter mobile money number" />
                 </Form.Item>
               </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="nextPaymentDate"
+                  label="Next Payment Date"
+                >
+                  <DatePicker 
+                    style={{ width: '100%' }} 
+                    placeholder="Select next payment date"
+                    format="YYYY-MM-DD"
+                  />
+                </Form.Item>
+              </Col>
             </Row>
 
             <Form.Item
-              name="nextPaymentDate"
-              label="Next Payment Date"
+              name="isActive"
+              label="Account Status"
+              valuePropName="checked"
             >
-              <DatePicker 
-                style={{ width: '100%' }} 
-                placeholder="Select next payment date"
+              <Switch 
+                checkedChildren="Active" 
+                unCheckedChildren="Inactive" 
               />
             </Form.Item>
 
@@ -1414,13 +1606,13 @@ const StaffAccountManagement = () => {
                 </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Created">
-                {staffAccountService.formatDateTime(selectedAccount.createdAt)}
+                {selectedAccount.createdAt ? new Date(selectedAccount.createdAt).toLocaleDateString() : 'N/A'}
               </Descriptions.Item>
               <Descriptions.Item label="Account ID">
                 <Text copyable>{selectedAccount.id}</Text>
               </Descriptions.Item>
               <Descriptions.Item label="Last Updated">
-                {staffAccountService.formatDateTime(selectedAccount.updatedAt)}
+                {selectedAccount.updatedAt ? new Date(selectedAccount.updatedAt).toLocaleDateString() : 'N/A'}
               </Descriptions.Item>
             </Descriptions>
 
@@ -1437,7 +1629,7 @@ const StaffAccountManagement = () => {
                       fontSize: '18px'
                     }}
                   >
-                    {staffAccountService.formatCurrency(selectedAccount.currentBalance)}
+                    {staffAccountService.formatCurrency ? staffAccountService.formatCurrency(selectedAccount.currentBalance) : `Ksh ${selectedAccount.currentBalance || 0}`}
                   </Text>
                   <Text type="secondary">
                     {selectedAccount.currentBalance < 0 ? 'Owes Station' : 
@@ -1448,31 +1640,33 @@ const StaffAccountManagement = () => {
               <Descriptions.Item label="Credit Limit">
                 <Space direction="vertical" size={0}>
                   <Text strong>
-                    {staffAccountService.formatCurrency(selectedAccount.creditLimit || 5000)}
+                    {staffAccountService.formatCurrency ? staffAccountService.formatCurrency(selectedAccount.creditLimit || 5000) : `Ksh ${selectedAccount.creditLimit || 5000}`}
                   </Text>
                   <Text type="secondary">
-                    Available: {staffAccountService.formatCurrency(
-                      (selectedAccount.creditLimit || 5000) + 
-                      Math.min(selectedAccount.currentBalance, 0)
-                    )}
+                    Available: {staffAccountService.formatCurrency ? 
+                      staffAccountService.formatCurrency(
+                        (selectedAccount.creditLimit || 5000) + 
+                        Math.min(selectedAccount.currentBalance || 0, 0)
+                      ) : 
+                      `Ksh ${(selectedAccount.creditLimit || 5000) + Math.min(selectedAccount.currentBalance || 0, 0)}`}
                   </Text>
                 </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Salary Amount">
                 {selectedAccount.salaryAmount ? 
-                  staffAccountService.formatCurrency(selectedAccount.salaryAmount) : 
+                  (staffAccountService.formatCurrency ? staffAccountService.formatCurrency(selectedAccount.salaryAmount) : `Ksh ${selectedAccount.salaryAmount}`) : 
                   'Not Set'}
               </Descriptions.Item>
               <Descriptions.Item label="Next Payment Date">
                 {selectedAccount.nextPaymentDate ? 
-                  staffAccountService.formatDate(selectedAccount.nextPaymentDate) : 
+                  new Date(selectedAccount.nextPaymentDate).toLocaleDateString() : 
                   'Not Set'}
               </Descriptions.Item>
               <Descriptions.Item label="Total Shortages">
-                {staffAccountService.formatCurrency(selectedAccount.totalShortages || 0)}
+                {staffAccountService.formatCurrency ? staffAccountService.formatCurrency(selectedAccount.totalShortages || 0) : `Ksh ${selectedAccount.totalShortages || 0}`}
               </Descriptions.Item>
               <Descriptions.Item label="Total Advances">
-                {staffAccountService.formatCurrency(selectedAccount.totalAdvances || 0)}
+                {staffAccountService.formatCurrency ? staffAccountService.formatCurrency(selectedAccount.totalAdvances || 0) : `Ksh ${selectedAccount.totalAdvances || 0}`}
               </Descriptions.Item>
             </Descriptions>
 
@@ -1480,10 +1674,14 @@ const StaffAccountManagement = () => {
 
             <Descriptions title="Payroll Settings" bordered size="small" column={2}>
               <Descriptions.Item label="Payroll Method">
-                {staffAccountService.getPayrollMethodLabel(selectedAccount.payrollMethod)}
+                {staffAccountService.getPayrollMethodLabel ? 
+                  staffAccountService.getPayrollMethodLabel(selectedAccount.payrollMethod) : 
+                  selectedAccount.payrollMethod}
               </Descriptions.Item>
               <Descriptions.Item label="Payment Schedule">
-                {staffAccountService.getPaymentScheduleLabel(selectedAccount.paymentSchedule)}
+                {staffAccountService.getPaymentScheduleLabel ? 
+                  staffAccountService.getPaymentScheduleLabel(selectedAccount.paymentSchedule) : 
+                  selectedAccount.paymentSchedule}
               </Descriptions.Item>
               <Descriptions.Item label="Bank Account" span={2}>
                 {selectedAccount.bankAccountNumber ? (
@@ -1502,26 +1700,6 @@ const StaffAccountManagement = () => {
                 {selectedAccount.notes || 'No notes'}
               </Descriptions.Item>
             </Descriptions>
-
-            {selectedAccount.shortageLedger && (
-              <>
-                <Divider />
-                <Descriptions title="Shortage Ledger" bordered size="small" column={2}>
-                  <Descriptions.Item label="Net Outstanding">
-                    {staffAccountService.formatCurrency(selectedAccount.shortageLedger.netOutstanding || 0)}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Total Deducted">
-                    {staffAccountService.formatCurrency(selectedAccount.shortageLedger.totalDeductedAmount || 0)}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Shortages Recorded">
-                    {selectedAccount.shortageLedger.totalShortagesRecorded || 0}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Deductions Made">
-                    {selectedAccount.shortageLedger.totalDeductionsMade || 0}
-                  </Descriptions.Item>
-                </Descriptions>
-              </>
-            )}
           </div>
         )}
       </Modal>

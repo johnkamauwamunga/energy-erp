@@ -1,7 +1,7 @@
 // src/services/shortage/shortageService.js
 import { apiService } from '../apiService';
 
-const SHORTAGE_BASE_URL = '/api/shortages';
+const SHORTAGE_BASE_URL = '/shortages';
 
 // Enhanced logging utility
 const logger = {
@@ -20,47 +20,96 @@ const debugResponse = (method, url, response) => {
   logger.debug(`⬅️ ${method} ${url} Response:`, response);
 };
 
-// Enhanced response handler utility
+// FIXED: Enhanced response handler utility - handles backend response structure properly
+// In shortageService.js - Update handleResponse function:
 const handleResponse = (response, operation) => {
-  if (response && response.success) {
-    logger.debug(`${operation} successful`);
-    return response.data;
+  logger.debug(`Handling response for ${operation}:`, response);
+  
+  if (!response) {
+    logger.warn(`No response received for ${operation}`);
+    throw new Error('No response received from server');
   }
   
-  if (response) {
-    logger.debug(`${operation} successful (direct data)`);
-    return response;
+  // If response has the standard backend structure (success, data, message)
+  if (typeof response === 'object') {
+    // If response has success: true and data property
+    if (response.success === true && response.data !== undefined) {
+      logger.debug(`${operation} successful - data found in response.data`);
+      return response;
+    }
+    // If response has success: true but no data property
+    else if (response.success === true) {
+      logger.debug(`${operation} successful - returning full response`);
+      return response;
+    }
+    // If response has success: false
+    else if (response.success === false) {
+      logger.warn(`${operation} failed:`, response.message);
+      throw new Error(response.message || 'Operation failed');
+    }
   }
   
-  logger.warn(`Unexpected response structure for ${operation}:`, response);
-  throw new Error('Invalid response format from server');
+  // If response is an array, treat it as data
+  if (Array.isArray(response)) {
+    logger.debug(`${operation} successful - response is array`);
+    return {
+      success: true,
+      data: response,
+      pagination: { page: 1, limit: response.length, total: response.length, pages: 1 },
+      meta: {}
+    };
+  }
+  
+  // Default: return the response as-is
+  logger.debug(`${operation} successful - returning response as-is`);
+  return response;
 };
 
-// Enhanced error handler utility
+// FIXED: Enhanced error handler utility
 const handleError = (error, operation, defaultMessage) => {
   logger.error(`Error during ${operation}:`, error);
   
-  if (error.message && error.message.includes('401')) {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('user');
-    window.location.href = '/login';
-    throw new Error('Authentication failed. Please login again.');
+  // Handle axios errors
+  if (error.response) {
+    const { status, data } = error.response;
+    
+    switch (status) {
+      case 401:
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+        throw new Error('Session expired. Please login again.');
+      
+      case 403:
+        throw new Error(data?.message || 'You do not have permission to perform this action');
+      
+      case 404:
+        throw new Error(data?.message || 'Requested resource not found');
+      
+      case 400:
+        throw new Error(data?.message || data?.error || 'Invalid request');
+      
+      case 500:
+        throw new Error('Server error. Please try again later.');
+      
+      default:
+        throw new Error(data?.message || `Error ${status}: ${defaultMessage}`);
+    }
   }
   
-  if (error.message && error.message.includes('403')) {
-    throw new Error('You do not have permission to perform this action');
+  // Handle network errors
+  if (error.message && error.message.includes('Network Error')) {
+    throw new Error('Network error. Please check your connection.');
   }
   
-  if (error.message && error.message.includes('404')) {
-    throw new Error('Requested resource not found');
+  // Handle timeout errors
+  if (error.code === 'ECONNABORTED') {
+    throw new Error('Request timeout. Please try again.');
   }
   
-  if (error.message && error.message.includes('400')) {
-    throw new Error(error.message);
-  }
-  
+  // If error already has a message, use it
   if (error.message) {
-    throw new Error(error.message);
+    throw error;
   }
   
   throw new Error(defaultMessage || 'An unexpected error occurred');
@@ -420,6 +469,7 @@ export const shortageService = {
       
       const result = handleResponse(response, 'fetching shortages by staff account');
       
+      // FIXED: Handle the response structure properly
       if (result && result.shortages) {
         return {
           ...result,
@@ -456,6 +506,7 @@ export const shortageService = {
       
       const result = handleResponse(response, 'fetching my shortages');
       
+      // FIXED: Handle the response structure properly
       if (result && result.shortages) {
         return {
           ...result,
@@ -470,38 +521,55 @@ export const shortageService = {
   },
 
   // Get station shortages (for station managers, supervisors)
-  getStationShortages: async (filters = {}) => {
-    logger.info('Fetching station shortages with filters:', filters);
+// In shortageService.js
+getStationShortages: async (filters = {}) => {
+  logger.info('Fetching station shortages with filters:', filters);
+  
+  try {
+    const params = new URLSearchParams();
     
-    try {
-      const params = new URLSearchParams();
-      
-      Object.keys(filters).forEach(key => {
-        const value = filters[key];
-        if (value !== undefined && value !== null && value !== '') {
-          params.append(key, value);
-        }
-      });
-      
-      const url = `${SHORTAGE_BASE_URL}/station?${params.toString()}`;
-      debugRequest('GET', url);
-      const response = await apiService.get(url);
-      debugResponse('GET', url, response);
-      
-      const result = handleResponse(response, 'fetching station shortages');
-      
-      if (result && result.shortages) {
-        return {
-          ...result,
-          shortages: formatShortageList(result.shortages)
-        };
+    Object.keys(filters).forEach(key => {
+      const value = filters[key];
+      if (value !== undefined && value !== null && value !== '') {
+        params.append(key, value);
       }
-      
-      return result;
-    } catch (error) {
-      throw handleError(error, 'fetching station shortages', 'Failed to fetch station shortages');
+    });
+    
+    const url = `${SHORTAGE_BASE_URL}/station?${params.toString()}`;
+    debugRequest('GET', url);
+    const response = await apiService.get(url);
+    debugResponse('GET', url, response);
+    
+    const result = handleResponse(response, 'fetching station shortages');
+    
+    // FIX: Handle the response structure properly
+    // The shortages array is in result.data, not result.shortages
+    if (result && result.data) {
+      return {
+        ...result,
+        shortages: formatShortageList(result.data)
+      };
     }
-  },
+    
+    // If result already has a shortages property
+    if (result && result.shortages) {
+      return {
+        ...result,
+        shortages: formatShortageList(result.shortages)
+      };
+    }
+    
+    // Return empty structure if no data
+    return {
+      data: [],
+      shortages: [],
+      pagination: result?.pagination || { page: 1, limit: 20, total: 0, pages: 1 },
+      meta: result?.meta || {}
+    };
+  } catch (error) {
+    throw handleError(error, 'fetching station shortages', 'Failed to fetch station shortages');
+  }
+},
 
   // Get company shortages (for company admins)
   getCompanyShortages: async (filters = {}) => {
@@ -524,6 +592,7 @@ export const shortageService = {
       
       const result = handleResponse(response, 'fetching company shortages');
       
+      // FIXED: Handle the response structure properly
       if (result && result.shortages) {
         return {
           ...result,
@@ -558,6 +627,7 @@ export const shortageService = {
       
       const result = handleResponse(response, 'fetching all shortages');
       
+      // FIXED: Handle the response structure properly
       if (result && result.shortages) {
         return {
           ...result,
@@ -644,7 +714,7 @@ export const shortageService = {
         }
       });
       
-      const url = `${SHORTAGE_BASE_URL}/stats/station?${params.toString()}`;
+      const url = `${SHORTAGE_BASE_URL}/stats/station`;
       debugRequest('GET', url);
       const response = await apiService.get(url);
       debugResponse('GET', url, response);
@@ -842,7 +912,7 @@ export const shortageService = {
   },
 
   getOverdueShortages: async (filters = {}) => {
-    const today = new Date().toISOString();
+    const today = new Date().toISOString().split('T')[0];
     return shortageService.getStationShortages({
       ...filters,
       status: 'ACTIVE',
@@ -854,7 +924,7 @@ export const shortageService = {
   getHighSeverityShortages: async (filters = {}) => {
     return shortageService.getStationShortages({
       ...filters,
-      severity: ['MAJOR', 'CRITICAL'].join(','),
+      severity: ['MAJOR', 'CRITICAL'],
       hasOutstanding: true
     });
   },
