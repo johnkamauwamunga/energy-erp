@@ -27,7 +27,9 @@ import {
   Tooltip,
   List,
   Grid
+  
 } from 'antd';
+import { CalendarOutlined, UserOutlined,BankOutlined } from '@ant-design/icons';
 import {
   Calculator,
   ArrowRight,
@@ -598,189 +600,907 @@ const calculatePumpValues = useCallback(() => {
     }
   };
 
-  // ========== FIXED COLLECTIONS MODAL ==========
-  const CollectionsModal = ({ 
-    visible, 
-    onCancel, 
-    onSave, 
-    islandIndex,
-    currentCollections
-  }) => {
-    const [localCollections, setLocalCollections] = useState(currentCollections || []);
-    const [cashAmount, setCashAmount] = useState('');
-    const [selectedDebtor, setSelectedDebtor] = useState(null);
-    const [debtAmount, setDebtAmount] = useState('');
-    const [postingShortage, setPostingShortage] = useState(false);
-    const [searchDebtor, setSearchDebtor] = useState('');
-    const [selectedIsland, setSelectedIsland] = useState(null);
+  // ========== FIND STAFF ACCOUNT BY USER ID ==========
+const CollectionsModal = ({ 
+  visible, 
+  onCancel, 
+  onSave, 
+  islandIndex,
+  currentCollections
+}) => {
+  const [localCollections, setLocalCollections] = useState(currentCollections || []);
+  const [cashAmount, setCashAmount] = useState('');
+  const [selectedDebtor, setSelectedDebtor] = useState(null);
+  const [debtAmount, setDebtAmount] = useState('');
+  const [searchDebtor, setSearchDebtor] = useState('');
+  const [selectedIsland, setSelectedIsland] = useState(null);
+  const [hasPendingShortage, setHasPendingShortage] = useState(false);
+  const [justPostedShortage, setJustPostedShortage] = useState(false);
+  
+  // ========== NEW STATE FOR SHORTAGE MODAL ==========
+  const [shortageModalVisible, setShortageModalVisible] = useState(false);
+  const [shortageDetails, setShortageDetails] = useState(null);
+  const [creatingShortage, setCreatingShortage] = useState(false);
+  
+  // Find the island data
+  useEffect(() => {
+    if (visible && islandIndex !== undefined) {
+      const island = islandsData.find(island => island.key === islandIndex);
+      setSelectedIsland(island);
+      setLocalCollections(currentCollections || []);
+      setHasPendingShortage(false);
+      setJustPostedShortage(false);
+    }
+  }, [visible, islandIndex, currentCollections]);
 
-    // Find the island data
-    useEffect(() => {
-      if (visible && islandIndex !== undefined) {
-        const island = islandsData.find(island => island.key === islandIndex);
-        setSelectedIsland(island);
-        setLocalCollections(currentCollections || []);
-      }
-    }, [visible, islandIndex, currentCollections]);
+  // Filter debtors based on search
+  const filteredDebtors = useMemo(() => {
+    if (!searchDebtor) return debtors;
+    return debtors.filter(debtor =>
+      debtor.name?.toLowerCase().includes(searchDebtor.toLowerCase()) ||
+      debtor.phone?.toLowerCase().includes(searchDebtor.toLowerCase()) ||
+      debtor.code?.toLowerCase().includes(searchDebtor.toLowerCase())
+    );
+  }, [debtors, searchDebtor]);
 
-    // Filter debtors based on search
-    const filteredDebtors = useMemo(() => {
-      if (!searchDebtor) return debtors;
-      return debtors.filter(debtor =>
-        debtor.name?.toLowerCase().includes(searchDebtor.toLowerCase()) ||
-        debtor.phone?.toLowerCase().includes(searchDebtor.toLowerCase()) ||
-        debtor.code?.toLowerCase().includes(searchDebtor.toLowerCase())
-      );
-    }, [debtors, searchDebtor]);
+  // Calculate totals
+  const totalPumpSales = selectedIsland?.totalPumpSales || 0;
+  const islandReceipts = receipts[islandIndex] || 0;
+  const islandExpenses = expenses[islandIndex] || 0;
+  const totalExpected = totalPumpSales + islandReceipts - islandExpenses;
+  
+  const currentCashCollection = localCollections
+    .filter(c => c?.type === 'cash')
+    .reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
+  
+  const currentDebtCollections = localCollections
+    .filter(c => c?.type === 'debt');
+  
+  const totalDebtCollection = currentDebtCollections
+    .reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
+  
+  const currentTotal = currentCashCollection + totalDebtCollection;
+  const cashNum = parseFloat(cashAmount) || 0;
+  const totalCollectedSoFar = currentTotal + cashNum;
+  const variance = totalExpected - totalCollectedSoFar;
 
-    // Calculate totals
-    const totalPumpSales = selectedIsland?.totalPumpSales || 0;
-    const islandReceipts = receipts[islandIndex] || 0;
-    const islandExpenses = expenses[islandIndex] || 0;
-    const totalExpected = totalPumpSales + islandReceipts - islandExpenses;
+  const hasShortage = variance > 10;
+  const shortagePosted = selectedIsland ? postedShortages[selectedIsland.key] : false;
+  
+  // ========== CHECK IF SHORTAGE WAS POSTED ==========
+  useEffect(() => {
+    if (selectedIsland && postedShortages[selectedIsland.key]) {
+      console.log('✅ Shortage already posted for this island:', postedShortages[selectedIsland.key]);
+      setJustPostedShortage(true);
+      setHasPendingShortage(false);
+    } else if (selectedIsland && variance > 10) {
+      setHasPendingShortage(true);
+      setJustPostedShortage(false);
+    } else {
+      setHasPendingShortage(false);
+      setJustPostedShortage(false);
+    }
+  }, [selectedIsland, postedShortages, variance]); // ✅ variance is now defined before this useEffect
+  
+  // ========== CRITICAL: Block save if shortage exists ==========
+  const canSaveCollections = localCollections.length > 0 && (!hasShortage || shortagePosted || justPostedShortage);
+
+  // Helper to determine severity based on amount
+  const getSeverityLevel = (amount) => {
+    if (amount <= 1000) return 'MINOR';
+    if (amount <= 5000) return 'MODERATE';
+    if (amount <= 20000) return 'MAJOR';
+    return 'CRITICAL';
+  };
+  
+
+  // ========== PREPARE COMPLETE SHORTAGE DETAILS ==========
+  const prepareShortageDetails = async () => {
+    console.log('=== START: prepareShortageDetails ===');
     
-    const currentCashCollection = localCollections
-      .filter(c => c?.type === 'cash')
-      .reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
-    
-    const currentDebtCollections = localCollections
-      .filter(c => c?.type === 'debt');
-    
-    const totalDebtCollection = currentDebtCollections
-      .reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
-    
-    const currentTotal = currentCashCollection + totalDebtCollection;
-    const cashNum = parseFloat(cashAmount) || 0;
-    const totalCollectedSoFar = currentTotal + cashNum;
-    const variance = totalExpected - totalCollectedSoFar;
-
-    const hasShortage = variance > 10; // Only consider shortages above KES 10
-    const shortagePosted = selectedIsland ? postedShortages[selectedIsland.key] : false;
-
-    const handleAddCashCollection = () => {
-      const cashAmountNum = parseFloat(cashAmount) || 0;
-      if (cashAmountNum <= 0) {
-        message.warning('Please enter a valid cash amount');
-        return;
-      }
-
-      const newCollection = {
-        id: `cash_${Date.now()}`,
-        type: 'cash',
-        amount: cashAmountNum,
-        timestamp: new Date().toISOString()
-      };
-      
-      const updatedCollections = [...localCollections, newCollection];
-      setLocalCollections(updatedCollections);
-      setCashAmount('');
-      message.success(`Added KES ${cashAmountNum.toFixed(2)} cash collection`);
-    };
-
-    const handleAddDebtCollection = () => {
-      const debtAmountNum = parseFloat(debtAmount) || 0;
-      
-      if (!selectedDebtor || debtAmountNum <= 0) {
-        message.warning('Please select a debtor and enter valid amount');
-        return;
-      }
-
-      const newCollection = {
-        id: `debt_${Date.now()}`,
-        type: 'debt',
-        debtorId: selectedDebtor.id,
-        debtorName: selectedDebtor.name,
-        debtorCode: selectedDebtor.code,
-        debtorPhone: selectedDebtor.phone,
-        amount: debtAmountNum,
-        timestamp: new Date().toISOString()
-      };
-
-      const updatedCollections = [...localCollections, newCollection];
-      setLocalCollections(updatedCollections);
-      setSelectedDebtor(null);
-      setDebtAmount('');
-      setSearchDebtor('');
-      message.success(`Added KES ${debtAmountNum.toFixed(2)} debt for ${selectedDebtor.name}`);
-    };
-
-    const handleRemoveCollection = (collectionId) => {
-      const updatedCollections = localCollections.filter(c => c.id !== collectionId);
-      setLocalCollections(updatedCollections);
-    };
-
-    const handlePostShortage = async () => {
-      if (variance <= 10) {
-        message.info('Shortage is below minimum threshold (KES 10)');
-        return;
-      }
-
-      if (!selectedIsland?.attendants || selectedIsland.attendants.length === 0) {
-        message.error('No attendant assigned to this island');
-        return;
-      }
-
-      setPostingShortage(true);
-      try {
-        const shortage = await postShortage(selectedIsland, variance, totalExpected, totalCollectedSoFar);
-        
-        if (shortage) {
-          setPostedShortages(prev => ({
-            ...prev,
-            [selectedIsland.key]: {
-              ...shortage,
-              postedAt: new Date().toISOString(),
-              attendantName: selectedIsland.attendants[0].firstName + ' ' + selectedIsland.attendants[0].lastName
-            }
-          }));
-        }
-      } catch (error) {
-        console.error('Error in shortage posting:', error);
-      } finally {
-        setPostingShortage(false);
-      }
-    };
-
-    const handleSaveCollections = () => {
-      // Check if there's an unresolved shortage above threshold
-      if (hasShortage && !shortagePosted) {
-        Modal.confirm({
-          title: 'Unresolved Shortage',
-          content: (
-            <div>
-              <p>There is an unresolved shortage of <strong>KES {variance.toFixed(2)}</strong>.</p>
-              <p>Do you want to:</p>
-              <ul>
-                <li>Post shortage to attendant account</li>
-                <li>Save collections without posting (not recommended)</li>
-              </ul>
-            </div>
-          ),
-          okText: 'Post Shortage',
-          cancelText: 'Save Without Posting',
-          onOk: () => {
-            handlePostShortage();
-          },
-          onCancel: () => {
-            // Save collections without posting shortage
-            onSave(localCollections, variance);
-          }
-        });
-      } else {
-        onSave(localCollections, variance);
-      }
-    };
-
-    if (!selectedIsland) {
+    if (!selectedIsland || !selectedIsland.attendants || selectedIsland.attendants.length === 0) {
+      console.error('❌ No attendant assigned to this island');
+      message.error('No attendant assigned to this island');
       return null;
     }
+
+    const primaryAttendant = selectedIsland.attendants[0];
+    
+    console.log('📋 PRIMARY ATTENDANT:', {
+      id: primaryAttendant.id,
+      name: `${primaryAttendant.firstName} ${primaryAttendant.lastName}`,
+      firstName: primaryAttendant.firstName,
+      lastName: primaryAttendant.lastName
+    });
+    
+    console.log('🏝️ SELECTED ISLAND:', {
+      islandId: selectedIsland.islandId,
+      islandName: selectedIsland.islandName,
+      totalAttendants: selectedIsland.attendants.length
+    });
+    
+    // ========== CRITICAL: FIND STAFF ACCOUNT FOR THIS ATTENDANT ==========
+    let staffAccount = null;
+    let staffAccountId = null;
+    
+    try {
+      console.log('🔍 Fetching staff accounts for station:', currentStationId);
+      
+      // Fetch staff accounts for the current station
+      const result = await staffAccountService.getStaffAccountsByStation(currentStationId);
+      const accounts = result?.accounts || result?.data || result || [];
+      
+      console.log('📊 Total staff accounts fetched:', accounts.length);
+      
+      // Log all staff accounts for debugging
+      console.log('👥 ALL STAFF ACCOUNTS:');
+      accounts.forEach((account, index) => {
+        console.log(`  ${index + 1}. Staff Account ID: ${account.id}`);
+        console.log(`     User ID: ${account.user?.id || account.userId}`);
+        console.log(`     User Name: ${account.user?.firstName || 'N/A'} ${account.user?.lastName || ''}`);
+        console.log(`     Station ID: ${account.stationId}`);
+        console.log(`     Balance: ${account.currentBalance || 0}`);
+        console.log(`     Is Match? ${(account.user?.id === primaryAttendant.id) ? '✅ YES' : '❌ NO'}`);
+        console.log('     ---');
+      });
+      
+      // Find the staff account where user.id matches attendant's id
+      console.log(`🔎 Looking for staff account where user.id === "${primaryAttendant.id}"`);
+      
+      // Try multiple matching strategies
+      staffAccount = accounts.find(account => {
+        const userId = account.user?.id || account.userId;
+        const isMatch = userId === primaryAttendant.id;
+        
+        if (isMatch) {
+          console.log(`🎯 FOUND EXACT MATCH by ID:`, {
+            staffAccountId: account.id,
+            userId: userId,
+            attendantId: primaryAttendant.id,
+            name: account.user?.firstName + ' ' + account.user?.lastName
+          });
+        }
+        return isMatch;
+      });
+      
+      // If no exact ID match, try name matching
+      if (!staffAccount) {
+        console.log('🔍 No exact ID match, trying name matching...');
+        
+        const attendantFullName = `${primaryAttendant.firstName} ${primaryAttendant.lastName}`.toLowerCase().trim();
+        
+        staffAccount = accounts.find(account => {
+          const accountFullName = `${account.user?.firstName || ''} ${account.user?.lastName || ''}`.toLowerCase().trim();
+          const isNameMatch = accountFullName === attendantFullName;
+          
+          if (isNameMatch) {
+            console.log(`🎯 FOUND MATCH by NAME:`, {
+              staffAccountId: account.id,
+              accountName: accountFullName,
+              attendantName: attendantFullName,
+              userId: account.user?.id
+            });
+          }
+          return isNameMatch;
+        });
+      }
+      
+      if (staffAccount) {
+        staffAccountId = staffAccount.id;
+        console.log('✅ STAFF ACCOUNT FOUND:', {
+          staffAccountId: staffAccount.id,
+          userId: staffAccount.user?.id,
+          userName: `${staffAccount.user?.firstName} ${staffAccount.user?.lastName}`,
+          stationId: staffAccount.stationId,
+          currentBalance: staffAccount.currentBalance,
+          status: staffAccount.status
+        });
+      } else {
+        console.error('❌ NO STAFF ACCOUNT FOUND for attendant:', {
+          attendantId: primaryAttendant.id,
+          attendantName: `${primaryAttendant.firstName} ${primaryAttendant.lastName}`,
+          totalAccountsChecked: accounts.length,
+          stationId: currentStationId
+        });
+        
+        // Show all available users for debugging
+        console.log('👥 Available users in staff accounts:');
+        accounts.forEach(acc => {
+          if (acc.user) {
+            console.log(`  - ${acc.user.id}: ${acc.user.firstName} ${acc.user.lastName}`);
+          }
+        });
+        
+        message.error(`No staff account found for ${primaryAttendant.firstName} ${primaryAttendant.lastName}. Please ensure the attendant has a staff account.`);
+        return null;
+      }
+      
+    } catch (error) {
+      console.error('❌ ERROR fetching staff accounts:', error);
+      message.error('Failed to fetch staff accounts');
+      return null;
+    }
+    
+    // ========== PREPARE SHORTAGE DATA ==========
+    
+    // Calculate due date (30 days from today)
+    const today = dayjs();
+    const dueDate = today.add(30, 'day');
+    
+    // Determine shortage type
+    const shortageType = 'CASH';
+    const responsibleParty = 'ATTENDANT';
+    
+    // Get severity level
+    const severity = getSeverityLevel(variance);
+    
+    // Create comprehensive description
+    const description = `Island Collection Shortage - ${selectedIsland.islandName}, Shift #${shift?.shiftNumber || 'N/A'}`;
+    
+    // Create detailed comments with collection breakdown
+    const comments = `Generated from shift closing collections:
+    • Station: ${state?.currentStation?.name || 'Unknown'}
+    • Island: ${selectedIsland.islandName}
+    • Shift: #${shift?.shiftNumber || 'N/A'}
+    • Attendant: ${primaryAttendant.firstName} ${primaryAttendant.lastName}
+    • Expected Total: KES ${totalExpected.toFixed(2)}
+    • Collected: KES ${totalCollectedSoFar.toFixed(2)}
+    • Shortage: KES ${variance.toFixed(2)}
+    • Cash Collections: ${localCollections.filter(c => c.type === 'cash').length} entries
+    • Debt Collections: ${localCollections.filter(c => c.type === 'debt').length} entries
+    • Generated on: ${today.format('DD/MM/YYYY HH:mm:ss')}
+    • Staff Account ID: ${staffAccountId}`;
+    
+    const shortageDetails = {
+      // Attendant Information
+      attendant: primaryAttendant,
+      attendantId: primaryAttendant.id,
+      attendantName: `${primaryAttendant.firstName} ${primaryAttendant.lastName}`,
+      
+      // Staff Account Information - CRITICAL FOR API
+      staffAccountId: staffAccountId,
+      staffAccount: staffAccount,
+      
+      // Location & Context
+      stationId: currentStationId,
+      stationName: state?.currentStation?.name,
+      islandId: selectedIsland.islandId,
+      islandName: selectedIsland.islandName,
+      shiftId: shift?.id,
+      shiftNumber: shift?.shiftNumber,
+      
+      // Shortage Details (pre-filled)
+      shortageAmount: variance,
+      shortageType: shortageType,
+      responsibleParty: responsibleParty,
+      severity: severity,
+      description: description,
+      comments: comments,
+      dueDate: dueDate.toISOString(),
+      incidentDate: new Date().toISOString(),
+      submitDate: today.toISOString(),
+      
+      // Collection details for audit trail
+      collectionDetails: {
+        totalExpected,
+        totalCollected: totalCollectedSoFar,
+        variance,
+        cashCollections: localCollections.filter(c => c.type === 'cash'),
+        debtCollections: localCollections.filter(c => c.type === 'debt'),
+        receipts: islandReceipts,
+        expenses: islandExpenses,
+        pumpSales: totalPumpSales,
+        timestamp: new Date().toISOString()
+      }
+    };
+    
+    console.log('✅ FINAL SHORTAGE DETAILS:', {
+      staffAccountId: shortageDetails.staffAccountId,
+      amount: shortageDetails.shortageAmount,
+      attendantName: shortageDetails.attendantName,
+      dueDate: dayjs(shortageDetails.dueDate).format('DD/MM/YYYY')
+    });
+    
+    console.log('=== END: prepareShortageDetails ===');
+    
+    return shortageDetails;
+  };
+
+  // ========== CREATE COMPLETE SHORTAGE RECORD ==========
+  const handleCreateShortageRecord = async () => {
+    if (!shortageDetails) return;
+    
+    setCreatingShortage(true);
+    try {
+      if (!shortageDetails.staffAccountId) {
+        message.error(`No staff account found for ${shortageDetails.attendantName}`);
+        return;
+      }
+
+      // Prepare complete shortage data for API
+      const shortageData = {
+        staffAccountId: shortageDetails.staffAccountId,
+        amount: shortageDetails.shortageAmount,
+        description: shortageDetails.description,
+        shortageType: shortageDetails.shortageType,
+        responsibleParty: shortageDetails.responsibleParty,
+        severity: shortageDetails.severity,
+        comments: shortageDetails.comments,
+        shiftId: shortageDetails.shiftId,
+        islandId: shortageDetails.islandId,
+        dueDate: shortageDetails.dueDate,
+        incidentDate: shortageDetails.incidentDate,
+        
+        recordedById: currentUser?.id,
+        stationId: shortageDetails.stationId,
+        submitDate: shortageDetails.submitDate,
+        autoGenerated: true,
+        source: 'SHIFT_CLOSING_COLLECTIONS',
+        
+        metadata: JSON.stringify({
+          collectionDetails: shortageDetails.collectionDetails,
+          stationName: shortageDetails.stationName,
+          islandName: shortageDetails.islandName,
+          shiftNumber: shortageDetails.shiftNumber,
+          attendantName: shortageDetails.attendantName
+        })
+      };
+
+      console.log('Creating complete shortage record:', shortageData);
+      
+      // Create shortage via API
+      const response = await shortageService.createShortage(shortageData);
+      const shortage = response.data;
+      
+      message.success(`Shortage of KES ${shortageDetails.shortageAmount.toFixed(2)} created for ${shortageDetails.attendantName}`);
+      
+      // ✅ CRITICAL: Update parent state via postedShortages setter
+      setPostedShortages(prev => ({
+        ...prev,
+        [selectedIsland.key]: {
+          ...shortage,
+          postedAt: new Date().toISOString(),
+          attendantName: shortageDetails.attendantName,
+          amount: shortageDetails.shortageAmount,
+          dueDate: shortageDetails.dueDate
+        }
+      }));
+      
+      // ✅ Update local state to reflect shortage was posted
+      setJustPostedShortage(true);
+      setHasPendingShortage(false);
+      
+      // Close shortage modal but KEEP collections modal open
+      setShortageModalVisible(false);
+      
+      // ✅ IMPORTANT: Don't close collections modal - keep user's data
+      
+      // Show inline success message
+      message.success({
+        content: (
+          <div>
+            <p><strong>KES {shortageDetails.shortageAmount.toFixed(2)} shortage recorded</strong></p>
+            <p>Attendant: {shortageDetails.attendantName}</p>
+            <p>Due Date: {dayjs(shortageDetails.dueDate).format('DD/MM/YYYY')}</p>
+          </div>
+        ),
+        duration: 4,
+      });
+      
+    } catch (error) {
+      console.error('Error creating shortage record:', error);
+      message.error(`Failed to create shortage: ${error.message}`);
+    } finally {
+      setCreatingShortage(false);
+    }
+  };
+
+  // ========== OPEN SHORTAGE CREATION MODAL ==========
+  const handleOpenShortageCreation = async () => {
+    console.log('Opening shortage creation modal...');
+    
+    try {
+      const details = await prepareShortageDetails();
+      if (details) {
+        setShortageDetails(details);
+        setShortageModalVisible(true);
+      }
+    } catch (error) {
+      console.error('Error preparing shortage details:', error);
+      message.error('Failed to prepare shortage details');
+    }
+  };
+
+  // ========== SHORTAGE CREATION MODAL COMPONENT ==========
+  const ShortageCreationModal = () => {
+    if (!shortageDetails) return null;
 
     return (
       <Modal
         title={
           <Space>
+            <AlertTriangle size={16} color="#fa8c16" />
+            <Text strong>Create Shortage Record</Text>
+            <Tag color="red" style={{ marginLeft: 8 }}>
+              KES {shortageDetails.shortageAmount.toFixed(2)}
+            </Tag>
+          </Space>
+        }
+        open={shortageModalVisible}
+        onCancel={() => {
+          if (!creatingShortage) {
+            setShortageModalVisible(false);
+          }
+        }}
+        width={750}
+        footer={[
+          <Button 
+            key="cancel" 
+            onClick={() => setShortageModalVisible(false)}
+            disabled={creatingShortage}
+          >
+            Cancel
+          </Button>,
+          <Button
+            key="create"
+            type="primary"
+            onClick={handleCreateShortageRecord}
+            loading={creatingShortage}
+            icon={creatingShortage ? null : <CheckSquare size={14} />}
+            disabled={!shortageDetails.staffAccountId || creatingShortage}
+          >
+            {creatingShortage ? 'Creating Shortage Record...' : 'Create Shortage Record'}
+          </Button>
+        ]}
+        maskClosable={!creatingShortage}
+        closable={!creatingShortage}
+      >
+        {/* ALERT IF NO STAFF ACCOUNT */}
+        {!shortageDetails.staffAccountId && (
+          <Alert
+            message="Missing Staff Account"
+            description="Cannot find staff account for this attendant. Please ensure the attendant has an active staff account."
+            type="error"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+        )}
+
+        {/* MAIN CONTENT */}
+        <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 8 }}>
+          {/* ATTENDANT & BASIC INFO CARD */}
+          <Card 
+            size="small" 
+            style={{ marginBottom: 16, borderLeft: '4px solid #1890ff' }}
+          >
+            <Descriptions title="Attendant & Basic Information" column={2} size="small">
+              <Descriptions.Item label="Attendant" span={2}>
+                <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                  <Space>
+                    <UserOutlined style={{ color: '#1890ff' }} />
+                    <Text strong style={{ fontSize: '15px' }}>
+                      {shortageDetails.attendantName}
+                    </Text>
+                  </Space>
+                  
+                  {shortageDetails.staffAccountId && (
+                    <div style={{ 
+                      backgroundColor: '#f6ffed', 
+                      padding: '4px 8px', 
+                      borderRadius: 4,
+                      marginTop: 4
+                    }}>
+                      <Space>
+                        {/* <Text type="secondary">Staff Account:</Text> */}
+                        {/* <Text code style={{ fontSize: '11px' }}>
+                          {shortageDetails.staffAccountId.slice(0, 12)}...
+                        </Text> */}
+                      </Space>
+                    </div>
+                  )}
+                </Space>
+              </Descriptions.Item>
+              
+              <Descriptions.Item label="Station">
+                <Space>
+                  <BankOutlined />
+                  <Text>{shortageDetails.stationName || 'Unknown Station'}</Text>
+                </Space>
+              </Descriptions.Item>
+              
+              <Descriptions.Item label="Island">
+                <Space>
+                  <Fuel size={14} color="#52c41a" />
+                  <Text>{shortageDetails.islandName}</Text>
+                </Space>
+              </Descriptions.Item>
+              
+              <Descriptions.Item label="Shift">
+                <Space>
+                  <Clock size={14} />
+                  <Tag color="blue">#{shortageDetails.shiftNumber}</Tag>
+                </Space>
+              </Descriptions.Item>
+            </Descriptions>
+          </Card>
+
+          {/* SHORTAGE DETAILS CARD */}
+          <Card 
+            size="small" 
+            style={{ marginBottom: 16, borderLeft: '4px solid #ff4d4f' }}
+            title={
+              <Space>
+                <DollarSign size={14} color="#ff4d4f" />
+                <Text strong>Shortage Details</Text>
+              </Space>
+            }
+          >
+            <Row gutter={[16, 16]} style={{ marginBottom: 12 }}>
+              <Col span={8}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '12px', color: '#666', marginBottom: 4 }}>
+                    Amount
+                  </div>
+                  <div style={{ 
+                    fontSize: '22px', 
+                    fontWeight: 'bold', 
+                    color: '#ff4d4f',
+                    padding: '8px',
+                    backgroundColor: '#fff2f0',
+                    borderRadius: '6px'
+                  }}>
+                    KES {shortageDetails.shortageAmount.toFixed(2)}
+                  </div>
+                </div>
+              </Col>
+              
+              <Col span={8}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '12px', color: '#666', marginBottom: 4 }}>
+                    Type
+                  </div>
+                  <Tag 
+                    color="purple" 
+                    style={{ 
+                      fontSize: '14px', 
+                      padding: '8px 12px',
+                      margin: 0
+                    }}
+                  >
+                    {shortageDetails.shortageType}
+                  </Tag>
+                </div>
+              </Col>
+              
+              <Col span={8}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '12px', color: '#666', marginBottom: 4 }}>
+                    Severity
+                  </div>
+                  <Tag 
+                    color={
+                      shortageDetails.severity === 'CRITICAL' ? 'red' :
+                      shortageDetails.severity === 'MAJOR' ? 'orange' :
+                      shortageDetails.severity === 'MODERATE' ? 'gold' : 'blue'
+                    }
+                    style={{ 
+                      fontSize: '14px', 
+                      padding: '8px 12px',
+                      margin: 0,
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    {shortageDetails.severity}
+                  </Tag>
+                </div>
+              </Col>
+            </Row>
+            
+            <Row gutter={[16, 16]}>
+              <Col span={12}>
+                <div style={{ marginBottom: 8 }}>
+                  <Text strong style={{ display: 'block', marginBottom: 4 }}>
+                    <CalendarOutlined /> Due Date
+                  </Text>
+                  <div style={{ 
+                    padding: '8px', 
+                    backgroundColor: '#e6f7ff',
+                    borderRadius: '4px',
+                    border: '1px solid #91d5ff'
+                  }}>
+                    <Space>
+                      <Text strong>{dayjs(shortageDetails.dueDate).format('DD/MM/YYYY')}</Text>
+                      <Text type="secondary">
+                        (30 days from today)
+                      </Text>
+                    </Space>
+                  </div>
+                </div>
+              </Col>
+              
+              <Col span={12}>
+                <div style={{ marginBottom: 8 }}>
+                  <Text strong style={{ display: 'block', marginBottom: 4 }}>
+                    Responsible Party
+                  </Text>
+                  <div style={{ 
+                    padding: '8px', 
+                    backgroundColor: '#f6ffed',
+                    borderRadius: '4px',
+                    border: '1px solid #b7eb8f'
+                  }}>
+                    <Tag color="blue">{shortageDetails.responsibleParty}</Tag>
+                  </div>
+                </div>
+              </Col>
+            </Row>
+          </Card>
+
+          {/* COLLECTION BREAKDOWN CARD */}
+          <Card 
+            size="small" 
+            style={{ marginBottom: 16, borderLeft: '4px solid #52c41a' }}
+            title={
+              <Space>
+                <Wallet size={14} color="#52c41a" />
+                <Text strong>Collection Breakdown</Text>
+              </Space>
+            }
+          >
+            <Row gutter={[16, 16]} style={{ marginBottom: 12 }}>
+              <Col span={8}>
+                <Statistic
+                  title="Expected Total"
+                  value={shortageDetails.collectionDetails.totalExpected}
+                  precision={2}
+                  prefix="KES"
+                  valueStyle={{ fontSize: '14px', color: '#1890ff', fontWeight: 'bold' }}
+                />
+              </Col>
+              <Col span={8}>
+                <Statistic
+                  title="Collected"
+                  value={shortageDetails.collectionDetails.totalCollected}
+                  precision={2}
+                  prefix="KES"
+                  valueStyle={{ fontSize: '14px', color: '#52c41a', fontWeight: 'bold' }}
+                />
+              </Col>
+              <Col span={8}>
+                <Statistic
+                  title="Shortage"
+                  value={shortageDetails.collectionDetails.variance}
+                  precision={2}
+                  prefix="KES"
+                  valueStyle={{ 
+                    fontSize: '14px', 
+                    color: '#ff4d4f', 
+                    fontWeight: 'bold',
+                    backgroundColor: '#fff2f0',
+                    padding: '4px 8px',
+                    borderRadius: '4px'
+                  }}
+                />
+              </Col>
+            </Row>
+            
+            <Divider style={{ margin: '8px 0' }} />
+            
+            <Row gutter={[16, 16]}>
+              <Col span={12}>
+                <Card size="small" style={{ backgroundColor: '#f6ffed' }}>
+                  <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                    <Space>
+                      <Tag color="green">Cash</Tag>
+                      <Text strong>Cash Collections</Text>
+                    </Space>
+                    <div style={{ paddingLeft: 24 }}>
+                      <Text>
+                        {shortageDetails.collectionDetails.cashCollections.length} entries
+                      </Text>
+                      <Text type="secondary" style={{ display: 'block', fontSize: '12px' }}>
+                        Total: KES {
+                          shortageDetails.collectionDetails.cashCollections
+                            .reduce((sum, c) => sum + (c.amount || 0), 0)
+                            .toFixed(2)
+                        }
+                      </Text>
+                    </div>
+                  </Space>
+                </Card>
+              </Col>
+              
+              <Col span={12}>
+                <Card size="small" style={{ backgroundColor: '#f0f8ff' }}>
+                  <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                    <Space>
+                      <Tag color="blue">Debt</Tag>
+                      <Text strong>Debt Collections</Text>
+                    </Space>
+                    <div style={{ paddingLeft: 24 }}>
+                      <Text>
+                        {shortageDetails.collectionDetails.debtCollections.length} entries
+                      </Text>
+                      <Text type="secondary" style={{ display: 'block', fontSize: '12px' }}>
+                        Total: KES {
+                          shortageDetails.collectionDetails.debtCollections
+                            .reduce((sum, c) => sum + (c.amount || 0), 0)
+                            .toFixed(2)
+                        }
+                      </Text>
+                    </div>
+                  </Space>
+                </Card>
+              </Col>
+            </Row>
+          </Card>
+
+          {/* DESCRIPTION & COMMENTS CARD */}
+          <Card 
+            size="small" 
+            title={
+              <Space>
+                <FileText size={14} />
+                <Text strong>Description & Comments</Text>
+              </Space>
+            }
+            style={{ marginBottom: 16 }}
+          >
+            <div style={{ marginBottom: 16 }}>
+              <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                Description:
+              </Text>
+              <div style={{ 
+                padding: 12, 
+                backgroundColor: '#fafafa', 
+                borderRadius: 6,
+                border: '1px solid #f0f0f0',
+                fontSize: '13px',
+                lineHeight: 1.5
+              }}>
+                {shortageDetails.description}
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: 12 }}>
+              <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                Detailed Comments:
+              </Text>
+              <div style={{ 
+                padding: 12, 
+                backgroundColor: '#f6ffed', 
+                borderRadius: 6,
+                border: '1px solid #d9f7be',
+                fontSize: '12px',
+                lineHeight: 1.5,
+                whiteSpace: 'pre-line'
+              }}>
+                {shortageDetails.comments}
+              </div>
+            </div>
+          </Card>
+
+          {/* FINAL WARNING/INFO CARD */}
+          <Alert
+            message="Important Information"
+            description={
+              <div>
+                <p style={{ marginBottom: 8 }}>
+                  <strong>This shortage will be recorded in the attendant's staff account with the following details:</strong>
+                </p>
+                <ul style={{ marginBottom: 0, paddingLeft: 20 }}>
+                  <li>Amount: <strong>KES {shortageDetails.shortageAmount.toFixed(2)}</strong></li>
+                  <li>Due Date: <strong>{dayjs(shortageDetails.dueDate).format('DD/MM/YYYY')}</strong> (30 days)</li>
+                  <li>Type: <strong>{shortageDetails.shortageType}</strong></li>
+                  <li>Responsible Party: <strong>{shortageDetails.responsibleParty}</strong></li>
+                  {/* <li>This record will be visible in the attendant's shortage history</li>
+                  <li>The attendant will receive notifications about this shortage</li> */}
+                </ul>
+              </div>
+            }
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+        </div>
+      </Modal>
+    );
+  };
+
+  const handleAddCashCollection = () => {
+    const cashAmountNum = parseFloat(cashAmount) || 0;
+    if (cashAmountNum <= 0) {
+      message.warning('Please enter a valid cash amount');
+      return;
+    }
+
+    const newCollection = {
+      id: `cash_${Date.now()}`,
+      type: 'cash',
+      amount: cashAmountNum,
+      timestamp: new Date().toISOString()
+    };
+    
+    const updatedCollections = [...localCollections, newCollection];
+    setLocalCollections(updatedCollections);
+    setCashAmount('');
+    message.success(`Added KES ${cashAmountNum.toFixed(2)} cash collection`);
+  };
+
+  const handleAddDebtCollection = () => {
+    const debtAmountNum = parseFloat(debtAmount) || 0;
+    
+    if (!selectedDebtor || debtAmountNum <= 0) {
+      message.warning('Please select a debtor and enter valid amount');
+      return;
+    }
+
+    const newCollection = {
+      id: `debt_${Date.now()}`,
+      type: 'debt',
+      debtorId: selectedDebtor.id,
+      debtorName: selectedDebtor.name,
+      debtorCode: selectedDebtor.code,
+      debtorPhone: selectedDebtor.phone,
+      amount: debtAmountNum,
+      timestamp: new Date().toISOString()
+    };
+
+    const updatedCollections = [...localCollections, newCollection];
+    setLocalCollections(updatedCollections);
+    setSelectedDebtor(null);
+    setDebtAmount('');
+    setSearchDebtor('');
+    message.success(`Added KES ${debtAmountNum.toFixed(2)} debt for ${selectedDebtor.name}`);
+  };
+
+  const handleRemoveCollection = (collectionId) => {
+    const updatedCollections = localCollections.filter(c => c.id !== collectionId);
+    setLocalCollections(updatedCollections);
+  };
+
+  // ========== MODIFIED SAVE HANDLER ==========
+  const handleSaveCollections = () => {
+    // ✅ CRITICAL: CANNOT SAVE IF UNRESOLVED SHORTAGE EXISTS
+    if (hasShortage && !shortagePosted && !justPostedShortage) {
+      Modal.error({
+        title: 'Cannot Save - Unresolved Shortage',
+        content: (
+          <div>
+            <p>You have an unresolved shortage of <strong>KES {variance.toFixed(2)}</strong>.</p>
+            <p><strong>You must create a shortage record before you can save collections.</strong></p>
+            <p>Click "Create Shortage Record" to proceed.</p>
+          </div>
+        ),
+        okText: 'Create Shortage Record',
+        cancelText: 'Cancel',
+        onOk: () => {
+          handleOpenShortageCreation();
+        }
+      });
+      return; // Block the save
+    }
+    
+    // Only allow save if no shortage or shortage is already posted
+    onSave(localCollections, variance);
+  };
+
+  if (!selectedIsland) {
+    return null;
+  }
+
+  return (
+    <>
+      <Modal
+        title={
+          <Space>
             <Wallet size={16} />
             <Text strong>Collections - {selectedIsland?.islandName || 'Unknown Island'}</Text>
+            {justPostedShortage && (
+              <Tag color="green" icon={<CheckCircle size={12} />}>
+                Shortage Posted
+              </Tag>
+            )}
           </Space>
         }
         open={visible}
@@ -792,25 +1512,34 @@ const calculatePumpValues = useCallback(() => {
           </Button>,
           <Button
             key="post"
-            type={hasShortage && !shortagePosted ? "dashed" : "default"}
-            danger={hasShortage && !shortagePosted}
-            onClick={handlePostShortage}
-            loading={postingShortage}
-            disabled={!hasShortage || shortagePosted || postingShortage}
+            type={hasPendingShortage && !justPostedShortage ? "dashed" : "default"}
+            danger={hasPendingShortage && !justPostedShortage}
+            onClick={handleOpenShortageCreation}
+            disabled={!hasPendingShortage || justPostedShortage || creatingShortage}
+            icon={<AlertTriangle size={14} />}
+            loading={creatingShortage}
           >
-            {shortagePosted 
-              ? 'Shortage Posted ✓' 
-              : hasShortage 
-                ? `Post Shortage (KES ${variance.toFixed(2)})`
+            {justPostedShortage 
+              ? 'Shortage Created ✓' 
+              : hasPendingShortage 
+                ? `Create Shortage (KES ${variance.toFixed(2)})`
                 : 'No Shortage'}
           </Button>,
           <Button
             key="save"
             type="primary"
             onClick={handleSaveCollections}
-            disabled={localCollections.length === 0}
+            disabled={!canSaveCollections}
+            style={{
+              opacity: canSaveCollections ? 1 : 0.5,
+              cursor: canSaveCollections ? 'pointer' : 'not-allowed'
+            }}
           >
-            Save Collections
+            {justPostedShortage 
+              ? 'Save Collections (Shortage Resolved)' 
+              : hasPendingShortage 
+                ? 'Save Collections (Blocked - Resolve Shortage First)'
+                : 'Save Collections'}
           </Button>
         ]}
       >
@@ -849,33 +1578,72 @@ const calculatePumpValues = useCallback(() => {
               <Col span={6}>
                 <Statistic
                   title="Status"
-                  value={variance === 0 ? 'Balanced' : variance > 0 ? 'Shortage' : 'Overage'}
+                  value={
+                    justPostedShortage ? 'Shortage Posted ✓' :
+                    variance === 0 ? 'Balanced' : 
+                    variance > 0 ? 'Shortage' : 'Overage'
+                  }
                   valueStyle={{ 
-                    color: variance === 0 ? '#52c41a' : variance > 0 ? '#ff4d4f' : '#faad14',
+                    color: justPostedShortage ? '#52c41a' :
+                    variance === 0 ? '#52c41a' : 
+                    variance > 0 ? '#ff4d4f' : '#faad14',
                     fontSize: '14px'
                   }}
                 />
               </Col>
             </Row>
             
-            {hasShortage && !shortagePosted && (
+            {/* ========== ENHANCED SHORTAGE ALERTS ========== */}
+            {hasPendingShortage && !justPostedShortage && (
               <Alert
-                message="Action Required"
-                description={`Shortage of KES ${variance.toFixed(2)} detected. Post to attendant account before saving.`}
+                message="⚠️ ACTION REQUIRED - CANNOT PROCEED"
+                description={
+                  <div>
+                    <p><strong>KES {variance.toFixed(2)} shortage detected.</strong></p>
+                    <p>You <strong>MUST create a shortage record</strong> for the attendant before you can save collections.</p>
+                    <p>The shortage will include:</p>
+                    <ul style={{ marginBottom: 0, paddingLeft: 20 }}>
+                      <li>Attendant information (auto-selected)</li>
+                      <li>30-day due date (auto-calculated)</li>
+                      <li>Complete shortage details</li>
+                      <li>Collection breakdown for reference</li>
+                    </ul>
+                  </div>
+                }
                 type="error"
                 showIcon
                 style={{ marginTop: 12 }}
               />
             )}
             
-            {shortagePosted && (
+            {justPostedShortage && (
               <Alert
-                message="Shortage Posted"
-                description={`Shortage of KES ${variance.toFixed(2)} has been posted to attendant account.`}
+                message="✅ Shortage Record Created - You Can Now Save Collections"
+                description={
+                  <div>
+                    <p><strong>KES {variance.toFixed(2)} shortage has been recorded for the attendant.</strong></p>
+                    <p>You can now save collections. All your entered data is preserved.</p>
+                  </div>
+                }
                 type="success"
                 showIcon
                 style={{ marginTop: 12 }}
               />
+            )}
+            
+            {/* ========== SAVE STATUS INDICATOR ========== */}
+            {!canSaveCollections && hasPendingShortage && (
+              <div style={{ 
+                marginTop: 12, 
+                padding: '8px 12px', 
+                backgroundColor: '#fff2e8',
+                border: '1px solid #ffbb96',
+                borderRadius: '4px'
+              }}>
+                <Text type="warning" strong>
+                  ⚠️ Save is blocked until shortage record is created
+                </Text>
+              </div>
             )}
           </Card>
         </div>
@@ -1029,8 +1797,12 @@ const calculatePumpValues = useCallback(() => {
           </div>
         )}
       </Modal>
-    );
-  };
+      
+      {/* Shortage Creation Modal */}
+      <ShortageCreationModal />
+    </>
+  );
+};
 
   // ========== STEP NAVIGATION ==========
   const handleNextStep = () => {
