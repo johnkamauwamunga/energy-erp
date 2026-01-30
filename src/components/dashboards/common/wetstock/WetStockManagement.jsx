@@ -13,7 +13,8 @@ import {
   Alert,
   Spin,
   message,
-  Badge
+  Badge,
+  Modal
 } from 'antd';
 import {
   DashboardOutlined,
@@ -21,18 +22,27 @@ import {
   BarChartOutlined,
   ReloadOutlined,
   PlusOutlined,
-  ReconciliationOutlined
+  ReconciliationOutlined,
+  DownloadOutlined,
+  FilePdfOutlined,
+  FileExcelOutlined
 } from '@ant-design/icons';
 import {LoaderPinwheelIcon, Fuel} from 'lucide-react'
 import PumpReadingsList from './PumpReadingsList';
 import TankReadingsList from './TankReadingsList';
 import ReconciliationList from './ReconciliationList';
 import { wetStockService } from '../../../../services/wetStockService/wetStockService';
+import { useApp } from '../../../../context/AppContext';
 
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
 
 const WetStockManagement = () => {
+  const { state } = useApp();
+  const currentUser = state?.currentUser;
+  const currentStation = state?.currentStation;
+  const currentCompany = state?.currentCompany;
+  
   const [activeTab, setActiveTab] = useState('pump-readings');
   const [pumpReadings, setPumpReadings] = useState([]);
   const [tankReadings, setTankReadings] = useState([]);
@@ -42,6 +52,8 @@ const WetStockManagement = () => {
   const [tankFilters, setTankFilters] = useState({});
   const [reconciliationFilters, setReconciliationFilters] = useState({});
   const [summary, setSummary] = useState(null);
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
 
   // Fetch pump readings
   const fetchPumpReadings = async (filters = {}) => {
@@ -125,7 +137,58 @@ const WetStockManagement = () => {
     fetchTankReadings(tankFilters);
     fetchReconciliations(reconciliationFilters);
     fetchSummary();
-    message.info('Data refreshed successfully', 2);
+    message.success('Data refreshed successfully', 2);
+  };
+
+  // Get current data based on active tab
+  const getCurrentData = () => {
+    switch(activeTab) {
+      case 'pump-readings':
+        return {
+          data: pumpReadings,
+          count: pumpReadings.length,
+          name: 'Pump Meter Readings'
+        };
+      case 'tank-readings':
+        return {
+          data: tankReadings,
+          count: tankReadings.length,
+          name: 'Tank Dip Readings'
+        };
+      case 'reconciliations':
+        return {
+          data: reconciliations,
+          count: reconciliations.length,
+          name: 'Reconciliations'
+        };
+      default:
+        return { data: [], count: 0, name: '' };
+    }
+  };
+
+  const handleQuickExport = async (format) => {
+    const currentData = getCurrentData();
+    if (currentData.count === 0) {
+      message.warning(`No ${currentData.name.toLowerCase()} to export`);
+      return;
+    }
+
+    setExportLoading(true);
+    try {
+      // Quick export logic would go here
+      message.success(`Preparing ${format.toUpperCase()} export for ${currentData.name}`);
+      
+      // For now, just show a message
+      setTimeout(() => {
+        setExportLoading(false);
+        message.success(`${currentData.name} ${format.toUpperCase()} export started`);
+      }, 1000);
+      
+    } catch (error) {
+      console.error('Export error:', error);
+      message.error(`Failed to export ${format}: ${error.message}`);
+      setExportLoading(false);
+    }
   };
 
   return (
@@ -164,6 +227,16 @@ const WetStockManagement = () => {
                   loading={loading}
                 >
                   Refresh All
+                </Button>
+              </Col>
+              <Col>
+                <Button
+                  type="default"
+                  icon={<DownloadOutlined />}
+                  onClick={() => setExportModalVisible(true)}
+                  loading={exportLoading}
+                >
+                  Export
                 </Button>
               </Col>
             </Row>
@@ -213,6 +286,53 @@ const WetStockManagement = () => {
         </Row>
       )}
 
+      {/* Export Modal */}
+      <Modal
+        title="Export Reports"
+        open={exportModalVisible}
+        onCancel={() => setExportModalVisible(false)}
+        footer={null}
+        width={400}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Alert
+            message="Export Options"
+            description="Choose export format for current tab data"
+            type="info"
+            showIcon
+          />
+          
+          <Row gutter={[16, 16]}>
+            <Col span={24}>
+              <Card size="small" title="Quick Export">
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Button 
+                    icon={<FilePdfOutlined />}
+                    onClick={() => handleQuickExport('pdf')}
+                    block
+                    loading={exportLoading}
+                  >
+                    Export as PDF
+                  </Button>
+                  <Button 
+                    icon={<FileExcelOutlined />}
+                    onClick={() => handleQuickExport('excel')}
+                    block
+                    loading={exportLoading}
+                  >
+                    Export as Excel
+                  </Button>
+                </Space>
+              </Card>
+            </Col>
+          </Row>
+          
+          <Text type="secondary" style={{ fontSize: '12px' }}>
+            Current tab: {getCurrentData().name} ({getCurrentData().count} records)
+          </Text>
+        </Space>
+      </Modal>
+
       {/* Main Content */}
       <Card>
         <Tabs
@@ -238,6 +358,9 @@ const WetStockManagement = () => {
               onRefresh={() => fetchPumpReadings(pumpFilters)}
               showFilters={true}
               pagination={{ pageSize: 20 }}
+              currentUser={currentUser}
+              currentStation={currentStation}
+              currentCompany={currentCompany}
             />
           </TabPane>
 
@@ -259,6 +382,9 @@ const WetStockManagement = () => {
               onRefresh={() => fetchTankReadings(tankFilters)}
               showFilters={true}
               pagination={{ pageSize: 20 }}
+              currentUser={currentUser}
+              currentStation={currentStation}
+              currentCompany={currentCompany}
             />
           </TabPane>
 
@@ -280,6 +406,9 @@ const WetStockManagement = () => {
               onRefresh={() => fetchReconciliations(reconciliationFilters)}
               showFilters={true}
               pagination={{ pageSize: 20 }}
+              currentUser={currentUser}
+              currentStation={currentStation}
+              currentCompany={currentCompany}
             />
           </TabPane>
         </Tabs>

@@ -665,17 +665,17 @@ const StaffAccountManagement = () => {
         type: 'text'
       },
       {
-        title: 'Role',
-        dataIndex: 'role',
-        key: 'role',
+        title: 'Phone',
+        dataIndex: 'phone',
+        key: 'phone',
         width: 100,
         type: 'text'
       },
       {
-        title: 'Station',
-        dataIndex: 'station',
-        key: 'station',
-        width: 120,
+        title: 'Role',
+        dataIndex: 'role',
+        key: 'role',
+        width: 100,
         type: 'text'
       },
       {
@@ -693,20 +693,6 @@ const StaffAccountManagement = () => {
         type: 'currency'
       },
       {
-        title: 'Balance Status',
-        dataIndex: 'balanceStatus',
-        key: 'balanceStatus',
-        width: 100,
-        type: 'text'
-      },
-      {
-        title: 'Credit Limit',
-        dataIndex: 'creditLimit',
-        key: 'creditLimit',
-        width: 100,
-        type: 'currency'
-      },
-      {
         title: 'Shortages',
         dataIndex: 'shortages',
         key: 'shortages',
@@ -714,18 +700,11 @@ const StaffAccountManagement = () => {
         type: 'currency'
       },
       {
-        title: 'Advances',
-        dataIndex: 'advances',
-        key: 'advances',
-        width: 100,
-        type: 'currency'
-      },
-      {
-        title: 'Bonuses',
-        dataIndex: 'bonuses',
-        key: 'bonuses',
-        width: 100,
-        type: 'currency'
+        title: 'Status',
+        dataIndex: 'status',
+        key: 'status',
+        width: 80,
+        type: 'text'
       },
       {
         title: 'Next Payment',
@@ -733,7 +712,7 @@ const StaffAccountManagement = () => {
         key: 'nextPaymentDate',
         width: 100,
         type: 'date'
-      }
+      },
     ];
   };
 
@@ -783,37 +762,9 @@ const StaffAccountManagement = () => {
         type: 'currency'
       },
       {
-        title: 'Balance Status',
-        dataIndex: 'balanceStatus',
-        key: 'balanceStatus',
-        width: 100,
-        type: 'text'
-      },
-      {
-        title: 'Credit Limit',
-        dataIndex: 'creditLimit',
-        key: 'creditLimit',
-        width: 100,
-        type: 'currency'
-      },
-      {
-        title: 'Credit Utilization',
-        dataIndex: 'creditUtilization',
-        key: 'creditUtilization',
-        width: 100,
-        type: 'text'
-      },
-      {
         title: 'Shortages',
         dataIndex: 'shortages',
         key: 'shortages',
-        width: 100,
-        type: 'currency'
-      },
-      {
-        title: 'Advances',
-        dataIndex: 'advances',
-        key: 'advances',
         width: 100,
         type: 'currency'
       },
@@ -822,20 +773,6 @@ const StaffAccountManagement = () => {
         dataIndex: 'status',
         key: 'status',
         width: 80,
-        type: 'text'
-      },
-      {
-        title: 'On Hold',
-        dataIndex: 'onHold',
-        key: 'onHold',
-        width: 80,
-        type: 'text'
-      },
-      {
-        title: 'Payment Method',
-        dataIndex: 'paymentMethod',
-        key: 'paymentMethod',
-        width: 120,
         type: 'text'
       },
       {
