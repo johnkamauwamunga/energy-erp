@@ -55,13 +55,17 @@ import {
   BarChartOutlined,
   HistoryOutlined,
   SettingOutlined,
-  PhoneOutlined
+  PhoneOutlined,
+  DownloadOutlined,
+  FileExcelOutlined,
+  FilePdfOutlined
 } from '@ant-design/icons';
 import { staffAccountService } from '../../../../services/staffAccountService/staffAccountService';
 import { userService } from '../../../../services/userService/userService';
 import { stationService } from '../../../../services/stationService/stationService';
 import { useApp } from '../../../../context/AppContext';
 import dayjs from 'dayjs';
+import AdvancedReportGenerator from '../../../dashboards/common/downloadable/AdvancedReportGenerator';
 
 const { Option } = Select;
 const { Title, Text } = Typography;
@@ -484,6 +488,355 @@ const StaffAccountManagement = () => {
     refreshData();
   }, []);
 
+  // Prepare data for staff accounts report
+  const prepareStaffAccountsExportData = () => {
+    if (!staffAccounts || staffAccounts.length === 0) return [];
+    
+    return staffAccounts.map((account, index) => ({
+      sequence: index + 1,
+      staffName: account.userDisplayName || `${account.user?.firstName || ''} ${account.user?.lastName || ''}`.trim(),
+      email: account.userEmail || account.user?.email || 'N/A',
+      station: account.stationDisplayName || account.station?.name || 'N/A',
+      salary: account.salaryAmount || 0,
+      balance: account.currentBalance || 0,
+      balanceStatus: account.currentBalance < 0 ? 'Owes Station' : 
+                    account.currentBalance > 0 ? 'Station Owes' : 'Settled',
+      creditLimit: account.creditLimit || 5000,
+      shortages: account.totalShortages || 0,
+      advances: account.totalAdvances || 0,
+      bonuses: account.totalBonuses || 0,
+      status: account.isActive ? 'Active' : 'Inactive',
+      onHold: account.isOnHold ? 'Yes' : 'No',
+      paymentMethod: staffAccountService.getPayrollMethodLabel ? 
+        staffAccountService.getPayrollMethodLabel(account.payrollMethod) : 
+        account.payrollMethod || 'N/A',
+      paymentSchedule: staffAccountService.getPaymentScheduleLabel ? 
+        staffAccountService.getPaymentScheduleLabel(account.paymentSchedule) : 
+        account.paymentSchedule || 'N/A',
+      bankAccount: account.bankAccountNumber || 'N/A',
+      mobileMoney: account.mobileMoneyNumber || 'N/A',
+      createdAt: account.createdAt ? dayjs(account.createdAt).format('YYYY-MM-DD HH:mm:ss') : 'N/A'
+    }));
+  };
+
+  // Prepare data for users without accounts report
+  const prepareUsersWithoutAccountsExportData = () => {
+    if (!usersWithoutAccounts || usersWithoutAccounts.length === 0) return [];
+    
+    return usersWithoutAccounts.map((user, index) => ({
+      sequence: index + 1,
+      name: user.displayName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      email: user.email || 'N/A',
+      role: user.role,
+      roleDisplay: {
+        'STATION_MANAGER': 'Station Manager',
+        'SUPERVISOR': 'Supervisor',
+        'ATTENDANT': 'Attendant'
+      }[user.role] || user.role,
+      station: user.stationAssignmentsDisplay?.[0]?.stationName || 'Not Assigned',
+      status: user.status === 'ACTIVE' ? 'Active' : 'Inactive',
+      phoneNumber: user.phoneNumber || 'N/A',
+      employeeId: user.employeeId || 'N/A',
+      joinDate: user.createdAt ? dayjs(user.createdAt).format('YYYY-MM-DD') : 'N/A'
+    }));
+  };
+
+  // Calculate summary data for reports
+  const calculateStaffAccountsSummary = () => {
+    if (!staffAccounts || staffAccounts.length === 0) return null;
+
+    const totalBalance = staffAccounts.reduce((sum, acc) => sum + (acc.currentBalance || 0), 0);
+    const totalNegative = staffAccounts.filter(acc => acc.currentBalance < 0).reduce((sum, acc) => sum + Math.abs(acc.currentBalance), 0);
+    const totalPositive = staffAccounts.filter(acc => acc.currentBalance > 0).reduce((sum, acc) => sum + acc.currentBalance, 0);
+    const totalShortages = staffAccounts.reduce((sum, acc) => sum + (acc.totalShortages || 0), 0);
+    
+    return {
+      totalRecords: staffAccounts.length,
+      activeAccounts: staffAccounts.filter(acc => acc.isActive).length,
+      onHoldAccounts: staffAccounts.filter(acc => acc.isOnHold).length,
+      totalBalance,
+      totalNegativeBalance: totalNegative,
+      totalPositiveBalance: totalPositive,
+      totalShortages,
+      averageBalance: staffAccounts.length > 0 ? totalBalance / staffAccounts.length : 0,
+      accountsWithShortages: staffAccounts.filter(acc => acc.hasShortages).length,
+      accountsWithAdvances: staffAccounts.filter(acc => acc.hasAdvances).length,
+      summaryInfo: {
+        'Total Accounts': staffAccounts.length,
+        'Active Accounts': staffAccounts.filter(acc => acc.isActive).length,
+        'Accounts on Hold': staffAccounts.filter(acc => acc.isOnHold).length,
+        'Total Balance': staffAccountService.formatCurrency ? 
+          staffAccountService.formatCurrency(totalBalance) : 
+          `Ksh ${totalBalance}`,
+        'Total Shortages': staffAccountService.formatCurrency ? 
+          staffAccountService.formatCurrency(totalShortages) : 
+          `Ksh ${totalShortages}`,
+        'Station Owes Staff': staffAccountService.formatCurrency ? 
+          staffAccountService.formatCurrency(totalPositive) : 
+          `Ksh ${totalPositive}`,
+        'Staff Owes Station': staffAccountService.formatCurrency ? 
+          staffAccountService.formatCurrency(totalNegative) : 
+          `Ksh ${totalNegative}`,
+        'Generated At': new Date().toLocaleString(),
+        'Company': state?.currentCompany?.name || 'N/A',
+        'Report Type': 'Staff Accounts Report',
+        'Generated By': `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`
+      }
+    };
+  };
+
+  const calculateUsersWithoutAccountsSummary = () => {
+    if (!usersWithoutAccounts || usersWithoutAccounts.length === 0) return null;
+
+    return {
+      totalRecords: usersWithoutAccounts.length,
+      activeUsers: usersWithoutAccounts.filter(user => user.status === 'ACTIVE').length,
+      managers: usersWithoutAccounts.filter(user => user.role === 'STATION_MANAGER').length,
+      supervisors: usersWithoutAccounts.filter(user => user.role === 'SUPERVISOR').length,
+      attendants: usersWithoutAccounts.filter(user => user.role === 'ATTENDANT').length,
+      summaryInfo: {
+        'Total Users Without Accounts': usersWithoutAccounts.length,
+        'Active Users': usersWithoutAccounts.filter(user => user.status === 'ACTIVE').length,
+        'Managers': usersWithoutAccounts.filter(user => user.role === 'STATION_MANAGER').length,
+        'Supervisors': usersWithoutAccounts.filter(user => user.role === 'SUPERVISOR').length,
+        'Attendants': usersWithoutAccounts.filter(user => user.role === 'ATTENDANT').length,
+        'Generated At': new Date().toLocaleString(),
+        'Company': state?.currentCompany?.name || 'N/A',
+        'Report Type': 'Users Without Accounts Report',
+        'Generated By': `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`
+      }
+    };
+  };
+
+  // Get columns for staff accounts report (with the exact column series you requested)
+  const getStaffAccountsExportColumns = () => {
+    return [
+      {
+        title: '#',
+        dataIndex: 'sequence',
+        key: 'sequence',
+        width: 60,
+        type: 'number'
+      },
+      {
+        title: 'User',
+        dataIndex: 'staffName',
+        key: 'staffName',
+        width: 150,
+        type: 'text'
+      },
+      {
+        title: 'Email',
+        dataIndex: 'email',
+        key: 'email',
+        width: 180,
+        type: 'text'
+      },
+      {
+        title: 'Station',
+        dataIndex: 'station',
+        key: 'station',
+        width: 120,
+        type: 'text'
+      },
+      {
+        title: 'Salary',
+        dataIndex: 'salary',
+        key: 'salary',
+        width: 100,
+        type: 'currency',
+        render: (value) => staffAccountService.formatCurrency ? 
+          staffAccountService.formatCurrency(value) : 
+          `Ksh ${value}`
+      },
+      {
+        title: 'Balance',
+        dataIndex: 'balance',
+        key: 'balance',
+        width: 120,
+        type: 'currency',
+        render: (value) => staffAccountService.formatCurrency ? 
+          staffAccountService.formatCurrency(value) : 
+          `Ksh ${value}`
+      },
+      {
+        title: 'Shortages',
+        dataIndex: 'shortages',
+        key: 'shortages',
+        width: 100,
+        type: 'currency',
+        render: (value) => staffAccountService.formatCurrency ? 
+          staffAccountService.formatCurrency(value) : 
+          `Ksh ${value}`
+      },
+      {
+        title: 'Status',
+        dataIndex: 'status',
+        key: 'status',
+        width: 80,
+        type: 'status'
+      },
+      {
+        title: 'Payment Method',
+        dataIndex: 'paymentMethod',
+        key: 'paymentMethod',
+        width: 120,
+        type: 'text'
+      },
+      {
+        title: 'On Hold',
+        dataIndex: 'onHold',
+        key: 'onHold',
+        width: 80,
+        type: 'text'
+      }
+    ];
+  };
+
+  // Get columns for users without accounts report
+  const getUsersWithoutAccountsExportColumns = () => {
+    return [
+      {
+        title: '#',
+        dataIndex: 'sequence',
+        key: 'sequence',
+        width: 60,
+        type: 'number'
+      },
+      {
+        title: 'Name',
+        dataIndex: 'name',
+        key: 'name',
+        width: 150,
+        type: 'text'
+      },
+      {
+        title: 'Email',
+        dataIndex: 'email',
+        key: 'email',
+        width: 180,
+        type: 'text'
+      },
+      {
+        title: 'Station',
+        dataIndex: 'station',
+        key: 'station',
+        width: 120,
+        type: 'text'
+      },
+      {
+        title: 'Role',
+        dataIndex: 'roleDisplay',
+        key: 'role',
+        width: 100,
+        type: 'text'
+      },
+      {
+        title: 'Status',
+        dataIndex: 'status',
+        key: 'status',
+        width: 80,
+        type: 'status'
+      },
+      {
+        title: 'Phone Number',
+        dataIndex: 'phoneNumber',
+        key: 'phoneNumber',
+        width: 120,
+        type: 'text'
+      },
+      {
+        title: 'Employee ID',
+        dataIndex: 'employeeId',
+        key: 'employeeId',
+        width: 100,
+        type: 'text'
+      }
+    ];
+  };
+
+  // Render export button for staff accounts
+  const renderStaffAccountsExportButton = () => {
+    if (!staffAccounts || staffAccounts.length === 0) {
+      return (
+        <Button icon={<DownloadOutlined />} disabled>
+          Export Accounts
+        </Button>
+      );
+    }
+
+    const exportDataSource = prepareStaffAccountsExportData();
+    const summaryData = calculateStaffAccountsSummary();
+    
+    const fileName = `staff_accounts_${state?.currentCompany?.code || 'company'}_${new Date().toISOString().split('T')[0]}`;
+
+    return (
+      <AdvancedReportGenerator
+        dataSource={exportDataSource}
+        columns={getStaffAccountsExportColumns()}
+        summaryData={summaryData}
+        title={`Staff Accounts - ${state?.currentCompany?.name || 'Company'}`}
+        fileName={fileName}
+        reportType="finance"
+        companyName={state?.currentCompany?.name || "Company"}
+        stationInfo={state?.currentStation ? {
+          name: state.currentStation.name,
+          code: state.currentStation.code,
+          address: state.currentStation.address
+        } : null}
+        showFooter={true}
+        footerText={`Generated from Staff Management System | User: ${currentUser?.firstName || ''} ${currentUser?.lastName || ''} | ${new Date().toLocaleString()}`}
+        enableCustomization={true}
+        includeLogo={false}
+        onReportGenerate={(format) => {
+          console.log(`Exporting ${exportDataSource.length} staff accounts as ${format}`);
+          message.success(`Staff accounts report generated with ${exportDataSource.length} records`);
+        }}
+      />
+    );
+  };
+
+  // Render export button for users without accounts
+  const renderUsersWithoutAccountsExportButton = () => {
+    if (!usersWithoutAccounts || usersWithoutAccounts.length === 0) {
+      return (
+        <Button icon={<DownloadOutlined />} disabled>
+          Export Users
+        </Button>
+      );
+    }
+
+    const exportDataSource = prepareUsersWithoutAccountsExportData();
+    const summaryData = calculateUsersWithoutAccountsSummary();
+    
+    const fileName = `users_without_accounts_${state?.currentCompany?.code || 'company'}_${new Date().toISOString().split('T')[0]}`;
+
+    return (
+      <AdvancedReportGenerator
+        dataSource={exportDataSource}
+        columns={getUsersWithoutAccountsExportColumns()}
+        summaryData={summaryData}
+        title={`Users Without Accounts - ${state?.currentCompany?.name || 'Company'}`}
+        fileName={fileName}
+        reportType="operations"
+        companyName={state?.currentCompany?.name || "Company"}
+        stationInfo={state?.currentStation ? {
+          name: state.currentStation.name,
+          code: state.currentStation.code,
+          address: state.currentStation.address
+        } : null}
+        showFooter={true}
+        footerText={`Generated from Staff Management System | User: ${currentUser?.firstName || ''} ${currentUser?.lastName || ''} | ${new Date().toLocaleString()}`}
+        enableCustomization={true}
+        includeLogo={false}
+        onReportGenerate={(format) => {
+          console.log(`Exporting ${exportDataSource.length} users without accounts as ${format}`);
+          message.success(`Users without accounts report generated with ${exportDataSource.length} records`);
+        }}
+      />
+    );
+  };
+
   // Table columns
   const accountColumns = [
     {
@@ -875,6 +1228,14 @@ const StaffAccountManagement = () => {
                   </Button>
                 </Tooltip>
               </Col>
+              <Col>
+                {renderStaffAccountsExportButton()}
+              </Col>
+              {usersWithoutAccounts.length > 0 && (
+                <Col>
+                  {renderUsersWithoutAccountsExportButton()}
+                </Col>
+              )}
               <Col>
                 <Button
                   type="primary"

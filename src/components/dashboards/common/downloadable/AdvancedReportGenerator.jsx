@@ -217,10 +217,12 @@ const AdvancedReportGenerator = ({
   const currentUser = state?.currentUser;
   const userName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : 'System';
   
+  // pick station from the state
+
   const stationInfo = propStationInfo || {
     name: state?.currentStation?.name || 'N/A',
     code: state?.currentStation?.code || '',
-    address: state?.currentStation?.address || ''
+    address: state?.currentStation?.location || ''
   };
   
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);

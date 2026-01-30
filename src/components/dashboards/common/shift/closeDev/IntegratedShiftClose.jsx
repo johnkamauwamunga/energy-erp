@@ -1,3 +1,4 @@
+// IntegratedShiftClose.jsx (Updated with Summary & File System)
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card,
@@ -54,7 +55,12 @@ import {
   TrendingUp,
   TrendingDown,
   CreditCard,
-  AlertCircle
+  AlertCircle,
+  FileCheck,
+  FolderPlus,
+  Download,
+  FileDown,
+  Printer
 } from 'lucide-react';
 import { useApp } from '../../../../../context/AppContext';
 import { shiftService } from '../../../../../services/shiftService/shiftService';
@@ -63,6 +69,8 @@ import { assetTopologyService } from '../../../../../services/assetTopologyServi
 import { debtorService } from '../../../../../services/debtorService/debtorService';
 import { shortageService } from '../../../../../services/shortageService/shortageService';
 import { staffAccountService } from '../../../../../services/staffAccountService/staffAccountService';
+import { bankingService } from '../../../../../services/bankingService/bankingService';
+import EnhancedSummaryModal from './EnhancedSummaryModal';
 import dayjs from 'dayjs';
 
 const { Text, Title } = Typography;
@@ -122,6 +130,8 @@ const IntegratedShiftClose = ({
   
   // ========== SUBMISSION STATE ==========
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [summaryModalVisible, setSummaryModalVisible] = useState(false);
+  const [summaryData, setSummaryData] = useState(null);
 
   // ========== CACHE SYSTEM ==========
   const getCacheKey = () => `shift_close_${currentStationId}_${shift?.id}`;
@@ -438,30 +448,34 @@ const IntegratedShiftClose = ({
   };
 
   // Calculate pump values based on global meter type
-  const calculatePumpValues = useCallback(() => {
-    return pumps.map(pump => {
-      const opening = parseFloat(pump[`opening${globalMeterType.charAt(0).toUpperCase() + globalMeterType.slice(1)}Meter`]) || 0;
-      const closing = parseFloat(pump[`closing${globalMeterType.charAt(0).toUpperCase() + globalMeterType.slice(1)}Meter`]) || 0;
-      const unitPrice = parseFloat(pump.unitPrice) || 0;
-      
-      let litersDispensed = 0;
-      let salesValue = 0;
-      
-      if (globalMeterType === 'cash') {
-        salesValue = Math.max(0, closing - opening);
-        litersDispensed = unitPrice > 0 ? salesValue / unitPrice : 0;
-      } else {
-        litersDispensed = Math.max(0, closing - opening);
-        salesValue = litersDispensed * unitPrice;
-      }
+ // Add this near your other calculation functions if not already present
+const calculatePumpValues = useCallback(() => {
+  return pumps.map(pump => {
+    const opening = parseFloat(pump[`opening${globalMeterType.charAt(0).toUpperCase() + globalMeterType.slice(1)}Meter`]) || 0;
+    const closing = parseFloat(pump[`closing${globalMeterType.charAt(0).toUpperCase() + globalMeterType.slice(1)}Meter`]) || 0;
+    const unitPrice = parseFloat(pump.unitPrice) || 0;
+    
+    let litersDispensed = 0;
+    let salesValue = 0;
+    
+    if (globalMeterType === 'cash') {
+      salesValue = Math.max(0, closing - opening);
+      litersDispensed = unitPrice > 0 ? salesValue / unitPrice : 0;
+    } else {
+      litersDispensed = Math.max(0, closing - opening);
+      salesValue = litersDispensed * unitPrice;
+    }
 
-      return {
-        ...pump,
-        litersDispensed: litersDispensed,
-        salesValue: salesValue
-      };
-    });
-  }, [pumps, globalMeterType]);
+    return {
+      ...pump,
+      litersDispensed: litersDispensed,
+      salesValue: salesValue,
+      electricMeter: parseFloat(pump.closingElectricMeter) || 0,
+      manualMeter: parseFloat(pump.closingManualMeter) || 0,
+      cashMeter: parseFloat(pump.closingCashMeter) || 0
+    };
+  });
+}, [pumps, globalMeterType]);
 
   // Handle pump reading change
   const handlePumpReadingChange = (pumpId, field, value) => {
@@ -677,6 +691,7 @@ const IntegratedShiftClose = ({
         debtorId: selectedDebtor.id,
         debtorName: selectedDebtor.name,
         debtorCode: selectedDebtor.code,
+        debtorPhone: selectedDebtor.phone,
         amount: debtAmountNum,
         timestamp: new Date().toISOString()
       };
@@ -1152,6 +1167,320 @@ const IntegratedShiftClose = ({
     setCollectionsModalVisible(false);
     message.success('Collections saved for island');
   };
+
+  // ========== PREPARE SUMMARY DATA ==========
+// IntegratedShiftClose.jsx - COMPLETE prepareSummaryData function
+const prepareSummaryData = () => {
+  const islandStats = calculateIslandStats();
+  
+  // Enhanced islands data with all needed information
+  const enhancedIslands = islandStats.map(island => {
+    const islandKey = island.key;
+    const islandCollections = Array.isArray(collections[islandKey]) ? collections[islandKey] : [];
+    
+    return {
+      ...island,
+      key: islandKey,
+      islandName: island.islandName,
+      islandId: island.islandId,
+      attendants: island.attendants || [],
+      totalActualSales: salesEntries[islandKey]?.islandTotalSales || 0,
+      receipts: receipts[islandKey] || 0,
+      expenses: expenses[islandKey] || 0,
+      cashCollection: islandCollections
+        .filter(c => c && c.type === 'cash')
+        .reduce((sum, c) => sum + (c.amount || 0), 0),
+      collections: islandCollections,
+      variance: island.variance,
+      shortagePosted: island.shortagePosted,
+      shortageRecord: island.shortageRecord,
+      isComplete: true,
+      notes: salesEntries[islandKey]?.notes || ''
+    };
+  });
+
+  // Calculate overall stats
+  const totalPumpSales = enhancedIslands.reduce((sum, island) => sum + (island.totalPumpSales || 0), 0);
+  const totalActualSales = enhancedIslands.reduce((sum, island) => sum + (island.totalActualSales || 0), 0);
+  const totalCashCollection = enhancedIslands.reduce((sum, island) => sum + (island.cashCollection || 0), 0);
+  const totalDebtCollection = enhancedIslands.reduce((sum, island) => sum + (island.debtCollection || 0), 0);
+  const totalReceipts = enhancedIslands.reduce((sum, island) => sum + (island.receipts || 0), 0);
+  const totalExpenses = enhancedIslands.reduce((sum, island) => sum + (island.expenses || 0), 0);
+  const totalVariance = enhancedIslands.reduce((sum, island) => sum + (island.variance || 0), 0);
+
+  // ==================== CRITICAL: CORRECT API PAYLOAD FOR BACKEND ====================
+  const apiPayload = {
+    // Basic shift info
+    shiftId: shift?.id,
+    endTime: new Date().toISOString(),
+    recordedById: currentUser?.id,
+    reconciliationNotes: 'Shift closed via station manager UI',
+    
+    // 1. PUMP READINGS - MUST HAVE electricMeter (not closingElectricMeter)
+    pumpReadings: pumps.map(pump => {
+      const calculatedPump = calculatePumpValues().find(p => p.id === pump.id);
+      
+      return {
+        pumpId: pump.pumpId,
+        electricMeter: parseFloat(pump.closingElectricMeter) || 0, // ✅ NOT closingElectricMeter
+        manualMeter: parseFloat(pump.closingManualMeter) || 0,     // ✅ NOT closingManualMeter
+        cashMeter: parseFloat(pump.closingCashMeter) || 0,         // ✅ NOT closingCashMeter
+        litersDispensed: calculatedPump?.litersDispensed || 0,
+        salesValue: calculatedPump?.salesValue || 0,
+        unitPrice: pump.unitPrice || 0,
+        // Include productId if available
+        ...(pump.productId && { productId: pump.productId })
+      };
+    }),
+    
+    // 2. TANK READINGS - THIS WAS MISSING IN YOUR CODE!
+    tankReadings: tanks.map(tank => ({
+      tankId: tank.tankId,
+      dipValue: parseFloat(tank.closingDipValue) || parseFloat(tank.dipValue) || 1.5,
+      volume: parseFloat(tank.currentVolume) || parseFloat(tank.closingVolume) || parseFloat(tank.volume) || 0,
+      currentVolume: parseFloat(tank.currentVolume) || parseFloat(tank.closingVolume) || parseFloat(tank.volume) || 0,
+      temperature: parseFloat(tank.temperature) || 25,
+      waterLevel: parseFloat(tank.waterLevel) || 0,
+      density: parseFloat(tank.density) || 0.85,
+      // Include productId if available
+      ...(tank.product?.id && { productId: tank.product.id })
+    })),
+    
+    // 3. ISLAND COLLECTIONS - MUST BE 'islandCollections' NOT 'collections'
+    islandCollections: enhancedIslands.map(island => {
+      const islandKey = island.key;
+      const islandCollections = island.collections || [];
+      const islandExpenses = island.expenses || 0;
+      const islandReceipts = island.receipts || 0;
+      const islandSales = island.totalActualSales || 0;
+      
+      // Calculate cash amount from cash collections
+      const cashAmount = islandCollections
+        .filter(c => c && c.type === 'cash')
+        .reduce((sum, c) => sum + (c.amount || 0), 0);
+      
+      // Group debtor collections
+      const debtorCollections = islandCollections
+        .filter(c => c && c.type === 'debt')
+        .map(debt => ({
+          debtorId: debt.debtorId,
+          amount: debt.amount || 0
+        }));
+      
+      // Get primary attendant
+      const primaryAttendant = island.attendants?.[0];
+      
+      return {
+        islandId: island.islandId,
+        attendantId: primaryAttendant?.id || currentUser?.id, // ✅ REQUIRED by backend
+        cashAmount: cashAmount,
+        receiptsAmount: islandReceipts,
+        expectedCashAmount: islandSales + islandReceipts - islandExpenses,
+        debtorCollections: debtorCollections,
+        expensesAmount: islandExpenses,
+        shortageAmount: island.shortagePosted ? Math.abs(island.variance) : 0,
+        overageAmount: island.variance < 0 ? Math.abs(island.variance) : 0
+      };
+    }).filter(item => item.islandId), // Remove items without islandId
+    
+    // 4. Optional fields
+    nonFuelStocks: []
+  };
+
+  // Log the payload for debugging
+  console.log('🔍 FINAL API PAYLOAD STRUCTURE:', {
+    shiftId: apiPayload.shiftId,
+    pumpReadingsCount: apiPayload.pumpReadings?.length || 0,
+    tankReadingsCount: apiPayload.tankReadings?.length || 0,
+    islandCollectionsCount: apiPayload.islandCollections?.length || 0,
+    hasElectricMeter: apiPayload.pumpReadings?.every(p => typeof p.electricMeter === 'number'),
+    hasTankReadings: apiPayload.tankReadings?.length > 0,
+    hasIslandCollections: apiPayload.islandCollections?.length > 0
+  });
+
+  console.log('📋 SAMPLE PUMP READING:', apiPayload.pumpReadings?.[0]);
+  console.log('📋 SAMPLE TANK READING:', apiPayload.tankReadings?.[0]);
+  console.log('📋 SAMPLE ISLAND COLLECTION:', apiPayload.islandCollections?.[0]);
+
+  const summaryData = {
+    islands: enhancedIslands,
+    overallStats: {
+      totalPumpSales,
+      totalActualSales,
+      totalCashCollection,
+      totalDebtCollection,
+      totalReceipts,
+      totalExpenses,
+      totalVariance,
+      totalIslands: enhancedIslands.length,
+      islandsWithShortage: enhancedIslands.filter(island => island.variance > 10).length,
+      islandsWithPostedShortages: enhancedIslands.filter(island => island.shortagePosted).length,
+      totalShortageAmount: Object.values(postedShortages).reduce((sum, shortage) => sum + (shortage.amount || 0), 0)
+    },
+    apiPayload: apiPayload, // ✅ This now has the CORRECT structure
+    shiftId: shift?.id,
+    shiftNumber: shift?.shiftNumber,
+    stationId: currentStationId,
+    stationName: state?.currentStation?.name,
+    stationCode: state?.currentStation?.code,
+    timestamp: new Date().toISOString(),
+    reconciliationNotes: 'Shift closed via station manager'
+  };
+
+  console.log('✅ prepareSummaryData completed');
+  return summaryData;
+};
+
+  // ========== HANDLE SUMMARY SUBMISSION ==========
+
+const handleSummarySubmit = async (reportPath) => {
+  setIsSubmitting(true);
+  
+  try {
+    const summaryData = prepareSummaryData();
+    const apiPayload = summaryData.apiPayload;
+    
+    // ==================== VALIDATE PAYLOAD ====================
+    const validationErrors = [];
+    
+    // Check pump readings
+    if (!apiPayload.pumpReadings || apiPayload.pumpReadings.length === 0) {
+      validationErrors.push('No pump readings provided');
+    } else {
+      apiPayload.pumpReadings.forEach((pump, index) => {
+        if (typeof pump.electricMeter === 'undefined') {
+          validationErrors.push(`Pump ${index + 1}: electricMeter is undefined`);
+        }
+        if (typeof pump.electricMeter !== 'number') {
+          validationErrors.push(`Pump ${index + 1}: electricMeter must be a number`);
+        }
+      });
+    }
+    
+    // Check tank readings
+    if (!apiPayload.tankReadings || apiPayload.tankReadings.length === 0) {
+      validationErrors.push('No tank readings provided');
+    }
+    
+    // Check island collections
+    if (!apiPayload.islandCollections || apiPayload.islandCollections.length === 0) {
+      validationErrors.push('No island collections provided');
+    } else {
+      apiPayload.islandCollections.forEach((island, index) => {
+        if (!island.islandId) {
+          validationErrors.push(`Island collection ${index + 1}: missing islandId`);
+        }
+        if (!island.attendantId) {
+          validationErrors.push(`Island collection ${index + 1}: missing attendantId`);
+        }
+      });
+    }
+    
+    if (validationErrors.length > 0) {
+      console.error('❌ PAYLOAD VALIDATION ERRORS:', validationErrors);
+      validationErrors.forEach(error => message.error(error));
+      throw new Error('Payload validation failed');
+    }
+    
+    // ==================== FINAL PAYLOAD ====================
+    const finalPayload = {
+      ...apiPayload,
+      ...(reportPath && { reportPath: reportPath })
+    };
+
+    console.log('🚀 SUBMITTING PAYLOAD (FIRST ITEM OF EACH ARRAY):', {
+      shiftId: finalPayload.shiftId,
+      firstPumpReading: finalPayload.pumpReadings[0],
+      firstTankReading: finalPayload.tankReadings[0],
+      firstIslandCollection: finalPayload.islandCollections[0],
+      pumpReadingsCount: finalPayload.pumpReadings.length,
+      tankReadingsCount: finalPayload.tankReadings.length,
+      islandCollectionsCount: finalPayload.islandCollections.length
+    });
+    
+    // Call API
+    const response = await shiftService.closeShift(shift?.id, finalPayload);
+    
+    // ... rest of your success handling ...
+    
+  } catch (error) {
+    console.error('❌ Shift closure error:', error);
+    if (error.response?.data?.errors) {
+      // Show backend validation errors
+      error.response.data.errors.forEach(err => {
+        message.error(`${err.field}: ${err.message}`);
+      });
+    } else {
+      message.error(`Failed to close shift: ${error.message}`);
+    }
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
+  // const handleSummarySubmit = async (reportPath) => {
+  //   setIsSubmitting(true);
+    
+  //   try {
+  //     const summaryData = prepareSummaryData();
+      
+  //     // Update payload with report path
+  //     const finalPayload = {
+  //       ...summaryData.apiPayload,
+  //       reportPath: reportPath,
+  //       reportGenerated: true,
+  //       reconciliationNotes: summaryData.reconciliationNotes || 'No reconciliation notes provided.',
+  //       submittedAt: new Date().toISOString()
+  //     };
+
+  //     console.log('🚀 Submitting final shift closure:', finalPayload);
+      
+  //     // Call API to close shift
+  //     const response = await shiftService.closeShift(shift?.id, finalPayload);
+      
+  //     console.log('✅ Shift closed successfully:', response);
+      
+  //     clearCache();
+      
+  //     message.success({
+  //       content: 'Shift closed successfully! Report has been saved.',
+  //       duration: 4,
+  //     });
+      
+  //     // Call success callback with results
+  //     if (onSuccess) {
+  //       onSuccess({
+  //         ...response,
+  //         summaryData: summaryData,
+  //         reportPath: reportPath
+  //       });
+  //     }
+      
+  //     // Close summary modal
+  //     setSummaryModalVisible(false);
+      
+  //     // Show success message
+  //     Modal.success({
+  //       title: 'Shift Closed Successfully',
+  //       content: (
+  //         <div>
+  //           <p>Shift #{shift?.shiftNumber} has been successfully closed.</p>
+  //           <p>The cash summary report has been saved to:</p>
+  //           <p><strong>{reportPath}</strong></p>
+  //         </div>
+  //       ),
+  //       onOk: () => {
+  //         onClose?.();
+  //       }
+  //     });
+      
+  //   } catch (error) {
+  //     console.error('Error closing shift:', error);
+  //     message.error('Failed to close shift');
+  //   } finally {
+  //     setIsSubmitting(false);
+  //   }
+  // };
 
   // ========== RENDER COMPONENTS ==========
   
@@ -2049,79 +2378,10 @@ const IntegratedShiftClose = ({
     const islandsWithPostedShortages = islandStats.filter(island => island.shortagePosted);
     const totalShortageAmount = islandsWithPostedShortages.reduce((sum, island) => sum + island.variance, 0);
 
-    const handleSubmitShiftClosure = async () => {
-      setIsSubmitting(true);
-      try {
-        // Prepare shift closure data
-        const payload = {
-          shiftId: shift?.id,
-          stationId: currentStationId,
-          recordedById: currentUser?.id,
-          endTime: new Date().toISOString(),
-          readings: {
-            pumps: pumps.map(pump => ({
-              pumpId: pump.pumpId,
-              closingElectricMeter: parseFloat(pump.closingElectricMeter) || 0,
-              closingManualMeter: parseFloat(pump.closingManualMeter) || 0,
-              closingCashMeter: parseFloat(pump.closingCashMeter) || 0
-            })),
-            tanks: tanks.map(tank => ({
-              tankId: tank.tankId,
-              closingVolume: parseFloat(tank.closingVolume) || 0,
-              closingDipValue: parseFloat(tank.closingDipValue) || 0
-            }))
-          },
-          sales: Object.entries(salesEntries).map(([key, entry]) => ({
-            islandId: islandsData.find(island => island.key === parseInt(key))?.islandId,
-            totalSales: entry.islandTotalSales,
-            notes: entry.notes
-          })),
-          collections: Object.entries(collections).map(([key, coll]) => ({
-            islandId: islandsData.find(island => island.key === parseInt(key))?.islandId,
-            collections: coll,
-            variance: islandStats.find(island => island.key === parseInt(key))?.variance || 0
-          })),
-          shortages: Object.entries(postedShortages).map(([key, shortage]) => ({
-            islandId: islandsData.find(island => island.key === parseInt(key))?.islandId,
-            shortageId: shortage.id,
-            amount: shortage.amount,
-            attendantId: islandStats.find(island => island.key === parseInt(key))?.attendants?.[0]?.id
-          })),
-          summary: {
-            totalPumps: pumps.length,
-            totalTanks: tanks.length,
-            totalExpectedSales,
-            totalActualSales,
-            totalCollections,
-            totalVariance,
-            shortagesPosted: Object.keys(postedShortages).length,
-            totalShortageAmount
-          }
-        };
-
-        console.log('Submitting shift closure:', payload);
-        
-        // Call API to close shift
-        // await shiftService.closeShift(payload);
-        
-        clearCache();
-        message.success('Shift closed successfully!');
-        
-        // Call success callback with results
-        if (onSuccess) {
-          onSuccess({
-            ...payload,
-            islandStats,
-            postedShortages
-          });
-        }
-        
-      } catch (error) {
-        console.error('Error closing shift:', error);
-        message.error('Failed to close shift');
-      } finally {
-        setIsSubmitting(false);
-      }
+    const handleOpenSummaryModal = () => {
+      const data = prepareSummaryData();
+      setSummaryData(data);
+      setSummaryModalVisible(true);
     };
 
     return (
@@ -2309,7 +2569,14 @@ const IntegratedShiftClose = ({
           />
         </Card>
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          padding: '24px',
+          borderTop: '2px solid #f0f0f0',
+          marginTop: '24px'
+        }}>
           <Button onClick={handlePrevStep} icon={<ArrowLeft size={16} />}>
             Back to Collections
           </Button>
@@ -2324,13 +2591,20 @@ const IntegratedShiftClose = ({
             </Button>
             <Button
               type="primary"
-              onClick={handleSubmitShiftClosure}
-              loading={isSubmitting}
-              icon={<CheckSquare size={16} />}
+              onClick={handleOpenSummaryModal}
+              icon={<FileCheck size={16} />}
               size="large"
-              style={{ minWidth: 200 }}
+              style={{ 
+                minWidth: 250,
+                background: 'linear-gradient(135deg, #52c41a, #389e0d)',
+                border: 'none',
+                fontWeight: 'bold'
+              }}
             >
-              {isSubmitting ? 'Submitting...' : 'Submit Shift Closure'}
+              <Space size={6}>
+                <CheckSquare size={18} />
+                Generate Summary & Submit
+              </Space>
             </Button>
           </Space>
         </div>
@@ -2340,73 +2614,86 @@ const IntegratedShiftClose = ({
 
   // ========== MAIN RENDER ==========
   return (
-    <Card
-      title={
-        <Space>
-          <Title level={4} style={{ margin: 0 }}>Shift Closure</Title>
-          <Text type="secondary">Shift #{shift?.shiftNumber} • {state?.currentStation?.name}</Text>
-        </Space>
-      }
-      extra={
-        <Space>
-          <Button
-            icon={<Save size={16} />}
-            onClick={saveToCache}
-            size="small"
-            type="dashed"
-            disabled={loading}
-          >
-            Save Draft
-          </Button>
-          <Button
-            icon={<X size={16} />}
-            onClick={() => {
-              Modal.confirm({
-                title: 'Close Shift Closure',
-                content: 'Are you sure you want to close? Unsaved changes will be lost.',
-                okText: 'Yes, Close',
-                cancelText: 'Cancel',
-                onOk: () => {
-                  clearCache();
-                  onClose?.();
-                }
-              });
-            }}
-            size="small"
-            danger
-            disabled={loading}
-          >
-            Close
-          </Button>
-        </Space>
-      }
-      style={{ height: '100%' }}
-      bodyStyle={{ padding: 0 }}
-    >
-      <Steps current={currentStep} style={{ padding: '16px 24px 0' }}>
-        {steps.map(step => (
-          <Step key={step.key} title={step.title} icon={step.icon} />
-        ))}
-      </Steps>
-      
-      <Divider style={{ margin: '16px 0 0' }} />
-      
-      <div style={{ padding: '24px' }}>
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: '40px' }}>
-            <Spin size="large" />
-            <div style={{ marginTop: 16 }}>Loading shift data...</div>
-          </div>
-        ) : (
-          <>
-            {currentStep === 0 && renderReadingsStep()}
-            {currentStep === 1 && renderIslandSalesStep()}
-            {currentStep === 2 && renderCollectionsStep()}
-            {currentStep === 3 && renderSummaryStep()}
-          </>
-        )}
-      </div>
-    </Card>
+    <>
+      <Card
+        title={
+          <Space>
+            <Title level={4} style={{ margin: 0 }}>Shift Closure</Title>
+            <Text type="secondary">Shift #{shift?.shiftNumber} • {state?.currentStation?.name}</Text>
+          </Space>
+        }
+        extra={
+          <Space>
+            <Button
+              icon={<Save size={16} />}
+              onClick={saveToCache}
+              size="small"
+              type="dashed"
+              disabled={loading}
+            >
+              Save Draft
+            </Button>
+            <Button
+              icon={<X size={16} />}
+              onClick={() => {
+                Modal.confirm({
+                  title: 'Close Shift Closure',
+                  content: 'Are you sure you want to close? Unsaved changes will be lost.',
+                  okText: 'Yes, Close',
+                  cancelText: 'Cancel',
+                  onOk: () => {
+                    clearCache();
+                    onClose?.();
+                  }
+                });
+              }}
+              size="small"
+              danger
+              disabled={loading}
+            >
+              Close
+            </Button>
+          </Space>
+        }
+        style={{ height: '100%' }}
+        bodyStyle={{ padding: 0 }}
+      >
+        <Steps current={currentStep} style={{ padding: '16px 24px 0' }}>
+          {steps.map(step => (
+            <Step key={step.key} title={step.title} icon={step.icon} />
+          ))}
+        </Steps>
+        
+        <Divider style={{ margin: '16px 0 0' }} />
+        
+        <div style={{ padding: '24px' }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '40px' }}>
+              <Spin size="large" />
+              <div style={{ marginTop: 16 }}>Loading shift data...</div>
+            </div>
+          ) : (
+            <>
+              {currentStep === 0 && renderReadingsStep()}
+              {currentStep === 1 && renderIslandSalesStep()}
+              {currentStep === 2 && renderCollectionsStep()}
+              {currentStep === 3 && renderSummaryStep()}
+            </>
+          )}
+        </div>
+      </Card>
+
+      {/* Enhanced Summary Modal */}
+      {summaryModalVisible && summaryData && (
+        <EnhancedSummaryModal
+          visible={summaryModalVisible}
+          onClose={() => setSummaryModalVisible(false)}
+          onSubmitShift={handleSummarySubmit}
+          islandSalesData={summaryData}
+          loading={isSubmitting}
+        />
+      )}
+    </>
   );
 };
 

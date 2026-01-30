@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Card, 
   Button, 
+  Dropdown,
   Table, 
   Tabs, 
   Tag,
@@ -36,6 +37,7 @@ import {
   TeamOutlined,
   DownloadOutlined,
   EyeOutlined,
+  FileTextOutlined,
   MailOutlined,
   PhoneOutlined,
   CalendarOutlined,
@@ -48,7 +50,8 @@ import {
   FilePdfOutlined,
   InfoCircleOutlined,
   IdcardOutlined,
-  SearchOutlined
+  SearchOutlined,
+  DownOutlined
 } from '@ant-design/icons';
 import { formatDate } from '../../../../utils/helpers';
 import { useApp } from '../../../../context/AppContext';
@@ -83,7 +86,7 @@ const StationUserManagement = () => {
     startDate: dayjs().subtract(30, 'days').format('YYYY-MM-DD'),
     endDate: dayjs().format('YYYY-MM-DD'),
     sortBy: 'createdAt',
-    sortOrder: 'desc', // Default to descending order
+    sortOrder: 'desc',
     page: 1,
     limit: 20
   });
@@ -146,7 +149,7 @@ const StationUserManagement = () => {
       const sortedUsers = [...usersArray].sort((a, b) => {
         const dateA = new Date(a.createdAt || a.joinDate || Date.now());
         const dateB = new Date(b.createdAt || b.joinDate || Date.now());
-        return dateB - dateA; // DESC order
+        return dateB - dateA;
       });
       
       setAllUsers(sortedUsers);
@@ -293,7 +296,7 @@ const StationUserManagement = () => {
     setFilters(prev => ({
       ...prev,
       [key]: value,
-      page: 1 // Reset to first page
+      page: 1
     }));
   };
 
@@ -359,7 +362,6 @@ const StationUserManagement = () => {
         fixed: 'left',
         type: 'number',
         render: (_, __, index) => {
-          // Calculate sequential number based on pagination for DESC order
           const page = filters.page || 1;
           const pageSize = filters.limit || 20;
           const sequentialNumber = ((page - 1) * pageSize) + index + 1;
@@ -503,7 +505,7 @@ const StationUserManagement = () => {
 
     // Add shift column for supervisors
     const supervisorColumns = [
-      ...commonColumns.slice(0, 5), // All columns up to status
+      ...commonColumns.slice(0, 5),
       {
         title: 'Shift',
         key: 'shift',
@@ -515,7 +517,7 @@ const StationUserManagement = () => {
           </div>
         )
       },
-      ...commonColumns.slice(5) // Rest of the columns
+      ...commonColumns.slice(5)
     ];
 
     return activeTab === 'supervisors' ? supervisorColumns : commonColumns;
@@ -559,76 +561,42 @@ const StationUserManagement = () => {
     ];
   };
 
-  // View user details
-  const viewUserDetails = (user) => {
-    setSelectedUser(user);
-    setUserDetailsModal(true);
-  };
-
-  // Prepare data for export with sequential numbering
-  const prepareExportData = () => {
-    if (!filteredUsers || filteredUsers.length === 0) return [];
+  // Prepare data for ALL users report (unified)
+  const prepareAllUsersExportData = () => {
+    if (!allUsers || allUsers.length === 0) return [];
     
-    const columnDefinitions = getColumnDefinitions();
-    
-    return filteredUsers.map((user, index) => {
-      const exportUser = { ...user };
-      
-      // Add sequential number
-      exportUser.sequenceNumber = index + 1;
-      
-      // Process each column to ensure proper values
-      columnDefinitions.forEach(col => {
-        if (col.key) {
-          let value;
-          
-          // Map key to actual data property
-          switch (col.key) {
-            case 'name':
-              value = `${user.firstName || ''} ${user.lastName || ''}`.trim();
-              break;
-            case 'contact':
-              value = user.email;
-              exportUser.phone = user.phoneNumber || 'N/A';
-              break;
-            case 'role':
-              value = getRoleConfig(user.role).label;
-              break;
-            case 'status':
-              value = getStatusConfig(user.status).label;
-              break;
-            case 'joinDate':
-              value = formatDate(user.createdAt || user.joinDate);
-              break;
-            case 'station':
-              value = getStationName(user);
-              break;
-            case 'shift':
-              value = user.shift || 'N/A';
-              break;
-            default:
-              value = user[col.key] || '';
-          }
-          
-          exportUser[col.key] = value || 'N/A';
-        }
-      });
+    return allUsers.map((user, index) => {
+      const exportUser = {
+        sequence: index + 1,
+        name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        employeeId: user.employeeId || 'N/A',
+        role: user.role, // This will show STATION_MANAGER, SUPERVISOR, ATTENDANT
+        roleDisplay: getRoleConfig(user.role).label, // For display purposes
+        email: user.email || 'N/A',
+        phone: user.phoneNumber || 'N/A',
+        status: getStatusConfig(user.status).label,
+        joinDate: formatDate(user.createdAt || user.joinDate),
+        station: getStationName(user),
+        shift: user.shift || 'N/A',
+        statusCode: user.status,
+        createdAt: user.createdAt || user.joinDate
+      };
       
       return exportUser;
     });
   };
 
-  // Calculate summary data for reports
-  const calculateSummaryData = () => {
-    if (!filteredUsers || filteredUsers.length === 0) return null;
+  // Calculate summary data for ALL users report
+  const calculateAllUsersSummaryData = () => {
+    if (!allUsers || allUsers.length === 0) return null;
 
     const totals = {
-      totalRecords: filteredUsers.length,
-      activeUsers: filteredUsers.filter(u => u.status === 'ACTIVE').length,
-      managers: filteredUsers.filter(u => u.role === 'STATION_MANAGER').length,
-      supervisors: filteredUsers.filter(u => u.role === 'SUPERVISOR').length,
-      attendants: filteredUsers.filter(u => u.role === 'ATTENDANT').length,
-      recentlyAdded: filteredUsers.filter(u => {
+      totalRecords: allUsers.length,
+      activeUsers: allUsers.filter(u => u.status === 'ACTIVE').length,
+      managers: allUsers.filter(u => u.role === 'STATION_MANAGER').length,
+      supervisors: allUsers.filter(u => u.role === 'SUPERVISOR').length,
+      attendants: allUsers.filter(u => u.role === 'ATTENDANT').length,
+      recentlyAdded: allUsers.filter(u => {
         const userDate = new Date(u.createdAt || u.joinDate || Date.now());
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -643,30 +611,169 @@ const StationUserManagement = () => {
       'Station Managers': totals.managers,
       'Supervisors': totals.supervisors,
       'Attendants': totals.attendants,
+      'Role Distribution': `${totals.managers} Managers, ${totals.supervisors} Supervisors, ${totals.attendants} Attendants`,
+      'Active Rate': `${((totals.activeUsers / totals.totalRecords) * 100).toFixed(1)}%`,
       'Recently Added (30 days)': totals.recentlyAdded,
       'Generated At': new Date().toLocaleString(),
       'Company': currentCompany?.name || 'All Companies',
-      'Report Type': 'Station User Management Report',
-      'User Role Filter': activeTab.charAt(0).toUpperCase() + activeTab.slice(1)
+      'Report Type': 'Complete Users Report',
+      'Generated By': `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`,
+      'Total Stations': stations.length
     };
     
     return totals;
   };
 
-  // Render export button with AdvancedReportGenerator
-  const renderExportButton = () => {
+  // Get columns for ALL users report
+  const getAllUsersExportColumns = () => {
+    return [
+      {
+        title: '#',
+        dataIndex: 'sequence',
+        key: 'sequence',
+        width: 60,
+        type: 'number'
+      },
+      {
+        title: 'Name',
+        dataIndex: 'name',
+        key: 'name',
+        width: 150,
+        type: 'text'
+      },
+      {
+        title: 'Employee ID',
+        dataIndex: 'employeeId',
+        key: 'employeeId',
+        width: 100,
+        type: 'text'
+      },
+      {
+        title: 'Role',
+        dataIndex: 'role',
+        key: 'role',
+        width: 120,
+        type: 'status',
+        render: (role) => {
+          const roleConfig = getRoleConfig(role);
+          return roleConfig.label;
+        }
+      },
+      {
+        title: 'Email',
+        dataIndex: 'email',
+        key: 'email',
+        width: 180,
+        type: 'text'
+      },
+      {
+        title: 'Phone',
+        dataIndex: 'phone',
+        key: 'phone',
+        width: 120,
+        type: 'text'
+      },
+      {
+        title: 'Status',
+        dataIndex: 'status',
+        key: 'status',
+        width: 100,
+        type: 'status'
+      },
+      {
+        title: 'Join Date',
+        dataIndex: 'joinDate',
+        key: 'joinDate',
+        width: 120,
+        type: 'date'
+      },
+      {
+        title: 'Station',
+        dataIndex: 'station',
+        key: 'station',
+        width: 150,
+        type: 'text'
+      },
+      {
+        title: 'Shift',
+        dataIndex: 'shift',
+        key: 'shift',
+        width: 100,
+        type: 'text'
+      }
+    ];
+  };
+
+  // Unified report generator for ALL users
+  const renderAllUsersReportGenerator = () => {
+    if (allUsers.length === 0) {
+      return null;
+    }
+
+    const exportDataSource = prepareAllUsersExportData();
+    const summaryData = calculateAllUsersSummaryData();
+    
+    const companyName = currentCompany?.name || "Lynx Energy System";
+    const dateStr = new Date().toISOString().split('T')[0];
+    const companyCode = currentCompany?.code ? `_${currentCompany.code}` : '';
+    const fileName = `all_users_report${companyCode}_${dateStr}`;
+
+    return (
+      <AdvancedReportGenerator
+        dataSource={exportDataSource}
+        columns={getAllUsersExportColumns()}
+        summaryData={summaryData}
+        title={`Complete Users Report - ${companyName}`}
+        fileName={fileName}
+        reportType="operations"
+        companyName={companyName}
+        stationInfo={currentStation ? {
+          name: currentStation.name,
+          code: currentStation.code,
+          address: currentStation.address
+        } : null}
+        showFooter={true}
+        footerText={`Generated from Lynx Energy System | User: ${currentUser?.firstName || ''} ${currentUser?.lastName || ''} | ${new Date().toLocaleString()}`}
+        enableCustomization={true}
+        includeLogo={false}
+        onReportGenerate={(format) => {
+          console.log(`Exporting ${exportDataSource.length} user records as ${format}`);
+          message.success(`Complete Users report generated with ${exportDataSource.length} records`);
+        }}
+        customStyles={{
+          fontSize: 9,
+          cellPadding: 3,
+          showGridLines: true,
+          alternateRowColors: true,
+          includeTimestamp: true,
+          includeStationInfo: !!currentStation,
+          autoWrapText: true,
+          pageOrientation: 'landscape'
+        }}
+      />
+    );
+  };
+
+  // Render export button for current tab
+  const renderCurrentTabExportButton = () => {
     if (!filteredUsers || filteredUsers.length === 0) {
-      return (
-        <Button icon={<DownloadOutlined />} disabled>
-          Export
-        </Button>
-      );
+      return null;
     }
 
     const columnDefinitions = getColumnDefinitions();
     const summaryData = calculateSummaryData();
-    const exportDataSource = prepareExportData();
-    
+    const exportDataSource = filteredUsers.map((user, index) => ({
+      ...user,
+      sequence: index + 1,
+      name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      role: getRoleConfig(user.role).label,
+      contact: user.email,
+      status: getStatusConfig(user.status).label,
+      joinDate: formatDate(user.createdAt || user.joinDate),
+      station: getStationName(user),
+      shift: user.shift || 'N/A'
+    }));
+
     // Get report title
     const getReportTitle = () => {
       const roleNames = {
@@ -690,12 +797,10 @@ const StationUserManagement = () => {
     const enhancedExportColumns = columnDefinitions.map(col => {
       const enhancedCol = { ...col };
       
-      // Add dataIndex for export
       if (!enhancedCol.dataIndex) {
         enhancedCol.dataIndex = enhancedCol.key;
       }
       
-      // Override render functions to ensure consistent values for export
       if (enhancedCol.type === 'text') {
         enhancedCol.render = (value, record) => {
           if (enhancedCol.key === 'name') {
@@ -757,6 +862,40 @@ const StationUserManagement = () => {
         }}
       />
     );
+  };
+
+  // Calculate summary data for current tab
+  const calculateSummaryData = () => {
+    if (!filteredUsers || filteredUsers.length === 0) return null;
+
+    const totals = {
+      totalRecords: filteredUsers.length,
+      activeUsers: filteredUsers.filter(u => u.status === 'ACTIVE').length,
+      managers: filteredUsers.filter(u => u.role === 'STATION_MANAGER').length,
+      supervisors: filteredUsers.filter(u => u.role === 'SUPERVISOR').length,
+      attendants: filteredUsers.filter(u => u.role === 'ATTENDANT').length,
+      recentlyAdded: filteredUsers.filter(u => {
+        const userDate = new Date(u.createdAt || u.joinDate || Date.now());
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        return userDate >= thirtyDaysAgo;
+      }).length
+    };
+    
+    totals.summaryInfo = {
+      'Total Users': totals.totalRecords,
+      'Active Users': totals.activeUsers,
+      'Station Managers': totals.managers,
+      'Supervisors': totals.supervisors,
+      'Attendants': totals.attendants,
+      'Recently Added (30 days)': totals.recentlyAdded,
+      'Generated At': new Date().toLocaleString(),
+      'Company': currentCompany?.name || 'All Companies',
+      'Report Type': `${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Report`,
+      'User Role Filter': activeTab.charAt(0).toUpperCase() + activeTab.slice(1)
+    };
+    
+    return totals;
   };
 
   // Handle table sort change
@@ -843,7 +982,46 @@ const StationUserManagement = () => {
         >
           Add New Staff
         </Button>
-        {renderExportButton()}
+        
+        {/* All Users Export */}
+        <Space.Compact>
+          <Button 
+            type="primary"
+  
+          >
+           All Users
+          </Button>
+          <Dropdown.Button
+            type="primary"
+            icon={<DownOutlined />}
+            menu={{
+              items: [
+                {
+                  key: 'all',
+                  label: 'Complete Users Report',
+                  icon: <TeamOutlined />
+                },
+                {
+                  key: 'current',
+                  label: 'Current Tab Report',
+                  icon: <FileTextOutlined />
+                }
+              ],
+              onClick: ({ key }) => {
+                if (key === 'all') {
+                  // This will trigger the AdvancedReportGenerator to download all users
+                  // We'll handle this through the component
+                }
+              }
+            }}
+          >
+            {renderAllUsersReportGenerator()}
+          </Dropdown.Button>
+        </Space.Compact>
+
+        {/* Current Tab Export */}
+        {renderCurrentTabExportButton()}
+        
         <Button 
           icon={<ReloadOutlined />}
           onClick={fetchUsers}
@@ -967,6 +1145,14 @@ const StationUserManagement = () => {
                     Attendants
                   </Tag>
                   <Text strong style={{ fontSize: '18px' }}>{stats.attendants}</Text>
+                </div>
+              </Col>
+              <Col xs={12} sm={6} md={3}>
+                <div style={{ textAlign: 'center' }}>
+                  <Tag color="gold" style={{ marginBottom: 8 }}>
+                    Total
+                  </Tag>
+                  <Text strong style={{ fontSize: '18px' }}>{stats.total}</Text>
                 </div>
               </Col>
             </Row>

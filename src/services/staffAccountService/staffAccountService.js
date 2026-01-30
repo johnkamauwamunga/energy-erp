@@ -1,4 +1,3 @@
-// src/services/staff/staffAccountService.js - COMPLETE FIXED VERSION
 import { apiService } from '../apiService';
 
 const STAFF_ACCOUNTS_BASE_URL = '/staff-accounts';
