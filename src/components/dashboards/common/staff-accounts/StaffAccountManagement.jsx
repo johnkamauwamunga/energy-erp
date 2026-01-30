@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Card,
   Table,
@@ -24,7 +24,10 @@ import {
   Descriptions,
   Divider,
   DatePicker,
-  Switch
+  Switch,
+  Tabs,
+  Progress,
+  Empty
 } from 'antd';
 import {
   UserOutlined,
@@ -58,18 +61,22 @@ import {
   PhoneOutlined,
   DownloadOutlined,
   FileExcelOutlined,
-  FilePdfOutlined
+  FilePdfOutlined,
+  FilterOutlined,
+  SearchOutlined,
+  DownOutlined
 } from '@ant-design/icons';
 import { staffAccountService } from '../../../../services/staffAccountService/staffAccountService';
 import { userService } from '../../../../services/userService/userService';
 import { stationService } from '../../../../services/stationService/stationService';
 import { useApp } from '../../../../context/AppContext';
-import dayjs from 'dayjs';
 import AdvancedReportGenerator from '../../../dashboards/common/downloadable/AdvancedReportGenerator';
+import dayjs from 'dayjs';
 
 const { Option } = Select;
 const { Title, Text } = Typography;
 const { TextArea } = Input;
+const { TabPane } = Tabs;
 
 const StaffAccountManagement = () => {
   const { state } = useApp();
@@ -82,22 +89,20 @@ const StaffAccountManagement = () => {
   const [modalVisible, setModalVisible] = useState({
     createAccount: false,
     updateAccount: false,
-    viewDetails: false,
-    accountActions: false
+    viewDetails: false
   });
   const [holdReason, setHoldReason] = useState('');
   const [deactivateReason, setDeactivateReason] = useState('');
   const [createForm] = Form.useForm();
   const [updateForm] = Form.useForm();
+  const [activeTab, setActiveTab] = useState('all');
   const [filters, setFilters] = useState({
     search: '',
-    isActive: 'all', // 'all', 'active', 'inactive'
-    isOnHold: 'all', // 'all', 'onHold', 'notOnHold'
+    status: 'all',
     payrollMethod: '',
     sortBy: 'createdAt',
     sortOrder: 'desc',
-    includeTransactions: false,
-    includeShortages: false
+    station: ''
   });
   const [accountSummary, setAccountSummary] = useState(null);
   const [pagination, setPagination] = useState({
@@ -105,12 +110,29 @@ const StaffAccountManagement = () => {
     pageSize: 10,
     total: 0
   });
+  const [exportConfig, setExportConfig] = useState({
+    visible: false,
+    type: null,
+    data: null,
+    columns: null,
+    title: '',
+    fileName: ''
+  });
 
   const currentUser = state?.currentUser;
   const isCompanyAdmin = ['SUPER_ADMIN', 'COMPANY_ADMIN'].includes(currentUser?.role);
   const isStationManager = ['STATION_MANAGER'].includes(currentUser?.role);
   const currentStationId = state?.currentStation?.id;
   const currentCompanyId = currentUser?.companyId;
+
+  // Currency formatter
+  const formatCurrency = (amount) => {
+    if (amount === null || amount === undefined) return 'Ksh 0';
+    return `Ksh ${amount.toLocaleString('en-KE', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}`;
+  };
 
   // Fetch stations
   const fetchStations = async () => {
@@ -129,51 +151,86 @@ const StaffAccountManagement = () => {
       setLoading(true);
       let accounts = [];
       let total = 0;
-      
+
       const filterParams = {
         page,
         limit: pageSize,
         ...filters
       };
-      
+
       // Remove 'all' values from filters
       Object.keys(filterParams).forEach(key => {
         if (filterParams[key] === 'all') {
           delete filterParams[key];
         }
       });
-      
+
       if (isCompanyAdmin && currentCompanyId) {
-        // Company admin can see all accounts in the company
         const result = await staffAccountService.getStaffAccountsByCompany(currentCompanyId, filterParams);
-        accounts = result?.accounts || [];
+        accounts = result?.data || result?.accounts || [];
         total = result?.pagination?.total || 0;
       } else if (isStationManager && currentStationId) {
-        // Station manager sees only accounts in their station
         const result = await staffAccountService.getStaffAccountsByStation(currentStationId, filterParams);
-        accounts = result?.accounts || [];
+        accounts = result?.data || result?.accounts || [];
         total = result?.pagination?.total || 0;
       } else {
-        // Fallback to all accounts with proper permissions
         const result = await staffAccountService.getAllStaffAccounts(filterParams);
-        accounts = result?.accounts || [];
+        accounts = result?.data || result?.accounts || [];
         total = result?.pagination?.total || 0;
       }
-      
+
       setStaffAccounts(accounts);
-      setPagination({
+      setPagination(prev => ({
+        ...prev,
         current: page,
         pageSize,
         total
-      });
-      
+      }));
+
+      // Calculate summary after fetching
+      calculateAccountSummary(accounts);
+
     } catch (error) {
       console.error('Error loading staff accounts:', error);
       message.error(error.message || 'Failed to load staff accounts');
       setStaffAccounts([]);
+      setAccountSummary(null);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Calculate account summary
+  const calculateAccountSummary = (accounts) => {
+    if (!accounts || accounts.length === 0) {
+      setAccountSummary(null);
+      return;
+    }
+
+    const totalAccounts = accounts.length;
+    const activeAccounts = accounts.filter(acc => acc.isActive).length;
+    const onHoldAccounts = accounts.filter(acc => acc.isOnHold).length;
+    const totalBalance = accounts.reduce((sum, acc) => sum + (acc.currentBalance || 0), 0);
+    const totalPositive = accounts.filter(acc => acc.currentBalance > 0)
+      .reduce((sum, acc) => sum + (acc.currentBalance || 0), 0);
+    const totalNegative = accounts.filter(acc => acc.currentBalance < 0)
+      .reduce((sum, acc) => sum + Math.abs(acc.currentBalance || 0), 0);
+    const totalShortages = accounts.reduce((sum, acc) => sum + (acc.totalShortages || 0), 0);
+    const totalAdvances = accounts.reduce((sum, acc) => sum + (acc.totalAdvances || 0), 0);
+    const totalBonuses = accounts.reduce((sum, acc) => sum + (acc.totalBonuses || 0), 0);
+
+    setAccountSummary({
+      totalAccounts,
+      activeAccounts,
+      onHoldAccounts,
+      totalBalance,
+      totalPositive,
+      totalNegative,
+      totalShortages,
+      totalAdvances,
+      totalBonuses,
+      averageBalance: totalAccounts > 0 ? totalBalance / totalAccounts : 0
+    });
   };
 
   // Fetch users without accounts
@@ -190,272 +247,15 @@ const StaffAccountManagement = () => {
     }
   };
 
-  // Fetch account summary
-  const fetchAccountSummary = async () => {
-    try {
-      const stationId = isStationManager ? currentStationId : null;
-      const companyId = isCompanyAdmin ? currentCompanyId : null;
-      const summary = await staffAccountService.getStaffAccountSummary(stationId, companyId);
-      setAccountSummary(summary);
-    } catch (error) {
-      console.error('Failed to fetch account summary:', error);
-      message.error('Failed to fetch account summary');
-    }
-  };
-
-  // Handle create account
-  const handleCreateAccount = async (values) => {
-    console.log('Form submission started with values:', values);
-    setSubmitting(true);
-    
-    try {
-      // Format the values for API submission
-      const formattedValues = {
-        userId: values.userId,
-        stationId: values.stationId,
-        creditLimit: values.creditLimit || 5000,
-        salaryAmount: values.salaryAmount || 30000,
-        payrollMethod: values.payrollMethod || 'STATION_WALLET',
-        paymentSchedule: values.paymentSchedule || 'MONTHLY',
-        bankAccountNumber: values.bankAccountNumber || '001110001100',
-        bankName: values.bankName || 'Baclays Bank',
-        mobileMoneyNumber: values.mobileMoneyNumber || '0712345678',
-        nextPaymentDate: values.nextPaymentDate ? 
-        values.nextPaymentDate.startOf('day').toISOString() : // Convert to start of day in ISO format
-        null,
-        notes: values.notes || '',
-        isActive: values.isActive !== undefined ? values.isActive : true
-      };
-      
-      console.log('Formatted values for API:', formattedValues);
-      
-      // Call the service
-      const account = await staffAccountService.createStaffAccount(formattedValues);
-      console.log('API response:', account);
-      
-      message.success('Staff account created successfully');
-      
-      // Close modal and reset
-      setModalVisible(prev => ({ ...prev, createAccount: false }));
-      createForm.resetFields();
-      
-      // Refresh data
-      await refreshData();
-      
-    } catch (error) {
-      console.error('Failed to create account:', error);
-      console.error('Error response:', error.response?.data || error.message);
-      
-      // Show detailed error message
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.errors?.map(e => e.message).join(', ') || 
-                          error.message || 
-                          'Failed to create staff account';
-      
-      message.error(errorMessage);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Handle update account
-  const handleUpdateAccount = async (values) => {
-    if (!selectedAccount) return;
-    
-    console.log('Updating account with values:', values);
-    setSubmitting(true);
-    
-    try {
-      // Format values for API
-      const updateData = {};
-      
-      if (values.creditLimit !== undefined) updateData.creditLimit = values.creditLimit;
-      if (values.salaryAmount !== undefined) updateData.salaryAmount = values.salaryAmount;
-      if (values.payrollMethod) updateData.payrollMethod = values.payrollMethod;
-      if (values.paymentSchedule) updateData.paymentSchedule = values.paymentSchedule;
-      if (values.bankAccountNumber !== undefined) updateData.bankAccountNumber = values.bankAccountNumber;
-      if (values.bankName !== undefined) updateData.bankName = values.bankName;
-      if (values.mobileMoneyNumber !== undefined) updateData.mobileMoneyNumber = values.mobileMoneyNumber;
-      if (values.nextPaymentDate) updateData.nextPaymentDate = values.nextPaymentDate.format('YYYY-MM-DD');
-      if (values.notes !== undefined) updateData.notes = values.notes;
-      if (values.isActive !== undefined) updateData.isActive = values.isActive;
-      
-      console.log('Update data:', updateData);
-      
-      const updatedAccount = await staffAccountService.updateStaffAccount(selectedAccount.id, updateData);
-      console.log('Update response:', updatedAccount);
-      
-      message.success('Staff account updated successfully');
-      
-      setModalVisible(prev => ({ ...prev, updateAccount: false }));
-      updateForm.resetFields();
-      setSelectedAccount(null);
-      await refreshData();
-      
-    } catch (error) {
-      console.error('Failed to update account:', error);
-      console.error('Error response:', error.response?.data || error.message);
-      
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.errors?.map(e => e.message).join(', ') || 
-                          error.message || 
-                          'Failed to update staff account';
-      
-      message.error(errorMessage);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Handle activate account
-  const handleActivateAccount = async (accountId) => {
-    setSubmitting(true);
-    
-    try {
-      const account = await staffAccountService.activateStaffAccount(accountId);
-      message.success('Staff account activated successfully');
-      await refreshData();
-    } catch (error) {
-      console.error('Failed to activate account:', error);
-      message.error(error.message || 'Failed to activate staff account');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Handle deactivate account
-  const handleDeactivateAccount = async (accountId, reason) => {
-    setSubmitting(true);
-    
-    try {
-      const account = await staffAccountService.deactivateStaffAccount(accountId, reason);
-      message.success('Staff account deactivated successfully');
-      await refreshData();
-    } catch (error) {
-      console.error('Failed to deactivate account:', error);
-      message.error(error.message || 'Failed to deactivate staff account');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Handle put account on hold
-  const handlePutOnHold = (accountId) => {
-    Modal.confirm({
-      title: 'Put Account On Hold',
-      content: (
-        <div>
-          <p>Please provide a reason for putting this account on hold:</p>
-          <TextArea 
-            placeholder="Enter reason (required)"
-            rows={3}
-            onChange={(e) => setHoldReason(e.target.value)}
-            value={holdReason}
-          />
-        </div>
-      ),
-      onOk: async () => {
-        if (!holdReason.trim()) {
-          message.error('Reason is required when putting account on hold');
-          return;
-        }
-        
-        try {
-          setSubmitting(true);
-          const account = await staffAccountService.putAccountOnHold(accountId, holdReason);
-          message.success('Account put on hold successfully');
-          setHoldReason('');
-          await refreshData();
-        } catch (error) {
-          console.error('Failed to put account on hold:', error);
-          message.error(error.message || 'Failed to put account on hold');
-        } finally {
-          setSubmitting(false);
-        }
-      }
-    });
-  };
-
-  // Handle remove from hold
-  const handleRemoveFromHold = async (accountId) => {
-    setSubmitting(true);
-    
-    try {
-      const account = await staffAccountService.removeAccountFromHold(accountId);
-      message.success('Account removed from hold successfully');
-      await refreshData();
-    } catch (error) {
-      console.error('Failed to remove account from hold:', error);
-      message.error(error.message || 'Failed to remove account from hold');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Handle delete account
-  const handleDeleteAccount = async (accountId) => {
-    Modal.confirm({
-      title: 'Delete Staff Account',
-      content: (
-        <div>
-          <Alert
-            message="Warning"
-            description="This action will permanently delete the staff account. Please confirm with a reason:"
-            type="warning"
-            showIcon
-          />
-          <TextArea 
-            placeholder="Enter reason for deletion"
-            rows={3}
-            style={{ marginTop: 16 }}
-            onChange={(e) => setDeactivateReason(e.target.value)}
-            value={deactivateReason}
-          />
-        </div>
-      ),
-      okText: 'Delete',
-      okType: 'danger',
-      onOk: async () => {
-        setSubmitting(true);
-        try {
-          await staffAccountService.deleteStaffAccount(accountId, deactivateReason);
-          message.success('Staff account deleted successfully');
-          setDeactivateReason('');
-          await refreshData();
-        } catch (error) {
-          console.error('Failed to delete account:', error);
-          message.error(error.message || 'Failed to delete staff account');
-        } finally {
-          setSubmitting(false);
-        }
-      }
-    });
-  };
-
-  // Custom formatter and parser for currency input
-  const currencyFormatter = (value) => {
-    if (!value && value !== 0) return '';
-    return `Ksh ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  };
-
-  const currencyParser = (value) => {
-    if (!value) return '';
-    // Remove Ksh, spaces, and commas
-    return value.replace(/Ksh\s?|,/g, '');
-  };
-
   // Main refresh function
   const refreshData = async (showMessage = false) => {
     try {
       setLoading(true);
-      
       await Promise.all([
         fetchStations(),
         fetchStaffAccounts(pagination.current, pagination.pageSize),
-        fetchUsersWithoutAccounts(),
-        fetchAccountSummary()
+        fetchUsersWithoutAccounts()
       ]);
-      
       if (showMessage) {
         message.success('Data refreshed successfully');
       }
@@ -469,17 +269,176 @@ const StaffAccountManagement = () => {
     }
   };
 
+  // Handle create account
+  const handleCreateAccount = async (values) => {
+    setSubmitting(true);
+    
+    try {
+      const formattedValues = {
+        userId: values.userId,
+        stationId: values.stationId,
+        creditLimit: values.creditLimit || 5000,
+        salaryAmount: values.salaryAmount || 30000,
+        payrollMethod: values.payrollMethod || 'STATION_WALLET',
+        paymentSchedule: values.paymentSchedule || 'MONTHLY',
+        bankAccountNumber: values.bankAccountNumber || '001110001100',
+        bankName: values.bankName || 'Baclays Bank',
+        mobileMoneyNumber: values.mobileMoneyNumber || '0712345678',
+        nextPaymentDate: values.nextPaymentDate ? 
+          values.nextPaymentDate.startOf('day').toISOString() : null,
+        notes: values.notes || '',
+        isActive: values.isActive !== undefined ? values.isActive : true
+      };
+
+      await staffAccountService.createStaffAccount(formattedValues);
+      message.success('Staff account created successfully');
+
+      setModalVisible(prev => ({ ...prev, createAccount: false }));
+      createForm.resetFields();
+      await refreshData();
+      
+    } catch (error) {
+      console.error('Failed to create account:', error);
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.errors?.map(e => e.message).join(', ') || 
+                          error.message || 
+                          'Failed to create staff account';
+      message.error(errorMessage);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Handle update account
+  const handleUpdateAccount = async (values) => {
+    if (!selectedAccount) return;
+    setSubmitting(true);
+
+    try {
+      const updateData = {};
+      if (values.creditLimit !== undefined) updateData.creditLimit = values.creditLimit;
+      if (values.salaryAmount !== undefined) updateData.salaryAmount = values.salaryAmount;
+      if (values.payrollMethod) updateData.payrollMethod = values.payrollMethod;
+      if (values.paymentSchedule) updateData.paymentSchedule = values.paymentSchedule;
+      if (values.bankAccountNumber !== undefined) updateData.bankAccountNumber = values.bankAccountNumber;
+      if (values.bankName !== undefined) updateData.bankName = values.bankName;
+      if (values.mobileMoneyNumber !== undefined) updateData.mobileMoneyNumber = values.mobileMoneyNumber;
+      if (values.nextPaymentDate) updateData.nextPaymentDate = values.nextPaymentDate.format('YYYY-MM-DD');
+      if (values.notes !== undefined) updateData.notes = values.notes;
+      if (values.isActive !== undefined) updateData.isActive = values.isActive;
+
+      await staffAccountService.updateStaffAccount(selectedAccount.id, updateData);
+      message.success('Staff account updated successfully');
+
+      setModalVisible(prev => ({ ...prev, updateAccount: false }));
+      updateForm.resetFields();
+      setSelectedAccount(null);
+      await refreshData();
+      
+    } catch (error) {
+      console.error('Failed to update account:', error);
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.errors?.map(e => e.message).join(', ') || 
+                          error.message || 
+                          'Failed to update staff account';
+      message.error(errorMessage);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Handle activate account
+  const handleActivateAccount = async (accountId) => {
+    setSubmitting(true);
+    try {
+      await staffAccountService.activateStaffAccount(accountId);
+      message.success('Staff account activated successfully');
+      await refreshData();
+    } catch (error) {
+      console.error('Failed to activate account:', error);
+      message.error(error.message || 'Failed to activate staff account');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Handle deactivate account
+  const handleDeactivateAccount = async (accountId, reason) => {
+    setSubmitting(true);
+    try {
+      await staffAccountService.deactivateStaffAccount(accountId, reason);
+      message.success('Staff account deactivated successfully');
+      await refreshData();
+    } catch (error) {
+      console.error('Failed to deactivate account:', error);
+      message.error(error.message || 'Failed to deactivate staff account');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Handle put on hold
+  const handlePutOnHold = async (accountId, reason) => {
+    setSubmitting(true);
+    try {
+      await staffAccountService.putAccountOnHold(accountId, reason);
+      message.success('Account put on hold successfully');
+      setHoldReason('');
+      await refreshData();
+    } catch (error) {
+      console.error('Failed to put account on hold:', error);
+      message.error(error.message || 'Failed to put account on hold');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Handle remove from hold
+  const handleRemoveFromHold = async (accountId) => {
+    setSubmitting(true);
+    try {
+      await staffAccountService.removeAccountFromHold(accountId);
+      message.success('Account removed from hold successfully');
+      await refreshData();
+    } catch (error) {
+      console.error('Failed to remove account from hold:', error);
+      message.error(error.message || 'Failed to remove account from hold');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Handle delete account
+  const handleDeleteAccount = async (accountId, reason) => {
+    setSubmitting(true);
+    try {
+      await staffAccountService.deleteStaffAccount(accountId, reason);
+      message.success('Staff account deleted successfully');
+      setDeactivateReason('');
+      await refreshData();
+    } catch (error) {
+      console.error('Failed to delete account:', error);
+      message.error(error.message || 'Failed to delete staff account');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // Handle table pagination
   const handleTableChange = (newPagination) => {
     fetchStaffAccounts(newPagination.current, newPagination.pageSize);
   };
 
-  // Apply filters
+  // Handle filter changes
+  const handleFilterChange = (key, value) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  // Apply filters with debounce
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
       fetchStaffAccounts(1, pagination.pageSize);
-    }, 500);
-    
+    }, 300);
     return () => clearTimeout(debounceTimer);
   }, [filters]);
 
@@ -488,129 +447,299 @@ const StaffAccountManagement = () => {
     refreshData();
   }, []);
 
-  // Prepare data for staff accounts report
-  const prepareStaffAccountsExportData = () => {
+  // ========== REPORT GENERATION FUNCTIONS ==========
+
+  // Prepare data for ALL staff accounts report
+  const prepareAllStaffAccountsExportData = () => {
     if (!staffAccounts || staffAccounts.length === 0) return [];
     
-    return staffAccounts.map((account, index) => ({
-      sequence: index + 1,
-      staffName: account.userDisplayName || `${account.user?.firstName || ''} ${account.user?.lastName || ''}`.trim(),
-      email: account.userEmail || account.user?.email || 'N/A',
-      station: account.stationDisplayName || account.station?.name || 'N/A',
-      salary: account.salaryAmount || 0,
-      balance: account.currentBalance || 0,
-      balanceStatus: account.currentBalance < 0 ? 'Owes Station' : 
-                    account.currentBalance > 0 ? 'Station Owes' : 'Settled',
-      creditLimit: account.creditLimit || 5000,
-      shortages: account.totalShortages || 0,
-      advances: account.totalAdvances || 0,
-      bonuses: account.totalBonuses || 0,
-      status: account.isActive ? 'Active' : 'Inactive',
-      onHold: account.isOnHold ? 'Yes' : 'No',
-      paymentMethod: staffAccountService.getPayrollMethodLabel ? 
-        staffAccountService.getPayrollMethodLabel(account.payrollMethod) : 
-        account.payrollMethod || 'N/A',
-      paymentSchedule: staffAccountService.getPaymentScheduleLabel ? 
-        staffAccountService.getPaymentScheduleLabel(account.paymentSchedule) : 
-        account.paymentSchedule || 'N/A',
-      bankAccount: account.bankAccountNumber || 'N/A',
-      mobileMoney: account.mobileMoneyNumber || 'N/A',
-      createdAt: account.createdAt ? dayjs(account.createdAt).format('YYYY-MM-DD HH:mm:ss') : 'N/A'
-    }));
+    return staffAccounts.map((account, index) => {
+      // Calculate credit utilization
+      const creditLimit = account.creditLimit || 5000;
+      const currentBalance = Math.abs(account.currentBalance || 0);
+      const utilization = creditLimit > 0 ? (currentBalance / creditLimit * 100) : 0;
+      
+      return {
+        sequence: index + 1,
+        staffId: account.user?.id?.substring(0, 8) || 'N/A',
+        staffName: account.user ? `${account.user.firstName || ''} ${account.user.lastName || ''}`.trim() : 'Unknown User',
+        email: account.user?.email || 'N/A',
+        phone: account.user?.phoneNumber || 'N/A',
+        role: account.user?.role || 'N/A',
+        station: account.station?.name || 'Unknown Station',
+        stationCode: account.station?.code || 'N/A',
+        salary: account.salaryAmount || 0,
+        balance: account.currentBalance || 0,
+        creditLimit: creditLimit,
+        creditUtilization: `${utilization.toFixed(1)}%`,
+        balanceStatus: account.currentBalance < 0 ? 'Owes Station' : 
+                      account.currentBalance > 0 ? 'Station Owes' : 'Settled',
+        shortages: account.totalShortages || 0,
+        advances: account.totalAdvances || 0,
+        bonuses: account.totalBonuses || 0,
+        status: account.isActive ? 'Active' : 'Inactive',
+        onHold: account.isOnHold ? 'Yes' : 'No',
+        holdReason: account.holdReason || 'N/A',
+        paymentMethod: getPayrollMethodLabel(account.payrollMethod),
+        paymentSchedule: getPaymentScheduleLabel(account.paymentSchedule),
+        bankAccount: account.bankAccountNumber || 'N/A',
+        bankName: account.bankName || 'N/A',
+        mobileMoney: account.mobileMoneyNumber || 'N/A',
+        lastPaymentDate: account.lastPaymentDate ? 
+          dayjs(account.lastPaymentDate).format('YYYY-MM-DD') : 'Never',
+        nextPaymentDate: account.nextPaymentDate ? 
+          dayjs(account.nextPaymentDate).format('YYYY-MM-DD') : 'Not Set',
+        createdAt: account.createdAt ? 
+          dayjs(account.createdAt).format('YYYY-MM-DD HH:mm:ss') : 'N/A',
+        updatedAt: account.updatedAt ? 
+          dayjs(account.updatedAt).format('YYYY-MM-DD HH:mm:ss') : 'N/A'
+      };
+    });
   };
 
-  // Prepare data for users without accounts report
-  const prepareUsersWithoutAccountsExportData = () => {
-    if (!usersWithoutAccounts || usersWithoutAccounts.length === 0) return [];
+  // Prepare data for current tab report
+  const prepareTabExportData = () => {
+    const accounts = getFilteredAccounts();
+    if (!accounts || accounts.length === 0) return [];
     
-    return usersWithoutAccounts.map((user, index) => ({
-      sequence: index + 1,
-      name: user.displayName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-      email: user.email || 'N/A',
-      role: user.role,
-      roleDisplay: {
-        'STATION_MANAGER': 'Station Manager',
-        'SUPERVISOR': 'Supervisor',
-        'ATTENDANT': 'Attendant'
-      }[user.role] || user.role,
-      station: user.stationAssignmentsDisplay?.[0]?.stationName || 'Not Assigned',
-      status: user.status === 'ACTIVE' ? 'Active' : 'Inactive',
-      phoneNumber: user.phoneNumber || 'N/A',
-      employeeId: user.employeeId || 'N/A',
-      joinDate: user.createdAt ? dayjs(user.createdAt).format('YYYY-MM-DD') : 'N/A'
-    }));
+    return accounts.map((account, index) => {
+      const creditLimit = account.creditLimit || 5000;
+      const currentBalance = Math.abs(account.currentBalance || 0);
+      const utilization = creditLimit > 0 ? (currentBalance / creditLimit * 100) : 0;
+      
+      return {
+        sequence: index + 1,
+        staffName: account.user ? `${account.user.firstName || ''} ${account.user.lastName || ''}`.trim() : 'Unknown User',
+        email: account.user?.email || 'N/A',
+        station: account.station?.name || 'Unknown Station',
+        salary: account.salaryAmount || 0,
+        balance: account.currentBalance || 0,
+        balanceStatus: account.currentBalance < 0 ? 'Owes Station' : 
+                      account.currentBalance > 0 ? 'Station Owes' : 'Settled',
+        creditLimit: creditLimit,
+        creditUtilization: `${utilization.toFixed(1)}%`,
+        shortages: account.totalShortages || 0,
+        advances: account.totalAdvances || 0,
+        status: account.isActive ? 'Active' : 'Inactive',
+        onHold: account.isOnHold ? 'Yes' : 'No',
+        paymentMethod: getPayrollMethodLabel(account.payrollMethod),
+        lastPaymentDate: account.lastPaymentDate ? 
+          dayjs(account.lastPaymentDate).format('YYYY-MM-DD') : 'Never',
+        createdAt: account.createdAt ? 
+          dayjs(account.createdAt).format('YYYY-MM-DD') : 'N/A'
+      };
+    });
+  };
+
+  // Prepare summary report data
+  const prepareSummaryExportData = () => {
+    if (!accountSummary) return [];
+    
+    return [
+      {
+        category: 'Total Accounts',
+        value: accountSummary.totalAccounts,
+        amount: null
+      },
+      {
+        category: 'Active Accounts',
+        value: accountSummary.activeAccounts,
+        amount: null
+      },
+      {
+        category: 'Accounts on Hold',
+        value: accountSummary.onHoldAccounts,
+        amount: null
+      },
+      {
+        category: 'Total Balance',
+        value: null,
+        amount: accountSummary.totalBalance
+      },
+      {
+        category: 'Station Owes Staff',
+        value: null,
+        amount: accountSummary.totalPositive
+      },
+      {
+        category: 'Staff Owes Station',
+        value: null,
+        amount: accountSummary.totalNegative
+      },
+      {
+        category: 'Total Shortages',
+        value: null,
+        amount: accountSummary.totalShortages
+      },
+      {
+        category: 'Total Advances',
+        value: null,
+        amount: accountSummary.totalAdvances
+      },
+      {
+        category: 'Total Bonuses',
+        value: null,
+        amount: accountSummary.totalBonuses
+      },
+      {
+        category: 'Average Balance',
+        value: null,
+        amount: accountSummary.averageBalance
+      }
+    ];
   };
 
   // Calculate summary data for reports
-  const calculateStaffAccountsSummary = () => {
+  const calculateAllStaffAccountsSummary = () => {
     if (!staffAccounts || staffAccounts.length === 0) return null;
 
-    const totalBalance = staffAccounts.reduce((sum, acc) => sum + (acc.currentBalance || 0), 0);
-    const totalNegative = staffAccounts.filter(acc => acc.currentBalance < 0).reduce((sum, acc) => sum + Math.abs(acc.currentBalance), 0);
-    const totalPositive = staffAccounts.filter(acc => acc.currentBalance > 0).reduce((sum, acc) => sum + acc.currentBalance, 0);
-    const totalShortages = staffAccounts.reduce((sum, acc) => sum + (acc.totalShortages || 0), 0);
-    
     return {
-      totalRecords: staffAccounts.length,
-      activeAccounts: staffAccounts.filter(acc => acc.isActive).length,
-      onHoldAccounts: staffAccounts.filter(acc => acc.isOnHold).length,
-      totalBalance,
-      totalNegativeBalance: totalNegative,
-      totalPositiveBalance: totalPositive,
-      totalShortages,
-      averageBalance: staffAccounts.length > 0 ? totalBalance / staffAccounts.length : 0,
-      accountsWithShortages: staffAccounts.filter(acc => acc.hasShortages).length,
-      accountsWithAdvances: staffAccounts.filter(acc => acc.hasAdvances).length,
       summaryInfo: {
-        'Total Accounts': staffAccounts.length,
+        'Total Staff Accounts': staffAccounts.length,
         'Active Accounts': staffAccounts.filter(acc => acc.isActive).length,
         'Accounts on Hold': staffAccounts.filter(acc => acc.isOnHold).length,
-        'Total Balance': staffAccountService.formatCurrency ? 
-          staffAccountService.formatCurrency(totalBalance) : 
-          `Ksh ${totalBalance}`,
-        'Total Shortages': staffAccountService.formatCurrency ? 
-          staffAccountService.formatCurrency(totalShortages) : 
-          `Ksh ${totalShortages}`,
-        'Station Owes Staff': staffAccountService.formatCurrency ? 
-          staffAccountService.formatCurrency(totalPositive) : 
-          `Ksh ${totalPositive}`,
-        'Staff Owes Station': staffAccountService.formatCurrency ? 
-          staffAccountService.formatCurrency(totalNegative) : 
-          `Ksh ${totalNegative}`,
-        'Generated At': new Date().toLocaleString(),
+        'Total Balance': formatCurrency(accountSummary?.totalBalance || 0),
+        'Station Owes Staff': formatCurrency(accountSummary?.totalPositive || 0),
+        'Staff Owes Station': formatCurrency(accountSummary?.totalNegative || 0),
+        'Total Shortages': formatCurrency(accountSummary?.totalShortages || 0),
+        'Total Advances': formatCurrency(accountSummary?.totalAdvances || 0),
+        'Total Bonuses': formatCurrency(accountSummary?.totalBonuses || 0),
+        'Average Balance': formatCurrency(accountSummary?.averageBalance || 0),
         'Company': state?.currentCompany?.name || 'N/A',
-        'Report Type': 'Staff Accounts Report',
-        'Generated By': `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`
+        'Station': state?.currentStation?.name || 'All Stations',
+        'Report Date': new Date().toLocaleDateString('en-KE'),
+        'Generated Time': new Date().toLocaleTimeString('en-KE'),
+        'Generated By': `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`,
+        'User Role': currentUser?.role || 'N/A'
       }
     };
   };
 
-  const calculateUsersWithoutAccountsSummary = () => {
-    if (!usersWithoutAccounts || usersWithoutAccounts.length === 0) return null;
+  const calculateTabSummaryData = () => {
+    const accounts = getFilteredAccounts();
+    if (!accounts || accounts.length === 0) return null;
+
+    const totalBalance = accounts.reduce((sum, acc) => sum + (acc.currentBalance || 0), 0);
+    const activeAccounts = accounts.filter(acc => acc.isActive).length;
+    const onHoldAccounts = accounts.filter(acc => acc.isOnHold).length;
 
     return {
-      totalRecords: usersWithoutAccounts.length,
-      activeUsers: usersWithoutAccounts.filter(user => user.status === 'ACTIVE').length,
-      managers: usersWithoutAccounts.filter(user => user.role === 'STATION_MANAGER').length,
-      supervisors: usersWithoutAccounts.filter(user => user.role === 'SUPERVISOR').length,
-      attendants: usersWithoutAccounts.filter(user => user.role === 'ATTENDANT').length,
       summaryInfo: {
-        'Total Users Without Accounts': usersWithoutAccounts.length,
-        'Active Users': usersWithoutAccounts.filter(user => user.status === 'ACTIVE').length,
-        'Managers': usersWithoutAccounts.filter(user => user.role === 'STATION_MANAGER').length,
-        'Supervisors': usersWithoutAccounts.filter(user => user.role === 'SUPERVISOR').length,
-        'Attendants': usersWithoutAccounts.filter(user => user.role === 'ATTENDANT').length,
-        'Generated At': new Date().toLocaleString(),
+        [`Total ${getTabDisplayName()} Accounts`]: accounts.length,
+        'Active Accounts': activeAccounts,
+        'Accounts on Hold': onHoldAccounts,
+        'Total Balance': formatCurrency(totalBalance),
+        'Average Balance': formatCurrency(accounts.length > 0 ? totalBalance / accounts.length : 0),
+        'Report Type': `${getTabDisplayName()} Staff Accounts`,
+        'Generated Date': new Date().toLocaleDateString('en-KE'),
+        'Generated Time': new Date().toLocaleTimeString('en-KE'),
+        'Generated By': `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`,
         'Company': state?.currentCompany?.name || 'N/A',
-        'Report Type': 'Users Without Accounts Report',
-        'Generated By': `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`
+        'Current Station': state?.currentStation?.name || 'All Stations'
       }
     };
   };
 
-  // Get columns for staff accounts report (with the exact column series you requested)
-  const getStaffAccountsExportColumns = () => {
+  // Get columns for ALL staff accounts report
+  const getAllStaffAccountsExportColumns = () => {
     return [
+      {
+        title: '#',
+        dataIndex: 'sequence',
+        key: 'sequence',
+        width: 50,
+        type: 'number'
+      },
+      {
+        title: 'Staff Name',
+        dataIndex: 'staffName',
+        key: 'staffName',
+        width: 150,
+        type: 'text'
+      },
+      {
+        title: 'Email',
+        dataIndex: 'email',
+        key: 'email',
+        width: 180,
+        type: 'text'
+      },
+      {
+        title: 'Role',
+        dataIndex: 'role',
+        key: 'role',
+        width: 100,
+        type: 'text'
+      },
+      {
+        title: 'Station',
+        dataIndex: 'station',
+        key: 'station',
+        width: 120,
+        type: 'text'
+      },
+      {
+        title: 'Salary',
+        dataIndex: 'salary',
+        key: 'salary',
+        width: 100,
+        type: 'currency'
+      },
+      {
+        title: 'Balance',
+        dataIndex: 'balance',
+        key: 'balance',
+        width: 120,
+        type: 'currency'
+      },
+      {
+        title: 'Balance Status',
+        dataIndex: 'balanceStatus',
+        key: 'balanceStatus',
+        width: 100,
+        type: 'text'
+      },
+      {
+        title: 'Credit Limit',
+        dataIndex: 'creditLimit',
+        key: 'creditLimit',
+        width: 100,
+        type: 'currency'
+      },
+      {
+        title: 'Shortages',
+        dataIndex: 'shortages',
+        key: 'shortages',
+        width: 100,
+        type: 'currency'
+      },
+      {
+        title: 'Advances',
+        dataIndex: 'advances',
+        key: 'advances',
+        width: 100,
+        type: 'currency'
+      },
+      {
+        title: 'Bonuses',
+        dataIndex: 'bonuses',
+        key: 'bonuses',
+        width: 100,
+        type: 'currency'
+      },
+      {
+        title: 'Next Payment',
+        dataIndex: 'nextPaymentDate',
+        key: 'nextPaymentDate',
+        width: 100,
+        type: 'date'
+      }
+    ];
+  };
+
+  // Get columns for current tab report
+  const getTabExportColumns = () => {
+    const baseColumns = [
       {
         title: '#',
         dataIndex: 'sequence',
@@ -619,7 +748,7 @@ const StaffAccountManagement = () => {
         type: 'number'
       },
       {
-        title: 'User',
+        title: 'Staff Name',
         dataIndex: 'staffName',
         key: 'staffName',
         width: 150,
@@ -644,37 +773,63 @@ const StaffAccountManagement = () => {
         dataIndex: 'salary',
         key: 'salary',
         width: 100,
-        type: 'currency',
-        render: (value) => staffAccountService.formatCurrency ? 
-          staffAccountService.formatCurrency(value) : 
-          `Ksh ${value}`
+        type: 'currency'
       },
       {
         title: 'Balance',
         dataIndex: 'balance',
         key: 'balance',
         width: 120,
-        type: 'currency',
-        render: (value) => staffAccountService.formatCurrency ? 
-          staffAccountService.formatCurrency(value) : 
-          `Ksh ${value}`
+        type: 'currency'
+      },
+      {
+        title: 'Balance Status',
+        dataIndex: 'balanceStatus',
+        key: 'balanceStatus',
+        width: 100,
+        type: 'text'
+      },
+      {
+        title: 'Credit Limit',
+        dataIndex: 'creditLimit',
+        key: 'creditLimit',
+        width: 100,
+        type: 'currency'
+      },
+      {
+        title: 'Credit Utilization',
+        dataIndex: 'creditUtilization',
+        key: 'creditUtilization',
+        width: 100,
+        type: 'text'
       },
       {
         title: 'Shortages',
         dataIndex: 'shortages',
         key: 'shortages',
         width: 100,
-        type: 'currency',
-        render: (value) => staffAccountService.formatCurrency ? 
-          staffAccountService.formatCurrency(value) : 
-          `Ksh ${value}`
+        type: 'currency'
+      },
+      {
+        title: 'Advances',
+        dataIndex: 'advances',
+        key: 'advances',
+        width: 100,
+        type: 'currency'
       },
       {
         title: 'Status',
         dataIndex: 'status',
         key: 'status',
         width: 80,
-        type: 'status'
+        type: 'text'
+      },
+      {
+        title: 'On Hold',
+        dataIndex: 'onHold',
+        key: 'onHold',
+        width: 80,
+        type: 'text'
       },
       {
         title: 'Payment Method',
@@ -684,161 +839,287 @@ const StaffAccountManagement = () => {
         type: 'text'
       },
       {
-        title: 'On Hold',
-        dataIndex: 'onHold',
-        key: 'onHold',
-        width: 80,
-        type: 'text'
+        title: 'Last Payment',
+        dataIndex: 'lastPaymentDate',
+        key: 'lastPaymentDate',
+        width: 100,
+        type: 'date'
       }
     ];
+
+    return baseColumns;
   };
 
-  // Get columns for users without accounts report
-  const getUsersWithoutAccountsExportColumns = () => {
+  // Get columns for summary report
+  const getSummaryExportColumns = () => {
     return [
       {
-        title: '#',
-        dataIndex: 'sequence',
-        key: 'sequence',
-        width: 60,
-        type: 'number'
-      },
-      {
-        title: 'Name',
-        dataIndex: 'name',
-        key: 'name',
-        width: 150,
-        type: 'text'
-      },
-      {
-        title: 'Email',
-        dataIndex: 'email',
-        key: 'email',
+        title: 'Category',
+        dataIndex: 'category',
+        key: 'category',
         width: 180,
         type: 'text'
       },
       {
-        title: 'Station',
-        dataIndex: 'station',
-        key: 'station',
-        width: 120,
-        type: 'text'
-      },
-      {
-        title: 'Role',
-        dataIndex: 'roleDisplay',
-        key: 'role',
+        title: 'Count/Value',
+        dataIndex: 'value',
+        key: 'value',
         width: 100,
-        type: 'text'
+        type: 'number',
+        render: (value) => value !== null ? value : '-'
       },
       {
-        title: 'Status',
-        dataIndex: 'status',
-        key: 'status',
-        width: 80,
-        type: 'status'
-      },
-      {
-        title: 'Phone Number',
-        dataIndex: 'phoneNumber',
-        key: 'phoneNumber',
+        title: 'Amount (Ksh)',
+        dataIndex: 'amount',
+        key: 'amount',
         width: 120,
-        type: 'text'
-      },
-      {
-        title: 'Employee ID',
-        dataIndex: 'employeeId',
-        key: 'employeeId',
-        width: 100,
-        type: 'text'
+        type: 'currency',
+        render: (amount) => amount !== null ? formatCurrency(amount) : '-'
       }
     ];
   };
 
-  // Render export button for staff accounts
-  const renderStaffAccountsExportButton = () => {
-    if (!staffAccounts || staffAccounts.length === 0) {
-      return (
-        <Button icon={<DownloadOutlined />} disabled>
-          Export Accounts
-        </Button>
+  // Get filtered accounts based on active tab
+  const getFilteredAccounts = () => {
+    if (!staffAccounts || staffAccounts.length === 0) return [];
+    
+    let filtered = [...staffAccounts];
+    
+    // Filter by active tab
+    if (activeTab === 'active') {
+      filtered = filtered.filter(acc => acc.isActive);
+    } else if (activeTab === 'inactive') {
+      filtered = filtered.filter(acc => !acc.isActive);
+    } else if (activeTab === 'onHold') {
+      filtered = filtered.filter(acc => acc.isOnHold);
+    } else if (activeTab === 'owing') {
+      filtered = filtered.filter(acc => (acc.currentBalance || 0) < 0);
+    } else if (activeTab === 'credit') {
+      filtered = filtered.filter(acc => (acc.currentBalance || 0) > 0);
+    }
+    
+    // Apply search filter
+    if (filters.search) {
+      const query = filters.search.toLowerCase();
+      filtered = filtered.filter(acc => 
+        (acc.user?.firstName && acc.user.firstName.toLowerCase().includes(query)) ||
+        (acc.user?.lastName && acc.user.lastName.toLowerCase().includes(query)) ||
+        (acc.user?.email && acc.user.email.toLowerCase().includes(query)) ||
+        (acc.station?.name && acc.station.name.toLowerCase().includes(query)) ||
+        (acc.user?.phoneNumber && acc.user.phoneNumber.includes(query))
       );
     }
-
-    const exportDataSource = prepareStaffAccountsExportData();
-    const summaryData = calculateStaffAccountsSummary();
     
-    const fileName = `staff_accounts_${state?.currentCompany?.code || 'company'}_${new Date().toISOString().split('T')[0]}`;
-
-    return (
-      <AdvancedReportGenerator
-        dataSource={exportDataSource}
-        columns={getStaffAccountsExportColumns()}
-        summaryData={summaryData}
-        title={`Staff Accounts - ${state?.currentCompany?.name || 'Company'}`}
-        fileName={fileName}
-        reportType="finance"
-        companyName={state?.currentCompany?.name || "Company"}
-        stationInfo={state?.currentStation ? {
-          name: state.currentStation.name,
-          code: state.currentStation.code,
-          address: state.currentStation.address
-        } : null}
-        showFooter={true}
-        footerText={`Generated from Staff Management System | User: ${currentUser?.firstName || ''} ${currentUser?.lastName || ''} | ${new Date().toLocaleString()}`}
-        enableCustomization={true}
-        includeLogo={false}
-        onReportGenerate={(format) => {
-          console.log(`Exporting ${exportDataSource.length} staff accounts as ${format}`);
-          message.success(`Staff accounts report generated with ${exportDataSource.length} records`);
-        }}
-      />
-    );
+    // Apply status filter
+    if (filters.status && filters.status !== 'all') {
+      if (filters.status === 'active') {
+        filtered = filtered.filter(acc => acc.isActive);
+      } else if (filters.status === 'inactive') {
+        filtered = filtered.filter(acc => !acc.isActive);
+      } else if (filters.status === 'onHold') {
+        filtered = filtered.filter(acc => acc.isOnHold);
+      }
+    }
+    
+    // Apply payroll method filter
+    if (filters.payrollMethod) {
+      filtered = filtered.filter(acc => acc.payrollMethod === filters.payrollMethod);
+    }
+    
+    // Apply station filter
+    if (filters.station) {
+      filtered = filtered.filter(acc => acc.stationId === filters.station);
+    }
+    
+    // Sort filtered accounts
+    filtered.sort((a, b) => {
+      const aValue = a[filters.sortBy] || '';
+      const bValue = b[filters.sortBy] || '';
+      
+      if (filters.sortBy === 'currentBalance' || filters.sortBy === 'salaryAmount' || filters.sortBy === 'creditLimit') {
+        return filters.sortOrder === 'desc' ? (bValue - aValue) : (aValue - bValue);
+      }
+      
+      if (filters.sortBy === 'createdAt' || filters.sortBy === 'updatedAt') {
+        const aDate = new Date(aValue).getTime();
+        const bDate = new Date(bValue).getTime();
+        return filters.sortOrder === 'desc' ? (bDate - aDate) : (aDate - bDate);
+      }
+      
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return filters.sortOrder === 'desc' ? 
+          bValue.localeCompare(aValue) : 
+          aValue.localeCompare(bValue);
+      }
+      
+      return 0;
+    });
+    
+    return filtered;
   };
 
-  // Render export button for users without accounts
-  const renderUsersWithoutAccountsExportButton = () => {
-    if (!usersWithoutAccounts || usersWithoutAccounts.length === 0) {
-      return (
-        <Button icon={<DownloadOutlined />} disabled>
-          Export Users
-        </Button>
-      );
+  // Get tab display name
+  const getTabDisplayName = () => {
+    const tabNames = {
+      'all': 'All',
+      'active': 'Active',
+      'inactive': 'Inactive',
+      'onHold': 'On Hold',
+      'owing': 'Owing',
+      'credit': 'Credit'
+    };
+    return tabNames[activeTab] || 'All';
+  };
+
+  // Get report title
+  const getReportTitle = (type) => {
+    const companyName = state?.currentCompany?.name || "Company";
+    const currentDate = new Date().toLocaleDateString('en-KE');
+    
+    if (type === 'all') {
+      return `Complete Staff Accounts Report - ${companyName} (${currentDate})`;
+    } else if (type === 'current') {
+      return `${getTabDisplayName()} Staff Accounts Report - ${companyName} (${currentDate})`;
+    } else if (type === 'summary') {
+      return `Staff Accounts Summary Report - ${companyName} (${currentDate})`;
+    }
+    return `Staff Accounts Report - ${companyName} (${currentDate})`;
+  };
+
+  // Get file name
+  const getFileName = (type) => {
+    const companyCode = state?.currentCompany?.code ? `_${state.currentCompany.code}` : '';
+    const dateStr = new Date().toISOString().split('T')[0];
+    
+    if (type === 'all') {
+      return `complete_staff_accounts${companyCode}_${dateStr}`;
+    } else if (type === 'current') {
+      return `${activeTab}_staff_accounts${companyCode}_${dateStr}`;
+    } else if (type === 'summary') {
+      return `staff_accounts_summary${companyCode}_${dateStr}`;
+    }
+    return `staff_accounts${companyCode}_${dateStr}`;
+  };
+
+  // Get footer text
+  const getFooterText = () => {
+    const generatedBy = `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`;
+    const timestamp = new Date().toLocaleString('en-KE');
+    const company = state?.currentCompany?.name || 'Company';
+    
+    return `Generated from ${company} | User: ${generatedBy} | ${timestamp}`;
+  };
+
+  // Handle export action
+  const handleExportAction = (type) => {
+    let exportData = [];
+    let exportColumns = [];
+    let summaryData = null;
+    let title = '';
+    let fileName = '';
+
+    if (type === 'all') {
+      if (staffAccounts.length === 0) {
+        message.warning('No staff accounts available to export');
+        return;
+      }
+      exportData = prepareAllStaffAccountsExportData();
+      exportColumns = getAllStaffAccountsExportColumns();
+      summaryData = calculateAllStaffAccountsSummary();
+      title = getReportTitle('all');
+      fileName = getFileName('all');
+    } else if (type === 'current') {
+      const filteredAccounts = getFilteredAccounts();
+      if (filteredAccounts.length === 0) {
+        message.warning(`No ${activeTab} staff accounts available to export`);
+        return;
+      }
+      exportData = prepareTabExportData();
+      exportColumns = getTabExportColumns();
+      summaryData = calculateTabSummaryData();
+      title = getReportTitle('current');
+      fileName = getFileName('current');
+    } else if (type === 'summary') {
+      if (!accountSummary) {
+        message.warning('No summary data available to export');
+        return;
+      }
+      exportData = prepareSummaryExportData();
+      exportColumns = getSummaryExportColumns();
+      summaryData = { summaryInfo: accountSummary };
+      title = getReportTitle('summary');
+      fileName = getFileName('summary');
     }
 
-    const exportDataSource = prepareUsersWithoutAccountsExportData();
-    const summaryData = calculateUsersWithoutAccountsSummary();
-    
-    const fileName = `users_without_accounts_${state?.currentCompany?.code || 'company'}_${new Date().toISOString().split('T')[0]}`;
+    setExportConfig({
+      visible: true,
+      type,
+      data: exportData,
+      columns: exportColumns,
+      summaryData,
+      title,
+      fileName
+    });
+  };
 
-    return (
-      <AdvancedReportGenerator
-        dataSource={exportDataSource}
-        columns={getUsersWithoutAccountsExportColumns()}
-        summaryData={summaryData}
-        title={`Users Without Accounts - ${state?.currentCompany?.name || 'Company'}`}
-        fileName={fileName}
-        reportType="operations"
-        companyName={state?.currentCompany?.name || "Company"}
-        stationInfo={state?.currentStation ? {
-          name: state.currentStation.name,
-          code: state.currentStation.code,
-          address: state.currentStation.address
-        } : null}
-        showFooter={true}
-        footerText={`Generated from Staff Management System | User: ${currentUser?.firstName || ''} ${currentUser?.lastName || ''} | ${new Date().toLocaleString()}`}
-        enableCustomization={true}
-        includeLogo={false}
-        onReportGenerate={(format) => {
-          console.log(`Exporting ${exportDataSource.length} users without accounts as ${format}`);
-          message.success(`Users without accounts report generated with ${exportDataSource.length} records`);
-        }}
-      />
-    );
+  // Handle report completion
+  const handleReportComplete = (format) => {
+    console.log(`✅ Report generated as ${format}`);
+    message.success(`Report generated successfully as ${format}`);
+    setExportConfig({
+      visible: false,
+      type: null,
+      data: null,
+      columns: null,
+      title: '',
+      fileName: ''
+    });
+  };
+
+  // Utility functions
+  const getPayrollMethodLabel = (method) => {
+    const labels = {
+      'STATION_WALLET': 'Station Wallet',
+      'BANK_TRANSFER': 'Bank Transfer',
+      'MOBILE_MONEY': 'Mobile Money',
+      'CASH': 'Cash'
+    };
+    return labels[method] || method;
+  };
+
+  const getPaymentScheduleLabel = (schedule) => {
+    const labels = {
+      'DAILY': 'Daily',
+      'WEEKLY': 'Weekly',
+      'BI_WEEKLY': 'Bi-Weekly',
+      'MONTHLY': 'Monthly',
+      'QUARTERLY': 'Quarterly'
+    };
+    return labels[schedule] || schedule;
+  };
+
+  const getStatusColor = (status) => {
+    return status === 'Active' ? 'green' : 'red';
+  };
+
+  const getBalanceColor = (balance) => {
+    if (balance < 0) return '#ff4d4f';
+    if (balance > 0) return '#52c41a';
+    return '#666';
   };
 
   // Table columns
   const accountColumns = [
+    {
+      title: '#',
+      key: 'index',
+      width: 60,
+      render: (_, __, index) => {
+        const page = pagination.current || 1;
+        const pageSize = pagination.pageSize || 10;
+        return ((page - 1) * pageSize) + index + 1;
+      }
+    },
     {
       title: 'Staff Member',
       key: 'staff',
@@ -848,88 +1129,47 @@ const StaffAccountManagement = () => {
             style={{ backgroundColor: '#1890ff' }}
             icon={<UserOutlined />}
           >
-            {(account.user?.firstName?.[0] || account.userDisplayName?.[0] || 'U').toUpperCase()}
+            {(account.user?.firstName?.[0] || 'U').toUpperCase()}
           </Avatar>
           <div>
             <div style={{ fontWeight: 'bold' }}>
-              {account.userDisplayName || `${account.user?.firstName} ${account.user?.lastName}`}
+              {account.user ? `${account.user.firstName || ''} ${account.user.lastName || ''}`.trim() : 'Unknown User'}
             </div>
             <div style={{ fontSize: '12px', color: '#666' }}>
-              {account.userEmail || account.user?.email || 'No email'}
+              {account.user?.email || 'No email'}
             </div>
             <div style={{ fontSize: '12px', color: '#999' }}>
-              {account.stationDisplayName || account.station?.name || 'No station'}
+              {account.station?.name || 'No station'}
             </div>
           </div>
         </Space>
-      ),
-      sorter: (a, b) => (a.userDisplayName || '').localeCompare(b.userDisplayName || '')
-    },
-    {
-      title: 'Status',
-      key: 'status',
-      render: (account) => {
-        const statusColor = account.isActive ? 'success' : 'default';
-        const statusText = account.isActive ? 'Active' : 'Inactive';
-        const holdColor = account.isOnHold ? 'warning' : 'default';
-        const holdText = account.isOnHold ? 'On Hold' : 'Normal';
-        
-        return (
-          <Space direction="vertical" size={2}>
-            <Tag color={statusColor}>
-              {statusText}
-            </Tag>
-            {account.isOnHold && (
-              <Tag color={holdColor} icon={<LockOutlined />}>
-                {holdText}
-              </Tag>
-            )}
-          </Space>
-        );
-      },
-      filters: [
-        { text: 'Active', value: 'active' },
-        { text: 'Inactive', value: 'inactive' },
-        { text: 'On Hold', value: 'onHold' }
-      ],
-      onFilter: (value, account) => {
-        if (value === 'active') return account.isActive;
-        if (value === 'inactive') return !account.isActive;
-        if (value === 'onHold') return account.isOnHold;
-        return true;
-      }
+      )
     },
     {
       title: 'Balance',
       key: 'balance',
       render: (account) => {
         const balance = account.currentBalance || 0;
-        const color = balance < 0 ? '#ff4d4f' : balance > 0 ? '#52c41a' : '#666';
-        const status = balance < 0 ? 'Owes' : balance > 0 ? 'Credit' : 'Zero';
+        const color = getBalanceColor(balance);
+        const status = balance < 0 ? 'Owes Station' : balance > 0 ? 'Station Owes' : 'Settled';
         
         return (
           <Space direction="vertical" size={0}>
-            <Text 
-              strong 
-              style={{ 
-                color,
-                fontSize: '16px'
-              }}
-            >
-              {staffAccountService.formatCurrency ? staffAccountService.formatCurrency(balance) : `Ksh ${balance}`}
+            <Text strong style={{ color, fontSize: '16px' }}>
+              {formatCurrency(balance)}
             </Text>
             <Text type="secondary" style={{ fontSize: '12px' }}>
               {status}
             </Text>
             {account.creditLimit && (
               <Text type="secondary" style={{ fontSize: '12px' }}>
-                Limit: {staffAccountService.formatCurrency ? staffAccountService.formatCurrency(account.creditLimit) : `Ksh ${account.creditLimit}`}
+                Limit: {formatCurrency(account.creditLimit)}
               </Text>
             )}
           </Space>
         );
       },
-      sorter: (a, b) => (a.currentBalance || 0) - (b.currentBalance || 0)
+      sorter: true
     },
     {
       title: 'Salary',
@@ -938,12 +1178,12 @@ const StaffAccountManagement = () => {
         <Space direction="vertical" size={0}>
           <div style={{ fontSize: '12px' }}>
             <Text strong>
-              {account.salaryAmount ? (staffAccountService.formatCurrency ? staffAccountService.formatCurrency(account.salaryAmount) : `Ksh ${account.salaryAmount}`) : 'Not Set'}
+              {account.salaryAmount ? formatCurrency(account.salaryAmount) : 'Not Set'}
             </Text>
           </div>
           <div style={{ fontSize: '12px' }}>
             <Text type="secondary">
-              {account.paymentSchedule ? (staffAccountService.getPaymentScheduleLabel ? staffAccountService.getPaymentScheduleLabel(account.paymentSchedule) : account.paymentSchedule) : 'Monthly'}
+              {getPaymentScheduleLabel(account.paymentSchedule)}
             </Text>
           </div>
         </Space>
@@ -954,9 +1194,7 @@ const StaffAccountManagement = () => {
       key: 'paymentMethod',
       render: (account) => {
         const method = account.payrollMethod || 'STATION_WALLET';
-        const methodLabel = staffAccountService.getPayrollMethodLabel ? 
-          staffAccountService.getPayrollMethodLabel(method) : 
-          method;
+        const methodLabel = getPayrollMethodLabel(method);
         
         return (
           <Space direction="vertical" size={0}>
@@ -979,32 +1217,28 @@ const StaffAccountManagement = () => {
             )}
           </Space>
         );
-      },
-      filters: [
-        { text: 'Station Wallet', value: 'STATION_WALLET' },
-        { text: 'Bank Transfer', value: 'BANK_TRANSFER' },
-        { text: 'Mobile Money', value: 'MOBILE_MONEY' },
-        { text: 'Cash', value: 'CASH' }
-      ],
-      onFilter: (value, account) => account.payrollMethod === value
+      }
     },
     {
-      title: 'Shortages',
-      key: 'shortages',
+      title: 'Status',
+      key: 'status',
       render: (account) => {
-        const shortages = account.totalShortages || 0;
-        const shortagesDisplay = shortages > 0 ? 
-          (staffAccountService.formatCurrency ? staffAccountService.formatCurrency(shortages) : `Ksh ${shortages}`) : 'None';
+        const statusColor = account.isActive ? 'success' : 'default';
+        const statusText = account.isActive ? 'Active' : 'Inactive';
+        const holdColor = account.isOnHold ? 'warning' : 'default';
+        const holdText = account.isOnHold ? 'On Hold' : 'Normal';
         
         return (
-          <Text 
-            style={{ 
-              color: shortages > 0 ? '#ff4d4f' : '#52c41a',
-              fontWeight: shortages > 0 ? 'bold' : 'normal'
-            }}
-          >
-            {shortagesDisplay}
-          </Text>
+          <Space direction="vertical" size={2}>
+            <Tag color={statusColor}>
+              {statusText}
+            </Tag>
+            {account.isOnHold && (
+              <Tag color={holdColor} icon={<LockOutlined />}>
+                {holdText}
+              </Tag>
+            )}
+          </Space>
         );
       }
     },
@@ -1083,7 +1317,23 @@ const StaffAccountManagement = () => {
             key: 'putOnHold',
             label: 'Put on Hold',
             icon: <LockOutlined />,
-            onClick: () => handlePutOnHold(account.id)
+            onClick: () => {
+              Modal.confirm({
+                title: 'Put Account On Hold',
+                content: (
+                  <div>
+                    <p>Please provide a reason for putting this account on hold:</p>
+                    <TextArea 
+                      placeholder="Enter reason"
+                      rows={3}
+                      onChange={(e) => setHoldReason(e.target.value)}
+                      value={holdReason}
+                    />
+                  </div>
+                ),
+                onOk: () => handlePutOnHold(account.id, holdReason)
+              });
+            }
           },
           {
             type: 'divider'
@@ -1093,7 +1343,31 @@ const StaffAccountManagement = () => {
             label: 'Delete Account',
             icon: <DeleteOutlined />,
             danger: true,
-            onClick: () => handleDeleteAccount(account.id)
+            onClick: () => {
+              Modal.confirm({
+                title: 'Delete Staff Account',
+                content: (
+                  <div>
+                    <Alert
+                      message="Warning"
+                      description="This action will permanently delete the staff account. Please confirm with a reason:"
+                      type="warning"
+                      showIcon
+                    />
+                    <TextArea 
+                      placeholder="Enter reason for deletion"
+                      rows={3}
+                      style={{ marginTop: 16 }}
+                      onChange={(e) => setDeactivateReason(e.target.value)}
+                      value={deactivateReason}
+                    />
+                  </div>
+                ),
+                okText: 'Delete',
+                okType: 'danger',
+                onOk: () => handleDeleteAccount(account.id, deactivateReason)
+              });
+            }
           }
         ].filter(item => item);
 
@@ -1115,235 +1389,260 @@ const StaffAccountManagement = () => {
     }
   ];
 
-  // Users without accounts columns
-  const usersWithoutAccountsColumns = [
-    {
-      title: 'User',
-      key: 'user',
-      render: (user) => (
-        <Space>
-          <Avatar icon={<UserOutlined />}>
-            {(user.firstName?.[0] || user.displayName?.[0] || 'U').toUpperCase()}
-          </Avatar>
-          <div>
-            <div style={{ fontWeight: 'bold' }}>
-              {user.displayName || `${user.firstName} ${user.lastName}`}
-            </div>
-            <div style={{ fontSize: '12px', color: '#666' }}>
-              {user.email}
-            </div>
-            <div style={{ fontSize: '12px', color: '#999' }}>
-              {user.companyName}
-            </div>
-          </div>
-        </Space>
-      )
-    },
-    {
-      title: 'Status',
-      key: 'status',
-      render: (user) => (
-        <Tag color={user.statusColor || 'default'}>
-          {user.status || 'Unknown'}
-        </Tag>
-      )
-    },
-    {
-      title: 'Assigned Stations',
-      key: 'stations',
-      render: (user) => (
-        <Space direction="vertical" size={2}>
-          {user.stationAssignmentsDisplay?.map((assignment, index) => (
-            <Tag key={index} color="blue">
-              {assignment.stationName} ({assignment.role})
-            </Tag>
-          )) || <Text type="secondary">No assignments</Text>}
-        </Space>
-      )
-    },
-    {
-      title: 'Action',
-      key: 'action',
-      render: (user) => (
-        <Tooltip title="Create Staff Account">
-          <Button
-            type="primary"
-            size="small"
-            onClick={() => {
-              createForm.setFieldsValue({
-                userId: user.id,
-                stationId: user.stationAssignmentsDisplay?.[0]?.stationId || currentStationId,
-                salaryAmount: 30000,
-                creditLimit: 5000,
-                payrollMethod: 'STATION_WALLET',
-                paymentSchedule: 'MONTHLY',
-                bankName: 'Baclays Bank',
-                bankAccountNumber: '001110001100',
-                mobileMoneyNumber: '0712345678',
-                isActive: true
-              });
-              setModalVisible(prev => ({ ...prev, createAccount: true }));
-            }}
-            disabled={!user.canCreateAccount}
-            icon={<PlusOutlined />}
-          >
-            Create Account
-          </Button>
-        </Tooltip>
-      )
-    }
-  ];
+  // Get tab items with counts
+  const getTabItems = () => {
+    const filteredAccounts = getFilteredAccounts();
+    const activeAccounts = staffAccounts.filter(acc => acc.isActive);
+    const inactiveAccounts = staffAccounts.filter(acc => !acc.isActive);
+    const onHoldAccounts = staffAccounts.filter(acc => acc.isOnHold);
+    const owingAccounts = staffAccounts.filter(acc => (acc.currentBalance || 0) < 0);
+    const creditAccounts = staffAccounts.filter(acc => (acc.currentBalance || 0) > 0);
+    
+    return [
+      {
+        key: 'all',
+        label: (
+          <Space>
+            <TeamOutlined />
+            <span>All Accounts</span>
+            <Badge 
+              count={staffAccounts.length} 
+              style={{ backgroundColor: '#1890ff' }}
+              overflowCount={999}
+            />
+          </Space>
+        )
+      },
+      {
+        key: 'active',
+        label: (
+          <Space>
+            <CheckCircleOutlined />
+            <span>Active</span>
+            <Badge 
+              count={activeAccounts.length} 
+              style={{ backgroundColor: '#52c41a' }}
+              overflowCount={999}
+            />
+          </Space>
+        )
+      },
+      {
+        key: 'inactive',
+        label: (
+          <Space>
+            <PauseCircleOutlined />
+            <span>Inactive</span>
+            <Badge 
+              count={inactiveAccounts.length} 
+              style={{ backgroundColor: '#ff4d4f' }}
+              overflowCount={999}
+            />
+          </Space>
+        )
+      },
+      {
+        key: 'onHold',
+        label: (
+          <Space>
+            <LockOutlined />
+            <span>On Hold</span>
+            <Badge 
+              count={onHoldAccounts.length} 
+              style={{ backgroundColor: '#fa8c16' }}
+              overflowCount={999}
+            />
+          </Space>
+        )
+      },
+      {
+        key: 'owing',
+        label: (
+          <Space>
+            <AccountBookOutlined />
+            <span>Owing</span>
+            <Badge 
+              count={owingAccounts.length} 
+              style={{ backgroundColor: '#ff4d4f' }}
+              overflowCount={999}
+            />
+          </Space>
+        )
+      },
+      {
+        key: 'credit',
+        label: (
+          <Space>
+            <MoneyCollectOutlined />
+            <span>Credit</span>
+            <Badge 
+              count={creditAccounts.length} 
+              style={{ backgroundColor: '#52c41a' }}
+              overflowCount={999}
+            />
+          </Space>
+        )
+      }
+    ];
+  };
 
-  // Handle filter changes
-  const handleFilterChange = (key, value) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
+  // Render export buttons
+  const renderExportButtons = () => {
+    const exportMenuItems = [
+      {
+        key: 'all',
+        label: 'Export All Staff Accounts',
+        icon: <FileExcelOutlined />,
+        disabled: staffAccounts.length === 0
+      },
+      {
+        key: 'current',
+        label: `Export Current Tab (${getTabDisplayName()})`,
+        icon: <FilePdfOutlined />,
+        disabled: getFilteredAccounts().length === 0
+      },
+      {
+        key: 'summary',
+        label: 'Export Summary Report',
+        icon: <BarChartOutlined />,
+        disabled: !accountSummary
+      }
+    ];
+
+    return (
+      <Dropdown
+        menu={{
+          items: exportMenuItems,
+          onClick: ({ key }) => handleExportAction(key)
+        }}
+        trigger={['click']}
+      >
+        <Button type="primary" icon={<DownloadOutlined />}>
+          Export Reports <DownOutlined />
+        </Button>
+      </Dropdown>
+    );
   };
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <Card className="shadow-sm">
-        <Row gutter={[16, 16]} align="middle">
-          <Col xs={24} md={12}>
-            <Space direction="vertical" size={0}>
-              <Title level={2} className="m-0">
-                <ShopOutlined className="mr-2" />
-                Staff Account Management
-              </Title>
-              <Text type="secondary">
-                Manage staff financial accounts, payroll settings, and transactions
-              </Text>
-            </Space>
-          </Col>
-          <Col xs={24} md={12}>
-            <Row gutter={[8, 8]} justify="end">
-              <Col>
-                <Tooltip title="Refresh all data">
-                  <Button
-                    icon={<SyncOutlined spin={loading} />}
-                    onClick={() => refreshData(true)}
-                    loading={loading}
-                  >
-                    Refresh
-                  </Button>
-                </Tooltip>
-              </Col>
-              <Col>
-                {renderStaffAccountsExportButton()}
-              </Col>
-              {usersWithoutAccounts.length > 0 && (
-                <Col>
-                  {renderUsersWithoutAccountsExportButton()}
-                </Col>
-              )}
-              <Col>
-                <Button
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={() => {
-                    createForm.resetFields();
-                    setModalVisible(prev => ({ ...prev, createAccount: true }));
-                  }}
-                  disabled={usersWithoutAccounts.length === 0}
-                >
-                  Create Account
-                </Button>
-              </Col>
-            </Row>
-          </Col>
-        </Row>
-      </Card>
+    <div style={{ padding: '24px' }}>
+      {/* Header Section */}
+      <Space direction="vertical" style={{ width: '100%' }}>
+        <Title level={2} style={{ margin: 0 }}>
+          <ShopOutlined /> Staff Account Management
+        </Title>
+        <Text type="secondary">
+          Manage staff financial accounts, payroll settings, and financial transactions
+        </Text>
+      </Space>
+
+      {/* Action Buttons */}
+      <Space style={{ margin: '24px 0' }} wrap>
+        <Button 
+          type="primary" 
+          icon={<PlusOutlined />}
+          onClick={() => {
+            createForm.resetFields();
+            setModalVisible(prev => ({ ...prev, createAccount: true }));
+          }}
+          disabled={usersWithoutAccounts.length === 0}
+        >
+          Create Account
+        </Button>
+        
+        {renderExportButtons()}
+        
+        <Button 
+          icon={<SyncOutlined />}
+          onClick={() => refreshData(true)}
+          loading={loading}
+        >
+          Refresh
+        </Button>
+      </Space>
 
       {/* Summary Statistics */}
       {accountSummary && (
-        <Card size="small" className="shadow-sm">
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={8} md={4}>
+        <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
+          <Col xs={24} sm={12} md={6}>
+            <Card size="small" hoverable>
               <Statistic
                 title="Total Accounts"
-                value={accountSummary.totals?.totalAccounts || 0}
+                value={accountSummary.totalAccounts}
                 prefix={<TeamOutlined />}
+                valueStyle={{ color: '#1890ff' }}
               />
-            </Col>
-            <Col xs={24} sm={8} md={4}>
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card size="small" hoverable>
               <Statistic
                 title="Active Accounts"
-                value={accountSummary.totals?.activeAccounts || 0}
-                valueStyle={{ color: '#52c41a' }}
+                value={accountSummary.activeAccounts}
                 prefix={<CheckCircleOutlined />}
+                valueStyle={{ color: '#52c41a' }}
               />
-            </Col>
-            <Col xs={24} sm={8} md={4}>
-              <Statistic
-                title="Accounts on Hold"
-                value={accountSummary.totals?.accountsOnHold || 0}
-                valueStyle={{ color: '#faad14' }}
-                prefix={<ExclamationCircleOutlined />}
+              <Progress 
+                percent={((accountSummary.activeAccounts / accountSummary.totalAccounts) * 100) || 0} 
+                size="small" 
+                status="active"
               />
-            </Col>
-            <Col xs={24} sm={8} md={4}>
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card size="small" hoverable>
               <Statistic
-                title="Positive Balance"
-                value={accountSummary.totals?.totalPositiveBalanceDisplay || 'Ksh 0'}
+                title="Total Balance"
+                value={formatCurrency(accountSummary.totalBalance)}
                 prefix={<DollarOutlined />}
+                valueStyle={{ 
+                  color: accountSummary.totalBalance < 0 ? '#ff4d4f' : 
+                         accountSummary.totalBalance > 0 ? '#52c41a' : '#666'
+                }}
               />
-            </Col>
-            <Col xs={24} sm={8} md={4}>
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card size="small" hoverable>
               <Statistic
-                title="Negative Balance"
-                value={accountSummary.totals?.totalNegativeBalanceDisplay || 'Ksh 0'}
-                valueStyle={{ color: '#ff4d4f' }}
+                title="Staff Owes Station"
+                value={formatCurrency(accountSummary.totalNegative)}
                 prefix={<AccountBookOutlined />}
+                valueStyle={{ color: '#ff4d4f' }}
               />
-            </Col>
-            <Col xs={24} sm={8} md={4}>
-              <Statistic
-                title="Credit Utilization"
-                value={accountSummary.totals?.creditUtilizationDisplay || '0%'}
-                prefix={<BarChartOutlined />}
-              />
-            </Col>
-          </Row>
-        </Card>
+            </Card>
+          </Col>
+        </Row>
       )}
 
       {/* Filters */}
-      <Card size="small" className="shadow-sm">
-        <Row gutter={[8, 8]} align="middle">
-          <Col xs={24} sm={8} md={6}>
+      <Card style={{ marginBottom: '24px' }} size="small">
+        <Row gutter={[16, 16]} align="middle">
+          <Col xs={24} sm={12} md={6}>
             <Input
               placeholder="Search by name, email, or station..."
               value={filters.search}
               onChange={(e) => handleFilterChange('search', e.target.value)}
-              prefix={<UserOutlined />}
+              prefix={<SearchOutlined />}
               allowClear
+              onPressEnter={() => fetchStaffAccounts(1, pagination.pageSize)}
             />
           </Col>
-          <Col xs={12} sm={8} md={4}>
+          <Col xs={24} sm={12} md={4}>
             <Select
               style={{ width: '100%' }}
-              placeholder="Account Status"
-              value={filters.isActive}
-              onChange={(value) => handleFilterChange('isActive', value)}
+              placeholder="Status"
+              value={filters.status}
+              onChange={(value) => handleFilterChange('status', value)}
+              allowClear
             >
               <Option value="all">All Status</Option>
               <Option value="active">Active</Option>
               <Option value="inactive">Inactive</Option>
-            </Select>
-          </Col>
-          <Col xs={12} sm={8} md={4}>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Hold Status"
-              value={filters.isOnHold}
-              onChange={(value) => handleFilterChange('isOnHold', value)}
-            >
-              <Option value="all">All</Option>
               <Option value="onHold">On Hold</Option>
-              <Option value="notOnHold">Not On Hold</Option>
             </Select>
           </Col>
-          <Col xs={12} sm={8} md={4}>
+          <Col xs={24} sm={12} md={4}>
             <Select
               style={{ width: '100%' }}
               placeholder="Payment Method"
@@ -1357,7 +1656,22 @@ const StaffAccountManagement = () => {
               <Option value="CASH">Cash</Option>
             </Select>
           </Col>
-          <Col xs={12} sm={8} md={4}>
+          <Col xs={24} sm={12} md={4}>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="Station"
+              value={filters.station}
+              onChange={(value) => handleFilterChange('station', value)}
+              allowClear
+            >
+              {stations.map(station => (
+                <Option key={station.id} value={station.id}>
+                  {station.name}
+                </Option>
+              ))}
+            </Select>
+          </Col>
+          <Col xs={24} sm={12} md={4}>
             <Select
               style={{ width: '100%' }}
               placeholder="Sort By"
@@ -1366,78 +1680,92 @@ const StaffAccountManagement = () => {
             >
               <Option value="createdAt">Created Date</Option>
               <Option value="currentBalance">Balance</Option>
-              <Option value="lastPaymentDate">Last Payment</Option>
+              <Option value="salaryAmount">Salary</Option>
+              <Option value="updatedAt">Last Updated</Option>
             </Select>
           </Col>
         </Row>
       </Card>
 
-      {/* Accounts Table */}
-      <Card 
-        title={
-          <Space>
-            <TeamOutlined />
-            <span>Staff Accounts ({staffAccounts.length})</span>
-          </Space>
-        }
-        className="shadow-sm"
-        extra={
-          <Space>
-            <Tooltip title="View Account Summary">
-              <Button
-                icon={<BarChartOutlined />}
-                onClick={() => fetchAccountSummary()}
-              >
-                Summary
-              </Button>
-            </Tooltip>
-          </Space>
-        }
-      >
-        {staffAccounts.length === 0 ? (
-          <Alert
-            message="No Staff Accounts Found"
-            description={
-              loading ? 
-                "Loading accounts..." :
-                "No staff accounts have been created yet. Create your first staff account."
-            }
-            type={loading ? "info" : "warning"}
-            showIcon
-            action={
-              <Button 
-                type="primary" 
-                size="small"
-                onClick={() => {
-                  createForm.resetFields();
-                  setModalVisible(prev => ({ ...prev, createAccount: true }));
-                }}
-              >
-                Create Account
-              </Button>
-            }
-          />
-        ) : (
-          <Table
-            columns={accountColumns}
-            dataSource={staffAccounts}
-            loading={loading}
-            rowKey="id"
-            pagination={{
-              current: pagination.current,
-              pageSize: pagination.pageSize,
-              total: pagination.total,
-              showSizeChanger: true,
-              showQuickJumper: true,
-              showTotal: (total, range) => 
-                `Showing ${range[0]}-${range[1]} of ${total} accounts`
-            }}
-            onChange={handleTableChange}
-          />
-        )}
+      {/* Main Content with Tabs */}
+      <Card>
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={getTabItems()}
+          style={{ marginBottom: '16px' }}
+        />
+
+        {/* Accounts Table */}
+        <div style={{ marginTop: '16px' }}>
+          {loading ? (
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'center', 
+              alignItems: 'center', 
+              padding: '48px' 
+            }}>
+              <SyncOutlined spin style={{ fontSize: '24px', color: '#1890ff' }} />
+              <span style={{ marginLeft: '8px', color: '#666' }}>
+                Loading staff accounts...
+              </span>
+            </div>
+          ) : getFilteredAccounts().length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={
+                <Space direction="vertical">
+                  <Text>
+                    {filters.search || filters.status || filters.payrollMethod
+                      ? 'No staff accounts match your search criteria'
+                      : `No ${activeTab} staff accounts found`}
+                  </Text>
+                  <Button type="link" onClick={() => {
+                    setFilters({
+                      search: '',
+                      status: 'all',
+                      payrollMethod: '',
+                      sortBy: 'createdAt',
+                      sortOrder: 'desc',
+                      station: ''
+                    });
+                  }}>
+                    Clear filters
+                  </Button>
+                </Space>
+              }
+            />
+          ) : (
+            <Table
+              columns={accountColumns}
+              dataSource={getFilteredAccounts()}
+              rowKey="id"
+              loading={loading}
+              pagination={{
+                current: pagination.current,
+                pageSize: pagination.pageSize,
+                total: getFilteredAccounts().length,
+                showSizeChanger: true,
+                showQuickJumper: true,
+                showTotal: (total, range) => 
+                  `${range[0]}-${range[1]} of ${total} accounts (${getTabDisplayName()})`
+              }}
+              onChange={(pagination, filters, sorter) => {
+                if (sorter.field) {
+                  handleFilterChange('sortBy', sorter.field);
+                  handleFilterChange('sortOrder', sorter.order === 'ascend' ? 'asc' : 'desc');
+                }
+                if (pagination.current !== pagination.current) {
+                  handleTableChange(pagination);
+                }
+              }}
+              scroll={{ x: 1200 }}
+            />
+          )}
+        </div>
       </Card>
 
-      {/* Users Without Accounts */}
+      {/* Users Without Accounts Section */}
       {usersWithoutAccounts.length > 0 && (
         <Card 
           title={
@@ -1446,46 +1774,73 @@ const StaffAccountManagement = () => {
               <span>Users Without Accounts ({usersWithoutAccounts.length})</span>
             </Space>
           }
-          className="shadow-sm"
+          style={{ marginTop: '24px' }}
           size="small"
         >
-          <Table
-            columns={usersWithoutAccountsColumns}
-            dataSource={usersWithoutAccounts}
-            rowKey="id"
-            pagination={{
-              pageSize: 5,
-              hideOnSinglePage: true
-            }}
-            size="small"
+          <Alert
+            message="Quick Account Creation"
+            description={`${usersWithoutAccounts.length} users are assigned to stations but don't have staff accounts yet. Click "Create Account" to add them.`}
+            type="info"
+            showIcon
+            action={
+              <Button 
+                size="small" 
+                type="primary"
+                onClick={() => {
+                  createForm.resetFields();
+                  setModalVisible(prev => ({ ...prev, createAccount: true }));
+                }}
+              >
+                Create Accounts
+              </Button>
+            }
           />
         </Card>
       )}
 
-      {/* High Risk Accounts Warning */}
-      {accountSummary?.highRiskAccounts && accountSummary.highRiskAccounts.length > 0 && (
-        <Card size="small" className="shadow-sm border-l-4 border-l-red-500">
-          <Alert
-            message="High Risk Accounts Detected"
-            description={
-              <Space direction="vertical" size={2}>
-                <Text>These accounts have exceeded 70% of their credit limit:</Text>
-                {accountSummary.highRiskAccounts.slice(0, 3).map(account => (
-                  <Text key={account.id}>
-                    • {account.name}: {account.balanceDisplay} ({account.utilizationDisplay})
-                  </Text>
-                ))}
-                {accountSummary.highRiskAccounts.length > 3 && (
-                  <Text type="secondary">
-                    And {accountSummary.highRiskAccounts.length - 3} more...
-                  </Text>
-                )}
-              </Space>
-            }
-            type="warning"
-            showIcon
+      {/* Export Report Modal */}
+      {exportConfig.visible && (
+        <Modal
+          title="Generate Report"
+          open={exportConfig.visible}
+          onCancel={() => setExportConfig(prev => ({ ...prev, visible: false }))}
+          footer={[
+            <Button 
+              key="cancel" 
+              onClick={() => setExportConfig(prev => ({ ...prev, visible: false }))}
+            >
+              Cancel
+            </Button>
+          ]}
+          width={800}
+          style={{ top: 20 }}
+          destroyOnClose
+        >
+          <AdvancedReportGenerator
+            dataSource={exportConfig.data || []}
+            columns={exportConfig.columns || []}
+            summaryData={exportConfig.summaryData}
+            title={exportConfig.title}
+            fileName={exportConfig.fileName}
+            reportType="finance"
+            companyName={state?.currentCompany?.name || "Company"}
+            stationInfo={state?.currentStation ? {
+              name: state.currentStation.name,
+              code: state.currentStation.code,
+              address: state.currentStation.location
+            } : null}
+            showFooter={true}
+            footerText={getFooterText()}
+            enableCustomization={true}
+            includeLogo={false}
+            onReportGenerate={(format) => {
+              handleReportComplete(format);
+            }}
+            onSettingsSave={(settings) => {
+              console.log('Settings saved:', settings);
+            }}
           />
-        </Card>
+        </Modal>
       )}
 
       {/* Create Account Modal */}
@@ -1496,11 +1851,7 @@ const StaffAccountManagement = () => {
           setModalVisible(prev => ({ ...prev, createAccount: false }));
           createForm.resetFields();
         }}
-        onOk={() => {
-          console.log('Modal OK button clicked');
-          // FIXED: Just call submit() - it doesn't return a promise
-          createForm.submit();
-        }}
+        onOk={() => createForm.submit()}
         okText="Create Account"
         cancelText="Cancel"
         width={600}
@@ -1511,16 +1862,6 @@ const StaffAccountManagement = () => {
           form={createForm} 
           layout="vertical" 
           onFinish={handleCreateAccount}
-          onFinishFailed={(errorInfo) => {
-            console.log('Form validation failed:', errorInfo);
-            // Show user-friendly error messages
-            if (errorInfo.errorFields && errorInfo.errorFields.length > 0) {
-              const firstError = errorInfo.errorFields[0];
-              if (firstError.errors && firstError.errors.length > 0) {
-                message.error(firstError.errors[0]);
-              }
-            }
-          }}
           preserve={false}
         >
           <Row gutter={16}>
@@ -1528,9 +1869,7 @@ const StaffAccountManagement = () => {
               <Form.Item
                 name="userId"
                 label="User"
-                rules={[
-                  { required: true, message: 'Please select a user' }
-                ]}
+                rules={[{ required: true, message: 'Please select a user' }]}
               >
                 <Select
                   placeholder="Select user"
@@ -1542,7 +1881,7 @@ const StaffAccountManagement = () => {
                 >
                   {usersWithoutAccounts.map(user => (
                     <Option key={user.id} value={user.id}>
-                      {user.displayName} ({user.email})
+                      {user.displayName || `${user.firstName} ${user.lastName}`} ({user.email})
                     </Option>
                   ))}
                 </Select>
@@ -1552,9 +1891,7 @@ const StaffAccountManagement = () => {
               <Form.Item
                 name="stationId"
                 label="Station"
-                rules={[
-                  { required: true, message: 'Please select a station' }
-                ]}
+                rules={[{ required: true, message: 'Please select a station' }]}
               >
                 <Select
                   placeholder="Select station"
@@ -1584,8 +1921,8 @@ const StaffAccountManagement = () => {
                   min={0}
                   max={500000}
                   step={1000}
-                  formatter={currencyFormatter}
-                  parser={currencyParser}
+                  formatter={value => `Ksh ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                  parser={value => value.replace(/Ksh\s?|,/g, '')}
                 />
               </Form.Item>
             </Col>
@@ -1601,8 +1938,8 @@ const StaffAccountManagement = () => {
                   min={0}
                   max={100000}
                   step={1000}
-                  formatter={currencyFormatter}
-                  parser={currencyParser}
+                  formatter={value => `Ksh ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                  parser={value => value.replace(/Ksh\s?|,/g, '')}
                 />
               </Form.Item>
             </Col>
@@ -1615,23 +1952,7 @@ const StaffAccountManagement = () => {
                 label="Payroll Method"
                 initialValue="STATION_WALLET"
               >
-                <Select 
-                  placeholder="Select payroll method"
-                  onChange={(value) => {
-                    // Reset bank/mobile fields when changing payroll method
-                    if (value !== 'BANK_TRANSFER') {
-                      createForm.setFieldsValue({
-                        bankAccountNumber: undefined,
-                        bankName: undefined
-                      });
-                    }
-                    if (value !== 'MOBILE_MONEY') {
-                      createForm.setFieldsValue({
-                        mobileMoneyNumber: undefined
-                      });
-                    }
-                  }}
-                >
+                <Select placeholder="Select payroll method">
                   <Option value="STATION_WALLET">Station Wallet</Option>
                   <Option value="BANK_TRANSFER">Bank Transfer</Option>
                   <Option value="MOBILE_MONEY">Mobile Money</Option>
@@ -1707,21 +2028,11 @@ const StaffAccountManagement = () => {
             valuePropName="checked"
             initialValue={true}
           >
-            <Switch 
-              checkedChildren="Active" 
-              unCheckedChildren="Inactive" 
-              defaultChecked
-            />
+            <Switch checkedChildren="Active" unCheckedChildren="Inactive" defaultChecked />
           </Form.Item>
 
-          <Form.Item
-            name="notes"
-            label="Notes"
-          >
-            <TextArea
-              placeholder="Additional notes (optional)"
-              rows={3}
-            />
+          <Form.Item name="notes" label="Notes">
+            <TextArea placeholder="Additional notes (optional)" rows={3} />
           </Form.Item>
         </Form>
       </Modal>
@@ -1732,13 +2043,9 @@ const StaffAccountManagement = () => {
         open={modalVisible.updateAccount}
         onCancel={() => {
           setModalVisible(prev => ({ ...prev, updateAccount: false }));
-          setSelectedAccount(null);
           updateForm.resetFields();
         }}
-        onOk={() => {
-          // FIXED: Just call submit() - it doesn't return a promise
-          updateForm.submit();
-        }}
+        onOk={() => updateForm.submit()}
         okText="Update Account"
         cancelText="Cancel"
         width={600}
@@ -1750,47 +2057,32 @@ const StaffAccountManagement = () => {
             form={updateForm} 
             layout="vertical" 
             onFinish={handleUpdateAccount}
-            onFinishFailed={(errorInfo) => {
-              console.log('Update form validation failed:', errorInfo);
-              if (errorInfo.errorFields && errorInfo.errorFields.length > 0) {
-                const firstError = errorInfo.errorFields[0];
-                if (firstError.errors && firstError.errors.length > 0) {
-                  message.error(firstError.errors[0]);
-                }
-              }
-            }}
             preserve={false}
           >
             <Row gutter={16}>
               <Col span={12}>
-                <Form.Item
-                  name="creditLimit"
-                  label="Credit Limit"
-                >
+                <Form.Item name="creditLimit" label="Credit Limit">
                   <InputNumber
                     style={{ width: '100%' }}
                     placeholder="Enter credit limit"
                     min={0}
                     max={100000}
                     step={1000}
-                    formatter={currencyFormatter}
-                    parser={currencyParser}
+                    formatter={value => `Ksh ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                    parser={value => value.replace(/Ksh\s?|,/g, '')}
                   />
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item
-                  name="salaryAmount"
-                  label="Salary Amount"
-                >
+                <Form.Item name="salaryAmount" label="Salary Amount">
                   <InputNumber
                     style={{ width: '100%' }}
                     placeholder="Enter salary amount"
                     min={0}
                     max={500000}
                     step={1000}
-                    formatter={currencyFormatter}
-                    parser={currencyParser}
+                    formatter={value => `Ksh ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                    parser={value => value.replace(/Ksh\s?|,/g, '')}
                   />
                 </Form.Item>
               </Col>
@@ -1798,26 +2090,8 @@ const StaffAccountManagement = () => {
 
             <Row gutter={16}>
               <Col span={12}>
-                <Form.Item
-                  name="payrollMethod"
-                  label="Payroll Method"
-                >
-                  <Select 
-                    placeholder="Select payroll method"
-                    onChange={(value) => {
-                      if (value !== 'BANK_TRANSFER') {
-                        updateForm.setFieldsValue({
-                          bankAccountNumber: undefined,
-                          bankName: undefined
-                        });
-                      }
-                      if (value !== 'MOBILE_MONEY') {
-                        updateForm.setFieldsValue({
-                          mobileMoneyNumber: undefined
-                        });
-                      }
-                    }}
-                  >
+                <Form.Item name="payrollMethod" label="Payroll Method">
+                  <Select placeholder="Select payroll method">
                     <Option value="STATION_WALLET">Station Wallet</Option>
                     <Option value="BANK_TRANSFER">Bank Transfer</Option>
                     <Option value="MOBILE_MONEY">Mobile Money</Option>
@@ -1826,10 +2100,7 @@ const StaffAccountManagement = () => {
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item
-                  name="paymentSchedule"
-                  label="Payment Schedule"
-                >
+                <Form.Item name="paymentSchedule" label="Payment Schedule">
                   <Select placeholder="Select payment schedule">
                     <Option value="DAILY">Daily</Option>
                     <Option value="WEEKLY">Weekly</Option>
@@ -1843,18 +2114,12 @@ const StaffAccountManagement = () => {
 
             <Row gutter={16}>
               <Col span={12}>
-                <Form.Item
-                  name="bankName"
-                  label="Bank Name"
-                >
+                <Form.Item name="bankName" label="Bank Name">
                   <Input placeholder="Enter bank name" />
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item
-                  name="bankAccountNumber"
-                  label="Bank Account Number"
-                >
+                <Form.Item name="bankAccountNumber" label="Bank Account Number">
                   <Input placeholder="Enter bank account number" />
                 </Form.Item>
               </Col>
@@ -1862,18 +2127,12 @@ const StaffAccountManagement = () => {
 
             <Row gutter={16}>
               <Col span={12}>
-                <Form.Item
-                  name="mobileMoneyNumber"
-                  label="Mobile Money Number"
-                >
+                <Form.Item name="mobileMoneyNumber" label="Mobile Money Number">
                   <Input placeholder="Enter mobile money number" />
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item
-                  name="nextPaymentDate"
-                  label="Next Payment Date"
-                >
+                <Form.Item name="nextPaymentDate" label="Next Payment Date">
                   <DatePicker 
                     style={{ width: '100%' }} 
                     placeholder="Select next payment date"
@@ -1883,25 +2142,12 @@ const StaffAccountManagement = () => {
               </Col>
             </Row>
 
-            <Form.Item
-              name="isActive"
-              label="Account Status"
-              valuePropName="checked"
-            >
-              <Switch 
-                checkedChildren="Active" 
-                unCheckedChildren="Inactive" 
-              />
+            <Form.Item name="isActive" label="Account Status" valuePropName="checked">
+              <Switch checkedChildren="Active" unCheckedChildren="Inactive" />
             </Form.Item>
 
-            <Form.Item
-              name="notes"
-              label="Notes"
-            >
-              <TextArea
-                placeholder="Additional notes"
-                rows={3}
-              />
+            <Form.Item name="notes" label="Notes">
+              <TextArea placeholder="Additional notes" rows={3} />
             </Form.Item>
           </Form>
         )}
@@ -1943,14 +2189,18 @@ const StaffAccountManagement = () => {
             <Descriptions title="Account Information" bordered size="small" column={2}>
               <Descriptions.Item label="Staff Member">
                 <Space direction="vertical" size={0}>
-                  <Text strong>{selectedAccount.userDisplayName}</Text>
-                  <Text type="secondary">{selectedAccount.userEmail}</Text>
+                  <Text strong>
+                    {selectedAccount.user ? 
+                      `${selectedAccount.user.firstName || ''} ${selectedAccount.user.lastName || ''}`.trim() : 
+                      'Unknown User'}
+                  </Text>
+                  <Text type="secondary">{selectedAccount.user?.email}</Text>
                   <Text type="secondary">ID: {selectedAccount.user?.id?.substring(0, 8)}...</Text>
                 </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Station">
                 <Space direction="vertical" size={0}>
-                  <Text strong>{selectedAccount.stationDisplayName}</Text>
+                  <Text strong>{selectedAccount.station?.name}</Text>
                   <Text type="secondary">{selectedAccount.station?.location || 'No location'}</Text>
                 </Space>
               </Descriptions.Item>
@@ -1967,13 +2217,15 @@ const StaffAccountManagement = () => {
                 </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Created">
-                {selectedAccount.createdAt ? new Date(selectedAccount.createdAt).toLocaleDateString() : 'N/A'}
+                {selectedAccount.createdAt ? 
+                  new Date(selectedAccount.createdAt).toLocaleDateString() : 'N/A'}
               </Descriptions.Item>
               <Descriptions.Item label="Account ID">
-                <Text copyable>{selectedAccount.id}</Text>
+                <Text copyable>{selectedAccount.id?.substring(0, 12)}...</Text>
               </Descriptions.Item>
               <Descriptions.Item label="Last Updated">
-                {selectedAccount.updatedAt ? new Date(selectedAccount.updatedAt).toLocaleDateString() : 'N/A'}
+                {selectedAccount.updatedAt ? 
+                  new Date(selectedAccount.updatedAt).toLocaleDateString() : 'N/A'}
               </Descriptions.Item>
             </Descriptions>
 
@@ -1985,12 +2237,11 @@ const StaffAccountManagement = () => {
                   <Text 
                     strong 
                     style={{ 
-                      color: selectedAccount.currentBalance < 0 ? '#ff4d4f' : 
-                             selectedAccount.currentBalance > 0 ? '#52c41a' : '#666',
+                      color: getBalanceColor(selectedAccount.currentBalance),
                       fontSize: '18px'
                     }}
                   >
-                    {staffAccountService.formatCurrency ? staffAccountService.formatCurrency(selectedAccount.currentBalance) : `Ksh ${selectedAccount.currentBalance || 0}`}
+                    {formatCurrency(selectedAccount.currentBalance || 0)}
                   </Text>
                   <Text type="secondary">
                     {selectedAccount.currentBalance < 0 ? 'Owes Station' : 
@@ -2001,33 +2252,29 @@ const StaffAccountManagement = () => {
               <Descriptions.Item label="Credit Limit">
                 <Space direction="vertical" size={0}>
                   <Text strong>
-                    {staffAccountService.formatCurrency ? staffAccountService.formatCurrency(selectedAccount.creditLimit || 5000) : `Ksh ${selectedAccount.creditLimit || 5000}`}
+                    {formatCurrency(selectedAccount.creditLimit || 5000)}
                   </Text>
                   <Text type="secondary">
-                    Available: {staffAccountService.formatCurrency ? 
-                      staffAccountService.formatCurrency(
-                        (selectedAccount.creditLimit || 5000) + 
-                        Math.min(selectedAccount.currentBalance || 0, 0)
-                      ) : 
-                      `Ksh ${(selectedAccount.creditLimit || 5000) + Math.min(selectedAccount.currentBalance || 0, 0)}`}
+                    Available: {formatCurrency(
+                      (selectedAccount.creditLimit || 5000) + 
+                      Math.min(selectedAccount.currentBalance || 0, 0)
+                    )}
                   </Text>
                 </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Salary Amount">
                 {selectedAccount.salaryAmount ? 
-                  (staffAccountService.formatCurrency ? staffAccountService.formatCurrency(selectedAccount.salaryAmount) : `Ksh ${selectedAccount.salaryAmount}`) : 
-                  'Not Set'}
+                  formatCurrency(selectedAccount.salaryAmount) : 'Not Set'}
               </Descriptions.Item>
               <Descriptions.Item label="Next Payment Date">
                 {selectedAccount.nextPaymentDate ? 
-                  new Date(selectedAccount.nextPaymentDate).toLocaleDateString() : 
-                  'Not Set'}
+                  new Date(selectedAccount.nextPaymentDate).toLocaleDateString() : 'Not Set'}
               </Descriptions.Item>
               <Descriptions.Item label="Total Shortages">
-                {staffAccountService.formatCurrency ? staffAccountService.formatCurrency(selectedAccount.totalShortages || 0) : `Ksh ${selectedAccount.totalShortages || 0}`}
+                {formatCurrency(selectedAccount.totalShortages || 0)}
               </Descriptions.Item>
               <Descriptions.Item label="Total Advances">
-                {staffAccountService.formatCurrency ? staffAccountService.formatCurrency(selectedAccount.totalAdvances || 0) : `Ksh ${selectedAccount.totalAdvances || 0}`}
+                {formatCurrency(selectedAccount.totalAdvances || 0)}
               </Descriptions.Item>
             </Descriptions>
 
@@ -2035,14 +2282,10 @@ const StaffAccountManagement = () => {
 
             <Descriptions title="Payroll Settings" bordered size="small" column={2}>
               <Descriptions.Item label="Payroll Method">
-                {staffAccountService.getPayrollMethodLabel ? 
-                  staffAccountService.getPayrollMethodLabel(selectedAccount.payrollMethod) : 
-                  selectedAccount.payrollMethod}
+                {getPayrollMethodLabel(selectedAccount.payrollMethod)}
               </Descriptions.Item>
               <Descriptions.Item label="Payment Schedule">
-                {staffAccountService.getPaymentScheduleLabel ? 
-                  staffAccountService.getPaymentScheduleLabel(selectedAccount.paymentSchedule) : 
-                  selectedAccount.paymentSchedule}
+                {getPaymentScheduleLabel(selectedAccount.paymentSchedule)}
               </Descriptions.Item>
               <Descriptions.Item label="Bank Account" span={2}>
                 {selectedAccount.bankAccountNumber ? (
