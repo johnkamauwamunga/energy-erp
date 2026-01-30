@@ -371,7 +371,7 @@ const ShortageList = ({
         
         return (
           <Space direction="vertical" size={0}>
-            <Text strong>{record.description?.substring(0, 50)}...</Text>
+            <Text small>{record.description?.substring(0, 50)}...</Text>
             <Space size={4}>
               <Tag color="blue" size="small">
                 {getShortageTypeDisplay(record.shortageType)}
