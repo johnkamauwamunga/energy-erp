@@ -10,6 +10,7 @@ const LOG_LEVEL = {
   ERROR: 3
 };
 
+
 const currentLogLevel = process.env.NODE_ENV === 'development' ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN;
 
 const logger = {

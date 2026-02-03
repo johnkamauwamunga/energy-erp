@@ -37,7 +37,8 @@ import {
   UserPlus,
   Shield,
   Database,
-  GitBranch
+  GitBranch,
+  Clock
 } from 'lucide-react';
 import { userService } from '../../../../../services/userService/userService';
 import { assetTopologyService } from '../../../../../services/assetTopologyService/assetTopologyService';
@@ -78,10 +79,18 @@ const PersonnelStep = ({
   const [assetToIslandMapping, setAssetToIslandMapping] = useState({});
   const [allAssets, setAllAssets] = useState([]);
   const [showDebugInfo, setShowDebugInfo] = useState(true);
-
+  const [shiftTypeModal, setShiftTypeModal] = useState(false);
+  const [selectedShiftType, setSelectedShiftType] = useState(null);
+  
   const stationId = state.currentStation?.id;
 
   console.log('🏢 PersonnelStep mounted with stationId:', stationId);
+
+  const shiftTypes = [
+    { id: 'DAY', label: 'Day Shift', description: 'Morning to Evening (e.g., 7 AM - 7 PM)' },
+    { id: 'NIGHT', label: 'Night Shift', description: 'Evening to Morning (e.g., 7 PM - 7 AM)' },
+    { id: 'OTHER', label: 'Other Shift', description: 'Custom shift timings' }
+  ];
 
   // Fetch data when stationId is available
   useEffect(() => {
@@ -281,29 +290,79 @@ const PersonnelStep = ({
     });
   };
 
+  // Helper function for example shift number display
+  const generateExampleShiftNumber = (shiftTypeId) => {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = now.toLocaleString('en-US', { month: 'short' });
+    const year = now.getFullYear();
+    
+    return `${shiftTypeId}-${day}/${month}/${year}`;
+  };
+
+  // Generate shift number in the format: "DAY-03/Feb/2026"
+  const generateShiftNumber = () => {
+    if (!selectedShiftType) return null;
+    
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = now.toLocaleString('en-US', { month: 'short' });
+    const year = now.getFullYear();
+    
+    // Format: DAY-03/Feb/2026
+    return `${selectedShiftType}-${day}/${month}/${year}`;
+  };
+
   const handleSupervisorSelection = (supervisorId) => {
     console.log('🎯 Supervisor selected:', supervisorId);
     setSelectedSupervisor(supervisorId);
+    
+    // Show shift type modal after supervisor selection
+    setTimeout(() => {
+      setShiftTypeModal(true);
+    }, 100);
+  };
+
+  const handleShiftTypeSelection = (shiftTypeId) => {
+    console.log('📅 Shift type selected:', shiftTypeId);
+    setSelectedShiftType(shiftTypeId);
+    setShiftTypeModal(false);
+    
+    // Proceed to create shift after type selection
+    setTimeout(() => {
+      handleCreateShift();
+    }, 100);
   };
 
   const handleCreateShift = async () => {
     console.log('🚀 Starting shift creation...');
     
-    if (!selectedSupervisor || !stationId) {
+    if (!selectedSupervisor || !stationId || !selectedShiftType) {
       console.warn('❌ Missing required data for shift creation');
       onClearError();
       return;
     }
 
     try {
+      // Generate shift number
+      const shiftNumber = generateShiftNumber();
+      console.log('📝 Generated shift number:', shiftNumber);
+      
       const shiftPayload = {
         stationId: stationId,
-        supervisorId: selectedSupervisor
+        supervisorId: selectedSupervisor,
+        shiftType: selectedShiftType,
+        shiftNumber: shiftNumber,
+        startTime: new Date().toISOString()
       };
 
+      console.log('📦 Shift payload:', shiftPayload);
       await onCreateShift(shiftPayload);
+      
+      // Reset states
       setCreateShiftModal(false);
       setSelectedSupervisor(null);
+      setSelectedShiftType(null);
     } catch (err) {
       console.error('❌ Shift creation failed:', err);
     }
@@ -568,178 +627,6 @@ const PersonnelStep = ({
         <Alert message={error} type="error" showIcon style={{ marginBottom: 16 }} />
       )}
 
-      {/* DEBUG INFORMATION */}
-      {/* <Card 
-        title={
-          <Space>
-            <Database size={16} />
-            <Title level={5} style={{ margin: 0 }}>Asset & Island Mapping Debug</Title>
-            <Button 
-              size="small" 
-              icon={<RefreshCw size={12} />}
-              onClick={() => {
-                fetchAssets();
-                fetchTopologyData();
-              }}
-            >
-              Refresh Data
-            </Button>
-          </Space>
-        } 
-        size="small" 
-        style={{ marginBottom: 16 }}
-        extra={
-          <Button 
-            type="link" 
-            size="small"
-            onClick={() => setShowDebugInfo(!showDebugInfo)}
-          >
-            {showDebugInfo ? 'Hide' : 'Show'} Debug Info
-          </Button>
-        }
-      >
-        <Collapse defaultActiveKey={['1', '2']}>
-          {/* Island Assets from Asset Service */}
-          {/* <Panel 
-            header={
-              <Space>
-                <GitBranch size={14} />
-                <Text strong>Island Assets ({islandAssets.length})</Text>
-                <Tag color="blue">Asset Service</Tag>
-              </Space>
-            } 
-            key="1"
-          >
-            <Table
-              size="small"
-              dataSource={islandAssets}
-              pagination={false}
-              rowKey="assetId"
-              columns={[
-                {
-                  title: 'Asset ID',
-                  dataIndex: 'assetId',
-                  render: (id) => <Text code>{id}</Text>,
-                  width: 300
-                },
-                {
-                  title: 'Asset Name',
-                  dataIndex: 'assetName',
-                },
-                {
-                  title: 'Actual Island ID',
-                  dataIndex: 'actualIslandId',
-                  render: (id) => id ? <Text code>{id}</Text> : <Tag color="red">Missing</Tag>,
-                  width: 300
-                },
-                {
-                  title: 'Mapping Status',
-                  dataIndex: 'mappingStatus',
-                  render: (status) => (
-                    <Tag color={status === 'MAPPED' ? 'green' : 'red'}>
-                      {status === 'MAPPED' ? '✅ Mapped' : '❌ No Mapping'}
-                    </Tag>
-                  )
-                }
-              ]}
-              locale={{ emptyText: 'No island assets found' }}
-            />
-          </Panel>
-
-          Topology Islands from Topology Service */}
-          {/* <Panel 
-            header={
-              <Space>
-                <MapPin size={14} />
-                <Text strong>Topology Islands ({topologyIslands.length})</Text>
-                <Tag color="green">Topology Service</Tag>
-              </Space>
-            } 
-            key="2"
-          >
-            <Table
-              size="small"
-              dataSource={topologyIslands}
-              pagination={false}
-              rowKey="topologyIslandId"
-              columns={[
-                {
-                  title: 'Topology Island ID',
-                  dataIndex: 'topologyIslandId',
-                  render: (id) => <Text code>{id}</Text>,
-                  width: 300
-                },
-                {
-                  title: 'Island Name',
-                  dataIndex: 'islandName',
-                },
-                {
-                  title: 'Island Code',
-                  dataIndex: 'islandCode',
-                },
-                {
-                  title: 'Actual Island ID',
-                  dataIndex: 'actualIslandId',
-                  render: (id) => id ? <Text code>{id}</Text> : <Tag color="red">No Mapping</Tag>,
-                  width: 300
-                },
-                {
-                  title: 'Pumps',
-                  dataIndex: 'pumpCount',
-                  render: (count) => <Tag color={count > 0 ? 'blue' : 'orange'}>{count} pumps</Tag>
-                },
-                {
-                  title: 'Mapping Status',
-                  dataIndex: 'mappingStatus',
-                  render: (status) => (
-                    <Tag color={status === 'MAPPED' ? 'green' : 'red'}>
-                      {status === 'MAPPED' ? '✅ Mapped' : '❌ No Mapping'}
-                    </Tag>
-                  )
-                }
-              ]}
-              locale={{ emptyText: 'No topology islands found' }}
-            />
-          </Panel> */}
-
-          {/* Mapping Summary */}
-          {/* <Panel 
-            header={
-              <Space>
-                <Link2 size={14} />
-                <Text strong>Mapping Summary</Text>
-              </Space>
-            } 
-            key="3"
-          >
-            <Row gutter={[16, 16]}>
-              <Col span={8}>
-                <Statistic
-                  title="Total Island Assets"
-                  value={islandAssets.length}
-                  prefix={<Database size={16} />}
-                />
-              </Col>
-              <Col span={8}>
-                <Statistic
-                  title="Total Topology Islands"
-                  value={topologyIslands.length}
-                  prefix={<MapPin size={16} />}
-                />
-              </Col>
-              <Col span={8}>
-                <Statistic
-                  title="Successful Mappings"
-                  value={topologyIslands.filter(i => i.hasMapping).length}
-                  valueStyle={{ color: '#3f8600' }}
-                  prefix={<Link2 size={16} />}
-                />
-              </Col>
-            </Row>
-          </Panel>
-        </Collapse>
-      // </Card> */}
-
       <Row gutter={[24, 24]}>
         {/* Shift Status & Creation */}
         <Col span={24}>
@@ -865,17 +752,14 @@ const PersonnelStep = ({
               items={[
                 {
                   title: 'Create Shift',
-               //   description: 'Start new shift operations',
                   status: canProceed ? 'finish' : 'process'
                 },
                 {
                   title: 'Assign Personnel',
-                //  description: 'Select attendants and assign islands',
                   status: canProceed ? (hasRequiredPersonnelData ? 'finish' : 'process') : 'wait'
                 },
                 {
                   title: 'Take Readings',
-                 // description: 'Record pump and tank readings',
                   status: 'wait'
                 }
               ]}
@@ -1112,6 +996,7 @@ const PersonnelStep = ({
         onCancel={() => {
           setCreateShiftModal(false);
           setSelectedSupervisor(null);
+          setSelectedShiftType(null);
         }}
         footer={[
           <Button 
@@ -1119,6 +1004,7 @@ const PersonnelStep = ({
             onClick={() => {
               setCreateShiftModal(false);
               setSelectedSupervisor(null);
+              setSelectedShiftType(null);
             }}
           >
             Cancel
@@ -1127,7 +1013,7 @@ const PersonnelStep = ({
             key="create"
             type="primary" 
             onClick={handleCreateShift}
-            disabled={!selectedSupervisor || loading}
+            disabled={!selectedSupervisor || !selectedShiftType || loading}
             loading={loading}
             style={{ 
               background: '#52c41a',
@@ -1135,7 +1021,7 @@ const PersonnelStep = ({
             }}
             icon={<Play size={16} />}
           >
-            {loading ? 'Creating Shift...' : 'Create Shift'}
+            {loading ? 'Creating Shift...' : `Create ${selectedShiftType ? shiftTypes.find(st => st.id === selectedShiftType)?.label : 'Shift'}`}
           </Button>
         ]}
         width={600}
@@ -1199,25 +1085,46 @@ const PersonnelStep = ({
           </div>
 
           {selectedSupervisor && (
-            <Card size="small" style={{ background: '#f6ffed' }}>
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <Text strong>Selected Supervisor:</Text>
-                <Space>
-                  <Avatar size="large" style={{ backgroundColor: '#52c41a' }}>
-                    {supervisors.find(s => s.id === selectedSupervisor)?.firstName?.[0]}
-                    {supervisors.find(s => s.id === selectedSupervisor)?.lastName?.[0]}
-                  </Avatar>
-                  <div>
-                    <div style={{ fontWeight: 'bold', fontSize: '16px' }}>
-                      {supervisors.find(s => s.id === selectedSupervisor)?.firstName} {supervisors.find(s => s.id === selectedSupervisor)?.lastName}
+            <>
+              <Card size="small" style={{ background: '#f6ffed' }}>
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Text strong>Selected Supervisor:</Text>
+                  <Space>
+                    <Avatar size="large" style={{ backgroundColor: '#52c41a' }}>
+                      {supervisors.find(s => s.id === selectedSupervisor)?.firstName?.[0]}
+                      {supervisors.find(s => s.id === selectedSupervisor)?.lastName?.[0]}
+                    </Avatar>
+                    <div>
+                      <div style={{ fontWeight: 'bold', fontSize: '16px' }}>
+                        {supervisors.find(s => s.id === selectedSupervisor)?.firstName} {supervisors.find(s => s.id === selectedSupervisor)?.lastName}
+                      </div>
+                      <div style={{ color: '#666' }}>
+                        {supervisors.find(s => s.id === selectedSupervisor)?.email}
+                      </div>
                     </div>
-                    <div style={{ color: '#666' }}>
-                      {supervisors.find(s => s.id === selectedSupervisor)?.email}
-                    </div>
-                  </div>
+                  </Space>
                 </Space>
-              </Space>
-            </Card>
+              </Card>
+              
+              {selectedShiftType && (
+                <Card size="small" style={{ background: '#e6f7ff', border: '1px solid #91d5ff' }}>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <Text strong>Selected Shift Type:</Text>
+                    <Space>
+                      <Tag color="blue" style={{ fontSize: '14px', padding: '4px 8px' }}>
+                        {shiftTypes.find(st => st.id === selectedShiftType)?.label}
+                      </Tag>
+                      <Text code style={{ fontSize: '14px', fontWeight: 'bold' }}>
+                        {generateShiftNumber()}
+                      </Text>
+                    </Space>
+                    <Text type="secondary" style={{ fontSize: '12px' }}>
+                      This will be the shift number for tracking purposes
+                    </Text>
+                  </Space>
+                </Card>
+              )}
+            </>
           )}
 
           {supervisors.length === 0 && !loadingSupervisors && (
@@ -1228,6 +1135,115 @@ const PersonnelStep = ({
               showIcon
             />
           )}
+        </Space>
+      </Modal>
+
+      {/* Shift Type Selection Modal */}
+      <Modal
+        title={
+          <Space>
+            <Clock size={18} />
+            <Title level={4} style={{ margin: 0 }}>Select Shift Type</Title>
+          </Space>
+        }
+        open={shiftTypeModal}
+        onCancel={() => {
+          setShiftTypeModal(false);
+          setSelectedShiftType(null);
+        }}
+        footer={null}
+        width={500}
+        centered
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Alert
+            message="Shift Type Selection"
+            description="Choose the shift type. This will determine the shift number format and timing."
+            type="info"
+            showIcon
+          />
+          
+          <div style={{ width: '100%' }}>
+            <List
+              dataSource={shiftTypes}
+              renderItem={(shiftType) => (
+                <List.Item
+                  style={{
+                    padding: '16px',
+                    border: selectedShiftType === shiftType.id ? '2px solid #1890ff' : '1px solid #f0f0f0',
+                    borderRadius: '8px',
+                    marginBottom: '12px',
+                    cursor: 'pointer',
+                    backgroundColor: selectedShiftType === shiftType.id ? '#f0f8ff' : 'white',
+                    transition: 'all 0.3s'
+                  }}
+                  onClick={() => handleShiftTypeSelection(shiftType.id)}
+                >
+                  <List.Item.Meta
+                    avatar={
+                      <Avatar 
+                        style={{ 
+                          backgroundColor: shiftType.id === 'DAY' ? '#faad14' : 
+                                         shiftType.id === 'NIGHT' ? '#1890ff' : '#52c41a'
+                        }}
+                      >
+                        {shiftType.id === 'DAY' ? 'D' : 
+                         shiftType.id === 'NIGHT' ? 'N' : 'O'}
+                      </Avatar>
+                    }
+                    title={
+                      <Space>
+                        <Text strong>{shiftType.label}</Text>
+                        {selectedShiftType === shiftType.id && (
+                          <Tag color="blue">Selected</Tag>
+                        )}
+                      </Space>
+                    }
+                    description={
+                      <Space direction="vertical" size={2}>
+                        <Text type="secondary">{shiftType.description}</Text>
+                        <Text code style={{ fontSize: '12px' }}>
+                          Shift Number: {generateExampleShiftNumber(shiftType.id)}
+                        </Text>
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              )}
+            />
+          </div>
+          
+          <div style={{ textAlign: 'center', padding: '16px', background: '#f6ffed', borderRadius: '6px' }}>
+            <Space direction="vertical">
+              <Text strong>Selected Shift Details:</Text>
+              {selectedShiftType && (
+                <Space>
+                  <Tag color="blue">
+                    {shiftTypes.find(st => st.id === selectedShiftType)?.label}
+                  </Tag>
+                  <Text code>{generateShiftNumber()}</Text>
+                </Space>
+              )}
+              {!selectedShiftType && (
+                <Text type="secondary">Please select a shift type to continue</Text>
+              )}
+            </Space>
+          </div>
+          
+          <div style={{ textAlign: 'right' }}>
+            <Button 
+              type="primary"
+              onClick={() => {
+                if (selectedShiftType) {
+                  handleShiftTypeSelection(selectedShiftType);
+                }
+              }}
+              disabled={!selectedShiftType}
+              icon={<CheckCircle size={16} />}
+            >
+              Confirm & Create Shift
+            </Button>
+          </div>
         </Space>
       </Modal>
 

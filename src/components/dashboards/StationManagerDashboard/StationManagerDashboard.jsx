@@ -43,6 +43,7 @@ import CashMovement from '../common/cashMovement/CashMovement';
 import ShortageManagement from '../common/shortages/ShortageManagement';
 import { FallOutlined } from '@ant-design/icons';
 
+
 const StationManagerDashboard = () => {
   const { state } = useApp();
   const dispatch = useAppDispatch();
@@ -129,7 +130,7 @@ const StationManagerDashboard = () => {
       expanded: expandedMenus.inventory,
       onToggle: () => toggleMenu('inventory'),
       items: [
-        { id: 'sales', label: 'Fuel Sales', icon: DollarSign },
+        // { id: 'sales', label: 'Fuel Sales', icon: DollarSign },
         { id: 'wet_stock', label: 'Wet Stock', icon: FuelIcon },
         { id: 'pump-sales', label: 'Pump Sales', icon: ShoppingCart },
         { id: 'cash-movement', label: 'Cash Movement', icon: LucideCoins },
