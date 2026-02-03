@@ -43,7 +43,7 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 import { shiftReadingService } from '../../../../../services/shiftReadingService/shiftReadingService';
 import dayjs from 'dayjs';
-import AdvancedReportGenerator from '../../../common/downloadable/AdvancedReportGenerator';
+import AdvancedReportGenerator from '../../downloadable/AdvancedReportGenerator';
 
 const { Option } = Select;
 const { Text, Title } = Typography;
@@ -179,32 +179,32 @@ const PumpMeterReadings = () => {
     return Array.from(productsMap.values());
   }, [pumpData]);
   
-  // Table columns
+  // Optimized table columns to fit without horizontal scroll
   const pumpReadingsColumns = [
     {
       title: '#',
       key: 'index',
-      width: 50,
+      width: 40,
       fixed: 'left',
       render: (_, record, index) => (
-        <div style={{ textAlign: 'center', fontWeight: '500' }}>
+        <div style={{ textAlign: 'center', fontWeight: '500', fontSize: '12px' }}>
           {index + 1}
         </div>
       )
     },
     {
-      title: 'Pump Name',
+      title: 'Pump',
       key: 'pumpName',
-      width: 120,
+      width: 100,
       fixed: 'left',
       render: (_, record) => (
         <div>
-          <div style={{ fontWeight: '500', fontSize: '13px' }}>
-            <FireOutlined style={{ fontSize: '10px', marginRight: '4px', color: '#ff4d4f' }} />
-            {record.pumpInfo?.name || 'Unknown'}
+          <div style={{ fontWeight: '500', fontSize: '12px' }}>
+            <FireOutlined style={{ fontSize: '9px', marginRight: '3px', color: '#ff4d4f' }} />
+            {record.pumpInfo?.name || 'N/A'}
           </div>
-          <div style={{ fontSize: '11px', color: '#666' }}>
-            Island: {record.pumpInfo?.island || 'N/A'}
+          <div style={{ fontSize: '10px', color: '#666', lineHeight: '1.2' }}>
+            {record.pumpInfo?.island || ''}
           </div>
         </div>
       )
@@ -212,30 +212,35 @@ const PumpMeterReadings = () => {
     {
       title: 'Product',
       key: 'product',
-      width: 120,
+      width: 100,
       render: (_, record) => {
         const product = record.pumpInfo?.tank?.product;
         const colorCode = product?.colorCode || '#1890ff';
         
         return (
           <div>
-            <div style={{ fontWeight: '500', fontSize: '12px' }}>
-              <Tag color={colorCode} style={{ marginRight: '4px', fontSize: '8px', padding: '0 4px' }}>
+            <div style={{ fontWeight: '500', fontSize: '11px', lineHeight: '1.2' }}>
+              <Tag color={colorCode} style={{ 
+                marginRight: '3px', 
+                fontSize: '7px', 
+                padding: '0 3px',
+                lineHeight: '1.2'
+              }}>
                 ●
               </Tag>
-              {product?.name || 'Unknown'}
+              {product?.name || 'N/A'}
             </div>
-            <div style={{ fontSize: '11px', color: '#666' }}>
-              Code: {product?.fuelCode || 'N/A'}
+            <div style={{ fontSize: '10px', color: '#666', lineHeight: '1.2' }}>
+              {product?.fuelCode || ''}
             </div>
           </div>
         );
       }
     },
     {
-      title: 'Unit Cost',
+      title: 'Unit Price',
       key: 'unitCost',
-      width: 90,
+      width: 75,
       align: 'right',
       render: (_, record) => {
         const unitPrice = record.readings?.endReading?.unitPrice || 
@@ -243,8 +248,8 @@ const PumpMeterReadings = () => {
                          record.pumpInfo?.tank?.product?.minSellingPrice;
         
         return (
-          <div style={{ color: '#52c41a', fontWeight: '500', fontSize: '12px' }}>
-            {formatCurrency(unitPrice || 0)}
+          <div style={{ color: '#52c41a', fontWeight: '500', fontSize: '11px' }}>
+            {parseFloat(unitPrice || 0).toFixed(2)}
           </div>
         );
       }
@@ -252,27 +257,27 @@ const PumpMeterReadings = () => {
     {
       title: 'Cash Meter',
       key: 'cashMeter',
-      width: 140,
+      width: 100,
       children: [
         {
           title: 'Start',
           key: 'cashStart',
-          width: 70,
+          width: 50,
           align: 'right',
           render: (_, record) => (
-            <div style={{ fontWeight: '500' }}>
-              {record.readings?.startReading?.cashMeter?.toLocaleString() || '0'}
+            <div style={{ fontSize: '11px', fontWeight: '500' }}>
+              {(record.readings?.startReading?.cashMeter || 0).toLocaleString()}
             </div>
           )
         },
         {
-          title: 'Closing',
+          title: 'End',
           key: 'cashEnd',
-          width: 70,
+          width: 50,
           align: 'right',
           render: (_, record) => (
-            <div style={{ fontWeight: '500', color: '#1890ff' }}>
-              {record.readings?.endReading?.cashMeter?.toLocaleString() || '0'}
+            <div style={{ fontSize: '11px', fontWeight: '500', color: '#1890ff' }}>
+              {(record.readings?.endReading?.cashMeter || 0).toLocaleString()}
             </div>
           )
         }
@@ -281,27 +286,27 @@ const PumpMeterReadings = () => {
     {
       title: 'Manual Meter',
       key: 'manualMeter',
-      width: 140,
+      width: 100,
       children: [
         {
           title: 'Start',
           key: 'manualStart',
-          width: 70,
+          width: 50,
           align: 'right',
           render: (_, record) => (
-            <div style={{ fontWeight: '500' }}>
-              {record.readings?.startReading?.manualMeter?.toLocaleString() || '0'}
+            <div style={{ fontSize: '11px', fontWeight: '500' }}>
+              {(record.readings?.startReading?.manualMeter || 0).toLocaleString()}
             </div>
           )
         },
         {
-          title: 'Closing',
+          title: 'End',
           key: 'manualEnd',
-          width: 70,
+          width: 50,
           align: 'right',
           render: (_, record) => (
-            <div style={{ fontWeight: '500', color: '#1890ff' }}>
-              {record.readings?.endReading?.manualMeter?.toLocaleString() || '0'}
+            <div style={{ fontSize: '11px', fontWeight: '500', color: '#1890ff' }}>
+              {(record.readings?.endReading?.manualMeter || 0).toLocaleString()}
             </div>
           )
         }
@@ -310,98 +315,90 @@ const PumpMeterReadings = () => {
     {
       title: 'Electric Meter',
       key: 'electricMeter',
-      width: 140,
+      width: 100,
       children: [
         {
           title: 'Start',
           key: 'electricStart',
-          width: 70,
+          width: 50,
           align: 'right',
           render: (_, record) => (
-            <div style={{ fontWeight: '500' }}>
-              {record.readings?.startReading?.electricMeter?.toLocaleString() || '0'}
+            <div style={{ fontSize: '11px', fontWeight: '500' }}>
+              {(record.readings?.startReading?.electricMeter || 0).toLocaleString()}
             </div>
           )
         },
         {
-          title: 'Closing',
+          title: 'End',
           key: 'electricEnd',
-          width: 70,
+          width: 50,
           align: 'right',
           render: (_, record) => (
-            <div style={{ fontWeight: '500', color: '#1890ff' }}>
-              {record.readings?.endReading?.electricMeter?.toLocaleString() || '0'}
+            <div style={{ fontSize: '11px', fontWeight: '500', color: '#1890ff' }}>
+              {(record.readings?.endReading?.electricMeter || 0).toLocaleString()}
             </div>
           )
         }
       ]
     },
     {
-      title: 'Liters Dispensed',
+      title: 'Liters',
       key: 'litersDispensed',
-      width: 110,
+      width: 70,
       align: 'right',
       render: (_, record) => (
-        <div>
-          <div style={{ fontWeight: '600', fontSize: '13px', color: '#1890ff' }}>
-            {formatVolume(record.readings?.calculated?.litersDispensed || 
-                         record.readings?.endReading?.litersDispensed || 0)}
-          </div>
-          <div style={{ fontSize: '11px', color: '#666' }}>
-            Diff: {calculateDifferential(
-              record.readings?.startReading?.electricMeter,
-              record.readings?.endReading?.electricMeter
-            ).toLocaleString()}
-          </div>
+        <div style={{ fontSize: '11px', fontWeight: '600', color: '#1890ff' }}>
+          {parseFloat(record.readings?.calculated?.litersDispensed || 
+                     record.readings?.endReading?.litersDispensed || 0).toFixed(2)}
         </div>
       )
     },
     {
-      title: 'Sales Value',
+      title: 'Sales',
       key: 'salesValue',
-      width: 110,
+      width: 90,
       align: 'right',
       render: (_, record) => (
-        <div style={{ fontWeight: '600', fontSize: '13px', color: '#cf1322' }}>
-          {formatCurrency(record.readings?.calculated?.salesValue || 
-                         record.readings?.endReading?.salesValue || 0)}
+        <div style={{ fontSize: '11px', fontWeight: '600', color: '#cf1322' }}>
+          {parseFloat(record.readings?.calculated?.salesValue || 
+                     record.readings?.endReading?.salesValue || 0).toFixed(2)}
         </div>
       )
     },
     {
-      title: 'Recorded By',
+      title: 'Recorded',
       key: 'recordedBy',
-      width: 120,
+      width: 90,
       render: (_, record) => {
         const recordedBy = record.readings?.endReading?.recordedBy || 
                           record.readings?.startReading?.recordedBy;
         
         return (
           <div>
-            <div style={{ fontSize: '11px' }}>
+            <div style={{ fontSize: '10px', lineHeight: '1.2' }}>
               {recordedBy ? 
-                `${recordedBy.firstName || ''} ${recordedBy.lastName || ''}`.trim() : 
+                `${recordedBy.firstName?.charAt(0) || ''}${recordedBy.lastName?.charAt(0) || ''}`.toUpperCase() : 
                 'N/A'}
             </div>
-            <div style={{ fontSize: '10px', color: '#666' }}>
-              {record.readings?.endReading?.recordedAt ? 
-                formatDate(record.readings.endReading.recordedAt).split(' ')[1] : 
-                'N/A'}
+            <div style={{ fontSize: '9px', color: '#666', lineHeight: '1.2' }}>
+              {recordedBy ? 
+                `${recordedBy.firstName?.split(' ')[0] || ''}`.substring(0, 6) : ''}
             </div>
           </div>
         );
       }
     },
     {
-      title: 'Actions',
+      title: '',
       key: 'actions',
-      width: 60,
+      width: 50,
       fixed: 'right',
       render: (_, record) => (
         <Button 
           icon={<EyeOutlined />} 
           size="small"
           type="text"
+          style={{ fontSize: '12px' }}
           onClick={() => {
             setViewingPump(record);
             setViewModalVisible(true);
@@ -539,6 +536,13 @@ const PumpMeterReadings = () => {
     navigate(-1);
   };
   
+  // Calculate total width for responsive check
+  const tableWidth = useMemo(() => {
+    return pumpReadingsColumns.reduce((total, col) => {
+      return total + (col.width || 0) + (col.children ? col.children.reduce((childTotal, child) => childTotal + (child.width || 0), 0) : 0);
+    }, 0);
+  }, []);
+  
   if (!shiftId) {
     return (
       <Card>
@@ -617,80 +621,59 @@ const PumpMeterReadings = () => {
         </Row>
       </Card>
       
-      {/* Statistics */}
+      {/* Statistics - Reduced to 4 cards for better space */}
       <Row gutter={[12, 12]}>
-        <Col xs={12} sm={6} md={4}>
+        <Col xs={12} sm={6} md={3}>
           <Card size="small" style={{ height: '100%' }}>
             <Statistic
-              title="Total Pumps"
+              title="Pumps"
               value={summary?.totalPumps || 0}
               valueStyle={{ color: '#1890ff', fontSize: '16px' }}
+              suffix={<span style={{ fontSize: '12px' }}>units</span>}
             />
           </Card>
         </Col>
-        <Col xs={12} sm={6} md={4}>
+        <Col xs={12} sm={6} md={3}>
           <Card size="small" style={{ height: '100%' }}>
             <Statistic
-              title="Total Liters"
+              title="Liters"
               value={summary?.totalLitersDispensed || 0}
-              precision={2}
-              suffix="L"
+              precision={0}
               valueStyle={{ color: '#52c41a', fontSize: '16px' }}
+              suffix={<span style={{ fontSize: '12px' }}>L</span>}
             />
           </Card>
         </Col>
-        <Col xs={12} sm={6} md={4}>
+        <Col xs={12} sm={6} md={3}>
           <Card size="small" style={{ height: '100%' }}>
             <Statistic
-              title="Total Sales"
+              title="Sales"
               value={summary?.totalSalesValue || 0}
-              precision={2}
+              precision={0}
               prefix="KES"
               valueStyle={{ color: '#cf1322', fontSize: '16px' }}
             />
           </Card>
         </Col>
-        <Col xs={12} sm={6} md={4}>
+        <Col xs={12} sm={6} md={3}>
           <Card size="small" style={{ height: '100%' }}>
             <Statistic
-              title="Avg Price/L"
+              title="Avg/L"
               value={summary?.avgUnitPrice || 0}
-              precision={2}
+              precision={0}
               prefix="KES"
               valueStyle={{ color: '#faad14', fontSize: '16px' }}
             />
           </Card>
         </Col>
-        <Col xs={12} sm={6} md={4}>
-          <Card size="small" style={{ height: '100%' }}>
-            <Statistic
-              title="Shift Duration"
-              value={
-                shiftInfo?.startTime && shiftInfo?.endTime ? 
-                `${dayjs(shiftInfo.endTime).diff(dayjs(shiftInfo.startTime), 'hours')}h` : 
-                'N/A'
-              }
-              valueStyle={{ color: '#722ed1', fontSize: '16px' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6} md={4}>
-          <Card size="small" style={{ height: '100%' }}>
-            <Statistic
-              title="Products"
-              value={summary?.productBreakdown?.length || 0}
-              valueStyle={{ color: '#13c2c2', fontSize: '16px' }}
-            />
-          </Card>
-        </Col>
       </Row>
       
-      {/* Filters */}
+      {/* Compact Filters */}
       <Card size="small">
         <Row gutter={[8, 8]} align="middle">
-          <Col xs={24} sm={12} md={8}>
+          <Col xs={24} sm={10} md={6}>
             <Input
-              placeholder="Search pumps or products..."
+              placeholder="Search..."
               value={filters.search}
               onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
               prefix={<SearchOutlined />}
@@ -698,10 +681,10 @@ const PumpMeterReadings = () => {
               size="small"
             />
           </Col>
-          <Col xs={12} sm={8} md={6}>
+          <Col xs={12} sm={7} md={5}>
             <Select
               style={{ width: '100%' }}
-              placeholder="Filter by product"
+              placeholder="Product"
               value={filters.productFilter}
               onChange={(value) => setFilters(prev => ({ ...prev, productFilter: value }))}
               allowClear
@@ -710,15 +693,22 @@ const PumpMeterReadings = () => {
               <Option value="all">All Products</Option>
               {uniqueProducts.map(product => (
                 <Option key={product.id} value={product.id}>
-                  <Tag color={product.colorCode || '#1890ff'} style={{ marginRight: '4px', fontSize: '8px', padding: '0 4px' }}>
-                    ●
-                  </Tag>
-                  {product.name} ({product.fuelCode || 'N/A'})
+                  <span style={{ fontSize: '11px' }}>
+                    <Tag color={product.colorCode || '#1890ff'} style={{ 
+                      marginRight: '3px', 
+                      fontSize: '7px', 
+                      padding: '0 3px',
+                      lineHeight: '1.2'
+                    }}>
+                      ●
+                    </Tag>
+                    {product.fuelCode || 'N/A'}
+                  </span>
                 </Option>
               ))}
             </Select>
           </Col>
-          <Col xs={12} sm={8} md={6}>
+          <Col xs={12} sm={7} md={4}>
             <Space>
               <Button 
                 icon={<FilterOutlined />}
@@ -726,7 +716,7 @@ const PumpMeterReadings = () => {
                 disabled={!filters.search && filters.productFilter === 'all'}
                 size="small"
               >
-                Clear Filters
+                Clear
               </Button>
               <Button 
                 icon={<ReloadOutlined />}
@@ -738,36 +728,24 @@ const PumpMeterReadings = () => {
               </Button>
             </Space>
           </Col>
-          <Col xs={24} sm={8} md={4}>
-            <Button 
-              icon={<FileTextOutlined />}
-              onClick={generateReport}
-              disabled={filteredPumpData.length === 0}
-              type="primary"
-              size="small"
-              style={{ width: '100%' }}
-            >
-              Generate Report
-            </Button>
-          </Col>
         </Row>
       </Card>
       
-      {/* Main Table */}
-      <Card>
-        <div style={{ marginBottom: '16px' }}>
+      {/* Main Table - Optimized for no horizontal scroll */}
+      <Card bodyStyle={{ padding: '12px' }}>
+        <div style={{ marginBottom: '12px' }}>
           <Space>
-            <Title level={4} style={{ margin: 0 }}>
-              Pump Readings Summary
+            <Title level={4} style={{ margin: 0, fontSize: '16px' }}>
+              Pump Readings
             </Title>
             <Badge 
               count={filteredPumpData.length} 
-              style={{ backgroundColor: '#1890ff' }} 
+              style={{ backgroundColor: '#1890ff', fontSize: '10px' }} 
               showZero 
             />
             {filters.search && (
-              <Text type="secondary">
-                Filtered results for "{filters.search}"
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                Filtered for "{filters.search}"
               </Text>
             )}
           </Space>
@@ -783,39 +761,39 @@ const PumpMeterReadings = () => {
             rowKey={(record) => record.pumpInfo?.id || Math.random()}
             pagination={{
               pageSize: 10,
-              showSizeChanger: true,
-              showQuickJumper: true,
-              showTotal: (total, range) => 
-                `Showing ${range[0]}-${range[1]} of ${total} pumps`,
-              size: 'small'
+              showSizeChanger: false,
+              showQuickJumper: false,
+              showTotal: (total, range) => (
+                <span style={{ fontSize: '12px' }}>
+                  {range[0]}-{range[1]} of {total}
+                </span>
+              ),
+              size: 'small',
+              simple: true
             }}
-            scroll={{ x: 1500 }}
+            scroll={{ x: tableWidth }}
             size="small"
             bordered
             summary={() => (
               <Table.Summary fixed>
-                <Table.Summary.Row style={{ fontWeight: 'bold', background: '#fafafa' }}>
-                  <Table.Summary.Cell index={0} colSpan={3}>
-                    <div style={{ textAlign: 'center' }}>TOTALS</div>
+                <Table.Summary.Row style={{ 
+                  fontWeight: 'bold', 
+                  background: '#fafafa',
+                  fontSize: '12px'
+                }}>
+                  <Table.Summary.Cell index={0} colSpan={4} align="center">
+                    TOTALS ({filteredPumpData.length} pumps)
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={1} align="right">
-                    {formatCurrency(summary?.avgUnitPrice || 0)}
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={2} colSpan={6} align="right">
+                  <Table.Summary.Cell index={1} colSpan={6} align="right">
                     {/* Empty for meter columns */}
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={8} align="right">
-                    <div style={{ color: '#1890ff', fontWeight: '600' }}>
-                      {formatVolume(summary?.totalLitersDispensed || 0)}
-                    </div>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={9} align="right">
-                    <div style={{ color: '#cf1322', fontWeight: '600' }}>
+                  <Table.Summary.Cell index={7} align="right">
+                    <div style={{ color: '#cf1322', fontWeight: '600', fontSize: '12px' }}>
                       {formatCurrency(summary?.totalSalesValue || 0)}
                     </div>
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={10} colSpan={2}>
-                    {/* Empty for recorded by and actions */}
+                  <Table.Summary.Cell index={8} colSpan={2}>
+                    {/* Empty for recorded and actions */}
                   </Table.Summary.Cell>
                 </Table.Summary.Row>
               </Table.Summary>

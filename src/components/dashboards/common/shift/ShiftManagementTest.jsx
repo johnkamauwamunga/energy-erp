@@ -472,19 +472,16 @@ const handleNavigateToTankReadings = (shiftId) => {
     message.warning('Shift ID or Station ID missing');
     return;
   }
+   const shift = shiftsHistory.find(s => s.id === shiftId);
   
-  const shift = shiftsHistory.find(s => s.id === shiftId);
-  
-  // If you have a TankReadings component:
-  // navigate('/dashboard/station/readings/TankReadings', {
-  //   state: {
-  //     shiftId,
-  //     stationId: userStationId,
-  //     shiftNumber: shift?.shiftNumber || 'Unknown'
-  //   }
-  // });
-  
-  message.info('Tank Readings page coming soon');
+  navigate('/readings/tank-readings', {
+    state: {
+      shiftId,
+      stationId: userStationId,
+      shiftNumber: shift?.shiftNumber || 'Unknown',
+      shiftData: shift
+    }
+  });
 };
 
   // Calculate shift duration
