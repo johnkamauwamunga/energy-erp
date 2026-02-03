@@ -11,40 +11,25 @@ import {
   message,
   Row,
   Col,
-  Statistic,
+  Typography,
   Tooltip,
   Badge,
-  Typography,
-  Tabs,
-  Divider,
   Empty,
   Dropdown,
-  Progress,
-  Alert
+  Divider
 } from 'antd';
 import {
   SearchOutlined,
   EyeOutlined,
   ReloadOutlined,
   FilterOutlined,
-  BarChartOutlined,
   ExportOutlined,
-  DownloadOutlined,
-  FileExcelOutlined,
-  FilePdfOutlined,
   FileTextOutlined,
   DatabaseOutlined,
-  FireOutlined,
-  DollarOutlined,
-  CalculatorOutlined,
-  UserOutlined,
-  HistoryOutlined,
-  InfoCircleOutlined,
   ArrowLeftOutlined,
-  DashboardOutlined,
-  LineChartOutlined,
-  PercentageOutlined,
-  ArrowsAltOutlined
+  SettingOutlined,
+  ColumnHeightOutlined,
+  FilterFilled
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { shiftReadingService } from '../../../../../services/shiftReadingService/shiftReadingService';
@@ -53,7 +38,6 @@ import AdvancedReportGenerator from '../../../common/downloadable/AdvancedReport
 
 const { Option } = Select;
 const { Text, Title } = Typography;
-const { TabPane } = Tabs;
 
 const TankFuelReadings = () => {
   const location = useLocation();
@@ -65,7 +49,6 @@ const TankFuelReadings = () => {
   const [loading, setLoading] = useState(false);
   const [tankData, setTankData] = useState([]);
   const [shiftInfo, setShiftInfo] = useState(null);
-  const [summary, setSummary] = useState(null);
   
   // Report states
   const [reportModalVisible, setReportModalVisible] = useState(false);
@@ -79,7 +62,14 @@ const TankFuelReadings = () => {
   // Filters
   const [filters, setFilters] = useState({
     search: '',
-    productFilter: 'all'
+    productFilter: 'all',
+    statusFilter: 'all'
+  });
+
+  // Table configuration
+  const [tableConfig, setTableConfig] = useState({
+    size: 'middle',
+    density: 'comfortable'
   });
 
   // Fetch tank readings function
@@ -92,17 +82,16 @@ const TankFuelReadings = () => {
     setLoading(true);
     try {
       const response = await shiftReadingService.getTankReadingsSummary(id);
-      console.log("tank response summary ", response.data);
       
-      const { tanksData, shiftData, summary } = response.data;
+      const { tanksData, shiftData } = response.data;
       
       setTankData(tanksData || []);
       setShiftInfo(shiftData);
-      setSummary(summary);
       
-      message.success(`Loaded ${tanksData?.length || 0} tank readings`);
+      if (tanksData?.length > 0) {
+        message.success(`Loaded ${tanksData.length} tank readings`);
+      }
     } catch (error) {
-      console.log("error ", error);
       message.error(`Failed to load tank readings: ${error.message}`);
     } finally {
       setLoading(false);
@@ -114,32 +103,38 @@ const TankFuelReadings = () => {
       fetchTankReadings(shiftId);
     } else {
       message.warning('No shift data provided. Please select a shift first.');
-      navigate(-1); // Go back if no shift data
+      navigate(-1);
     }
   }, [shiftId]);
   
-  // Format date
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return dayjs(dateString).format('DD/MM/YYYY HH:mm:ss');
-  };
-  
-  // Format currency
-  const formatCurrency = (amount) => {
-    if (amount === undefined || amount === null) return 'KES 0.00';
-    return `KES ${parseFloat(amount).toLocaleString('en-KE', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })}`;
-  };
-  
-  // Format volume
+  // Format volume - show actual figures with thousand separators
   const formatVolume = (liters) => {
+    if (liters === undefined || liters === null) return '0 L';
+    
+    const num = parseFloat(liters);
+    
+    // Format with thousand separators and 0 decimal places
+    const formattedNumber = num.toLocaleString('en-KE', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    });
+    
+    return `${formattedNumber} L`;
+  };
+  
+  // Format volume for display with 2 decimal places if needed
+  const formatVolumeDetailed = (liters) => {
     if (liters === undefined || liters === null) return '0.00 L';
-    return `${parseFloat(liters).toLocaleString('en-KE', {
+    
+    const num = parseFloat(liters);
+    
+    // For display purposes, show 2 decimal places for better precision
+    const formattedNumber = num.toLocaleString('en-KE', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
-    })} L`;
+    });
+    
+    return `${formattedNumber} L`;
   };
   
   // Calculate volume reduction percentage
@@ -151,20 +146,20 @@ const TankFuelReadings = () => {
   
   // Get tank status based on volume reduction
   const getTankStatus = (tank) => {
-    const startVolume = tank.readings?.startReading?.volume || 0;
-    const endVolume = tank.readings?.endReading?.volume || 0;
-    const reduction = startVolume - endVolume;
     const percentageReduction = tank.readings?.calculated?.percentageReduction || 
-                                calculateReductionPercentage(startVolume, endVolume);
+                                calculateReductionPercentage(
+                                  tank.readings?.startReading?.volume,
+                                  tank.readings?.endReading?.volume
+                                );
     
     if (percentageReduction < 5) {
-      return { status: 'low', text: 'Low Dispensing', color: 'green' };
+      return { status: 'low', text: 'Low', color: 'success', tagColor: 'green' };
     } else if (percentageReduction < 15) {
-      return { status: 'normal', text: 'Normal', color: 'blue' };
+      return { status: 'normal', text: 'Normal', color: 'processing', tagColor: 'blue' };
     } else if (percentageReduction < 30) {
-      return { status: 'high', text: 'High Dispensing', color: 'orange' };
+      return { status: 'high', text: 'High', color: 'warning', tagColor: 'orange' };
     } else {
-      return { status: 'very-high', text: 'Very High', color: 'red' };
+      return { status: 'very-high', text: 'Very High', color: 'error', tagColor: 'red' };
     }
   };
   
@@ -177,7 +172,8 @@ const TankFuelReadings = () => {
       const searchLower = filters.search.toLowerCase();
       data = data.filter(tank =>
         tank.tankInfo?.name?.toLowerCase().includes(searchLower) ||
-        tank.tankInfo?.product?.name?.toLowerCase().includes(searchLower)
+        tank.tankInfo?.product?.name?.toLowerCase().includes(searchLower) ||
+        tank.tankInfo?.product?.fuelCode?.toLowerCase().includes(searchLower)
       );
     }
     
@@ -186,6 +182,14 @@ const TankFuelReadings = () => {
       data = data.filter(tank =>
         tank.tankInfo?.product?.id === filters.productFilter
       );
+    }
+    
+    // Status filter
+    if (filters.statusFilter !== 'all') {
+      data = data.filter(tank => {
+        const status = getTankStatus(tank);
+        return status.status === filters.statusFilter;
+      });
     }
     
     return data;
@@ -205,246 +209,6 @@ const TankFuelReadings = () => {
     
     return Array.from(productsMap.values());
   }, [tankData]);
-  
-  // Calculate total reduction
-  const totalReduction = useMemo(() => {
-    return filteredTankData.reduce((total, tank) => {
-      const reduction = tank.readings?.calculated?.volumeReduction || 0;
-      return total + parseFloat(reduction);
-    }, 0);
-  }, [filteredTankData]);
-  
-  // Calculate total closing volume
-  const totalClosingVolume = useMemo(() => {
-    return filteredTankData.reduce((total, tank) => {
-      const volume = tank.readings?.endReading?.volume || 0;
-      return total + parseFloat(volume);
-    }, 0);
-  }, [filteredTankData]);
-  
-  // Calculate total opening volume
-  const totalOpeningVolume = useMemo(() => {
-    return filteredTankData.reduce((total, tank) => {
-      const volume = tank.readings?.startReading?.volume || 0;
-      return total + parseFloat(volume);
-    }, 0);
-  }, [filteredTankData]);
-  
-  // Table columns
-  const tankReadingsColumns = [
-    {
-      title: '#',
-      key: 'index',
-      width: 50,
-      fixed: 'left',
-      render: (_, record, index) => (
-        <div style={{ textAlign: 'center', fontWeight: '500' }}>
-          {index + 1}
-        </div>
-      )
-    },
-    {
-      title: 'Tank Name',
-      key: 'tankName',
-      width: 130,
-      fixed: 'left',
-      render: (_, record) => (
-        <div>
-          <div style={{ fontWeight: '500', fontSize: '13px' }}>
-            <DatabaseOutlined style={{ fontSize: '10px', marginRight: '4px', color: '#722ed1' }} />
-            {record.tankInfo?.name || 'Unknown'}
-          </div>
-          <div style={{ fontSize: '11px', color: '#666' }}>
-            Capacity: {record.tankInfo?.capacity?.toLocaleString() || '0'} L
-          </div>
-        </div>
-      )
-    },
-    {
-      title: 'Product',
-      key: 'product',
-      width: 130,
-      render: (_, record) => {
-        const product = record.tankInfo?.product;
-        const colorCode = product?.colorCode || '#1890ff';
-        
-        return (
-          <div>
-            <div style={{ fontWeight: '500', fontSize: '12px' }}>
-              <Tag color={colorCode} style={{ marginRight: '4px', fontSize: '8px', padding: '0 4px' }}>
-                ●
-              </Tag>
-              {product?.name || 'Unknown'}
-            </div>
-            <div style={{ fontSize: '11px', color: '#666' }}>
-              Code: {product?.fuelCode || 'N/A'}
-            </div>
-          </div>
-        );
-      }
-    },
-    {
-      title: 'Opening Volume',
-      key: 'openingVolume',
-      width: 110,
-      align: 'right',
-      render: (_, record) => (
-        <div style={{ fontWeight: '500', fontSize: '12px' }}>
-          {formatVolume(record.readings?.startReading?.volume || 0)}
-        </div>
-      )
-    },
-    {
-      title: 'Closing Volume',
-      key: 'closingVolume',
-      width: 110,
-      align: 'right',
-      render: (_, record) => (
-        <div style={{ fontWeight: '500', fontSize: '12px', color: '#1890ff' }}>
-          {formatVolume(record.readings?.endReading?.volume || 0)}
-        </div>
-      )
-    },
-    {
-      title: 'Volume Reduction',
-      key: 'volumeReduction',
-      width: 120,
-      align: 'right',
-      render: (_, record) => {
-        const reduction = record.readings?.calculated?.volumeReduction || 0;
-        return (
-          <div>
-            <div style={{ fontWeight: '600', fontSize: '13px', color: '#cf1322' }}>
-              {formatVolume(reduction)}
-            </div>
-            <div style={{ fontSize: '11px', color: '#666' }}>
-              Density: {record.readings?.calculated?.densityChange || record.readings?.endReading?.density || 'N/A'}
-            </div>
-          </div>
-        );
-      }
-    },
-    {
-      title: '% Reduction',
-      key: 'percentageReduction',
-      width: 90,
-      align: 'right',
-      render: (_, record) => {
-        const percentage = record.readings?.calculated?.percentageReduction || 
-                          calculateReductionPercentage(
-                            record.readings?.startReading?.volume,
-                            record.readings?.endReading?.volume
-                          );
-        const status = getTankStatus(record);
-        
-        return (
-          <div style={{ textAlign: 'center' }}>
-            <Tag 
-              color={status.color} 
-              style={{ 
-                margin: 0, 
-                padding: '2px 8px', 
-                fontSize: '11px',
-                fontWeight: '600'
-              }}
-            >
-              {percentage.toFixed(2)}%
-            </Tag>
-          </div>
-        );
-      }
-    },
-    {
-      title: 'Temperature',
-      key: 'temperature',
-      width: 110,
-      align: 'right',
-      render: (_, record) => (
-        <div>
-          <div style={{ fontSize: '12px' }}>
-            Start: {record.readings?.startReading?.temperature || 'N/A'}°C
-          </div>
-          <div style={{ fontSize: '11px', color: '#666' }}>
-            End: {record.readings?.endReading?.temperature || 'N/A'}°C
-          </div>
-        </div>
-      )
-    },
-    {
-      title: 'Connected Pumps',
-      key: 'connectedPumps',
-      width: 90,
-      align: 'center',
-      render: (_, record) => (
-        <div style={{ textAlign: 'center' }}>
-          <Tag color="blue" style={{ margin: 0 }}>
-            {record.tankInfo?.pumps?.length || 0}
-          </Tag>
-          <div style={{ fontSize: '10px', color: '#666' }}>
-            pumps
-          </div>
-        </div>
-      )
-    },
-    {
-      title: 'Verification',
-      key: 'verification',
-      width: 90,
-      align: 'center',
-      render: (_, record) => (
-        <div style={{ textAlign: 'center' }}>
-          <Badge 
-            status={record.readings?.endReading?.isVerified ? "success" : "warning"} 
-            text={
-              <span style={{ fontSize: '11px' }}>
-                {record.readings?.endReading?.isVerified ? 'Verified' : 'Pending'}
-              </span>
-            } 
-          />
-        </div>
-      )
-    },
-    {
-      title: 'Recorded By',
-      key: 'recordedBy',
-      width: 120,
-      render: (_, record) => {
-        const recordedBy = record.readings?.endReading?.recordedBy;
-        
-        return (
-          <div>
-            <div style={{ fontSize: '11px' }}>
-              {recordedBy ? 
-                `${recordedBy.firstName || ''} ${recordedBy.lastName || ''}`.trim() : 
-                'N/A'}
-            </div>
-            <div style={{ fontSize: '10px', color: '#666' }}>
-              {record.readings?.endReading?.recordedAt ? 
-                formatDate(record.readings.endReading.recordedAt).split(' ')[1] : 
-                'N/A'}
-            </div>
-          </div>
-        );
-      }
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      width: 60,
-      fixed: 'right',
-      render: (_, record) => (
-        <Button 
-          icon={<EyeOutlined />} 
-          size="small"
-          type="text"
-          onClick={() => {
-            setViewingTank(record);
-            setViewModalVisible(true);
-          }}
-        />
-      )
-    }
-  ];
   
   // Generate report
   const generateReport = () => {
@@ -467,62 +231,33 @@ const TankFuelReadings = () => {
         '#': index + 1,
         'Tank Name': tank.tankInfo?.name || 'Unknown',
         'Product': product?.name || 'Unknown',
-        'Fuel Code': product?.fuelCode || 'N/A',
-        'Tank Capacity': tank.tankInfo?.capacity ? `${tank.tankInfo.capacity} L` : 'N/A',
-        'Opening Volume': formatVolume(startReading?.volume || 0),
-        'Closing Volume': formatVolume(endReading?.volume || 0),
-        'Volume Reduction': formatVolume(calculated?.volumeReduction || 0),
+        'Opening Volume (L)': startReading?.volume ? parseFloat(startReading.volume).toLocaleString('en-KE') : '0',
+        'Closing Volume (L)': endReading?.volume ? parseFloat(endReading.volume).toLocaleString('en-KE') : '0',
+        'Volume Reduction (L)': calculated?.volumeReduction ? parseFloat(calculated.volumeReduction).toLocaleString('en-KE') : '0',
         'Percentage Reduction': `${(calculated?.percentageReduction || 
           calculateReductionPercentage(startReading?.volume, endReading?.volume)).toFixed(2)}%`,
-        'Density': calculated?.densityChange || endReading?.density || 'N/A',
-        'Temperature': `${startReading?.temperature || 'N/A'}°C → ${endReading?.temperature || 'N/A'}°C`,
-        'Water Level': `${startReading?.waterLevel || 0} → ${endReading?.waterLevel || 0}`,
-        'Connected Pumps': tank.tankInfo?.pumps?.length || 0,
         'Status': status.text,
         'Verification': endReading?.isVerified ? 'Verified' : 'Pending',
-        'Recorded By': endReading?.recordedBy ? 
-          `${endReading.recordedBy.firstName || ''} ${endReading.recordedBy.lastName || ''}`.trim() : 
-          'N/A',
-        'Recorded At': endReading?.recordedAt ? formatDate(endReading.recordedAt) : 'N/A'
       };
     });
     
     const summaryData = {
       'Station Name': stationName,
       'Shift Number': shiftNum,
-      'Shift Status': shiftInfo?.status || 'N/A',
-      'Start Time': shiftInfo?.startTime ? formatDate(shiftInfo.startTime) : 'N/A',
-      'End Time': shiftInfo?.endTime ? formatDate(shiftInfo.endTime) : 'N/A',
-      'Supervisor': shiftInfo?.supervisor ? 
-        `${shiftInfo.supervisor.firstName} ${shiftInfo.supervisor.lastName}` : 'N/A',
-      'Total Tanks': summary?.totalTanks || 0,
-      'Total Opening Volume': formatVolume(totalOpeningVolume),
-      'Total Closing Volume': formatVolume(totalClosingVolume),
-      'Total Volume Reduction': formatVolume(totalReduction),
-      'Average % Reduction': `${(summary?.totalTanks ? totalReduction / totalOpeningVolume * 100 : 0).toFixed(2)}%`,
-      'Products Count': summary?.productBreakdown?.length || 0,
+      'Total Tanks': filteredTankData.length,
       'Report Date': new Date().toLocaleDateString('en-KE'),
-      'Generated At': new Date().toLocaleTimeString('en-KE')
     };
     
     const exportColumns = [
       { title: '#', dataIndex: '#', key: 'index', width: 50 },
-      { title: 'Tank Name', dataIndex: 'Tank Name', key: 'tankName', width: 120 },
-      { title: 'Product', dataIndex: 'Product', key: 'product', width: 100 },
-      { title: 'Fuel Code', dataIndex: 'Fuel Code', key: 'fuelCode', width: 80 },
-      { title: 'Capacity', dataIndex: 'Tank Capacity', key: 'capacity', width: 80 },
-      { title: 'Opening Volume', dataIndex: 'Opening Volume', key: 'openingVolume', width: 90, type: 'volume' },
-      { title: 'Closing Volume', dataIndex: 'Closing Volume', key: 'closingVolume', width: 90, type: 'volume' },
-      { title: 'Volume Reduction', dataIndex: 'Volume Reduction', key: 'volumeReduction', width: 90, type: 'volume' },
+      { title: 'Tank Name', dataIndex: 'Tank Name', key: 'tankName', width: 100 },
+      { title: 'Product', dataIndex: 'Product', key: 'product', width: 120 },
+      { title: 'Opening Volume (L)', dataIndex: 'Opening Volume (L)', key: 'openingVolume', width: 120 },
+      { title: 'Closing Volume (L)', dataIndex: 'Closing Volume (L)', key: 'closingVolume', width: 120 },
+      { title: 'Volume Reduction (L)', dataIndex: 'Volume Reduction (L)', key: 'volumeReduction', width: 120 },
       { title: '% Reduction', dataIndex: 'Percentage Reduction', key: 'percentageReduction', width: 80 },
-      { title: 'Density', dataIndex: 'Density', key: 'density', width: 70 },
-      { title: 'Temperature', dataIndex: 'Temperature', key: 'temperature', width: 100 },
-      { title: 'Water Level', dataIndex: 'Water Level', key: 'waterLevel', width: 80 },
-      { title: 'Pumps', dataIndex: 'Connected Pumps', key: 'pumps', width: 60, type: 'number' },
       { title: 'Status', dataIndex: 'Status', key: 'status', width: 80 },
       { title: 'Verification', dataIndex: 'Verification', key: 'verification', width: 80 },
-      { title: 'Recorded By', dataIndex: 'Recorded By', key: 'recordedBy', width: 120 },
-      { title: 'Recorded At', dataIndex: 'Recorded At', key: 'recordedAt', width: 120, type: 'datetime' }
     ];
     
     const title = `Tank Fuel Readings - ${stationName} - Shift ${shiftNum}`;
@@ -534,14 +269,9 @@ const TankFuelReadings = () => {
       title: title,
       fileName: `tank_fuel_readings_${stationName.replace(/\s+/g, '_')}_${shiftNum}_${new Date().toISOString().split('T')[0]}`,
       reportType: 'tank-readings',
-      companyName: shiftInfo?.station?.company || "Lynx Energy System",
-      stationInfo: shiftInfo?.station ? {
-        name: shiftInfo.station.name,
-        code: shiftInfo.station.code,
-        address: shiftInfo.station.location
-      } : null,
+      companyName: shiftInfo?.station?.company || "Fuel Management System",
       showFooter: true,
-      footerText: `Generated from Lynx Energy System | Station: ${stationName} | Shift: ${shiftNum} | ${new Date().toLocaleString('en-KE')}`,
+      footerText: `Generated from Fuel Management System`,
       enableCustomization: true
     };
     
@@ -551,7 +281,7 @@ const TankFuelReadings = () => {
   };
   
   const handleReportComplete = (format) => {
-    message.success(`${reportTitle} generated successfully as ${format.toUpperCase()}!`);
+    message.success(`Report generated successfully as ${format.toUpperCase()}!`);
     setReportModalVisible(false);
     setReportConfig(null);
   };
@@ -560,7 +290,8 @@ const TankFuelReadings = () => {
   const clearFilters = () => {
     setFilters({
       search: '',
-      productFilter: 'all'
+      productFilter: 'all',
+      statusFilter: 'all'
     });
   };
   
@@ -569,334 +300,511 @@ const TankFuelReadings = () => {
     navigate(-1);
   };
   
-  if (!shiftId) {
-    return (
-      <Card>
-        <div style={{ textAlign: 'center', padding: '40px' }}>
-          <HistoryOutlined style={{ fontSize: '48px', color: '#ccc', marginBottom: '16px' }} />
-          <Text type="secondary">
-            No shift data provided. Please select a shift first.
-          </Text>
-          <div style={{ marginTop: '16px' }}>
-            <Button type="primary" onClick={handleGoBack}>
-              Go Back
-            </Button>
+  // Optimized table columns
+  const tankReadingsColumns = [
+    {
+      title: 'Tank',
+      dataIndex: 'tankInfo',
+      key: 'tankName',
+      width: 120,
+      fixed: 'left',
+      render: (tankInfo) => {
+        const productColor = tankInfo?.product?.colorCode || '#1890ff';
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div 
+              style={{
+                width: 12,
+                height: 12,
+                borderRadius: '50%',
+                backgroundColor: productColor,
+                flexShrink: 0
+              }}
+            />
+            <div>
+              <div style={{ fontWeight: 500, fontSize: '13px' }}>
+                {tankInfo?.name || 'Unknown'}
+              </div>
+              <div style={{ fontSize: '11px', color: '#666' }}>
+                {tankInfo?.product?.fuelCode || ''}
+              </div>
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      title: 'Product',
+      dataIndex: 'tankInfo',
+      key: 'product',
+      width: 120,
+      render: (tankInfo) => (
+        <div>
+          <div style={{ fontWeight: 500, fontSize: '13px' }}>
+            {tankInfo?.product?.name || 'Unknown'}
+          </div>
+          <div style={{ fontSize: '11px', color: '#666' }}>
+            Density: {tankInfo?.product?.density || 'N/A'}
           </div>
         </div>
-      </Card>
+      )
+    },
+    {
+      title: 'Opening (L)',
+      dataIndex: 'readings',
+      key: 'openingVolume',
+      width: 120,
+      align: 'right',
+      render: (readings) => (
+        <div style={{ fontWeight: 600, fontSize: '13px' }}>
+          {readings?.startReading?.volume ? parseFloat(readings.startReading.volume).toLocaleString('en-KE') : '0'}
+        </div>
+      )
+    },
+    {
+      title: 'Closing (L)',
+      dataIndex: 'readings',
+      key: 'closingVolume',
+      width: 120,
+      align: 'right',
+      render: (readings) => (
+        <div style={{ fontWeight: 600, fontSize: '13px', color: '#1890ff' }}>
+          {readings?.endReading?.volume ? parseFloat(readings.endReading.volume).toLocaleString('en-KE') : '0'}
+        </div>
+      )
+    },
+    {
+      title: 'Reduction (L)',
+      dataIndex: 'readings',
+      key: 'volumeReduction',
+      width: 130,
+      align: 'right',
+      render: (readings, record) => {
+        const reduction = readings?.calculated?.volumeReduction || 0;
+        const percentage = readings?.calculated?.percentageReduction || 
+                          calculateReductionPercentage(
+                            readings?.startReading?.volume,
+                            readings?.endReading?.volume
+                          );
+        
+        return (
+          <div>
+            <div style={{ 
+              fontWeight: 600, 
+              fontSize: '13px', 
+              color: '#cf1322'
+            }}>
+              {parseFloat(reduction).toLocaleString('en-KE')}
+            </div>
+            <div style={{ fontSize: '11px', color: '#666' }}>
+              {percentage.toFixed(1)}%
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      title: 'Status',
+      key: 'status',
+      width: 100,
+      align: 'center',
+      render: (_, record) => {
+        const status = getTankStatus(record);
+        const percentage = record.readings?.calculated?.percentageReduction || 
+                          calculateReductionPercentage(
+                            record.readings?.startReading?.volume,
+                            record.readings?.endReading?.volume
+                          );
+        
+        return (
+          <Tooltip title={`${percentage.toFixed(1)}% reduction`}>
+            <Badge
+              status={status.color}
+              text={
+                <span style={{ 
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  color: status.color === 'error' ? '#cf1322' : 
+                        status.color === 'warning' ? '#fa8c16' : 
+                        status.color === 'success' ? '#52c41a' : '#1890ff'
+                }}>
+                  {status.text}
+                </span>
+              }
+            />
+          </Tooltip>
+        );
+      }
+    },
+    {
+      title: 'Temperature (°C)',
+      dataIndex: 'readings',
+      key: 'temperature',
+      width: 130,
+      align: 'center',
+      render: (readings) => (
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '12px' }}>
+            <span style={{ color: '#666', fontSize: '11px' }}>Start:</span> {readings?.startReading?.temperature || 'N/A'}°
+          </div>
+          <div style={{ fontSize: '12px' }}>
+            <span style={{ color: '#666', fontSize: '11px' }}>End:</span> {readings?.endReading?.temperature || 'N/A'}°
+          </div>
+        </div>
+      )
+    },
+    {
+      title: 'Verification',
+      dataIndex: 'readings',
+      key: 'verification',
+      width: 100,
+      align: 'center',
+      render: (readings) => (
+        <Tag color={readings?.endReading?.isVerified ? "success" : "warning"}>
+          {readings?.endReading?.isVerified ? "Verified" : "Pending"}
+        </Tag>
+      )
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 80,
+      fixed: 'right',
+      align: 'center',
+      render: (_, record) => (
+        <Tooltip title="View details">
+          <Button 
+            icon={<EyeOutlined />} 
+            size="small"
+            type="text"
+            onClick={() => {
+              setViewingTank(record);
+              setViewModalVisible(true);
+            }}
+          />
+        </Tooltip>
+      )
+    }
+  ];
+  
+  // Table density styles
+  const tableDensityStyles = {
+    compact: { fontSize: '12px', padding: '8px 12px' },
+    comfortable: { fontSize: '13px', padding: '12px 16px' },
+    spacious: { fontSize: '14px', padding: '16px 20px' }
+  };
+  
+  if (!shiftId) {
+    return (
+      <div style={{ padding: 40, textAlign: 'center' }}>
+        <Title level={4} type="secondary">No shift data provided</Title>
+        <Button type="primary" onClick={handleGoBack} style={{ marginTop: 16 }}>
+          Go Back to Shifts
+        </Button>
+      </div>
     );
   }
   
   return (
-    <div className="space-y-4">
-      {/* Header with Back Button */}
-      <Card>
-        <Row gutter={[16, 16]} align="middle">
-          <Col xs={24} md={12}>
-            <div>
-              <Space size="middle" align="center" style={{ marginBottom: '8px' }}>
-                <Button 
-                  icon={<ArrowLeftOutlined />} 
-                  onClick={handleGoBack}
-                  type="text"
-                  size="small"
-                >
-                  Back
-                </Button>
-                <Title level={2} style={{ margin: 0 }}>
-                  <DatabaseOutlined /> Tank Fuel Readings
-                </Title>
-              </Space>
-              <Text type="secondary">
-                Shift: <Tag color="blue">{shiftInfo?.shiftNumber || shiftNumber || 'N/A'}</Tag> | 
-                Station: <Text strong>{shiftInfo?.station?.name || 'Unknown Station'}</Text> | 
-                Status: <Tag color={shiftInfo?.status === 'CLOSED' ? 'green' : 'orange'}>
-                  {shiftInfo?.status || 'UNKNOWN'}
-                </Tag>
-              </Text>
-            </div>
-          </Col>
-          <Col xs={24} md={12}>
-            <Row gutter={[8, 8]} justify="end">
-              <Col>
-                <Dropdown
-                  menu={{
-                    items: [
-                      {
-                        key: 'report',
-                        label: 'Generate Report',
-                        icon: <FileTextOutlined />,
-                        onClick: generateReport
-                      },
-                      {
-                        key: 'refresh',
-                        label: 'Refresh Data',
-                        icon: <ReloadOutlined />,
-                        onClick: () => fetchTankReadings(shiftId)
-                      }
-                    ]
-                  }}
-                >
-                  <Button icon={<DownloadOutlined />}>
-                    Actions
-                  </Button>
-                </Dropdown>
-              </Col>
-            </Row>
-          </Col>
-        </Row>
-      </Card>
-      
-      {/* Statistics */}
-      <Row gutter={[12, 12]}>
-        <Col xs={12} sm={6} md={4}>
-          <Card size="small" style={{ height: '100%' }}>
-            <Statistic
-              title="Total Tanks"
-              value={summary?.totalTanks || 0}
-              valueStyle={{ color: '#722ed1', fontSize: '16px' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6} md={4}>
-          <Card size="small" style={{ height: '100%' }}>
-            <Statistic
-              title="Opening Volume"
-              value={totalOpeningVolume || 0}
-              precision={2}
-              suffix="L"
-              valueStyle={{ color: '#52c41a', fontSize: '16px' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6} md={4}>
-          <Card size="small" style={{ height: '100%' }}>
-            <Statistic
-              title="Closing Volume"
-              value={totalClosingVolume || 0}
-              precision={2}
-              suffix="L"
-              valueStyle={{ color: '#1890ff', fontSize: '16px' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6} md={4}>
-          <Card size="small" style={{ height: '100%' }}>
-            <Statistic
-              title="Total Reduction"
-              value={totalReduction || 0}
-              precision={2}
-              suffix="L"
-              valueStyle={{ color: '#cf1322', fontSize: '16px' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6} md={4}>
-          <Card size="small" style={{ height: '100%' }}>
-            <Statistic
-              title="Avg Reduction"
-              value={summary?.totalTanks ? (totalReduction / summary.totalTanks).toFixed(2) : 0}
-              precision={2}
-              suffix="L"
-              valueStyle={{ color: '#faad14', fontSize: '16px' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6} md={4}>
-          <Card size="small" style={{ height: '100%' }}>
-            <Statistic
-              title="Shift Duration"
-              value={
-                shiftInfo?.startTime && shiftInfo?.endTime ? 
-                `${dayjs(shiftInfo.endTime).diff(dayjs(shiftInfo.startTime), 'hours')}h` : 
-                'N/A'
-              }
-              valueStyle={{ color: '#13c2c2', fontSize: '16px' }}
-            />
-          </Card>
-        </Col>
-      </Row>
-      
-      {/* Product Breakdown */}
-      {summary?.productBreakdown && summary.productBreakdown.length > 0 && (
-        <Card size="small">
-          <Title level={5} style={{ marginBottom: '16px' }}>
-            <BarChartOutlined /> Product Breakdown
-          </Title>
-          <Row gutter={[8, 8]}>
-            {summary.productBreakdown.map((product, index) => (
-              <Col xs={24} sm={12} md={6} key={index}>
-                <Card size="small" style={{ height: '100%' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
-                    <Tag color={product.colorCode || '#1890ff'} style={{ marginRight: '8px', fontSize: '8px', padding: '0 4px' }}>
-                      ●
-                    </Tag>
-                    <Text strong>{product.productName}</Text>
-                  </div>
-                  <div style={{ fontSize: '12px' }}>
-                    <div>Tanks: <Tag color="blue">{product.tankCount}</Tag></div>
-                    <div>Reduction: <Text strong>{formatVolume(product.totalReduction)}</Text></div>
-                  </div>
-                </Card>
-              </Col>
-            ))}
-          </Row>
-        </Card>
-      )}
-      
-      {/* Filters */}
-      <Card size="small">
-        <Row gutter={[8, 8]} align="middle">
-          <Col xs={24} sm={12} md={8}>
-            <Input
-              placeholder="Search tanks or products..."
-              value={filters.search}
-              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-              prefix={<SearchOutlined />}
-              allowClear
-              size="small"
-            />
-          </Col>
-          <Col xs={12} sm={8} md={6}>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Filter by product"
-              value={filters.productFilter}
-              onChange={(value) => setFilters(prev => ({ ...prev, productFilter: value }))}
-              allowClear
-              size="small"
-            >
-              <Option value="all">All Products</Option>
-              {uniqueProducts.map(product => (
-                <Option key={product.id} value={product.id}>
-                  <Tag color={product.colorCode || '#1890ff'} style={{ marginRight: '4px', fontSize: '8px', padding: '0 4px' }}>
-                    ●
-                  </Tag>
-                  {product.name} ({product.fuelCode || 'N/A'})
-                </Option>
-              ))}
-            </Select>
-          </Col>
-          <Col xs={12} sm={8} md={6}>
-            <Space>
+    <div style={{ 
+      padding: 24, 
+      maxWidth: '100%',
+      backgroundColor: '#f5f5f5',
+      minHeight: '100vh'
+    }}>
+      {/* Header Card */}
+      <Card 
+        style={{ 
+          marginBottom: 16,
+          borderRadius: 8,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.12)'
+        }}
+      >
+        <Row justify="space-between" align="middle">
+          <Col>
+            <Space align="center">
               <Button 
-                icon={<FilterOutlined />}
-                onClick={clearFilters}
-                disabled={!filters.search && filters.productFilter === 'all'}
-                size="small"
-              >
-                Clear Filters
-              </Button>
+                icon={<ArrowLeftOutlined />}
+                onClick={handleGoBack}
+                type="text"
+                size="large"
+                style={{ padding: '4px 8px' }}
+              />
+              <div>
+                <Title level={4} style={{ margin: 0 }}>
+                  <DatabaseOutlined style={{ marginRight: 8 }} />
+                  Tank Fuel Readings
+                </Title>
+                <div style={{ marginTop: 4 }}>
+                  <Tag color="blue" style={{ fontSize: '12px' }}>
+                    Shift {shiftInfo?.shiftNumber || shiftNumber || 'N/A'}
+                  </Tag>
+                  <Text type="secondary" style={{ marginLeft: 8, fontSize: '13px' }}>
+                    {shiftInfo?.station?.name || 'Unknown Station'}
+                  </Text>
+                </div>
+              </div>
+            </Space>
+          </Col>
+          
+          <Col>
+            <Space wrap>
               <Button 
                 icon={<ReloadOutlined />}
                 onClick={() => fetchTankReadings(shiftId)}
                 loading={loading}
-                size="small"
               >
                 Refresh
               </Button>
+              <Button 
+                type="primary"
+                icon={<FileTextOutlined />}
+                onClick={generateReport}
+                disabled={filteredTankData.length === 0}
+              >
+                Generate Report
+              </Button>
             </Space>
-          </Col>
-          <Col xs={24} sm={8} md={4}>
-            <Button 
-              icon={<FileTextOutlined />}
-              onClick={generateReport}
-              disabled={filteredTankData.length === 0}
-              type="primary"
-              size="small"
-              style={{ width: '100%' }}
-            >
-              Generate Report
-            </Button>
           </Col>
         </Row>
       </Card>
       
-      {/* Main Table */}
-      <Card>
-        <div style={{ marginBottom: '16px' }}>
+      {/* Filters Card */}
+      <Card 
+        style={{ 
+          marginBottom: 16,
+          borderRadius: 8,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.12)'
+        }}
+      >
+        <Row gutter={[16, 16]} align="middle">
+          <Col xs={24} md={8}>
+            <Input
+              placeholder="Search tanks, products, or fuel codes..."
+              value={filters.search}
+              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+              prefix={<SearchOutlined />}
+              allowClear
+              size="large"
+              style={{ width: '100%' }}
+            />
+          </Col>
+          
+          <Col xs={24} md={6}>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="Filter by Product"
+              value={filters.productFilter}
+              onChange={(value) => setFilters(prev => ({ ...prev, productFilter: value }))}
+              size="large"
+              allowClear
+            >
+              <Option value="all">All Products</Option>
+              {uniqueProducts.map(product => (
+                <Option key={product.id} value={product.id}>
+                  <Space>
+                    <div 
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        backgroundColor: product.colorCode || '#1890ff'
+                      }}
+                    />
+                    <span>{product.name}</span>
+                  </Space>
+                </Option>
+              ))}
+            </Select>
+          </Col>
+          
+          <Col xs={24} md={4}>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="Status"
+              value={filters.statusFilter}
+              onChange={(value) => setFilters(prev => ({ ...prev, statusFilter: value }))}
+              size="large"
+              allowClear
+            >
+              <Option value="all">All Status</Option>
+              <Option value="low">Low</Option>
+              <Option value="normal">Normal</Option>
+              <Option value="high">High</Option>
+              <Option value="very-high">Very High</Option>
+            </Select>
+          </Col>
+          
+          <Col xs={24} md={6}>
+            <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+              <Button 
+                icon={<FilterFilled />}
+                onClick={clearFilters}
+                disabled={!filters.search && filters.productFilter === 'all' && filters.statusFilter === 'all'}
+                size="large"
+              >
+                Clear Filters
+              </Button>
+              
+              <Dropdown
+                menu={{
+                  items: [
+                    {
+                      key: 'comfortable',
+                      label: 'Comfortable',
+                      icon: <ColumnHeightOutlined />,
+                      onClick: () => setTableConfig(prev => ({ ...prev, density: 'comfortable' }))
+                    },
+                    {
+                      key: 'compact',
+                      label: 'Compact',
+                      icon: <ColumnHeightOutlined />,
+                      onClick: () => setTableConfig(prev => ({ ...prev, density: 'compact' }))
+                    },
+                    {
+                      key: 'spacious',
+                      label: 'Spacious',
+                      icon: <ColumnHeightOutlined />,
+                      onClick: () => setTableConfig(prev => ({ ...prev, density: 'spacious' }))
+                    }
+                  ]
+                }}
+                placement="bottomRight"
+              >
+                <Button icon={<SettingOutlined />} size="large">
+                  Table Settings
+                </Button>
+              </Dropdown>
+            </Space>
+          </Col>
+        </Row>
+      </Card>
+      
+      {/* Main Table Card */}
+      <Card 
+        style={{ 
+          borderRadius: 8,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+          overflow: 'hidden'
+        }}
+      >
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          marginBottom: 16,
+          padding: '0 4px'
+        }}>
           <Space>
-            <Title level={4} style={{ margin: 0 }}>
-              Tank Readings Summary
+            <Title level={5} style={{ margin: 0 }}>
+              Tank Readings (Litres)
             </Title>
             <Badge 
               count={filteredTankData.length} 
-              style={{ backgroundColor: '#722ed1' }} 
-              showZero 
+              style={{ 
+                backgroundColor: '#722ed1',
+                fontSize: '12px'
+              }} 
             />
-            {filters.search && (
-              <Text type="secondary">
-                Filtered results for "{filters.search}"
-              </Text>
-            )}
           </Space>
+          
+          <Text type="secondary">
+            Showing {filteredTankData.length} of {tankData.length} tanks
+          </Text>
         </div>
         
         {filteredTankData.length === 0 ? (
-          <Empty description="No tank readings found" />
-        ) : (
-          <Table
-            columns={tankReadingsColumns}
-            dataSource={filteredTankData}
-            loading={loading}
-            rowKey={(record) => record.tankInfo?.id || Math.random()}
-            pagination={{
-              pageSize: 10,
-              showSizeChanger: true,
-              showQuickJumper: true,
-              showTotal: (total, range) => 
-                `Showing ${range[0]}-${range[1]} of ${total} tanks`,
-              size: 'small'
-            }}
-            scroll={{ x: 1500 }}
-            size="small"
-            bordered
-            summary={() => (
-              <Table.Summary fixed>
-                <Table.Summary.Row style={{ fontWeight: 'bold', background: '#fafafa' }}>
-                  <Table.Summary.Cell index={0} colSpan={3}>
-                    <div style={{ textAlign: 'center' }}>TOTALS</div>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={1} align="right">
-                    <div style={{ fontWeight: '600' }}>
-                      {formatVolume(totalOpeningVolume)}
-                    </div>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={2} align="right">
-                    <div style={{ fontWeight: '600', color: '#1890ff' }}>
-                      {formatVolume(totalClosingVolume)}
-                    </div>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={3} align="right">
-                    <div style={{ fontWeight: '600', color: '#cf1322' }}>
-                      {formatVolume(totalReduction)}
-                    </div>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={4} align="right">
-                    <div style={{ textAlign: 'center' }}>
-                      <Tag color="volcano" style={{ margin: 0, fontWeight: '600' }}>
-                        {summary?.totalTanks ? (totalReduction / totalOpeningVolume * 100).toFixed(2) : 0}%
-                      </Tag>
-                    </div>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={5} colSpan={7}>
-                    {/* Empty for remaining columns */}
-                  </Table.Summary.Cell>
-                </Table.Summary.Row>
-              </Table.Summary>
-            )}
+          <Empty 
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              <div>
+                <div style={{ marginBottom: 8 }}>No tank readings found</div>
+                {tankData.length > 0 ? (
+                  <Text type="secondary">Try adjusting your filters</Text>
+                ) : (
+                  <Text type="secondary">No data available for this shift</Text>
+                )}
+              </div>
+            }
+            style={{ padding: 40 }}
           />
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <Table
+              columns={tankReadingsColumns}
+              dataSource={filteredTankData}
+              loading={loading}
+              rowKey={(record) => record.tankInfo?.id || Math.random()}
+              size={tableConfig.size}
+              pagination={{
+                pageSize: 15,
+                showSizeChanger: true,
+                showTotal: (total, range) => 
+                  `${range[0]}-${range[1]} of ${total} items`,
+                size: 'default',
+                showQuickJumper: true,
+                pageSizeOptions: ['10', '15', '20', '50']
+              }}
+              scroll={{ x: 1300 }}
+              style={{ 
+                ...tableDensityStyles[tableConfig.density],
+                minWidth: '100%'
+              }}
+              bordered
+              rowClassName={(record, index) => 
+                index % 2 === 0 ? 'table-row-light' : 'table-row-dark'
+              }
+              summary={(pageData) => {
+                if (!pageData.length) return null;
+                
+                const totalOpening = pageData.reduce((sum, item) => 
+                  sum + (parseFloat(item.readings?.startReading?.volume) || 0), 0
+                );
+                const totalClosing = pageData.reduce((sum, item) => 
+                  sum + (parseFloat(item.readings?.endReading?.volume) || 0), 0
+                );
+                const totalReduction = pageData.reduce((sum, item) => 
+                  sum + (parseFloat(item.readings?.calculated?.volumeReduction) || 0), 0
+                );
+                
+                return (
+                  <Table.Summary fixed>
+                    <Table.Summary.Row style={{ 
+                      fontWeight: 'bold', 
+                      backgroundColor: '#fafafa',
+                      fontSize: '13px'
+                    }}>
+                      <Table.Summary.Cell index={0} colSpan={2}>
+                        <strong>Page Totals</strong>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={1} align="right">
+                        <strong>{totalOpening.toLocaleString('en-KE')} L</strong>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={2} align="right">
+                        <strong style={{ color: '#1890ff' }}>
+                          {totalClosing.toLocaleString('en-KE')} L
+                        </strong>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={3} align="right">
+                        <strong style={{ color: '#cf1322' }}>
+                          {totalReduction.toLocaleString('en-KE')} L
+                        </strong>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={4} colSpan={5}>
+                        {/* Empty cells for remaining columns */}
+                      </Table.Summary.Cell>
+                    </Table.Summary.Row>
+                  </Table.Summary>
+                );
+              }}
+            />
+          </div>
         )}
       </Card>
       
       {/* View Tank Details Modal */}
       <Modal
-        title={
-          <Space>
-            <InfoCircleOutlined />
-            Tank Reading Details
-          </Space>
-        }
+        title="Tank Reading Details"
         open={viewModalVisible}
         onCancel={() => {
           setViewModalVisible(false);
@@ -907,269 +815,111 @@ const TankFuelReadings = () => {
             Close
           </Button>
         ]}
-        width={800}
+        width={600}
+        centered
       >
         {viewingTank ? (
           <div>
-            <Row gutter={[16, 16]}>
-              <Col span={24}>
-                <Title level={4} style={{ marginBottom: 16 }}>Tank Information</Title>
-                <Row gutter={[16, 8]}>
-                  <Col span={12}>
-                    <Text strong>Tank Name:</Text>
-                    <br />
-                    <Text>{viewingTank.tankInfo?.name || 'Unknown'}</Text>
-                  </Col>
-                  <Col span={12}>
-                    <Text strong>Tank ID:</Text>
-                    <br />
-                    <Text type="secondary">{viewingTank.tankInfo?.id || 'N/A'}</Text>
-                  </Col>
-                  <Col span={12}>
-                    <Text strong>Capacity:</Text>
-                    <br />
-                    <Text>{viewingTank.tankInfo?.capacity?.toLocaleString() || '0'} L</Text>
-                  </Col>
-                  <Col span={12}>
-                    <Text strong>Current Volume:</Text>
-                    <br />
-                    <Text>{viewingTank.tankInfo?.currentVolume?.toLocaleString() || '0'} L</Text>
-                  </Col>
-                  <Col span={24}>
-                    <Text strong>Station Label:</Text>
-                    <br />
-                    <Text>{viewingTank.tankInfo?.stationLabel || 'N/A'}</Text>
-                  </Col>
-                </Row>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                <div 
+                  style={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: '50%',
+                    backgroundColor: viewingTank.tankInfo?.product?.colorCode || '#1890ff'
+                  }}
+                />
+                <Title level={4} style={{ margin: 0 }}>
+                  {viewingTank.tankInfo?.name}
+                </Title>
+                <Tag color="blue">{viewingTank.tankInfo?.product?.name}</Tag>
+              </div>
+              <Text type="secondary">
+                Fuel Code: {viewingTank.tankInfo?.product?.fuelCode}
+              </Text>
+            </div>
+            
+            <Divider />
+            
+            <Row gutter={[24, 16]}>
+              <Col span={12}>
+                <div style={{ marginBottom: 8 }}>
+                  <Text type="secondary">Opening Volume</Text>
+                  <div style={{ fontSize: 18, fontWeight: 600 }}>
+                    {viewingTank.readings?.startReading?.volume ? 
+                      parseFloat(viewingTank.readings.startReading.volume).toLocaleString('en-KE') : '0'} L
+                  </div>
+                </div>
+              </Col>
+              <Col span={12}>
+                <div style={{ marginBottom: 8 }}>
+                  <Text type="secondary">Closing Volume</Text>
+                  <div style={{ fontSize: 18, fontWeight: 600, color: '#1890ff' }}>
+                    {viewingTank.readings?.endReading?.volume ? 
+                      parseFloat(viewingTank.readings.endReading.volume).toLocaleString('en-KE') : '0'} L
+                  </div>
+                </div>
               </Col>
               
-              <Col span={24}>
-                <Title level={4} style={{ marginBottom: 16 }}>Product Information</Title>
-                <Row gutter={[16, 8]}>
-                  <Col span={12}>
-                    <Text strong>Product Name:</Text>
-                    <br />
-                    <Text>{viewingTank.tankInfo?.product?.name || 'Unknown'}</Text>
-                  </Col>
-                  <Col span={12}>
-                    <Text strong>Fuel Code:</Text>
-                    <br />
-                    <Text>{viewingTank.tankInfo?.product?.fuelCode || 'N/A'}</Text>
-                  </Col>
-                  <Col span={12}>
-                    <Text strong>Density:</Text>
-                    <br />
-                    <Text>{viewingTank.tankInfo?.product?.density || 'N/A'}</Text>
-                  </Col>
-                  <Col span={12}>
-                    <Text strong>Unit:</Text>
-                    <br />
-                    <Text>{viewingTank.tankInfo?.product?.unit || 'N/A'}</Text>
-                  </Col>
-                  <Col span={24}>
-                    <Text strong>Color Code:</Text>
-                    <br />
-                    <Tag color={viewingTank.tankInfo?.product?.colorCode || '#1890ff'}>
-                      {viewingTank.tankInfo?.product?.colorCode || '#1890ff'}
-                    </Tag>
-                  </Col>
-                </Row>
+              <Col span={12}>
+                <div style={{ marginBottom: 8 }}>
+                  <Text type="secondary">Volume Reduction</Text>
+                  <div style={{ fontSize: 18, fontWeight: 600, color: '#cf1322' }}>
+                    {viewingTank.readings?.calculated?.volumeReduction ? 
+                      parseFloat(viewingTank.readings.calculated.volumeReduction).toLocaleString('en-KE') : '0'} L
+                  </div>
+                </div>
               </Col>
-              
-              <Col span={24}>
-                <Title level={4} style={{ marginBottom: 16 }}>Connected Pumps</Title>
-                {viewingTank.tankInfo?.pumps && viewingTank.tankInfo.pumps.length > 0 ? (
-                  <Row gutter={[8, 8]}>
-                    {viewingTank.tankInfo.pumps.map((pump, index) => (
-                      <Col span={24} key={pump.id || index}>
-                        <Card size="small" style={{ background: '#fafafa' }}>
-                          <Row gutter={[8, 8]} align="middle">
-                            <Col span={8}>
-                              <Text strong>Pump:</Text>
-                              <br />
-                              <Text>{pump.asset?.name || 'Unknown'}</Text>
-                            </Col>
-                            <Col span={8}>
-                              <Text strong>Status:</Text>
-                              <br />
-                              <Tag color={pump.connectionStatus === 'FULLY_CONNECTED' ? 'success' : 'warning'}>
-                                {pump.connectionStatus}
-                              </Tag>
-                            </Col>
-                            <Col span={8}>
-                              <Text strong>Created:</Text>
-                              <br />
-                              <Text>{pump.createdAt ? formatDate(pump.createdAt) : 'N/A'}</Text>
-                            </Col>
-                          </Row>
-                        </Card>
-                      </Col>
-                    ))}
-                  </Row>
-                ) : (
-                  <Alert message="No pumps connected to this tank" type="info" showIcon />
-                )}
-              </Col>
-              
-              <Col span={24}>
-                <Title level={4} style={{ marginBottom: 16 }}>Start Reading</Title>
-                <Row gutter={[16, 8]}>
-                  <Col span={8}>
-                    <Text strong>Volume:</Text>
-                    <br />
-                    <Text style={{ fontWeight: 'bold' }}>
-                      {formatVolume(viewingTank.readings?.startReading?.volume || 0)}
-                    </Text>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Dip Value:</Text>
-                    <br />
-                    <Text>{viewingTank.readings?.startReading?.dipValue || 'N/A'}</Text>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Temperature:</Text>
-                    <br />
-                    <Text>{viewingTank.readings?.startReading?.temperature || 'N/A'}°C</Text>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Water Level:</Text>
-                    <br />
-                    <Text>{viewingTank.readings?.startReading?.waterLevel || 0}</Text>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Density:</Text>
-                    <br />
-                    <Text>{viewingTank.readings?.startReading?.density || 'N/A'}</Text>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Verified:</Text>
-                    <br />
-                    <Badge 
-                      status={viewingTank.readings?.startReading?.isVerified ? "success" : "warning"} 
-                      text={viewingTank.readings?.startReading?.isVerified ? 'Yes' : 'No'} 
-                    />
-                  </Col>
-                  <Col span={12}>
-                    <Text strong>Recorded By:</Text>
-                    <br />
-                    <Text>
-                      {viewingTank.readings?.startReading?.recordedBy ? 
-                        `${viewingTank.readings.startReading.recordedBy.firstName || ''} 
-                        ${viewingTank.readings.startReading.recordedBy.lastName || ''}`.trim() : 
-                        'N/A'}
-                    </Text>
-                  </Col>
-                  <Col span={12}>
-                    <Text strong>Recorded At:</Text>
-                    <br />
-                    <Text>{viewingTank.readings?.startReading?.recordedAt ? 
-                      formatDate(viewingTank.readings.startReading.recordedAt) : 'N/A'}</Text>
-                  </Col>
-                </Row>
-              </Col>
-              
-              <Col span={24}>
-                <Title level={4} style={{ marginBottom: 16 }}>End Reading</Title>
-                <Row gutter={[16, 8]}>
-                  <Col span={8}>
-                    <Text strong>Volume:</Text>
-                    <br />
-                    <Text style={{ fontWeight: 'bold', color: '#1890ff' }}>
-                      {formatVolume(viewingTank.readings?.endReading?.volume || 0)}
-                    </Text>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Dip Value:</Text>
-                    <br />
-                    <Text>{viewingTank.readings?.endReading?.dipValue || 'N/A'}</Text>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Temperature:</Text>
-                    <br />
-                    <Text>{viewingTank.readings?.endReading?.temperature || 'N/A'}°C</Text>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Water Level:</Text>
-                    <br />
-                    <Text>{viewingTank.readings?.endReading?.waterLevel || 0}</Text>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Density:</Text>
-                    <br />
-                    <Text>{viewingTank.readings?.endReading?.density || 'N/A'}</Text>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Verified:</Text>
-                    <br />
-                    <Badge 
-                      status={viewingTank.readings?.endReading?.isVerified ? "success" : "warning"} 
-                      text={viewingTank.readings?.endReading?.isVerified ? 'Yes' : 'No'} 
-                    />
-                  </Col>
-                  <Col span={12}>
-                    <Text strong>Recorded By:</Text>
-                    <br />
-                    <Text>
-                      {viewingTank.readings?.endReading?.recordedBy ? 
-                        `${viewingTank.readings.endReading.recordedBy.firstName || ''} 
-                        ${viewingTank.readings.endReading.recordedBy.lastName || ''}`.trim() : 
-                        'N/A'}
-                    </Text>
-                  </Col>
-                  <Col span={12}>
-                    <Text strong>Recorded At:</Text>
-                    <br />
-                    <Text>{viewingTank.readings?.endReading?.recordedAt ? 
-                      formatDate(viewingTank.readings.endReading.recordedAt) : 'N/A'}</Text>
-                  </Col>
-                </Row>
-              </Col>
-              
-              <Col span={24}>
-                <Title level={4} style={{ marginBottom: 16 }}>Calculated Values</Title>
-                <Row gutter={[16, 8]}>
-                  <Col span={8}>
-                    <Text strong>Volume Reduction:</Text>
-                    <br />
-                    <Text style={{ color: '#cf1322', fontWeight: 'bold' }}>
-                      {formatVolume(viewingTank.readings?.calculated?.volumeReduction || 0)}
-                    </Text>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Percentage Reduction:</Text>
-                    <br />
-                    <Tag color={getTankStatus(viewingTank).color} style={{ fontSize: '14px', fontWeight: 'bold' }}>
+              <Col span={12}>
+                <div style={{ marginBottom: 8 }}>
+                  <Text type="secondary">Percentage Reduction</Text>
+                  <div>
+                    <Tag 
+                      color={getTankStatus(viewingTank).tagColor}
+                      style={{ fontSize: 14, padding: '4px 12px' }}
+                    >
                       {(viewingTank.readings?.calculated?.percentageReduction || 0).toFixed(2)}%
                     </Tag>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Density Change:</Text>
-                    <br />
-                    <Text>{viewingTank.readings?.calculated?.densityChange || '0'}</Text>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Temperature Change:</Text>
-                    <br />
-                    <Text>{viewingTank.readings?.calculated?.temperatureChange || '0'}°C</Text>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Water Level Change:</Text>
-                    <br />
-                    <Text>{viewingTank.readings?.calculated?.waterLevelChange || '0'}</Text>
-                  </Col>
-                  <Col span={8}>
-                    <Text strong>Status:</Text>
-                    <br />
-                    <Tag color={getTankStatus(viewingTank).color}>
-                      {getTankStatus(viewingTank).text}
-                    </Tag>
-                  </Col>
-                </Row>
+                  </div>
+                </div>
+              </Col>
+            </Row>
+            
+            <Divider />
+            
+            <Row gutter={[24, 16]}>
+              <Col span={12}>
+                <Text strong>Tank Capacity:</Text>
+                <div>
+                  {viewingTank.tankInfo?.capacity?.toLocaleString() || '0'} L
+                </div>
+              </Col>
+              <Col span={12}>
+                <Text strong>Density:</Text>
+                <div>
+                  {viewingTank.readings?.endReading?.density || viewingTank.tankInfo?.product?.density || 'N/A'}
+                </div>
+              </Col>
+              
+              <Col span={12}>
+                <Text strong>Connected Pumps:</Text>
+                <div>
+                  {viewingTank.tankInfo?.pumps?.length || 0}
+                </div>
+              </Col>
+              <Col span={12}>
+                <Text strong>Verification Status:</Text>
+                <div>
+                  <Tag color={viewingTank.readings?.endReading?.isVerified ? "success" : "warning"}>
+                    {viewingTank.readings?.endReading?.isVerified ? "Verified" : "Pending"}
+                  </Tag>
+                </div>
               </Col>
             </Row>
           </div>
         ) : (
-          <div style={{ textAlign: 'center', padding: '20px' }}>
+          <div style={{ textAlign: 'center', padding: 40 }}>
             <Text type="secondary">Loading tank details...</Text>
           </div>
         )}
@@ -1177,13 +927,7 @@ const TankFuelReadings = () => {
       
       {/* Report Generator Modal */}
       <Modal
-        title={
-          <Space>
-            <FileTextOutlined />
-            <span>{reportTitle}</span>
-            <Tag color="blue">{reportConfig?.dataSource?.length || 0} records</Tag>
-          </Space>
-        }
+        title={reportTitle}
         open={reportModalVisible}
         onCancel={() => {
           setReportModalVisible(false);
@@ -1208,7 +952,7 @@ const TankFuelReadings = () => {
             
             <Divider />
             
-            <Space style={{ justifyContent: 'flex-end', width: '100%' }}>
+            <div style={{ textAlign: 'right' }}>
               <Button 
                 onClick={() => {
                   setReportModalVisible(false);
@@ -1217,7 +961,7 @@ const TankFuelReadings = () => {
               >
                 Close
               </Button>
-            </Space>
+            </div>
           </div>
         )}
       </Modal>
