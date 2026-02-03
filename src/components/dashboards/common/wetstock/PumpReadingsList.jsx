@@ -18,7 +18,8 @@ import {
   Modal,
   Statistic,
   Descriptions,
-  Divider
+  Divider,
+  message
 } from 'antd';
 import {
   FilterOutlined,
@@ -31,8 +32,7 @@ import {
   ShopOutlined,
   DollarOutlined,
   DashboardOutlined,
-  CarOutlined,
-  SafetyOutlined
+  CarOutlined
 } from '@ant-design/icons';
 import { formatCurrency, formatDate } from '../../../../utils/formatters';
 import AdvancedReportGenerator from '../../common/downloadable/AdvancedReportGenerator';
@@ -58,11 +58,11 @@ const PumpReadingsList = ({
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [reportConfig, setReportConfig] = useState(null);
-  
+
   // Process and group readings by shift and pump
-  const { groupedReadings, completeShifts, incompleteReadings } = useMemo(() => {
+  const { completeShifts, incompleteReadings } = useMemo(() => {
     if (!readings || readings.length === 0) {
-      return { groupedReadings: [], completeShifts: [], incompleteReadings: [] };
+      return { completeShifts: [], incompleteReadings: [] };
     }
 
     const groups = {};
@@ -161,7 +161,6 @@ const PumpReadingsList = ({
     });
     
     return {
-      groupedReadings: groups,
       completeShifts: complete,
       incompleteReadings: incomplete
     };
@@ -439,6 +438,13 @@ const PumpReadingsList = ({
     setReportModalVisible(true);
   };
 
+  // Handle report completion
+  const handleReportComplete = (format) => {
+    message.success(`Pump readings report generated successfully as ${format.toUpperCase()}!`);
+    setReportModalVisible(false);
+    setReportConfig(null);
+  };
+
   // Columns for complete shifts table
   const completeColumns = [
     {
@@ -455,6 +461,21 @@ const PumpReadingsList = ({
               '#52c41a' : '#1890ff'
           }}
         />
+      )
+    },
+    {
+      title: 'Shift',
+      key: 'shift',
+      width: 100,
+      render: (_, record) => (
+        <Space direction="vertical" size={0}>
+          <Text strong style={{ fontSize: '12px' }}>
+            #{record.shift?.shiftNumber || 'N/A'}
+          </Text>
+          <Text type="secondary" style={{ fontSize: '10px' }}>
+            {formatDate(record.endRecordedAt, 'date')}
+          </Text>
+        </Space>
       )
     },
     {
@@ -568,6 +589,16 @@ const PumpReadingsList = ({
       )
     },
     {
+      title: 'Shift',
+      key: 'shift',
+      width: 100,
+      render: (_, record) => (
+        <Text strong style={{ fontSize: '12px' }}>
+          #{record.shiftNumber || 'N/A'}
+        </Text>
+      )
+    },
+    {
       title: 'Station & Pump',
       key: 'stationPump',
       width: 180,
@@ -674,6 +705,16 @@ const PumpReadingsList = ({
                 '#faad14'
             }}
           />
+        )
+      },
+      {
+        title: 'Shift',
+        key: 'shift',
+        width: 100,
+        render: (_, record) => (
+          <Text strong style={{ fontSize: '12px' }}>
+            #{record.shiftNumber || record.shift?.shiftNumber || 'N/A'}
+          </Text>
         )
       },
       {
@@ -1115,12 +1156,10 @@ const PumpReadingsList = ({
             <AdvancedReportGenerator
               key={`pump-report-${Date.now()}`}
               {...reportConfig}
-              onReportGenerate={(format) => {
-                console.log(`✅ Pump report generated as ${format}`);
-                message.success(`Pump readings report generated as ${format}`);
-              }}
+              onReportGenerate={handleReportComplete}
               onSettingsSave={(settings) => {
                 console.log('Report settings saved:', settings);
+                message.success('Report settings saved successfully!');
               }}
             />
             

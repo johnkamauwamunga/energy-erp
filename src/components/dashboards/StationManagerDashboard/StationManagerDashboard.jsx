@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useApp, useAppDispatch } from '../../../context/AppContext';
 import { logout } from '../../../context/AppContext/actions';
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+
 import { 
   BarChart3, Activity, Clock, Users, FileText, 
   Flame, X, Menu, MapPin, DollarSign, Truck, Building2, Fuel, LogOut, User, Settings,
@@ -19,6 +21,7 @@ import SalesManagement from '../common/sales/SalesManagement';
 import StationUserManagement from './staff/StationUserManagement';
 import FuelOffloadWizard from '../common/fuel-offload/FuelOffloadWizard';
 import ShiftManagement from '../common/shift/ShiftManagement';
+import ShiftManagementTest from '../common/shift/ShiftManagementTest';
 import AnalyticsDemo from '../common/analytics/AnalyticsDemo';
 import OffloadMagement from '../common/offload-test/OffloadManagement';
 import FuelTankManagement from './products/fuelTankManagement/FuelTankManagement';
@@ -178,7 +181,7 @@ const StationManagerDashboard = () => {
       case 'fuel_tanks':
         return <FuelTankManagement />;
       case 'shifts':
-        return <ShiftManagement />;
+        return <ShiftManagementTest />;
       case 'offloads':
         return <OffloadMagement />;
       case 'expenses':

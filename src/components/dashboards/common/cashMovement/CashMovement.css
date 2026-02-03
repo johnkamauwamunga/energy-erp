@@ -1,98 +1,114 @@
 /* src/components/collections/CashMovement.css */
-.cash-movement .ant-tabs-nav {
-  margin-bottom: 0;
+.cash-movement {
+  background-color: #f5f5f5;
+  min-height: 100vh;
 }
 
+/* Compact table styles */
+.cash-movement .ant-table-small .ant-table-thead > tr > th {
+  background-color: #fafafa;
+  padding: 8px !important;
+  font-size: 11px !important;
+  font-weight: 600;
+}
+
+.cash-movement .ant-table-small .ant-table-tbody > tr > td {
+  padding: 6px 8px !important;
+  font-size: 11px !important;
+}
+
+.cash-movement .ant-table-small .ant-table-cell {
+  line-height: 1.2;
+}
+
+/* Card styles */
 .cash-movement .ant-card {
-  border-radius: 8px;
+  border-radius: 6px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .cash-movement .ant-card-head {
-  background-color: #fafafa;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 0 12px;
+  min-height: 40px;
 }
 
-.cash-movement .ant-table-thead > tr > th {
-  background-color: #fafafa;
-  font-weight: 600;
+.cash-movement .ant-card-head-title {
+  padding: 8px 0;
+  font-size: 14px;
 }
 
-.cash-movement .ant-table-tbody > tr:hover > td {
-  background-color: #f6ffed;
+.cash-movement .ant-card-body {
+  padding: 12px;
 }
 
-.cash-movement .ant-statistic-title {
-  font-size: 12px;
-  color: #666;
-}
-
-.cash-movement .ant-statistic-content {
-  font-size: 20px;
-}
-
+/* Form item spacing */
 .cash-movement .ant-form-item {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
-.cash-movement .ant-alert {
-  border-radius: 6px;
+.cash-movement .ant-form-item-label {
+  padding-bottom: 2px;
 }
 
-.cash-movement .dashboard-container {
-  padding: 8px;
+.cash-movement .ant-form-item-label > label {
+  font-size: 11px;
+  height: auto;
 }
 
-.cash-movement .money-flow-card {
-  border-left: 4px solid #52c41a;
+/* Button spacing */
+.cash-movement .ant-btn {
+  font-size: 12px;
+  height: 28px;
+  padding: 0 8px;
 }
 
-.cash-movement .money-flow-card.negative {
-  border-left-color: #f5222d;
+.cash-movement .ant-btn-sm {
+  height: 24px;
+  padding: 0 6px;
 }
 
-/* Status colors */
-.cash-movement .status-pending {
-  color: #fa8c16;
+/* Tabs styling */
+.cash-movement .ant-tabs-tab {
+  padding: 8px 12px;
+  font-size: 13px;
 }
 
-.cash-movement .status-approved {
-  color: #52c41a;
+.cash-movement .ant-tabs-card > .ant-tabs-nav .ant-tabs-tab {
+  margin: 0 4px;
 }
 
-.cash-movement .status-rejected {
-  color: #f5222d;
+/* Badge adjustments */
+.cash-movement .ant-badge-count {
+  font-size: 10px;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
 }
 
-.cash-movement .status-under-review {
-  color: #1890ff;
-}
-
-/* Amount colors */
-.cash-movement .amount-positive {
-  color: #52c41a;
-}
-
-.cash-movement .amount-negative {
-  color: #f5222d;
+/* Tag adjustments */
+.cash-movement .ant-tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  line-height: 16px;
 }
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
-  .cash-movement .ant-tabs-tab {
-    padding: 8px 12px;
+  .cash-movement {
+    padding: 8px;
   }
   
-  .cash-movement .ant-statistic {
-    text-align: center;
+  .cash-movement .ant-card {
+    margin-bottom: 8px;
   }
   
   .cash-movement .ant-table {
-    overflow-x: auto;
+    font-size: 10px;
   }
   
-  .cash-movement .ant-descriptions-item-label {
-    width: 120px;
+  .cash-movement .ant-tabs-tab {
+    padding: 6px 8px;
+    margin: 0 2px;
   }
 }
 
@@ -100,11 +116,12 @@
 @media print {
   .cash-movement .ant-tabs-nav,
   .cash-movement .ant-btn,
-  .cash-movement .ant-tabs-extra-content {
+  .cash-movement .ant-card-extra,
+  .cash-movement .filter-section {
     display: none !important;
   }
   
   .cash-movement .ant-table {
-    break-inside: avoid;
+    font-size: 9px;
   }
 }

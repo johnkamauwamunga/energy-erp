@@ -22,7 +22,8 @@ const SuperAdminDashboard = React.lazy(() => import('./components/dashboards/Sup
 const CompanyAdminDashboard = React.lazy(() => import('./components/dashboards/CompanyAdminDashboard'));
 const StationManagerDashboard = React.lazy(() => import('./components/dashboards/StationManagerDashboard'));
 const SupervisorDashboard = React.lazy(() => import('./components/dashboards/SupervisorDashboard'));
-
+const PumpMeterReadings = React.lazy(() => import('./components/dashboards/common/shift/readings/PumpMeterReadings'));
+const TankFuelReadings = React.lazy(() => import('./components/dashboards/common/shift/readings/TankFuelReadings'));
 // Feature Modules
 const ServiceStationManagement = React.lazy(() => import('./components/features/stations/ServiceStationManagement'));
 const FuelManagement = React.lazy(() => import('./components/features/fuel/FuelManagement'));
@@ -172,6 +173,21 @@ function App() {
                 </RoleProtectedRoute>
               } />
             </Route>
+
+            
+            <Route path="/readings/pump-meter-readings" element={
+              <RoleProtectedRoute allowedRoles={['STATION_MANAGER', 'SUPERVISOR']}>
+                {/* You'll need to import this component */}
+                <PumpMeterReadings />
+              </RoleProtectedRoute>
+            } />
+
+              <Route path="/readings/tank-readings" element={
+              <RoleProtectedRoute allowedRoles={['STATION_MANAGER', 'SUPERVISOR']}>
+                {/* You'll need to import this component */}
+                <TankFuelReadings />
+              </RoleProtectedRoute>
+            } />
             
             {/* Fallback Routes */}
             <Route path="*" element={<Navigate to="/" replace />} />
