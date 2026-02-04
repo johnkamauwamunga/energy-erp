@@ -22,6 +22,7 @@ import FuelPurchaseManagement from './purchases/PurchaseManagement';
 import ProductManagement from './products/ProductManagement';
 import NonFuelManagement from './products/nonfuel/NonFuelManagement';
 import CompanyDashboardOverview from '../common/CompanyDashboardOverview';
+import DashboardChecker from '../common/DashboardChecker';
 import AnalyticsDemo from '../common/analytics/AnalyticsDemo';
 import CustomDashboard from '../common/analytics/CustomDashboard';
 import FuelPriceManagement from './fuel-price/FuelPriceManagement';

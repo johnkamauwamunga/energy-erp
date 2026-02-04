@@ -13,7 +13,8 @@ import {
 import { Button } from '../../ui';
 import DashboardOverview from '../../../components/dashboards/common/CompanyOverview';
 import PlaceholderComponent from './PlaceholderComponent';
-import StationAssetManagement from './assets/StationAssetManagement';
+// import StationAssetManagement from './assets/StationAssetManagement';
+import StationAssetManagement from '../StationManagerDashboard/assets/StationAssetManagement';
 import StationDashboardOverview from '../common/StationDashboardOverview';
 import SalesManagement from '../common/sales/SalesManagement';
 import StationUserManagement from '../../dashboards/StationManagerDashboard/staff/StationUserManagement';
@@ -122,7 +123,7 @@ const SupervisorDashboard = () => {
       expanded: expandedMenus.inventory,
       onToggle: () => toggleMenu('inventory'),
       items: [
-        { id: 'sales', label: 'Fuel Sales', icon: DollarSign },
+        // { id: 'sales', label: 'Fuel Sales', icon: DollarSign },
         { id: 'wet_stock', label: 'Wet Stock', icon: FuelIcon },
         { id: 'warehouses', label: 'Warehouses', icon: Archive },
         { id: 'pump-sales', label: 'Pump Sales', icon: ShoppingCart },
@@ -183,8 +184,8 @@ const SupervisorDashboard = () => {
         return <ExpenseManagement />;
       case 'accounts':
         return <AccountsManagement />;
-      case 'sales':
-        return <FuelSalesManagement />;
+      // case 'sales':
+      //   return <FuelSalesManagement />;
       case 'debtor':
         return <DebtorManagementTabs />;
       case 'debt-transfer':
