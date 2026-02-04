@@ -22,7 +22,6 @@ import FuelPurchaseManagement from './purchases/PurchaseManagement';
 import ProductManagement from './products/ProductManagement';
 import NonFuelManagement from './products/nonfuel/NonFuelManagement';
 import CompanyDashboardOverview from '../common/CompanyDashboardOverview';
-import DashboardChecker from '../common/DashboardChecker';
 import AnalyticsDemo from '../common/analytics/AnalyticsDemo';
 import CustomDashboard from '../common/analytics/CustomDashboard';
 import FuelPriceManagement from './fuel-price/FuelPriceManagement';
@@ -32,7 +31,6 @@ import BankManagementTabs from '../common/banks/BankManagementTabs';
 import FinancialDashboard from '../common/finance-manager/FinancialDashboard';
 import WarehouseManagement from '../common/warehouses/WarehouseManagement';
 import CompanyFuelSales from '../common/fuelSales/CompanyFuelSales';
-import Debug from './Debug';
 import FinanceDebugComponent from '../common/FinanceDebugComponent';
 
 const CompanyAdminDashboard = () => {
@@ -195,8 +193,8 @@ const CompanyAdminDashboard = () => {
         return <FinanceDebugComponent />;
       case 'analytics':
         return <AnalyticsDemo />;
-      case 'debug':
-        return <Debug />;
+      // case 'debug':
+      //   return <Debug />;
       case 'warehouses':
         return <WarehouseManagement />;
       case 'accounts':
