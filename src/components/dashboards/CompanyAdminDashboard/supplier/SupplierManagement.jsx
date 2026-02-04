@@ -12,7 +12,6 @@ import {
   Statistic,
   message,
   Modal,
-  Form,
   Tooltip,
   Grid,
   Dropdown,
@@ -20,12 +19,8 @@ import {
   Badge,
   Drawer,
   Typography,
-  Popconfirm,
   Empty,
-  Divider,
-  Alert,
-  Descriptions,
-  InputNumber
+  Divider
 } from 'antd';
 import {
   PlusOutlined,
@@ -39,25 +34,27 @@ import {
   PhoneOutlined,
   MailOutlined,
   EnvironmentOutlined,
-  AppstoreOutlined,
   EyeOutlined,
   ReloadOutlined,
   DownloadOutlined,
   SettingOutlined,
   SortDescendingOutlined,
-  FileTextOutlined,
   UserOutlined,
   IdcardOutlined,
   CalendarOutlined,
-  BarChartOutlined,
-  SortAscendingOutlined
+  ClearOutlined,
+  ExportOutlined,
+  FileExcelOutlined,
+  FilePdfOutlined,
+  FileWordOutlined,
+  FileTextOutlined,
+  AppstoreOutlined
 } from '@ant-design/icons';
 import { supplierService } from '../../../../services/supplierService/supplierService';
 import CreateSupplierModal from './create/CreateSupplierModal';
 import UpdateSupplierModal from './edit/UpdateSupplierModal';
 import CreateSupplierProductModal from './create/CreateSupplierProductModal';
 import SupplierProductsModal from './products/SupplierProductsModal';
-import AdvancedReportGenerator from '../../../dashboards/common/downloadable/AdvancedReportGenerator';
 import './SupplierManagement.css';
 
 const { Search } = Input;
@@ -93,6 +90,31 @@ const SupplierManagement = () => {
     pageSize: 10,
     total: 0
   });
+
+  // Helper functions
+  const getStatusConfig = (status) => {
+    const statusConfig = {
+      ACTIVE: { color: 'green', text: 'Active' },
+      INACTIVE: { color: 'red', text: 'Inactive' },
+      ON_HOLD: { color: 'orange', text: 'On Hold' },
+      BLACKLISTED: { color: 'red', text: 'Blacklisted' }
+    };
+    return statusConfig[status] || { color: 'default', text: status };
+  };
+
+  const getTypeConfig = (type) => {
+    const typeConfig = {
+      FUEL_WHOLESALER: { color: 'blue', text: 'Fuel Wholesaler' },
+      FUEL_REFINERY: { color: 'volcano', text: 'Refinery' },
+      OIL_COMPANY: { color: 'orange', text: 'Oil Company' },
+      DISTRIBUTOR: { color: 'green', text: 'Distributor' },
+      RETAIL_SUPPLIER: { color: 'purple', text: 'Retail Supplier' },
+      EQUIPMENT_VENDOR: { color: 'cyan', text: 'Equipment Vendor' },
+      SERVICE_PROVIDER: { color: 'geekblue', text: 'Service Provider' },
+      GENERAL_SUPPLIER: { color: 'gray', text: 'General Supplier' }
+    };
+    return typeConfig[type] || { color: 'default', text: type };
+  };
 
   // Fetch suppliers and stats
   const fetchData = async () => {
@@ -152,7 +174,7 @@ const SupplierManagement = () => {
     }
   };
 
-  // Enhanced suppliers data for reporting WITH SEQUENTIAL NUMBERING
+  // Enhanced suppliers data for reporting
   const enhancedSuppliers = useMemo(() => 
     suppliers.map((supplier, index) => ({
       ...supplier,
@@ -170,74 +192,14 @@ const SupplierManagement = () => {
       // Product counts
       productsCount: supplier.supplierProducts ? supplier.supplierProducts.length : 0,
       activeProductsCount: supplier.supplierProducts ? supplier.supplierProducts.filter(p => p.status === 'ACTIVE').length : 0,
-      // Dates
-      formattedCreatedAt: supplier.createdAt ? new Date(supplier.createdAt).toLocaleDateString() : 'N/A',
-      formattedUpdatedAt: supplier.updatedAt ? new Date(supplier.updatedAt).toLocaleDateString() : 'N/A',
-      // Financial info
-      creditLimit: supplier.creditLimit || 0,
-      paymentTerms: supplier.paymentTerms || 'N/A',
-      // Company info
-      companyName: supplier.company?.name || 'N/A',
-      companyCode: supplier.company?.code || 'N/A',
-      // Ratings
-      rating: supplier.rating || 0,
-      performanceScore: supplier.performanceScore || 0,
       // Timestamp for sorting
       timestamp: new Date(supplier.createdAt).getTime()
     })),
   [suppliers]);
 
-  // Calculate summary statistics
-  const summaryStats = useMemo(() => {
-    const totalSuppliers = enhancedSuppliers.length;
-    const activeSuppliers = enhancedSuppliers.filter(s => s.status === 'ACTIVE').length;
-    const suppliersWithProducts = enhancedSuppliers.filter(s => s.productsCount > 0).length;
-    const totalProducts = enhancedSuppliers.reduce((sum, s) => sum + s.productsCount, 0);
-    const totalCreditLimit = enhancedSuppliers.reduce((sum, s) => sum + (s.creditLimit || 0), 0);
-    const avgRating = enhancedSuppliers.length > 0 ? 
-      enhancedSuppliers.reduce((sum, s) => sum + (s.rating || 0), 0) / enhancedSuppliers.length : 0;
-    
-    // Group by type
-    const typeDistribution = enhancedSuppliers.reduce((acc, supplier) => {
-      const type = supplier.typeDisplay;
-      acc[type] = (acc[type] || 0) + 1;
-      return acc;
-    }, {});
-
-    // Top suppliers by products
-    const topSuppliersByProducts = [...enhancedSuppliers]
-      .sort((a, b) => b.productsCount - a.productsCount)
-      .slice(0, 3);
-
-    return {
-      totalSuppliers,
-      activeSuppliers,
-      suppliersWithProducts,
-      totalProducts,
-      totalCreditLimit,
-      avgRating,
-      typeDistribution,
-      topSuppliersByProducts
-    };
-  }, [enhancedSuppliers]);
-
-  // Summary data for report header
-  const summaryData = {
-    'Total Suppliers': summaryStats.totalSuppliers,
-    'Active Suppliers': summaryStats.activeSuppliers,
-    'Suppliers with Products': summaryStats.suppliersWithProducts,
-    'Total Products Offered': summaryStats.totalProducts,
-    'Average Rating': summaryStats.avgRating.toFixed(1),
-    'Total Credit Limit': supplierService.formatCurrency?.(summaryStats.totalCreditLimit) || `KES ${summaryStats.totalCreditLimit.toLocaleString()}`,
-    'Top Supplier by Products': summaryStats.topSuppliersByProducts[0]?.name || 'N/A',
-    'Report Generated': new Date().toLocaleString(),
-    'Generated By': 'System User'
-  };
-
   // Handle supplier actions
   const handleViewSupplier = (supplier) => {
     setSelectedSupplier(supplier);
-    // Could implement a detailed view modal here
     message.info(`Viewing supplier: ${supplier.name}`);
   };
 
@@ -284,44 +246,18 @@ const SupplierManagement = () => {
     setProductsModalVisible(true);
   };
 
-  // Get status config
-  const getStatusConfig = (status) => {
-    const statusConfig = {
-      ACTIVE: { color: 'green', text: 'Active' },
-      INACTIVE: { color: 'red', text: 'Inactive' },
-      ON_HOLD: { color: 'orange', text: 'On Hold' },
-      BLACKLISTED: { color: 'red', text: 'Blacklisted' }
-    };
-    return statusConfig[status] || { color: 'default', text: status };
-  };
-
-  // Get type config
-  const getTypeConfig = (type) => {
-    const typeConfig = {
-      FUEL_WHOLESALER: { color: 'blue', text: 'Fuel Wholesaler' },
-      FUEL_REFINERY: { color: 'volcano', text: 'Refinery' },
-      OIL_COMPANY: { color: 'orange', text: 'Oil Company' },
-      DISTRIBUTOR: { color: 'green', text: 'Distributor' },
-      RETAIL_SUPPLIER: { color: 'purple', text: 'Retail Supplier' },
-      EQUIPMENT_VENDOR: { color: 'cyan', text: 'Equipment Vendor' },
-      SERVICE_PROVIDER: { color: 'geekblue', text: 'Service Provider' },
-      GENERAL_SUPPLIER: { color: 'gray', text: 'General Supplier' }
-    };
-    return typeConfig[type] || { color: 'default', text: type };
-  };
-
-  // Table columns for desktop WITH SEQUENTIAL NUMBERING AND DEFAULT DESC ORDER
+  // Table columns - RESPONSIVE AND CLEAN
   const columns = [
     {
       title: '#',
       key: 'sequence',
       render: (_, __, index) => (
-        <Text type="secondary" style={{ fontSize: '11px', fontWeight: 'bold' }}>
+        <Text type="secondary" style={{ fontSize: '12px', fontWeight: 'bold' }}>
           {((pagination.current - 1) * pagination.pageSize) + index + 1}
         </Text>
       ),
       width: 50,
-      fixed: 'left'
+      fixed: screens.xs ? false : 'left'
     },
     {
       title: 'Supplier',
@@ -329,7 +265,7 @@ const SupplierManagement = () => {
       render: (_, record) => (
         <Space>
           <Avatar 
-            size="small" 
+            size={screens.xs ? 'small' : 'default'}
             style={{ 
               backgroundColor: getStatusConfig(record.status).color,
               color: '#fff',
@@ -339,12 +275,12 @@ const SupplierManagement = () => {
             {record.name?.charAt(0).toUpperCase()}
           </Avatar>
           <div>
-            <div style={{ fontWeight: 500, fontSize: '14px' }}>{record.name}</div>
+            <div style={{ fontWeight: 500, fontSize: screens.xs ? '13px' : '14px' }}>{record.name}</div>
             <Space size={4}>
-              <Text type="secondary" style={{ fontSize: '11px' }}>
+              <Text type="secondary" style={{ fontSize: screens.xs ? '10px' : '11px' }}>
                 {record.code}
               </Text>
-              {record.contactPerson && (
+              {record.contactPerson && !screens.xs && (
                 <Text type="secondary" style={{ fontSize: '10px' }}>
                   • {record.contactPerson}
                 </Text>
@@ -355,7 +291,8 @@ const SupplierManagement = () => {
       ),
       sorter: (a, b) => a.name.localeCompare(b.name),
       defaultSortOrder: 'descend',
-      sortDirections: ['descend', 'ascend']
+      sortDirections: ['descend', 'ascend'],
+      fixed: screens.xs ? false : 'left'
     },
     {
       title: 'Contact',
@@ -414,7 +351,8 @@ const SupplierManagement = () => {
       },
       sorter: (a, b) => a.status.localeCompare(b.status),
       defaultSortOrder: 'descend',
-      sortDirections: ['descend', 'ascend']
+      sortDirections: ['descend', 'ascend'],
+      responsive: ['sm']
     },
     {
       title: 'Products',
@@ -479,8 +417,8 @@ const SupplierManagement = () => {
     {
       title: 'Actions',
       key: 'actions',
-      width: 120,
-      fixed: 'right',
+      width: 100,
+      fixed: screens.xs ? false : 'right',
       render: (_, record) => (
         <Dropdown
           menu={{
@@ -523,222 +461,17 @@ const SupplierManagement = () => {
           }}
           trigger={['click']}
         >
-          <Button type="text" icon={<MoreOutlined />} />
+          <Button 
+            type="text" 
+            icon={<MoreOutlined />}
+            size={screens.xs ? 'small' : 'default'}
+          />
         </Dropdown>
       )
     }
   ];
 
-  // Export columns for reports - COMPREHENSIVE WITH ALL IMPORTANT FIELDS
-  const exportColumns = [
-    {
-      title: '#',
-      key: 'sequence',
-      render: (_, __, index) => index + 1,
-      type: 'number',
-      width: 50
-    },
-    {
-      title: 'Supplier Code',
-      dataIndex: 'code',
-      key: 'supplierCode',
-      type: 'text'
-    },
-    {
-      title: 'Supplier Name',
-      dataIndex: 'name',
-      key: 'supplierName',
-      type: 'text'
-    },
-    {
-      title: 'Supplier Type',
-      dataIndex: 'supplierType',
-      key: 'supplierType',
-      render: (type) => getTypeConfig(type).text,
-      type: 'text'
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status) => getStatusConfig(status).text,
-      type: 'status'
-    },
-    {
-      title: 'Contact Person',
-      dataIndex: 'contactPerson',
-      key: 'contactPerson',
-      render: (person) => person || 'N/A',
-      type: 'text'
-    },
-    {
-      title: 'Email Address',
-      dataIndex: 'email',
-      key: 'email',
-      type: 'text'
-    },
-    {
-      title: 'Phone Number',
-      dataIndex: 'phone',
-      key: 'phone',
-      type: 'text'
-    },
-    {
-      title: 'Address',
-      key: 'address',
-      render: (_, record) => record.address || 'N/A',
-      type: 'text'
-    },
-    {
-      title: 'City',
-      dataIndex: 'city',
-      key: 'city',
-      type: 'text'
-    },
-    {
-      title: 'Country',
-      dataIndex: 'country',
-      key: 'country',
-      type: 'text'
-    },
-    {
-      title: 'Full Location',
-      key: 'fullLocation',
-      render: (_, record) => `${record.address || ''}${record.address && record.city ? ', ' : ''}${record.city || ''}${(record.address || record.city) && record.country ? ', ' : ''}${record.country || ''}`.trim() || 'N/A',
-      type: 'text'
-    },
-    {
-      title: 'Total Products',
-      key: 'totalProducts',
-      render: (_, record) => record.supplierProducts ? record.supplierProducts.length : 0,
-      type: 'number'
-    },
-    {
-      title: 'Active Products',
-      key: 'activeProducts',
-      render: (_, record) => record.supplierProducts ? record.supplierProducts.filter(p => p.status === 'ACTIVE').length : 0,
-      type: 'number'
-    },
-    {
-      title: 'Credit Limit',
-      dataIndex: 'creditLimit',
-      key: 'creditLimit',
-      render: (amount) => amount || 0,
-      type: 'currency'
-    },
-    {
-      title: 'Payment Terms',
-      dataIndex: 'paymentTerms',
-      key: 'paymentTerms',
-      render: (terms) => terms || 'N/A',
-      type: 'text'
-    },
-    {
-      title: 'Rating',
-      dataIndex: 'rating',
-      key: 'rating',
-      render: (rating) => rating || 0,
-      type: 'number'
-    },
-    {
-      title: 'Performance Score',
-      dataIndex: 'performanceScore',
-      key: 'performanceScore',
-      render: (score) => score || 0,
-      type: 'number'
-    },
-    {
-      title: 'Tax ID/Number',
-      dataIndex: 'taxId',
-      key: 'taxId',
-      render: (taxId) => taxId || 'N/A',
-      type: 'text'
-    },
-    {
-      title: 'Company Registration',
-      dataIndex: 'registrationNumber',
-      key: 'registrationNumber',
-      render: (reg) => reg || 'N/A',
-      type: 'text'
-    },
-    {
-      title: 'Account Number',
-      dataIndex: 'accountNumber',
-      key: 'accountNumber',
-      render: (account) => account || 'N/A',
-      type: 'text'
-    },
-    {
-      title: 'Bank Name',
-      dataIndex: 'bankName',
-      key: 'bankName',
-      render: (bank) => bank || 'N/A',
-      type: 'text'
-    },
-    {
-      title: 'Payment Method',
-      dataIndex: 'preferredPaymentMethod',
-      key: 'paymentMethod',
-      render: (method) => method || 'N/A',
-      type: 'text'
-    },
-    {
-      title: 'Lead Time (Days)',
-      dataIndex: 'leadTime',
-      key: 'leadTime',
-      render: (days) => days || 'N/A',
-      type: 'number'
-    },
-    {
-      title: 'Minimum Order Quantity',
-      dataIndex: 'minimumOrderQuantity',
-      key: 'minOrderQuantity',
-      render: (qty) => qty || 'N/A',
-      type: 'number'
-    },
-    {
-      title: 'Delivery Terms',
-      dataIndex: 'deliveryTerms',
-      key: 'deliveryTerms',
-      render: (terms) => terms || 'N/A',
-      type: 'text'
-    },
-    {
-      title: 'Created Date',
-      dataIndex: 'createdAt',
-      key: 'createdDate',
-      render: (date) => date ? new Date(date).toLocaleDateString() : 'N/A',
-      type: 'date'
-    },
-    {
-      title: 'Last Updated',
-      dataIndex: 'updatedAt',
-      key: 'lastUpdated',
-      render: (date) => date ? new Date(date).toLocaleDateString() : 'N/A',
-      type: 'date'
-    },
-    {
-      title: 'Notes/Comments',
-      dataIndex: 'notes',
-      key: 'notes',
-      render: (notes) => notes || 'N/A',
-      type: 'text'
-    },
-    {
-      title: 'Company',
-      key: 'company',
-      render: (_, record) => record.company?.name || 'N/A',
-      type: 'text'
-    },
-    {
-      title: 'Company Code',
-      key: 'companyCode',
-      render: (_, record) => record.company?.code || 'N/A',
-      type: 'text'
-    }
-  ];
-
-  // Mobile card view
+  // Mobile card view - SIMPLIFIED
   const renderMobileCard = (supplier, index) => (
     <Card 
       key={supplier.id} 
@@ -747,9 +480,6 @@ const SupplierManagement = () => {
       actions={[
         <Tooltip title="View Products">
           <ShoppingOutlined onClick={() => handleViewProducts(supplier)} />
-        </Tooltip>,
-        <Tooltip title="Add Products">
-          <PlusOutlined onClick={() => handleAddProducts(supplier)} />
         </Tooltip>,
         <Tooltip title="Edit">
           <EditOutlined onClick={() => handleEditSupplier(supplier)} />
@@ -780,9 +510,6 @@ const SupplierManagement = () => {
                 <Tag color={getTypeConfig(supplier.supplierType).color} size="small" style={{ fontSize: '10px' }}>
                   {getTypeConfig(supplier.supplierType).text}
                 </Tag>
-                <Tag color={getStatusConfig(supplier.status).color} size="small" style={{ fontSize: '10px' }}>
-                  {getStatusConfig(supplier.status).text}
-                </Tag>
               </div>
             </div>
           </Space>
@@ -800,36 +527,18 @@ const SupplierManagement = () => {
                 <Text type="secondary">{supplier.phone}</Text>
               </div>
             )}
-            {(supplier.city || supplier.country) && (
-              <div style={{ fontSize: '11px' }}>
-                <EnvironmentOutlined style={{ marginRight: 4, fontSize: '10px', color: '#fa8c16' }} />
-                <Text type="secondary">
-                  {supplier.city}{supplier.city && supplier.country ? ', ' : ''}{supplier.country}
-                </Text>
-              </div>
-            )}
-            {supplier.contactPerson && (
-              <div style={{ fontSize: '11px' }}>
-                <UserOutlined style={{ marginRight: 4, fontSize: '10px', color: '#722ed1' }} />
-                <Text type="secondary">{supplier.contactPerson}</Text>
-              </div>
-            )}
           </Space>
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Tag color={getStatusConfig(supplier.status).color} size="small" style={{ fontSize: '10px' }}>
+              {getStatusConfig(supplier.status).text}
+            </Tag>
             <Badge 
               count={supplier.supplierProducts ? supplier.supplierProducts.length : 0} 
               showZero 
               color={supplier.supplierProducts && supplier.supplierProducts.length > 0 ? 'blue' : 'default'}
               size="small"
-            >
-              <Text type="secondary" style={{ fontSize: '11px' }}>Products</Text>
-            </Badge>
-            {supplier.creditLimit > 0 && (
-              <Text type="secondary" style={{ fontSize: '10px' }}>
-                Limit: {supplierService.formatCurrency?.(supplier.creditLimit) || `KES ${supplier.creditLimit}`}
-              </Text>
-            )}
+            />
           </div>
         </Space>
       </div>
@@ -859,48 +568,111 @@ const SupplierManagement = () => {
     message.success('Data refreshed successfully');
   };
 
-  // Handle export
+  // Export data function
   const handleExport = (format) => {
+    const fileName = `suppliers_${new Date().toISOString().split('T')[0]}`;
+    
+    switch(format) {
+      case 'excel':
+        message.info('Exporting to Excel...');
+        // Add Excel export logic here
+        break;
+      case 'pdf':
+        message.info('Exporting to PDF...');
+        // Add PDF export logic here
+        break;
+      case 'csv':
+        message.info('Exporting to CSV...');
+        // Add CSV export logic here
+        break;
+      default:
+        message.info('Exporting data...');
+    }
+    
     console.log(`Exporting ${enhancedSuppliers.length} suppliers as ${format}`);
   };
 
+  // Check if any filter is active
+  const hasActiveFilters = () => {
+    return filters.search || filters.status || filters.supplierType || filters.sortBy !== 'name' || filters.sortOrder !== 'asc';
+  };
+
+  // Export dropdown items
+  const exportItems = [
+    {
+      key: 'excel',
+      label: 'Excel (.xlsx)',
+      icon: <FileExcelOutlined style={{ color: '#52c41a' }} />
+    },
+    {
+      key: 'pdf',
+      label: 'PDF (.pdf)',
+      icon: <FilePdfOutlined style={{ color: '#ff4d4f' }} />
+    },
+    {
+      key: 'csv',
+      label: 'CSV (.csv)',
+      icon: <FileTextOutlined style={{ color: '#1890ff' }} />
+    },
+    {
+      key: 'word',
+      label: 'Word (.docx)',
+      icon: <FileWordOutlined style={{ color: '#1890ff' }} />
+    }
+  ];
+
   return (
     <div className="supplier-management">
-      {/* Header with Stats and Actions */}
+      {/* Header with Actions */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={12} md={16}>
-          <Title level={2} style={{ margin: 0 }}>
+        <Col xs={24} md={16}>
+          <Title level={2} style={{ margin: 0, fontSize: screens.xs ? '20px' : '24px' }}>
             <TeamOutlined style={{ marginRight: 8 }} /> 
             Supplier Management
           </Title>
-          <Text type="secondary">Manage your suppliers and their products</Text>
+          <Text type="secondary" style={{ fontSize: screens.xs ? '12px' : '14px' }}>
+            Manage your suppliers and their products
+          </Text>
         </Col>
-        <Col xs={24} sm={12} md={8}>
-          <Space style={{ width: '100%', justifyContent: screens.xs ? 'flex-start' : 'flex-end' }}>
+        <Col xs={24} md={8}>
+          <Space 
+            style={{ 
+              width: '100%', 
+              justifyContent: screens.xs ? 'flex-start' : 'flex-end',
+              flexWrap: 'wrap',
+              gap: screens.xs ? '8px' : '12px'
+            }}
+          >
             <Tooltip title="Refresh">
               <Button
                 icon={<ReloadOutlined />}
                 onClick={handleRefresh}
                 loading={loading}
+                size={screens.xs ? 'middle' : 'default'}
               />
             </Tooltip>
-            <AdvancedReportGenerator
-              dataSource={enhancedSuppliers}
-              columns={exportColumns}
-              title="Supplier Management Report"
-              fileName={`suppliers_report_${new Date().toISOString().split('T')[0]}`}
-              summaryData={summaryData}
-              reportType="operations"
-              showFooter={true}
-              footerText={`Generated from Lynx Energy System - ${new Date().toLocaleDateString()}`}
-              enableCustomization={true}
-              onReportGenerate={handleExport}
-            />
+            
+            {/* Export Dropdown */}
+            <Dropdown
+              menu={{
+                items: exportItems,
+                onClick: ({ key }) => handleExport(key)
+              }}
+              placement="bottomRight"
+            >
+              <Button
+                icon={<ExportOutlined />}
+                size={screens.xs ? 'middle' : 'default'}
+              >
+                {screens.xs ? '' : 'Export'}
+              </Button>
+            </Dropdown>
+            
             <Button
               type="primary"
               icon={<PlusOutlined />}
               onClick={() => setCreateModalVisible(true)}
-              block={screens.xs}
+              size={screens.xs ? 'middle' : 'default'}
             >
               {screens.xs ? 'Add' : 'Add Supplier'}
             </Button>
@@ -908,16 +680,16 @@ const SupplierManagement = () => {
         </Col>
       </Row>
 
-      {/* Statistics Cards */}
-      <Row gutter={[16, 16]} className="stats-row" style={{ marginBottom: 24 }}>
+      {/* Statistics Cards - RESPONSIVE */}
+      <Row gutter={[8, 8]} className="stats-row" style={{ marginBottom: 24 }}>
         {[
           { 
             key: 'total', 
-            title: 'Total Suppliers', 
+            title: 'Total', 
             value: stats.totalSuppliers || 0, 
             icon: <TeamOutlined />, 
             color: '#1890ff',
-            suffix: `${summaryStats.totalProducts} products`
+            suffix: 'suppliers'
           },
           { 
             key: 'active', 
@@ -925,7 +697,7 @@ const SupplierManagement = () => {
             value: stats.activeSuppliers || 0, 
             icon: <IdcardOutlined />,
             color: '#52c41a',
-            suffix: `${Math.round((summaryStats.activeSuppliers / (summaryStats.totalSuppliers || 1)) * 100)}% of total`
+            suffix: `${Math.round((stats.activeSuppliers || 0) / ((stats.totalSuppliers || 1)) * 100)}%`
           },
           { 
             key: 'withProducts', 
@@ -933,7 +705,7 @@ const SupplierManagement = () => {
             value: stats.suppliersWithProducts || 0, 
             icon: <ShoppingOutlined />,
             color: '#722ed1',
-            suffix: `${Math.round((summaryStats.suppliersWithProducts / (summaryStats.totalSuppliers || 1)) * 100)}% coverage`
+            suffix: 'suppliers'
           },
           { 
             key: 'onHold', 
@@ -941,16 +713,20 @@ const SupplierManagement = () => {
             value: stats.onHoldSuppliers || 0, 
             icon: <CalendarOutlined />,
             color: '#fa8c16',
-            suffix: 'Review needed'
+            suffix: 'review'
           },
         ].map(stat => (
           <Col xs={12} sm={6} key={stat.key}>
-            <Card size="small" hoverable>
+            <Card size="small" hoverable bodyStyle={{ padding: screens.xs ? '12px' : '16px' }}>
               <Statistic
-                title={stat.title}
+                title={<Text style={{ fontSize: screens.xs ? '12px' : '14px' }}>{stat.title}</Text>}
                 value={stat.value}
-                prefix={stat.icon}
-                valueStyle={{ color: stat.color, fontSize: '24px' }}
+                prefix={<span style={{ color: stat.color, marginRight: 8 }}>{stat.icon}</span>}
+                valueStyle={{ 
+                  color: stat.color, 
+                  fontSize: screens.xs ? '18px' : '24px',
+                  fontWeight: 'bold'
+                }}
                 suffix={stat.suffix && <div style={{ fontSize: '10px', color: '#999', marginTop: 2 }}>{stat.suffix}</div>}
               />
             </Card>
@@ -958,132 +734,135 @@ const SupplierManagement = () => {
         ))}
       </Row>
 
-      {/* Filters Section */}
+      {/* Filters Section - SIMPLIFIED */}
       <Card 
         style={{ marginBottom: 24 }}
-        bodyStyle={{ padding: screens.xs ? '16px' : '24px' }}
+        bodyStyle={{ padding: screens.xs ? '12px' : '16px' }}
       >
-        <Row gutter={[16, 16]} align="middle">
-          {/* Search Input */}
-          <Col xs={24} sm={12} md={8} lg={6}>
+        <Row gutter={[8, 8]} align="middle">
+          {/* Search Input - Always visible */}
+          <Col xs={24} sm={16} md={12} lg={8}>
             <Search
               placeholder="Search suppliers..."
               allowClear
               enterButton={<SearchOutlined />}
-              size="large"
+              size={screens.xs ? 'middle' : 'default'}
               value={filters.search}
               onChange={(e) => handleFilterChange('search', e.target.value)}
+              style={{ width: '100%' }}
             />
           </Col>
 
-          {/* Filter Button for Mobile */}
-          {!screens.lg && (
-            <Col xs={12} sm={6}>
+          {/* Filter Actions */}
+          <Col xs={24} sm={8} md={12} lg={16}>
+            <Space 
+              style={{ 
+                width: '100%', 
+                justifyContent: screens.sm ? 'flex-end' : 'flex-start',
+                flexWrap: 'wrap'
+              }}
+            >
+              {/* Mobile View Toggle */}
+              {!screens.lg && (
+                <Button
+                  icon={<AppstoreOutlined />}
+                  onClick={() => setMobileView(mobileView === 'list' ? 'grid' : 'list')}
+                  size={screens.xs ? 'middle' : 'default'}
+                >
+                  {mobileView === 'list' ? 'Grid' : 'List'}
+                </Button>
+              )}
+
+              {/* Filter Button */}
               <Button
                 icon={<FilterOutlined />}
-                size="large"
                 onClick={() => setFilterDrawerVisible(true)}
-                block
+                size={screens.xs ? 'middle' : 'default'}
               >
-                Filters
+                {screens.xs ? 'Filters' : 'More Filters'}
               </Button>
-            </Col>
-          )}
 
-          {/* View Toggle for Mobile */}
-          {!screens.lg && (
-            <Col xs={12} sm={6}>
+              {/* Clear Filters */}
               <Button
-                icon={<AppstoreOutlined />}
-                size="large"
-                onClick={() => setMobileView(mobileView === 'list' ? 'grid' : 'list')}
-                block
+                icon={<ClearOutlined />}
+                onClick={clearFilters}
+                disabled={!hasActiveFilters()}
+                size={screens.xs ? 'middle' : 'default'}
               >
-                {mobileView === 'list' ? 'Grid' : 'List'}
+                {screens.xs ? '' : 'Clear'}
               </Button>
-            </Col>
-          )}
+            </Space>
+          </Col>
 
-          {/* Desktop Filters */}
-          {screens.lg && (
-            <>
-              <Col span={4}>
-                <Select
-                  placeholder="Status"
-                  allowClear
-                  style={{ width: '100%' }}
-                  size="large"
-                  value={filters.status}
-                  onChange={(value) => handleFilterChange('status', value)}
-                >
-                  <Option value="ACTIVE">Active</Option>
-                  <Option value="INACTIVE">Inactive</Option>
-                  <Option value="ON_HOLD">On Hold</Option>
-                  <Option value="BLACKLISTED">Blacklisted</Option>
-                </Select>
-              </Col>
-              <Col span={4}>
-                <Select
-                  placeholder="Supplier Type"
-                  allowClear
-                  style={{ width: '100%' }}
-                  size="large"
-                  value={filters.supplierType}
-                  onChange={(value) => handleFilterChange('supplierType', value)}
-                >
-                  <Option value="FUEL_WHOLESALER">Fuel Wholesaler</Option>
-                  <Option value="FUEL_REFINERY">Refinery</Option>
-                  <Option value="OIL_COMPANY">Oil Company</Option>
-                  <Option value="DISTRIBUTOR">Distributor</Option>
-                  <Option value="RETAIL_SUPPLIER">Retail Supplier</Option>
-                  <Option value="EQUIPMENT_VENDOR">Equipment Vendor</Option>
-                  <Option value="SERVICE_PROVIDER">Service Provider</Option>
-                  <Option value="GENERAL_SUPPLIER">General Supplier</Option>
-                </Select>
-              </Col>
-              <Col span={3}>
-                <Button
-                  icon={<FilterOutlined />}
-                  onClick={clearFilters}
-                  size="large"
-                  block
-                >
-                  Clear
-                </Button>
-              </Col>
-            </>
+          {/* Active Filters Display */}
+          {hasActiveFilters() && (
+            <Col xs={24} style={{ marginTop: 8 }}>
+              <Space wrap size={[4, 4]}>
+                <Text type="secondary" style={{ fontSize: '12px' }}>Filters:</Text>
+                {filters.search && (
+                  <Tag 
+                    closable 
+                    onClose={() => handleFilterChange('search', '')} 
+                    color="blue"
+                    size="small"
+                  >
+                    Search: "{filters.search}"
+                  </Tag>
+                )}
+                {filters.status && (
+                  <Tag 
+                    closable 
+                    onClose={() => handleFilterChange('status', '')} 
+                    color="green"
+                    size="small"
+                  >
+                    Status: {getStatusConfig(filters.status).text}
+                  </Tag>
+                )}
+                {filters.supplierType && (
+                  <Tag 
+                    closable 
+                    onClose={() => handleFilterChange('supplierType', '')} 
+                    color="orange"
+                    size="small"
+                  >
+                    Type: {getTypeConfig(filters.supplierType).text}
+                  </Tag>
+                )}
+              </Space>
+            </Col>
           )}
         </Row>
       </Card>
 
       {/* Suppliers List/Table */}
       <Card
-        title={`Suppliers (${pagination.total})`}
-        extra={
+        title={
           <Space>
-            <Text type="secondary">
-              <SortDescendingOutlined style={{ marginRight: 4, color: sortOrder.order === 'descend' ? '#1890ff' : '#999' }} />
-              Sorted by: {sortOrder.field} ({sortOrder.order === 'descend' ? 'Desc' : 'Asc'})
+            <Text strong style={{ fontSize: screens.xs ? '16px' : '18px' }}>
+              Suppliers ({pagination.total})
             </Text>
-            <Text type="secondary">
-              Showing {((pagination.current - 1) * pagination.pageSize) + 1}-
-              {Math.min(pagination.current * pagination.pageSize, pagination.total)} of {pagination.total}
-            </Text>
-            {screens.lg && filters.status && (
-              <Tag closable onClose={() => handleFilterChange('status', '')}>
-                Status: {getStatusConfig(filters.status).text}
-              </Tag>
-            )}
-            {screens.lg && filters.supplierType && (
-              <Tag closable onClose={() => handleFilterChange('supplierType', '')}>
-                Type: {getTypeConfig(filters.supplierType).text}
-              </Tag>
+            {!screens.xs && (
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                Showing {((pagination.current - 1) * pagination.pageSize) + 1}-
+                {Math.min(pagination.current * pagination.pageSize, pagination.total)} of {pagination.total}
+              </Text>
             )}
           </Space>
         }
+        extra={
+          !screens.xs && (
+            <Space>
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                Sorted by: {sortOrder.field} ({sortOrder.order === 'descend' ? 'Desc' : 'Asc'})
+              </Text>
+            </Space>
+          )
+        }
+        bodyStyle={{ padding: screens.xs ? '8px' : '16px' }}
       >
-        {screens.lg ? (
-          // Desktop Table View
+        {screens.lg || mobileView === 'list' ? (
+          // Desktop Table View or Mobile List View
           <Table
             columns={columns}
             dataSource={suppliers}
@@ -1091,25 +870,28 @@ const SupplierManagement = () => {
             loading={loading}
             pagination={{
               ...pagination,
-              showSizeChanger: true,
-              showQuickJumper: true,
-              showTotal: (total, range) => 
-                `${range[0]}-${range[1]} of ${total} suppliers`,
-              pageSizeOptions: ['10', '20', '50', '100']
+              showSizeChanger: !screens.xs,
+              showQuickJumper: !screens.xs,
+              showTotal: !screens.xs ? (total, range) => 
+                `${range[0]}-${range[1]} of ${total} suppliers` : false,
+              pageSizeOptions: ['10', '20', '50', '100'],
+              size: screens.xs ? 'small' : 'default'
             }}
             onChange={handleTableChange}
-            scroll={{ x: 1200 }}
+            scroll={{ x: screens.xs ? 600 : 1200 }}
+            size={screens.xs ? 'small' : 'default'}
             locale={{
               emptyText: (
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   description={
-                    <div>
-                      <p>No suppliers found</p>
+                    <div style={{ padding: screens.xs ? '16px' : '24px' }}>
+                      <p style={{ marginBottom: 16 }}>No suppliers found</p>
                       <Button 
                         type="primary" 
                         onClick={() => setCreateModalVisible(true)}
                         icon={<PlusOutlined />}
+                        size={screens.xs ? 'small' : 'default'}
                       >
                         Create First Supplier
                       </Button>
@@ -1118,47 +900,9 @@ const SupplierManagement = () => {
                 />
               )
             }}
-            summary={() => (
-              <Table.Summary fixed>
-                <Table.Summary.Row>
-                  <Table.Summary.Cell index={0} colSpan={3}>
-                    <Space>
-                      <SortDescendingOutlined style={{ color: '#1890ff' }} />
-                      <Text strong>Sorted by: {sortOrder.field}</Text>
-                      <Text type="secondary">({sortOrder.order === 'descend' ? 'Descending' : 'Ascending'})</Text>
-                    </Space>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={1}>
-                    <Text strong>Total: {summaryStats.totalSuppliers} suppliers</Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={2} colSpan={3}>
-                    <Text type="secondary">
-                      {summaryStats.activeSuppliers} active • {summaryStats.suppliersWithProducts} with products • {summaryStats.totalProducts} total products
-                    </Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={3}>
-                    <AdvancedReportGenerator
-                      dataSource={enhancedSuppliers}
-                      columns={exportColumns}
-                      title="Detailed Supplier Report"
-                      fileName={`detailed_suppliers_${new Date().toISOString().split('T')[0]}`}
-                      summaryData={summaryData}
-                      reportType="operations"
-                      showFooter={true}
-                      customStyles={{
-                        fontSize: 8,
-                        rowHeight: 5,
-                        alternateRowColors: true
-                      }}
-                      enableCustomization={false}
-                    />
-                  </Table.Summary.Cell>
-                </Table.Summary.Row>
-              </Table.Summary>
-            )}
           />
         ) : (
-          // Mobile Card/List View
+          // Mobile Grid View
           <div>
             {suppliers.length > 0 ? (
               suppliers.map((supplier, index) => renderMobileCard(supplier, index))
@@ -1166,8 +910,8 @@ const SupplierManagement = () => {
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={
-                  <div>
-                    <p>No suppliers found</p>
+                  <div style={{ padding: '24px' }}>
+                    <p style={{ marginBottom: 16 }}>No suppliers found</p>
                     <Button 
                       type="primary" 
                       onClick={() => setCreateModalVisible(true)}
@@ -1186,21 +930,37 @@ const SupplierManagement = () => {
 
       {/* Filter Drawer for Mobile */}
       <Drawer
-        title="Filter Suppliers"
+        title={
+          <Space>
+            <FilterOutlined />
+            <Text strong>Filter Suppliers</Text>
+          </Space>
+        }
         placement="right"
         onClose={() => setFilterDrawerVisible(false)}
         open={filterDrawerVisible}
-        width={300}
+        width={screens.xs ? '100%' : 300}
+        extra={
+          <Button
+            type="text"
+            icon={<ClearOutlined />}
+            onClick={clearFilters}
+            size="small"
+          >
+            Clear
+          </Button>
+        }
       >
         <Space direction="vertical" style={{ width: '100%' }} size="large">
           <div>
-            <Text strong>Status</Text>
+            <Text strong style={{ display: 'block', marginBottom: 8 }}>Status</Text>
             <Select
               placeholder="Select Status"
               allowClear
-              style={{ width: '100%', marginTop: 8 }}
+              style={{ width: '100%' }}
               value={filters.status}
               onChange={(value) => handleFilterChange('status', value)}
+              size="large"
             >
               <Option value="ACTIVE">Active</Option>
               <Option value="INACTIVE">Inactive</Option>
@@ -1210,13 +970,14 @@ const SupplierManagement = () => {
           </div>
 
           <div>
-            <Text strong>Supplier Type</Text>
+            <Text strong style={{ display: 'block', marginBottom: 8 }}>Supplier Type</Text>
             <Select
               placeholder="Select Type"
               allowClear
-              style={{ width: '100%', marginTop: 8 }}
+              style={{ width: '100%' }}
               value={filters.supplierType}
               onChange={(value) => handleFilterChange('supplierType', value)}
+              size="large"
             >
               <Option value="FUEL_WHOLESALER">Fuel Wholesaler</Option>
               <Option value="FUEL_REFINERY">Refinery</Option>
@@ -1229,35 +990,46 @@ const SupplierManagement = () => {
             </Select>
           </div>
 
+          <Divider />
+
           <div>
-            <Text strong>Sort By</Text>
+            <Text strong style={{ display: 'block', marginBottom: 8 }}>Sort By</Text>
             <Select
-              style={{ width: '100%', marginTop: 8 }}
+              style={{ width: '100%' }}
               value={filters.sortBy}
               onChange={(value) => handleFilterChange('sortBy', value)}
+              size="large"
             >
               <Option value="name">Name</Option>
               <Option value="code">Code</Option>
               <Option value="createdAt">Date Added</Option>
-              <Option value="products">Number of Products</Option>
+              <Option value="products">Products Count</Option>
               <Option value="rating">Rating</Option>
             </Select>
           </div>
 
           <div>
-            <Text strong>Sort Order</Text>
+            <Text strong style={{ display: 'block', marginBottom: 8 }}>Sort Order</Text>
             <Select
-              style={{ width: '100%', marginTop: 8 }}
+              style={{ width: '100%' }}
               value={filters.sortOrder}
               onChange={(value) => handleFilterChange('sortOrder', value)}
+              size="large"
             >
               <Option value="desc">Descending (Z-A)</Option>
               <Option value="asc">Ascending (A-Z)</Option>
             </Select>
           </div>
 
-          <Button type="primary" onClick={clearFilters} block>
-            Clear All Filters
+          <Divider />
+
+          <Button 
+            type="primary" 
+            onClick={() => setFilterDrawerVisible(false)} 
+            block
+            size="large"
+          >
+            Apply Filters
           </Button>
         </Space>
       </Drawer>

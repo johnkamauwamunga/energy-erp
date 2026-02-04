@@ -18,7 +18,7 @@ import StationDashboardOverview from '../common/StationDashboardOverview';
 import SalesManagement from '../common/sales/SalesManagement';
 import StationUserManagement from '../../dashboards/StationManagerDashboard/staff/StationUserManagement';
 import FuelOffloadWizard from '../common/fuel-offload/FuelOffloadWizard';
-import ShiftManagement from '../common/shift/ShiftManagement';
+import ShiftManagementTest from '../common/shift/ShiftManagementTest';
 import AnalyticsDemo from '../common/analytics/AnalyticsDemo';
 import OffloadMagement from '../common/offload-test/OffloadManagement';
 import FuelTankManagement from '../../dashboards/StationManagerDashboard/products/fuelTankManagement/FuelTankManagement';
@@ -176,7 +176,7 @@ const SupervisorDashboard = () => {
       case 'fuel_tanks':
         return <FuelTankManagement />;
       case 'shifts':
-        return <ShiftManagement />;
+        return <ShiftManagementTest />;
       case 'offloads':
         return <OffloadMagement />;
       case 'expenses':
