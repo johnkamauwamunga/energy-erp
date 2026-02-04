@@ -14,20 +14,20 @@ export const useAuth = () => {
         const accessToken = localStorage.getItem('accessToken');
         const refreshToken = localStorage.getItem('refreshToken');
 
-        console.log('🔄 Auth initialization check:', {
-          hasStoredAuthData: !!storedAuthData,
-          hasAccessToken: !!accessToken,
-          hasRefreshToken: !!refreshToken
-        });
+       // console.log('🔄 Auth initialization check:', {
+        //   hasStoredAuthData: !!storedAuthData,
+        //   hasAccessToken: !!accessToken,
+        //   hasRefreshToken: !!refreshToken
+        // });
 
         if (storedAuthData && accessToken && refreshToken) {
           const authData = JSON.parse(storedAuthData);
           
-          console.log('📦 Parsed auth data from localStorage:', authData);
+         // console.log('📦 Parsed auth data from localStorage:', authData);
           
           // Check if token is still valid
           if (isTokenValid(accessToken)) {
-            console.log('✅ Token valid, setting auth state with user:', authData.user?.email);
+           // console.log('✅ Token valid, setting auth state with user:', authData.user?.email);
             dispatch({ 
               type: 'SET_AUTH_DATA', 
               payload: {
@@ -40,10 +40,10 @@ export const useAuth = () => {
               }
             });
           } else {
-            console.log('⚠️ Token expired on initialization');
+           // console.log('⚠️ Token expired on initialization');
           }
         } else {
-          console.log('❌ Missing auth data in localStorage');
+          console.log('⚠️ Token Expired');
         }
       } catch (error) {
         console.error('❌ Failed to initialize auth state:', error);
@@ -58,7 +58,7 @@ export const useAuth = () => {
 
   // Helper function to update auth data
   const updateAuthData = (responseData) => {
-    console.log('💾 Updating auth data with full response:', responseData);
+    //console.log('💾 Updating auth data with full response:', responseData);
     
     // Extract the actual data from response
     const authData = {
@@ -70,12 +70,12 @@ export const useAuth = () => {
       refreshToken: responseData.refreshToken
     };
 
-    console.log('📦 Extracted auth data:', {
-      user: authData.user,
-      company: authData.company,
-      accessToken: !!authData.accessToken,
-      refreshToken: !!authData.refreshToken
-    });
+    //// console.log('📦 Extracted auth data:', {
+    //   user: authData.user,
+    //   company: authData.company,
+    //   accessToken: !!authData.accessToken,
+    //   refreshToken: !!authData.refreshToken
+    // });
 
     // Store in localStorage - make sure we're storing the actual user object
     const storageData = {
@@ -89,7 +89,7 @@ export const useAuth = () => {
     localStorage.setItem('accessToken', authData.accessToken);
     localStorage.setItem('refreshToken', authData.refreshToken);
 
-    console.log('✅ Auth data stored in localStorage, user:', storageData.user?.email);
+   //// console.log('✅ Auth data stored in localStorage, user:', storageData.user?.email);
 
     // Update context with the actual data
     dispatch({ 
@@ -97,7 +97,7 @@ export const useAuth = () => {
       payload: authData 
     });
 
-    console.log('🔄 Dispatch completed, context should be updated');
+   // console.log('🔄 Dispatch completed, context should be updated');
   };
 
   const clearAuthData = () => {
@@ -120,13 +120,13 @@ export const useAuth = () => {
 
   const login = useCallback(async (email, password) => {
     try {
-      console.log('🔄 Starting login process for:', email);
+     //// console.log('🔄 Starting login process for:', email);
       const response = await authService.login(email, password);
       
-      console.log('📨 Login service response:', response);
+     // console.log('📨 Login service response:', response);
       
       if (response.success && response.data) {
-        console.log('✅ Login successful, updating auth data...');
+       // console.log('✅ Login successful, updating auth data...');
         updateAuthData(response.data);
         
         return { 

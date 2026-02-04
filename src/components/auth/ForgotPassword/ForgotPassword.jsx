@@ -1,19 +1,47 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Flame, Mail, Lock, ArrowLeft, CheckCircle, Eye, EyeOff } from 'lucide-react';
-import { Button, Input } from '../../../components/ui';
+import {
+  Card,
+  Form,
+  Input,
+  Button,
+  Alert,
+  Divider,
+  Space,
+  Typography,
+  Layout,
+  Row,
+  Col,
+  message,
+  Progress,
+  List,
+  Steps
+} from 'antd';
+import {
+  UserOutlined,
+  LockOutlined,
+  HomeOutlined,
+  SafetyCertificateOutlined,
+  RocketOutlined,
+  MailOutlined,
+  CheckCircleOutlined,
+  ArrowLeftOutlined,
+  EyeOutlined,
+  EyeInvisibleOutlined
+} from '@ant-design/icons';
 import { userService } from '../../../services/userService/userService';
 
+const { Title, Text, Link } = Typography;
+const { Content } = Layout;
+const { Step } = Steps;
+
 const ForgotPassword = () => {
-  const [email, setEmail] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [passwordMatch, setPasswordMatch] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState({
     hasMinLength: false,
     hasUpperCase: false,
@@ -24,110 +52,15 @@ const ForgotPassword = () => {
   
   const navigate = useNavigate();
 
-  // Check if passwords match
-  useEffect(() => {
-    if (newPassword && confirmPassword && newPassword === confirmPassword) {
-      setPasswordMatch(true);
-      setError('');
-    } else if (confirmPassword) {
-      setPasswordMatch(false);
-    }
-  }, [newPassword, confirmPassword]);
-
-  // Validate password strength in real-time using userService validation
-  useEffect(() => {
+  // Password strength checker
+  const checkPasswordStrength = (password) => {
     setPasswordStrength({
-      hasMinLength: newPassword.length >= 8,
-      hasUpperCase: /[A-Z]/.test(newPassword),
-      hasLowerCase: /[a-z]/.test(newPassword),
-      hasNumber: /[0-9]/.test(newPassword),
-      hasSpecialChar: /[^A-Za-z0-9]/.test(newPassword)
+      hasMinLength: password.length >= 8,
+      hasUpperCase: /[A-Z]/.test(password),
+      hasLowerCase: /[a-z]/.test(password),
+      hasNumber: /[0-9]/.test(password),
+      hasSpecialChar: /[^A-Za-z0-9]/.test(password)
     });
-  }, [newPassword]);
-
-  const validateForm = () => {
-    if (!email || !newPassword || !confirmPassword) {
-      setError('Please fill in all fields');
-      return false;
-    }
-
-    if (!email.includes('@')) {
-      setError('Please enter a valid email address');
-      return false;
-    }
-
-    // Use userService validation for password strength
-    const passwordValidation = userService.validatePasswordStrength(newPassword);
-    if (!passwordValidation.isValid) {
-      setError(passwordValidation.errors[0]);
-      return false;
-    }
-
-    // Use userService validation for password match
-    const matchValidation = userService.validatePasswordMatch(newPassword, confirmPassword);
-    if (!matchValidation.isValid) {
-      setError(matchValidation.error);
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleResetPassword = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-
-    if (!validateForm()) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      // Call userService with the exact payload structure expected by the API
-      const resetData = {
-        email: email.trim().toLowerCase(),
-        newPassword: newPassword,
-        confirmPassword: confirmPassword
-      };
-
-      console.log('🟢 [FRONTEND] Sending reset payload:', resetData);
-
-      const result = await userService.resetPasswordByEmail(resetData);
-      
-      if (result.success) {
-        setSuccess(true);
-        console.log('✅ [FRONTEND] Password reset successful for:', email);
-        // Auto-redirect to login after 3 seconds
-        setTimeout(() => {
-          navigate('/login');
-        }, 3000);
-      } else {
-        setError(result.message || 'Password reset failed. Please try again.');
-      }
-    } catch (err) {
-      // Handle API errors
-      console.error('❌ [FRONTEND] Password reset error:', err);
-      
-      // Enhanced error handling based on common scenarios
-      if (err.response?.status === 404) {
-        setError('No account found with this email address');
-      } else if (err.response?.status === 400) {
-        setError(err.message || 'Invalid request. Please check your input and try again.');
-      } else if (err.response?.status === 422) {
-        setError(err.message || 'Password does not meet security requirements');
-      } else {
-        setError(err.message || 'An unexpected error occurred. Please try again.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && email && newPassword && confirmPassword && passwordMatch) {
-      handleResetPassword(e);
-    }
   };
 
   const getPasswordStrengthScore = () => {
@@ -138,10 +71,10 @@ const ForgotPassword = () => {
 
   const getStrengthColor = () => {
     const score = getPasswordStrengthScore();
-    if (score <= 2) return 'text-red-400';
-    if (score <= 3) return 'text-orange-400';
-    if (score === 4) return 'text-yellow-400';
-    return 'text-green-400';
+    if (score <= 2) return '#ff4d4f'; // red
+    if (score <= 3) return '#faad14'; // orange
+    if (score === 4) return '#1890ff'; // blue
+    return '#52c41a'; // green
   };
 
   const getStrengthText = () => {
@@ -152,190 +85,388 @@ const ForgotPassword = () => {
     return 'Strong';
   };
 
-  // Check if form is ready for submission
-  const isFormValid = () => {
-    return email && 
-           newPassword && 
-           confirmPassword && 
-           passwordMatch && 
-           getPasswordStrengthScore() === 5;
+  const handleResetPassword = async (values) => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const resetData = {
+        email: values.email.trim().toLowerCase(),
+        newPassword: values.newPassword,
+        confirmPassword: values.confirmPassword
+      };
+
+      console.log('🟢 [FRONTEND] Sending reset payload:', resetData);
+
+      const result = await userService.resetPasswordByEmail(resetData);
+      
+      if (result.success) {
+        setSuccess(true);
+        message.success('Password reset successful! Redirecting to login...');
+        console.log('✅ [FRONTEND] Password reset successful for:', values.email);
+        
+        // Auto-redirect to login after 3 seconds
+        setTimeout(() => {
+          navigate('/login');
+        }, 3000);
+      } else {
+        setError(result.message || 'Password reset failed. Please try again.');
+        message.error(result.message || 'Password reset failed');
+      }
+    } catch (err) {
+      console.error('❌ [FRONTEND] Password reset error:', err);
+      
+      // Enhanced error handling
+      if (err.response?.status === 404) {
+        setError('No account found with this email address');
+      } else if (err.response?.status === 400) {
+        setError(err.message || 'Invalid request. Please check your input and try again.');
+      } else if (err.response?.status === 422) {
+        setError(err.message || 'Password does not meet security requirements');
+      } else if (err.message) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred. Please try again.');
+      }
+      
+      message.error(err.message || 'Reset failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen cosmic-gradient flex items-center justify-center">
-        <div className="text-white text-xl">Processing...</div>
-      </div>
-    );
-  }
+  const onFinishFailed = (errorInfo) => {
+    console.log('Failed:', errorInfo);
+  };
 
+  const validatePasswordMatch = (_, value) => {
+    const newPassword = form.getFieldValue('newPassword');
+    if (value && value !== newPassword) {
+      return Promise.reject(new Error('Passwords do not match!'));
+    }
+    return Promise.resolve();
+  };
+
+  // Success screen
   if (success) {
     return (
-      <div className="min-h-screen cosmic-gradient flex items-center justify-center relative overflow-hidden">
-        <div className="absolute inset-0">
-          <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-blue-400 rounded-full opacity-10 animate-pulse"></div>
-          <div className="absolute bottom-1/4 right-1/4 w-48 h-48 bg-purple-400 rounded-full opacity-10 animate-pulse delay-1000"></div>
-        </div>
+      <Layout style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+        <Content style={{ padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Row justify="center" style={{ width: '100%', maxWidth: 1200 }}>
+            <Col xs={24} sm={20} md={16} lg={12} xl={8}>
+              
+              {/* Back to Login Button */}
+              <Button 
+                type="text" 
+                icon={<ArrowLeftOutlined />}
+                onClick={() => navigate('/login')}
+                style={{ 
+                  color: 'white', 
+                  marginBottom: 16,
+                  border: '1px solid rgba(255,255,255,0.2)'
+                }}
+              >
+                Back to Login
+              </Button>
 
-        <div className="relative z-10 max-w-md w-full mx-4">
-          <div className="glass-effect rounded-2xl p-8 shadow-2xl text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-green-500 rounded-full mb-4">
-              <CheckCircle className="w-8 h-8 text-white" />
-            </div>
-            <h2 className="text-2xl font-bold text-white mb-4">Password Reset Successful!</h2>
-            <p className="text-blue-100 mb-6">
-              Your password has been successfully reset. You will be redirected to the login page shortly.
-            </p>
-            <Button
-              onClick={() => navigate('/login')}
-              variant="cosmic"
-              className="w-full"
-            >
-              Back to Login
-            </Button>
-          </div>
-        </div>
-      </div>
+              {/* Success Card */}
+              <Card
+                style={{
+                  borderRadius: 12,
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
+                  border: '1px solid #e8e8e8'
+                }}
+                bodyStyle={{ padding: '32px' }}
+              >
+                <div style={{ textAlign: 'center', marginBottom: 32 }}>
+                  <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                    <div style={{ 
+                      background: 'linear-gradient(135deg, #52c41a 0%, #73d13d 100%)',
+                      width: 80,
+                      height: 80,
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: '0 auto'
+                    }}>
+                      <CheckCircleOutlined style={{ fontSize: 40, color: 'white' }} />
+                    </div>
+                    <Title level={2} style={{ margin: 0, color: '#262626' }}>
+                      Password Reset Successful!
+                    </Title>
+                    <Text type="secondary" style={{ fontSize: 16 }}>
+                      Your password has been successfully reset. You will be redirected to the login page shortly.
+                    </Text>
+                  </Space>
+                </div>
+
+                <Steps current={2} style={{ marginBottom: 32 }}>
+                  <Step title="Enter Email" description="Verification" />
+                  <Step title="Set Password" description="Security" />
+                  <Step title="Complete" description="Success" />
+                </Steps>
+
+                <Button
+                  type="primary"
+                  onClick={() => navigate('/login')}
+                  block
+                  size="large"
+                  style={{ 
+                    height: 48,
+                    fontSize: 16,
+                    background: 'linear-gradient(135deg, #1890ff 0%, #722ed1 100%)',
+                    border: 'none',
+                    marginTop: 16
+                  }}
+                >
+                  Back to Login
+                </Button>
+              </Card>
+            </Col>
+          </Row>
+        </Content>
+      </Layout>
     );
   }
 
   return (
-    <div className="min-h-screen cosmic-gradient flex items-center justify-center relative overflow-hidden">
-      {/* Background Elements */}
-      <div className="absolute inset-0">
-        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-blue-400 rounded-full opacity-10 animate-pulse"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-48 h-48 bg-purple-400 rounded-full opacity-10 animate-pulse delay-1000"></div>
-      </div>
-
-      <div className="relative z-10 max-w-md w-full mx-4">
-        {/* Back to Login */}
-        <div className="mb-8">
-          <Button 
-            onClick={() => navigate('/login')}
-            variant="ghost"
-            icon={ArrowLeft}
-            className="text-white hover:bg-white hover:bg-opacity-20"
-          >
-            Back to Login
-          </Button>
-        </div>
-
-        {/* Reset Card */}
-        <div className="glass-effect rounded-2xl p-8 shadow-2xl">
-          <div className="text-center mb-8">
-            <div className="inline-block cosmic-gradient p-3 rounded-xl flame-animation mb-4">
-              <Flame className="w-10 h-10 text-white" />
-            </div>
-            <h2 className="text-2xl font-bold text-white mb-2">Reset Your Password</h2>
-            <p className="text-blue-100">Enter your email and new password</p>
-          </div>
-
-          {error && (
-            <div className="mb-4 p-3 bg-red-500 bg-opacity-20 border border-red-400 rounded-lg text-red-100">
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={handleResetPassword} className="space-y-4">
-            <Input
-              label="Email Address"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Enter your email"
-              icon={Mail}
-              required
-              autoComplete="email"
-            />
+    <Layout style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+      <Content style={{ padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Row justify="center" style={{ width: '100%', maxWidth: 1200 }}>
+          <Col xs={24} sm={20} md={16} lg={12} xl={8}>
             
-            {/* Password with strength indicator */}
-            <div className="space-y-2">
-              <Input
-                label="New Password"
-                type={showPassword ? "text" : "password"}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Enter new password"
-                icon={Lock}
-                required
-                autoComplete="new-password"
-                rightIcon={showPassword ? EyeOff : Eye}
-                onRightIconClick={() => setShowPassword(!showPassword)}
-              />
-              
-              {newPassword && (
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-blue-100">Password Strength:</span>
-                    <span className={`text-sm font-medium ${getStrengthColor()}`}>
-                      {getStrengthText()}
-                    </span>
-                  </div>
-                  
-                  {/* Password requirements */}
-                  <div className="space-y-1 text-xs">
-                    <div className={`flex items-center ${passwordStrength.hasMinLength ? 'text-green-400' : 'text-red-400'}`}>
-                      {passwordStrength.hasMinLength ? '✓' : '✗'} At least 8 characters
-                    </div>
-                    <div className={`flex items-center ${passwordStrength.hasUpperCase ? 'text-green-400' : 'text-red-400'}`}>
-                      {passwordStrength.hasUpperCase ? '✓' : '✗'} One uppercase letter
-                    </div>
-                    <div className={`flex items-center ${passwordStrength.hasLowerCase ? 'text-green-400' : 'text-red-400'}`}>
-                      {passwordStrength.hasLowerCase ? '✓' : '✗'} One lowercase letter
-                    </div>
-                    <div className={`flex items-center ${passwordStrength.hasNumber ? 'text-green-400' : 'text-red-400'}`}>
-                      {passwordStrength.hasNumber ? '✓' : '✗'} One number
-                    </div>
-                    <div className={`flex items-center ${passwordStrength.hasSpecialChar ? 'text-green-400' : 'text-red-400'}`}>
-                      {passwordStrength.hasSpecialChar ? '✓' : '✗'} One special character
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <Input
-              label="Confirm New Password"
-              type={showConfirmPassword ? "text" : "password"}
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Confirm new password"
-              icon={Lock}
-              required
-              autoComplete="new-password"
-              rightIcon={showConfirmPassword ? EyeOff : Eye}
-              onRightIconClick={() => setShowConfirmPassword(!showConfirmPassword)}
-            />
-
-            {confirmPassword && (
-              <div className={`text-sm ${passwordMatch ? 'text-green-400' : 'text-red-400'}`}>
-                {passwordMatch ? '✓ Passwords match' : '✗ Passwords do not match'}
-              </div>
-            )}
-
-            <Button
-              type="submit"
-              variant="cosmic"
-              size="lg"
-              className="w-full"
-              loading={loading}
-              disabled={!isFormValid()}
+            {/* Back to Login Button */}
+            <Button 
+              type="text" 
+              icon={<ArrowLeftOutlined />}
+              onClick={() => navigate('/login')}
+              style={{ 
+                color: 'white', 
+                marginBottom: 16,
+                border: '1px solid rgba(255,255,255,0.2)'
+              }}
             >
-              {loading ? 'Resetting Password...' : 'Reset Password'}
+              Back to Login
             </Button>
-          </form>
 
-          <div className="mt-6 text-center">
-            <div className="text-blue-100 text-sm">
-              Make sure your new password meets all security requirements
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+            {/* Reset Password Card */}
+            <Card
+              style={{
+                borderRadius: 12,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
+                border: '1px solid #e8e8e8'
+              }}
+              bodyStyle={{ padding: '32px' }}
+            >
+              {/* Header */}
+              <div style={{ textAlign: 'center', marginBottom: 32 }}>
+                <Space direction="vertical" size="middle">
+                  <div style={{ 
+                    background: 'linear-gradient(135deg, #1890ff 0%, #722ed1 100%)',
+                    width: 64,
+                    height: 64,
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto'
+                  }}>
+                    <SafetyCertificateOutlined style={{ fontSize: 28, color: 'white' }} />
+                  </div>
+                  <Title level={2} style={{ margin: 0, color: '#262626' }}>
+                    Reset Password
+                  </Title>
+                  <Text type="secondary" style={{ fontSize: 16 }}>
+                    Enter your email and set a new password
+                  </Text>
+                </Space>
+              </div>
+
+              <Steps current={1} style={{ marginBottom: 32 }}>
+                <Step title="Enter Email" description="Verification" />
+                <Step title="Set Password" description="Security" />
+                <Step title="Complete" description="Success" />
+              </Steps>
+
+              {/* Error Alert */}
+              {error && (
+                <Alert
+                  message="Reset Error"
+                  description={error}
+                  type="error"
+                  showIcon
+                  closable
+                  style={{ marginBottom: 24 }}
+                  onClose={() => setError('')}
+                />
+              )}
+
+              {/* Reset Form */}
+              <Form
+                form={form}
+                name="resetPassword"
+                onFinish={handleResetPassword}
+                onFinishFailed={onFinishFailed}
+                autoComplete="off"
+                size="large"
+                layout="vertical"
+              >
+                <Form.Item
+                  label="Email Address"
+                  name="email"
+                  rules={[
+                    { required: true, message: 'Please input your email!' },
+                    { type: 'email', message: 'Please enter a valid email!' }
+                  ]}
+                >
+                  <Input 
+                    prefix={<MailOutlined />}
+                    placeholder="Enter your registered email"
+                    autoComplete="email"
+                  />
+                </Form.Item>
+
+                <Form.Item
+                  label="New Password"
+                  name="newPassword"
+                  rules={[
+                    { required: true, message: 'Please input your new password!' },
+                    () => ({
+                      validator(_, value) {
+                        if (!value) {
+                          return Promise.resolve();
+                        }
+                        
+                        const validation = userService.validatePasswordStrength(value);
+                        if (!validation.isValid) {
+                          return Promise.reject(new Error(validation.errors[0]));
+                        }
+                        return Promise.resolve();
+                      },
+                    }),
+                  ]}
+                >
+                  <Input.Password
+                    prefix={<LockOutlined />}
+                    placeholder="Enter new password"
+                    autoComplete="new-password"
+                    iconRender={(visible) => 
+                      visible ? <EyeOutlined /> : <EyeInvisibleOutlined />
+                    }
+                    onChange={(e) => checkPasswordStrength(e.target.value)}
+                  />
+                </Form.Item>
+
+                {/* Password Strength Indicator */}
+                {form.getFieldValue('newPassword') && (
+                  <div style={{ marginBottom: 24 }}>
+                    <Row justify="space-between" style={{ marginBottom: 8 }}>
+                      <Text>Password Strength</Text>
+                      <Text strong style={{ color: getStrengthColor() }}>
+                        {getStrengthText()}
+                      </Text>
+                    </Row>
+                    <Progress 
+                      percent={(getPasswordStrengthScore() / 5) * 100} 
+                      showInfo={false}
+                      strokeColor={getStrengthColor()}
+                      size="small"
+                    />
+                    
+                    <List
+                      size="small"
+                      dataSource={[
+                        { label: 'At least 8 characters', valid: passwordStrength.hasMinLength },
+                        { label: 'One uppercase letter', valid: passwordStrength.hasUpperCase },
+                        { label: 'One lowercase letter', valid: passwordStrength.hasLowerCase },
+                        { label: 'One number', valid: passwordStrength.hasNumber },
+                        { label: 'One special character', valid: passwordStrength.hasSpecialChar }
+                      ]}
+                      renderItem={item => (
+                        <List.Item style={{ padding: '4px 0' }}>
+                          <Text type={item.valid ? "success" : "secondary"} style={{ fontSize: 12 }}>
+                            {item.valid ? '✓ ' : '○ '}{item.label}
+                          </Text>
+                        </List.Item>
+                      )}
+                      style={{ marginTop: 8 }}
+                    />
+                  </div>
+                )}
+
+                <Form.Item
+                  label="Confirm New Password"
+                  name="confirmPassword"
+                  dependencies={['newPassword']}
+                  rules={[
+                    { required: true, message: 'Please confirm your password!' },
+                    { validator: validatePasswordMatch }
+                  ]}
+                >
+                  <Input.Password
+                    prefix={<LockOutlined />}
+                    placeholder="Confirm new password"
+                    autoComplete="new-password"
+                    iconRender={(visible) => 
+                      visible ? <EyeOutlined /> : <EyeInvisibleOutlined />
+                    }
+                  />
+                </Form.Item>
+
+                <Form.Item style={{ marginBottom: 16 }}>
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    loading={loading}
+                    block
+                    size="large"
+                    style={{ 
+                      height: 48,
+                      fontSize: 16,
+                      background: 'linear-gradient(135deg, #1890ff 0%, #722ed1 100%)',
+                      border: 'none'
+                    }}
+                    disabled={getPasswordStrengthScore() < 5}
+                  >
+                    {loading ? 'Resetting Password...' : 'Reset Password'}
+                  </Button>
+                </Form.Item>
+              </Form>
+
+              <Divider plain>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Ensure your password meets all security requirements
+                </Text>
+              </Divider>
+
+              {/* Security Tips */}
+              <Alert
+                message="Password Security Tips"
+                description={
+                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+                    <li>Use a combination of letters, numbers, and special characters</li>
+                    <li>Avoid using personal information like your name or birthdate</li>
+                    <li>Don't reuse passwords from other accounts</li>
+                    <li>Consider using a password manager</li>
+                  </ul>
+                }
+                type="info"
+                showIcon
+                style={{ marginTop: 16 }}
+              />
+
+              {/* Version Info */}
+              <div style={{ textAlign: 'center', marginTop: 24 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Fuel Management System v1.0
+                </Text>
+              </div>
+            </Card>
+          </Col>
+        </Row>
+      </Content>
+    </Layout>
   );
 };
 

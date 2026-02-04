@@ -494,6 +494,21 @@ export const userService = {
     };
   },
 
+  // Validate password match
+validatePasswordMatch: (password, confirmPassword) => {
+  if (password !== confirmPassword) {
+    return {
+      isValid: false,
+      error: 'Passwords do not match'
+    };
+  }
+  
+  return {
+    isValid: true,
+    error: ''
+  };
+},
+
   // Format user for display (includes station assignments)
   formatUserDisplay: (user) => {
     return {

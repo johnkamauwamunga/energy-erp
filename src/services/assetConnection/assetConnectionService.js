@@ -11,12 +11,12 @@ const logger = {
 
 // Response handler utility
 const handleResponse = (response, operation) => {
-  logger.debug(`${operation} response:`, response.data);
+//  logger.debug(`${operation} response:`, response.data);
   
   // Check if response.data exists and has success flag
   if (response.data && response.data.success !== undefined) {
     if (response.data.success) {
-      logger.debug(`${operation} successful`);
+     // logger.debug(`${operation} successful`);
       return response.data.data || response.data; // Return data or entire response if no data field
     } else {
       throw new Error(response.data.message || `Operation ${operation} failed`);

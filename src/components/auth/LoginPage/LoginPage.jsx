@@ -39,10 +39,10 @@ const LoginPage = () => {
   // Redirect when authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
-      console.log("✅ LoginPage: User authenticated, redirecting...", {
-        role: user.role,
-        email: user.email
-      });
+     // console.log("✅ LoginPage: User authenticated, redirecting...", {
+      //   role: user.role,
+      //   email: user.email
+      // });
       
       const redirectTimer = setTimeout(() => {
         redirectBasedOnRole(user.role);

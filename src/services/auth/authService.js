@@ -25,7 +25,7 @@ export const authService = {
 
       const data = await response.json();
 
-      console.log('🔐 Login API response:', data);
+      // console.log('🔐 Login API response:', data);
 
       if (!response.ok) {
         throw new Error(data.message || 'Login failed');
