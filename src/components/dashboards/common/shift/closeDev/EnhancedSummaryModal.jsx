@@ -1,4 +1,4 @@
-// EnhancedSummaryModal.jsx
+// EnhancedSummaryModal.jsx (UPDATED WITH EXPENSE DISPLAY)
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -13,14 +13,15 @@ import {
   Button,
   Input,
   message,
-  Result,
   Tag,
   Divider,
   List,
   Statistic,
   Progress,
   Tooltip,
-  Badge
+  Badge,
+  Descriptions,
+  Collapse
 } from 'antd';
 import {
   FileText,
@@ -54,7 +55,9 @@ import {
   FileCheck,
   FolderOpen,
   FileJson,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Receipt as ReceiptIcon,
+  FileWarning
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -65,8 +68,9 @@ import fileSystemService  from '../../../../../services/fileSystemService/fileSy
 import { useApp } from '../../../../../context/AppContext';
 
 const { Title, Text, Paragraph } = Typography;
+const { Panel } = Collapse;
 
-// Enhanced Summary Modal Component
+// Enhanced Summary Modal Component with Expense Display
 const EnhancedSummaryModal = ({
   visible,
   onClose,
@@ -82,6 +86,7 @@ const EnhancedSummaryModal = ({
   const [savePath, setSavePath] = useState('');
   const [walletBalance, setWalletBalance] = useState(0);
   const [showDebtorDetails, setShowDebtorDetails] = useState({});
+  const [showExpenseDetails, setShowExpenseDetails] = useState({});
   const [saveResult, setSaveResult] = useState(null);
 
   const printRef = useRef();
@@ -96,6 +101,7 @@ const EnhancedSummaryModal = ({
   const stationName = islandSalesData?.stationName || state?.currentStation?.name || 'N/A';
   const stationCode = islandSalesData?.stationCode || state?.currentStation?.code || 'N/A';
   const currentUser = state.currentUser;
+  const autoExpenses = islandSalesData?.autoExpenses || {}; // Get auto expenses details
 
   // Format date for filename
   const getFormattedDate = () => {
@@ -149,6 +155,31 @@ const EnhancedSummaryModal = ({
     return Array.from(debtorMap.values()).sort((a, b) => b.total - a.total);
   }, [islands]);
 
+  // Calculate expense breakdown by island
+  const expenseBreakdown = useMemo(() => {
+    const breakdown = [];
+    
+    islands.forEach(island => {
+      const autoExpenseDetails = island.autoExpenseDetails || [];
+      const manualExpenses = island.manualExpenses || 0;
+      const totalExpenses = island.totalExpenses || 0;
+      
+      if (totalExpenses > 0) {
+        breakdown.push({
+          islandName: island.islandName,
+          islandId: island.islandId,
+          autoExpenses: island.autoExpenses || 0,
+          manualExpenses: manualExpenses,
+          totalExpenses: totalExpenses,
+          autoExpenseDetails: autoExpenseDetails,
+          hasAutoExpenses: autoExpenseDetails.length > 0
+        });
+      }
+    });
+    
+    return breakdown.sort((a, b) => b.totalExpenses - a.totalExpenses);
+  }, [islands]);
+
   // Enhanced reconciliation data
   const reconciliationData = useMemo(() => {
     return islands.map((island, index) => {
@@ -161,9 +192,11 @@ const EnhancedSummaryModal = ({
       
       const totalSales = island.totalActualSales || 0;
       const receipts = island.receipts || 0;
-      const expenses = island.expenses || 0;
+      const autoExpenses = island.autoExpenses || 0;
+      const manualExpenses = island.manualExpenses || 0;
+      const totalExpenses = autoExpenses + manualExpenses;
       
-      const totalCollected = cashDrops + totalDebts + receipts - expenses;
+      const totalCollected = cashDrops + totalDebts + receipts - totalExpenses;
       const variance = totalSales - totalCollected;
       
       const shortageStatus = variance > 10 ? 'SHORT' : variance < -10 ? 'OVER' : 'BALANCED';
@@ -175,7 +208,9 @@ const EnhancedSummaryModal = ({
         attendants: island.attendants || [],
         totalSales: totalSales,
         receipts: receipts,
-        expenses: expenses,
+        autoExpenses: autoExpenses,
+        manualExpenses: manualExpenses,
+        totalExpenses: totalExpenses,
         cashDrops: cashDrops,
         cashCollections: totalCashCollected,
         totalDebts: totalDebts,
@@ -185,7 +220,8 @@ const EnhancedSummaryModal = ({
         shortageStatus: shortageStatus,
         shortagePosted: island.shortagePosted || false,
         isComplete: island.isComplete || false,
-        collections: island.collections || []
+        collections: island.collections || [],
+        autoExpenseDetails: island.autoExpenseDetails || []
       };
     });
   }, [islands]);
@@ -195,7 +231,9 @@ const EnhancedSummaryModal = ({
     const totalCashDrops = reconciliationData.reduce((sum, row) => sum + row.cashDrops, 0);
     const totalSales = reconciliationData.reduce((sum, row) => sum + row.totalSales, 0);
     const totalReceipts = reconciliationData.reduce((sum, row) => sum + row.receipts, 0);
-    const totalExpenses = reconciliationData.reduce((sum, row) => sum + row.expenses, 0);
+    const totalAutoExpenses = reconciliationData.reduce((sum, row) => sum + row.autoExpenses, 0);
+    const totalManualExpenses = reconciliationData.reduce((sum, row) => sum + row.manualExpenses, 0);
+    const totalExpenses = totalAutoExpenses + totalManualExpenses;
     const totalVariance = reconciliationData.reduce((sum, row) => sum + row.variance, 0);
     const totalDebts = reconciliationData.reduce((sum, row) => sum + row.totalDebts, 0);
     const totalCashCollections = reconciliationData.reduce((sum, row) => sum + row.cashCollections, 0);
@@ -217,6 +255,8 @@ const EnhancedSummaryModal = ({
       totalCashDrops,
       totalSales,
       totalReceipts,
+      totalAutoExpenses,
+      totalManualExpenses,
       totalExpenses,
       totalVariance,
       totalDebts,
@@ -270,6 +310,8 @@ const EnhancedSummaryModal = ({
       overallStats: overallTotals,
       walletBalance,
       debtorBreakdown,
+      expenseBreakdown,
+      autoExpenses: autoExpenses,
       reconciliationNotes: reconciliationNotes.trim(),
       timestamp: new Date().toISOString(),
       generatedBy: `${currentUser?.firstName} ${currentUser?.lastName}`,
@@ -292,6 +334,11 @@ const EnhancedSummaryModal = ({
             <Text type="secondary" style={{ fontSize: '10px' }}>
               {record.attendants.length} attendant(s)
             </Text>
+          )}
+          {record.autoExpenses > 0 && (
+            <Tag size="small" color="orange" style={{ marginTop: 2 }}>
+              Auto Exp: {formatCurrency(record.autoExpenses)}
+            </Tag>
           )}
         </Space>
       ),
@@ -322,6 +369,29 @@ const EnhancedSummaryModal = ({
           {record.debtCollections.length > 0 && (
             <Text type="secondary" style={{ fontSize: '10px' }}>
               {record.debtCollections.length} transaction(s)
+            </Text>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: 'EXPENSES',
+      dataIndex: 'totalExpenses',
+      key: 'totalExpenses',
+      width: 130,
+      align: 'right',
+      render: (amount, record) => (
+        <Space direction="vertical" size={0} align="end">
+          <Text strong style={{ 
+            fontSize: '13px', 
+            color: amount > 0 ? '#ff4d4f' : '#52c41a',
+            fontWeight: 'bold' 
+          }}>
+            {formatCurrency(amount)}
+          </Text>
+          {record.autoExpenses > 0 && (
+            <Text type="secondary" style={{ fontSize: '10px' }}>
+              Auto: {formatCurrency(record.autoExpenses)}
             </Text>
           )}
         </Space>
@@ -430,6 +500,66 @@ const EnhancedSummaryModal = ({
     },
   ];
 
+  // Expense Breakdown Table
+  const expenseColumns = [
+    {
+      title: 'ISLAND',
+      dataIndex: 'islandName',
+      key: 'islandName',
+      width: 150,
+      render: (name, record) => (
+        <Space direction="vertical" size={1}>
+          <Text strong style={{ fontSize: '13px' }}>{name}</Text>
+          {record.hasAutoExpenses && (
+            <Tag size="small" color="orange" style={{ marginTop: 2 }}>
+              {record.autoExpenseDetails.length} auto expense(s)
+            </Tag>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: 'AUTO EXPENSES',
+      dataIndex: 'autoExpenses',
+      key: 'autoExpenses',
+      width: 130,
+      align: 'right',
+      render: (amount) => (
+        <Text strong style={{ fontSize: '13px', color: '#fa8c16' }}>
+          {formatCurrency(amount)}
+        </Text>
+      ),
+    },
+    {
+      title: 'MANUAL EXPENSES',
+      dataIndex: 'manualExpenses',
+      key: 'manualExpenses',
+      width: 130,
+      align: 'right',
+      render: (amount) => (
+        <Text strong style={{ fontSize: '13px', color: '#ff4d4f' }}>
+          {formatCurrency(amount)}
+        </Text>
+      ),
+    },
+    {
+      title: 'TOTAL EXPENSES',
+      dataIndex: 'totalExpenses',
+      key: 'totalExpenses',
+      width: 130,
+      align: 'right',
+      render: (amount) => (
+        <Text strong style={{ 
+          fontSize: '14px', 
+          color: '#ff4d4f',
+          fontWeight: 'bold' 
+        }}>
+          {formatCurrency(amount)}
+        </Text>
+      ),
+    },
+  ];
+
   // Save report using fileSystemService
   const saveReportToFileSystem = async () => {
     try {
@@ -466,7 +596,7 @@ const EnhancedSummaryModal = ({
     }
   };
 
-  // Enhanced PDF Generation
+  // Enhanced PDF Generation with Expenses
   const generatePDF = async () => {
     return new Promise((resolve, reject) => {
       try {
@@ -486,6 +616,7 @@ const EnhancedSummaryModal = ({
         const successColor = [39, 174, 96];
         const warningColor = [241, 196, 15];
         const dangerColor = [231, 76, 60];
+        const expenseColor = [230, 126, 34];
         
         let yPosition = 25;
         const margin = 15;
@@ -519,8 +650,9 @@ const EnhancedSummaryModal = ({
           ['Total Sales', formatCurrency(overallTotals.totalSales)],
           ['Cash Drops', formatCurrency(overallTotals.totalCashDrops)],
           ['Debt Collections', formatCurrency(overallTotals.totalDebts)],
-          ['Receipts', formatCurrency(overallTotals.totalReceipts)],
-          ['Expenses', formatCurrency(overallTotals.totalExpenses)],
+          ['Auto Expenses', formatCurrency(overallTotals.totalAutoExpenses)],
+          ['Manual Expenses', formatCurrency(overallTotals.totalManualExpenses)],
+          ['Total Expenses', formatCurrency(overallTotals.totalExpenses)],
           ['Total Variance', formatCurrency(Math.abs(overallTotals.totalVariance))],
           ['Status', overallTotals.totalVariance === 0 ? 'BALANCED' : overallTotals.totalVariance > 0 ? 'SHORT' : 'OVER']
         ];
@@ -555,6 +687,7 @@ const EnhancedSummaryModal = ({
           row.islandName,
           formatCurrency(row.cashDrops),
           formatCurrency(row.totalDebts),
+          formatCurrency(row.totalExpenses),
           row.shortageStatus,
           formatCurrency(Math.abs(row.variance)),
           row.shortagePosted ? 'Posted' : 'Complete'
@@ -562,7 +695,7 @@ const EnhancedSummaryModal = ({
         
         autoTable(doc, {
           startY: yPosition,
-          head: [['Island', 'Cash Drops', 'Debt Collections', 'Short/Over', 'Variance', 'Status']],
+          head: [['Island', 'Cash Drops', 'Debt Collections', 'Expenses', 'Short/Over', 'Variance', 'Status']],
           body: islandTableData,
           margin: { left: margin, right: margin },
           headStyles: { 
@@ -572,12 +705,13 @@ const EnhancedSummaryModal = ({
           },
           bodyStyles: { fontSize: 9 },
           columnStyles: {
-            0: { cellWidth: 50 },
-            1: { cellWidth: 40, halign: 'right' },
-            2: { cellWidth: 45, halign: 'right' },
-            3: { cellWidth: 35, halign: 'center' },
-            4: { cellWidth: 40, halign: 'right' },
-            5: { cellWidth: 35, halign: 'center' }
+            0: { cellWidth: 45 },
+            1: { cellWidth: 35, halign: 'right' },
+            2: { cellWidth: 40, halign: 'right' },
+            3: { cellWidth: 35, halign: 'right' },
+            4: { cellWidth: 30, halign: 'center' },
+            5: { cellWidth: 35, halign: 'right' },
+            6: { cellWidth: 30, halign: 'center' }
           }
         });
         
@@ -588,6 +722,7 @@ const EnhancedSummaryModal = ({
             'TOTAL',
             formatCurrency(overallTotals.totalCashDrops),
             formatCurrency(overallTotals.totalDebts),
+            formatCurrency(overallTotals.totalExpenses),
             overallTotals.totalVariance === 0 ? 'BALANCED' : overallTotals.totalVariance > 0 ? 'SHORT' : 'OVER',
             formatCurrency(Math.abs(overallTotals.totalVariance)),
             `${overallTotals.islandsBalanced}/${overallTotals.totalIslands} Balanced`
@@ -598,16 +733,75 @@ const EnhancedSummaryModal = ({
             fillColor: [240, 240, 240]
           },
           columnStyles: {
-            0: { cellWidth: 50 },
-            1: { cellWidth: 40, halign: 'right' },
-            2: { cellWidth: 45, halign: 'right' },
-            3: { cellWidth: 35, halign: 'center' },
-            4: { cellWidth: 40, halign: 'right' },
-            5: { cellWidth: 35, halign: 'center' }
+            0: { cellWidth: 45 },
+            1: { cellWidth: 35, halign: 'right' },
+            2: { cellWidth: 40, halign: 'right' },
+            3: { cellWidth: 35, halign: 'right' },
+            4: { cellWidth: 30, halign: 'center' },
+            5: { cellWidth: 35, halign: 'right' },
+            6: { cellWidth: 30, halign: 'center' }
           }
         });
         
         yPosition = doc.lastAutoTable.finalY + 10;
+        
+        // ================= EXPENSE BREAKDOWN TABLE =================
+        if (expenseBreakdown.length > 0) {
+          doc.setFontSize(12);
+          doc.setFont('helvetica', 'bold');
+          doc.text('EXPENSE BREAKDOWN', margin, yPosition);
+          yPosition += 8;
+          
+          const expenseTableData = expenseBreakdown.map(row => [
+            row.islandName,
+            formatCurrency(row.autoExpenses),
+            formatCurrency(row.manualExpenses),
+            formatCurrency(row.totalExpenses)
+          ]);
+          
+          autoTable(doc, {
+            startY: yPosition,
+            head: [['Island', 'Auto Expenses', 'Manual Expenses', 'Total Expenses']],
+            body: expenseTableData,
+            margin: { left: margin, right: margin },
+            headStyles: { 
+              fillColor: [...expenseColor],
+              textColor: [255, 255, 255],
+              fontSize: 9
+            },
+            bodyStyles: { fontSize: 9 },
+            columnStyles: {
+              0: { cellWidth: 60 },
+              1: { cellWidth: 45, halign: 'right' },
+              2: { cellWidth: 45, halign: 'right' },
+              3: { cellWidth: 45, halign: 'right' }
+            }
+          });
+          
+          // Add expense summary
+          doc.autoTable({
+            startY: doc.lastAutoTable.finalY,
+            body: [[
+              'TOTAL EXPENSES',
+              formatCurrency(overallTotals.totalAutoExpenses),
+              formatCurrency(overallTotals.totalManualExpenses),
+              formatCurrency(overallTotals.totalExpenses)
+            ]],
+            styles: { 
+              fontSize: 10,
+              fontStyle: 'bold',
+              fillColor: [255, 243, 205]
+            },
+            columnStyles: {
+              0: { cellWidth: 60 },
+              1: { cellWidth: 45, halign: 'right' },
+              2: { cellWidth: 45, halign: 'right' },
+              3: { cellWidth: 45, halign: 'right' }
+            }
+          });
+          
+          yPosition = doc.lastAutoTable.finalY + 10;
+        }
         
         // ================= DEBTOR COLLECTIONS TABLE =================
         doc.setFontSize(12);
@@ -672,40 +866,8 @@ const EnhancedSummaryModal = ({
           yPosition += 10;
         }
         
-        // ================= CASH SUMMARY =================
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.text('CASH SUMMARY', margin, yPosition);
-        yPosition += 8;
-        
-        const cashSummaryData = [
-          ['Station Wallet Previous Balance', formatCurrency(walletBalance)],
-          ['Total Sales Revenue', formatCurrency(overallTotals.totalSales)],
-          ['Total Cash Collected', formatCurrency(overallTotals.totalCashDrops)],
-          ['Total Debt Collected', formatCurrency(overallTotals.totalDebts)],
-          ['Net Variance', formatCurrency(Math.abs(overallTotals.totalVariance))],
-          ['New Wallet Balance', formatCurrency(walletBalance + overallTotals.totalSales)]
-        ];
-        
-        autoTable(doc, {
-          startY: yPosition,
-          head: [['Item', 'Amount']],
-          body: cashSummaryData,
-          margin: { left: margin, right: margin },
-          headStyles: { 
-            fillColor: [...warningColor],
-            textColor: [0, 0, 0],
-            fontSize: 10
-          },
-          bodyStyles: { fontSize: 10 },
-          columnStyles: {
-            0: { cellWidth: 100, fontStyle: 'bold' },
-            1: { cellWidth: 60, halign: 'right' }
-          }
-        });
-        
         // ================= RECONCILIATION NOTES =================
-        yPosition = doc.lastAutoTable.finalY + 10;
+        yPosition = Math.max(doc.lastAutoTable?.finalY || yPosition, yPosition) + 10;
         
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
@@ -805,66 +967,44 @@ const EnhancedSummaryModal = ({
   };
 
   // Handle final submission
-  // Handle final submission - UPDATED PAYLOAD FORMAT
   const handleFinalSubmit = async () => {
-  if (!reconciliationNotes.trim()) {
-    message.warning('Please add reconciliation notes before submitting');
-    return;
-  }
-
-  setSubmitting(true);
-  
-  try {
-    // Save report to file system
-    const saveResult = await saveReportToFileSystem();
-    
-    if (saveResult.success) {
-      // ================== CORRECT PAYLOAD FORMAT ==================
-      // Use the apiPayload from parent, but ensure it has reconciliationNotes
-      const finalPayload = {
-        ...apiPayload, // This comes from IntegratedShiftClose.jsx's prepareSummaryData()
-        reconciliationNotes: reconciliationNotes.trim(),
-        // Don't add extra fields that backend doesn't expect
-      };
-
-      console.log('🚀 FINAL PAYLOAD FOR SUBMISSION:', JSON.stringify(finalPayload, null, 2));
-      
-      // Validate payload has required fields
-      if (!finalPayload.pumpReadings || !Array.isArray(finalPayload.pumpReadings)) {
-        throw new Error('Missing pump readings');
-      }
-      if (!finalPayload.tankReadings || !Array.isArray(finalPayload.tankReadings)) {
-        throw new Error('Missing tank readings');
-      }
-      if (!finalPayload.islandCollections || !Array.isArray(finalPayload.islandCollections)) {
-        throw new Error('Missing island collections');
-      }
-      
-      // Call parent submit function with the correct payload
-      await onSubmitShift(finalPayload, saveResult.file?.path);
-      
-      message.success('Shift submitted successfully with report!');
-      
-      // Close modal after successful submission
-      setTimeout(() => onClose(), 1500);
-    } else {
-      throw new Error(saveResult.message || 'Failed to save report');
+    if (!reconciliationNotes.trim()) {
+      message.warning('Please add reconciliation notes before submitting');
+      return;
     }
+
+    setSubmitting(true);
     
-  } catch (error) {
-    console.error('Error in final submission:', error);
-    message.error(`Failed to submit shift: ${error.message}`);
-    
-    // Show validation errors if available
-    if (error.response?.data?.errors) {
-      error.response.data.errors.forEach(err => {
-        message.error(`${err.field}: ${err.message}`);
-      });
+    try {
+      // Save report to file system
+      const saveResult = await saveReportToFileSystem();
+      
+      if (saveResult.success) {
+        // Call parent function with report path
+        await onSubmitShift(saveResult.file?.path);
+        
+        message.success('Shift submitted successfully with report!');
+        
+        // Close modal after successful submission
+        setTimeout(() => onClose(), 1500);
+      } else {
+        throw new Error(saveResult.message || 'Failed to save report');
+      }
+      
+    } catch (error) {
+      console.error('Error in final submission:', error);
+      message.error(`Failed to submit shift: ${error.message}`);
+      
+      // Show validation errors if available
+      if (error.response?.data?.errors) {
+        error.response.data.errors.forEach(err => {
+          message.error(`${err.field}: ${err.message}`);
+        });
+      }
+    } finally {
+      setSubmitting(false);
     }
-  } finally {
-    setSubmitting(false);
-  }
-};
+  };
 
   const handleBackToShiftManagement = () => {
     onClose();
@@ -933,6 +1073,37 @@ const EnhancedSummaryModal = ({
           </Col>
           <Col xs={12} sm={6}>
             <Card size="small" style={{ 
+              background: '#fff7e6',
+              border: '2px solid #fa8c16'
+            }}>
+              <Statistic
+                title="Total Expenses"
+                value={overallTotals.totalExpenses}
+                precision={0}
+                prefix="KES"
+                valueStyle={{ 
+                  color: '#fa8c16',
+                  fontSize: '16px',
+                  fontWeight: 'bold'
+                }}
+                suffix={
+                  overallTotals.totalAutoExpenses > 0 && (
+                    <Tooltip title={`KES ${overallTotals.totalAutoExpenses} auto expenses`}>
+                      <Badge 
+                        count="Auto" 
+                        style={{ 
+                          backgroundColor: '#fa8c16',
+                          marginLeft: 4
+                        }}
+                      />
+                    </Tooltip>
+                  )
+                }
+              />
+            </Card>
+          </Col>
+          <Col xs={12} sm={6}>
+            <Card size="small" style={{ 
               background: overallTotals.totalVariance >= 0 ? '#fff2e8' : '#fff7e6',
               border: `2px solid ${overallTotals.totalVariance >= 0 ? '#fa541c' : '#faad14'}`
             }}>
@@ -949,28 +1120,126 @@ const EnhancedSummaryModal = ({
               />
             </Card>
           </Col>
-          <Col xs={12} sm={6}>
-            <Card size="small" style={{ background: '#f9f0ff', border: '2px solid #722ed1' }}>
-              <Statistic
-                title="Debt Collections"
-                value={overallTotals.totalDebts}
-                precision={0}
-                prefix="KES"
-                valueStyle={{ color: '#722ed1', fontSize: '16px', fontWeight: 'bold' }}
-                suffix={
-                  <Badge 
-                    count={debtorBreakdown.length} 
-                    style={{ 
-                      backgroundColor: '#722ed1',
-                      marginLeft: 4
-                    }}
-                    title="Debtors"
-                  />
-                }
-              />
-            </Card>
-          </Col>
         </Row>
+
+        {/* Expense Breakdown Section */}
+        {expenseBreakdown.length > 0 && (
+          <Card
+            title={
+              <Space>
+                <ReceiptIcon size={18} color="#fa8c16" />
+                <Text strong>Expense Breakdown</Text>
+                <Tag color="orange">{expenseBreakdown.length} Islands with Expenses</Tag>
+                <Text type="secondary" style={{ fontSize: '12px' }}>
+                  Total: {formatCurrency(overallTotals.totalExpenses)}
+                </Text>
+              </Space>
+            }
+            style={{ marginBottom: 24 }}
+          >
+            <div style={{ overflowX: 'auto' }}>
+              <Table
+                columns={expenseColumns}
+                dataSource={expenseBreakdown}
+                pagination={false}
+                size="middle"
+                scroll={{ x: 600 }}
+                style={{ minWidth: 600 }}
+                expandable={{
+                  expandedRowRender: (record) => (
+                    <div style={{ padding: '12px', backgroundColor: '#fafafa', borderRadius: '4px' }}>
+                      {record.hasAutoExpenses ? (
+                        <>
+                          <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                            Auto-Loaded Expenses ({record.autoExpenseDetails.length}):
+                          </Text>
+                          <List
+                            size="small"
+                            dataSource={record.autoExpenseDetails}
+                            renderItem={(expense, idx) => (
+                              <List.Item>
+                                <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <Text style={{ fontSize: '12px' }}>
+                                      {expense.title || expense.description || 'Expense'}
+                                    </Text>
+                                    <Text strong style={{ fontSize: '12px', color: '#fa8c16' }}>
+                                      {formatCurrency(expense.amount)}
+                                    </Text>
+                                  </div>
+                                  {expense.description && (
+                                    <Text type="secondary" style={{ fontSize: '11px' }}>
+                                      {expense.description}
+                                    </Text>
+                                  )}
+                                  {expense.category && (
+                                    <Tag size="small" color="blue" style={{ fontSize: '10px' }}>
+                                      {expense.category}
+                                    </Tag>
+                                  )}
+                                </Space>
+                              </List.Item>
+                            )}
+                          />
+                        </>
+                      ) : (
+                        <Text type="secondary" style={{ fontSize: '12px' }}>
+                          No auto-loaded expenses. All expenses were entered manually during shift closing.
+                        </Text>
+                      )}
+                      
+                      {record.manualExpenses > 0 && (
+                        <div style={{ marginTop: 16 }}>
+                          <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                            Manual Expenses (Entered During Shift Closing):
+                          </Text>
+                          <Alert
+                            message={`KES ${record.manualExpenses.toFixed(2)}`}
+                            description="Manually entered expenses for this island."
+                            type="info"
+                            showIcon
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ),
+                  rowExpandable: (record) => record.hasAutoExpenses || record.manualExpenses > 0,
+                  expandedRowKeys: Object.keys(showExpenseDetails).filter(key => showExpenseDetails[key]),
+                  onExpand: (expanded, record) => {
+                    setShowExpenseDetails(prev => ({
+                      ...prev,
+                      [record.islandId || record.islandName]: expanded
+                    }));
+                  }
+                }}
+                summary={() => (
+                  <Table.Summary>
+                    <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
+                      <Table.Summary.Cell index={0} colSpan={2}>
+                        <Text strong>TOTAL EXPENSES</Text>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={1} align="right">
+                        <Text strong style={{ color: '#fa8c16', fontSize: '14px' }}>
+                          {formatCurrency(overallTotals.totalAutoExpenses)}
+                        </Text>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={2} align="right">
+                        <Text strong style={{ color: '#ff4d4f', fontSize: '14px' }}>
+                          {formatCurrency(overallTotals.totalManualExpenses)}
+                        </Text>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={3} align="right">
+                        <Text strong style={{ color: '#ff4d4f', fontSize: '14px' }}>
+                          {formatCurrency(overallTotals.totalExpenses)}
+                        </Text>
+                      </Table.Summary.Cell>
+                    </Table.Summary.Row>
+                  </Table.Summary>
+                )}
+              />
+            </div>
+          </Card>
+        )}
 
         {/* Island Reconciliation Table */}
         <Card
@@ -1012,7 +1281,17 @@ const EnhancedSummaryModal = ({
                         {formatCurrency(overallTotals.totalDebts)}
                       </Text>
                     </Table.Summary.Cell>
-                    <Table.Summary.Cell index={3} align="center">
+                    <Table.Summary.Cell index={3} align="right">
+                      <Text strong style={{ color: '#ff4d4f', fontSize: '14px' }}>
+                        {formatCurrency(overallTotals.totalExpenses)}
+                      </Text>
+                      {overallTotals.totalAutoExpenses > 0 && (
+                        <div style={{ fontSize: '11px', color: '#fa8c16' }}>
+                          (Auto: {formatCurrency(overallTotals.totalAutoExpenses)})
+                        </div>
+                      )}
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={4} align="center">
                       <Tag color={
                         overallTotals.totalVariance === 0 ? 'green' : 
                         overallTotals.totalVariance > 0 ? 'red' : 'gold'
@@ -1021,7 +1300,7 @@ const EnhancedSummaryModal = ({
                          overallTotals.totalVariance > 0 ? 'SHORT' : 'OVER'}
                       </Tag>
                     </Table.Summary.Cell>
-                    <Table.Summary.Cell index={4} align="right">
+                    <Table.Summary.Cell index={5} align="right">
                       <Text strong style={{ 
                         color: overallTotals.totalVariance === 0 ? '#52c41a' : 
                                overallTotals.totalVariance > 0 ? '#fa541c' : '#faad14',
@@ -1038,88 +1317,90 @@ const EnhancedSummaryModal = ({
         </Card>
 
         {/* Debtor Collections Table */}
-        <Card
-          title={
-            <Space>
-              <Users size={18} color="#722ed1" />
-              <Text strong>Debtor Collections</Text>
-              <Tag color="purple">{debtorBreakdown.length} Debtors</Tag>
-              <Text type="secondary" style={{ fontSize: '12px' }}>
-                Total: {formatCurrency(overallTotals.totalDebts)}
-              </Text>
-            </Space>
-          }
-          style={{ marginBottom: 24 }}
-        >
-          <div style={{ overflowX: 'auto' }}>
-            <Table
-              columns={debtorColumns}
-              dataSource={debtorBreakdown}
-              pagination={false}
-              size="middle"
-              scroll={{ x: 600 }}
-              style={{ minWidth: 600 }}
-              expandable={{
-                expandedRowRender: (record) => (
-                  <div style={{ padding: '12px', backgroundColor: '#fafafa', borderRadius: '4px' }}>
-                    <Text strong style={{ display: 'block', marginBottom: 8 }}>Transaction Details:</Text>
-                    <List
-                      size="small"
-                      dataSource={record.transactions}
-                      renderItem={(transaction, idx) => (
-                        <List.Item>
-                          <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <Text style={{ fontSize: '12px' }}>{transaction.island}</Text>
-                              <Text strong style={{ fontSize: '12px', color: '#722ed1' }}>
-                                {formatCurrency(transaction.amount)}
-                              </Text>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <Text type="secondary" style={{ fontSize: '11px' }}>
-                                {transaction.date}
-                              </Text>
-                              <Text type="secondary" style={{ fontSize: '11px' }}>
-                                {transaction.time}
-                              </Text>
-                            </div>
-                          </Space>
-                        </List.Item>
-                      )}
-                    />
-                  </div>
-                ),
-                rowExpandable: (record) => record.transactions.length > 0,
-                expandedRowKeys: Object.keys(showDebtorDetails).filter(key => showDebtorDetails[key]),
-                onExpand: (expanded, record) => {
-                  setShowDebtorDetails(prev => ({
-                    ...prev,
-                    [record.id || record.name]: expanded
-                  }));
-                }
-              }}
-              summary={() => (
-                <Table.Summary>
-                  <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
-                    <Table.Summary.Cell index={0} colSpan={2}>
-                      <Text strong>TOTAL DEBT COLLECTIONS</Text>
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell index={1} align="right">
-                      <Text strong style={{ color: '#722ed1', fontSize: '14px' }}>
-                        {formatCurrency(overallTotals.totalDebts)}
-                      </Text>
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell index={2} align="center">
-                      <Text strong>
-                        {debtorBreakdown.reduce((sum, d) => sum + d.transactions.length, 0)} transactions
-                      </Text>
-                    </Table.Summary.Cell>
-                  </Table.Summary.Row>
-                </Table.Summary>
-              )}
-            />
-          </div>
-        </Card>
+        {debtorBreakdown.length > 0 && (
+          <Card
+            title={
+              <Space>
+                <Users size={18} color="#722ed1" />
+                <Text strong>Debtor Collections</Text>
+                <Tag color="purple">{debtorBreakdown.length} Debtors</Tag>
+                <Text type="secondary" style={{ fontSize: '12px' }}>
+                  Total: {formatCurrency(overallTotals.totalDebts)}
+                </Text>
+              </Space>
+            }
+            style={{ marginBottom: 24 }}
+          >
+            <div style={{ overflowX: 'auto' }}>
+              <Table
+                columns={debtorColumns}
+                dataSource={debtorBreakdown}
+                pagination={false}
+                size="middle"
+                scroll={{ x: 600 }}
+                style={{ minWidth: 600 }}
+                expandable={{
+                  expandedRowRender: (record) => (
+                    <div style={{ padding: '12px', backgroundColor: '#fafafa', borderRadius: '4px' }}>
+                      <Text strong style={{ display: 'block', marginBottom: 8 }}>Transaction Details:</Text>
+                      <List
+                        size="small"
+                        dataSource={record.transactions}
+                        renderItem={(transaction, idx) => (
+                          <List.Item>
+                            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <Text style={{ fontSize: '12px' }}>{transaction.island}</Text>
+                                <Text strong style={{ fontSize: '12px', color: '#722ed1' }}>
+                                  {formatCurrency(transaction.amount)}
+                                </Text>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <Text type="secondary" style={{ fontSize: '11px' }}>
+                                  {transaction.date}
+                                </Text>
+                                <Text type="secondary" style={{ fontSize: '11px' }}>
+                                  {transaction.time}
+                                </Text>
+                              </div>
+                            </Space>
+                          </List.Item>
+                        )}
+                      />
+                    </div>
+                  ),
+                  rowExpandable: (record) => record.transactions.length > 0,
+                  expandedRowKeys: Object.keys(showDebtorDetails).filter(key => showDebtorDetails[key]),
+                  onExpand: (expanded, record) => {
+                    setShowDebtorDetails(prev => ({
+                      ...prev,
+                      [record.id || record.name]: expanded
+                    }));
+                  }
+                }}
+                summary={() => (
+                  <Table.Summary>
+                    <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
+                      <Table.Summary.Cell index={0} colSpan={2}>
+                        <Text strong>TOTAL DEBT COLLECTIONS</Text>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={1} align="right">
+                        <Text strong style={{ color: '#722ed1', fontSize: '14px' }}>
+                          {formatCurrency(overallTotals.totalDebts)}
+                        </Text>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={2} align="center">
+                        <Text strong>
+                          {debtorBreakdown.reduce((sum, d) => sum + d.transactions.length, 0)} transactions
+                        </Text>
+                      </Table.Summary.Cell>
+                    </Table.Summary.Row>
+                  </Table.Summary>
+                )}
+              />
+            </div>
+          </Card>
+        )}
 
         {/* Cash Summary Section */}
         <Card
@@ -1163,14 +1444,20 @@ const EnhancedSummaryModal = ({
                     </Text>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Text>Expenses:</Text>
+                    <Text>Auto Expenses:</Text>
+                    <Text strong style={{ color: '#fa8c16' }}>
+                      {formatCurrency(overallTotals.totalAutoExpenses)}
+                    </Text>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Text>Manual Expenses:</Text>
                     <Text strong style={{ color: '#ff4d4f' }}>
-                      {formatCurrency(overallTotals.totalExpenses)}
+                      {formatCurrency(overallTotals.totalManualExpenses)}
                     </Text>
                   </div>
                   <Divider style={{ margin: '8px 0' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Text strong>Total Collected:</Text>
+                    <Text strong>Net Collected:</Text>
                     <Text strong style={{ fontSize: '16px', color: '#1890ff' }}>
                       {formatCurrency(overallTotals.totalCollected)}
                     </Text>
@@ -1203,11 +1490,18 @@ const EnhancedSummaryModal = ({
                       {formatCurrency(overallTotals.totalSales)}
                     </Text>
                   </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Text>Total Expenses:</Text>
+                    <Text strong style={{ color: '#ff4d4f' }}>
+                      {formatCurrency(overallTotals.totalExpenses)}
+                    </Text>
+                  </div>
                   <Progress
-                    percent={Math.min(100, (overallTotals.totalSales / (walletBalance + overallTotals.totalSales)) * 100)}
+                    percent={Math.min(100, ((overallTotals.totalSales - overallTotals.totalExpenses) / (walletBalance + overallTotals.totalSales)) * 100)}
                     strokeColor={{
                       '0%': '#1890ff',
-                      '100%': '#52c41a',
+                      '50%': '#52c41a',
+                      '100%': '#fa8c16',
                     }}
                     style={{ margin: '8px 0' }}
                   />
@@ -1215,7 +1509,7 @@ const EnhancedSummaryModal = ({
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Text strong>New Balance:</Text>
                     <Text strong style={{ fontSize: '18px', color: '#1890ff' }}>
-                      {formatCurrency(walletBalance + overallTotals.totalSales)}
+                      {formatCurrency(walletBalance + overallTotals.totalSales - overallTotals.totalExpenses)}
                     </Text>
                   </div>
                 </Space>
@@ -1239,7 +1533,7 @@ const EnhancedSummaryModal = ({
         >
           <Input.TextArea
             rows={4}
-            placeholder="Enter detailed reconciliation notes, explanation of variances, special circumstances, or additional comments..."
+            placeholder="Enter detailed reconciliation notes, explanation of variances, expense details, special circumstances, or additional comments..."
             value={reconciliationNotes}
             onChange={(e) => setReconciliationNotes(e.target.value)}
             maxLength={500}
@@ -1351,7 +1645,7 @@ const EnhancedSummaryModal = ({
                     {saveResult.metadata && (
                       <div style={{ marginTop: 8 }}>
                         <Text type="secondary" style={{ fontSize: '11px' }}>
-                          {saveResult.metadata.dataPoints?.islands} islands • {saveResult.metadata.dataPoints?.debtors} debtors • {saveResult.metadata.dataPoints?.totalTransactions} transactions
+                          {saveResult.metadata.dataPoints?.islands} islands • {saveResult.metadata.dataPoints?.debtors} debtors • {saveResult.metadata.dataPoints?.totalTransactions} transactions • {overallTotals.totalAutoExpenses > 0 ? `${expenseBreakdown.length} islands with auto expenses` : 'No auto expenses'}
                         </Text>
                       </div>
                     )}
