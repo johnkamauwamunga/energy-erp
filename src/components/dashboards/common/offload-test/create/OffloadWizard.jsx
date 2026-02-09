@@ -54,7 +54,7 @@ const OffloadWizard = ({ visible, purchase, onClose, onComplete, stationId, user
   const [productBaseCost, setProductBaseCost] = useState(0);
   const [sellingPrice, setSellingPrice] = useState(0);
   const [currentShiftId, setCurrentShiftId] = useState("");
-  
+  const [errorMessage, setErrorMessage]=useState("")
   // Single source of truth for all form data
   const [formData, setFormData] = useState({
     // Step 0: Delivery Information
@@ -117,7 +117,8 @@ const OffloadWizard = ({ visible, purchase, onClose, onComplete, stationId, user
             const topologyTanks = topologyResult.data?.tanks || [];
             const purchaseProductId = purchase.items[0]?.product?.id;
             
-            console.log('🎯 Looking for product ID:', purchaseProductId);
+            console.log('🎯 Looking for product ID:', purchase.items[0]);
+            console.log("the tank bears the productId ",)
             
             // Filter tanks that match the purchase product
             const compatibleTanks = topologyTanks.filter(tank => {
@@ -476,6 +477,8 @@ const OffloadWizard = ({ visible, purchase, onClose, onComplete, stationId, user
       
     } catch (error) {
       console.error('❌ Error submitting offload:', error);
+      let msg="Failed to submit, please try again"
+      setErrorMessage(msg)
       message.error(error.message || 'Failed to complete offload. Please try again.');
     } finally {
       setLoading(false);
@@ -1150,12 +1153,22 @@ const OffloadWizard = ({ visible, purchase, onClose, onComplete, stationId, user
       case 3:
         return (
           <div className="space-y-4">
-            <Alert
+            {errorMessage ?(
+               <Alert
+              message="Error Occured"
+              description="Failed to submit offload info, please try again or consult IT"
+              type="warning"
+              showIcon
+            />
+            ):(
+                <Alert
               message="Ready to Complete Offload"
               description="Please review all information before completing the offload process."
               type="info"
               showIcon
             />
+            )}
+       
 
             <Card 
               title="📊 Offload Summary" 

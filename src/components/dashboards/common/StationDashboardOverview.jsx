@@ -376,7 +376,7 @@ const StationDashboardOverview = () => {
     //   );
     // }
 
-    const shiftStatus = shiftId ? 'OPEN' : 'NO_SHIFT';
+    const shiftStatus = currentShift ? 'OPEN' : 'NO_SHIFT';
     const statusConfig = {
       OPEN: {
         color: 'green',
@@ -412,12 +412,9 @@ const StationDashboardOverview = () => {
             <div>
               <Text strong style={{ color: config.textColor }}>Current Shift</Text>
               <br />
-              {shiftId ? (
+              {currentShift ? (
                 <Space direction="vertical" size={0}>
                   <Text>ReF#: {currentShift?.shiftNumber}</Text>
-                  {/* <Text type="secondary" style={{ fontSize: '12px' }}>
-                    Started: {currentShift.startTime ? new Date(currentShift.startTime).toLocaleString() : 'N/A'}
-                  </Text> */}
                 </Space>
               ) : (
                 <Text style={{ color: config.textColor }}>No shift currently active</Text>
