@@ -42,7 +42,8 @@ import {
   FileExcelOutlined,
   SettingOutlined,
   AppstoreOutlined,
-  LineChartOutlined
+  LineChartOutlined,
+  FileTextOutlined
 } from '@ant-design/icons';
 import { shortageService } from '../../../../services/shortageService/shortageService';
 import { stationService } from '../../../../services/stationService/stationService';
@@ -63,13 +64,18 @@ const ShortageManagement = () => {
   const [activeTab, setActiveTab] = useState('all');
   const [shortages, setShortages] = useState([]);
   
-  // Modal states - Fixed: Using separate states for better control
+  // Modal states
   const [createShortageModalVisible, setCreateShortageModalVisible] = useState(false);
   const [deductionModalVisible, setDeductionModalVisible] = useState(false);
   const [exportModalVisible, setExportModalVisible] = useState(false);
   const [viewDetailsModalVisible, setViewDetailsModalVisible] = useState(false);
-  const [shortageReportData, setShortageReportData] = useState([]);
   
+  // Report Generator state
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportConfig, setReportConfig] = useState(null);
+  const [reportTitle, setReportTitle] = useState('');
+  
+  const [shortageReportData, setShortageReportData] = useState([]);
   const [selectedStation, setSelectedStation] = useState(null);
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [selectedShortage, setSelectedShortage] = useState(null);
@@ -79,10 +85,6 @@ const ShortageManagement = () => {
   const [loading, setLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [reportColumns, setReportColumns] = useState([]);
-  const [formSubmitting, setFormSubmitting] = useState(false);
-
-  // Create ref for CreateShortageForm
-  const createShortageFormRef = useRef();
 
   const currentUser = state?.currentUser;
   const currentStation = state?.currentStation;
@@ -183,125 +185,50 @@ const ShortageManagement = () => {
     }
   };
 
-  // Prepare data for report generator
-// Prepare data for report generator - UPDATED
-const prepareReportData = (shortagesData) => {
-  const formattedData = shortagesData.map(shortage => {
-    // Extract user info from nested structure
-
-    console.log(" this is the logged shortage data ", shortage);
-    const staffAccount = shortage.ledger?.staffAccount;
-    const user = staffAccount?.user;
-     const station = staffAccount?.station.name;
-  console.log("station info ", station);
+  // Prepare data for report generator - SIMPLIFIED COLUMNS
+  const prepareReportData = (shortagesData) => {
+    const formattedData = shortagesData.map((shortage, index) => {
+      const staffAccount = shortage.ledger?.staffAccount;
+      const user = staffAccount?.user;
+      const station = staffAccount?.station?.name || 'Unknown';
+      
+      return {
+        '#': index + 1,
+        'Staff Name': user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'Unknown',
+        'Station': station,
+        'Amount (KES)': shortage.amount || 0,
+        'Remaining (KES)': shortage.amountRemaining || 0,
+        'Description': shortage.description || '',
+        'Type': shortage.shortageTypeDisplay || shortage.shortageType || 'CASH',
+        'Severity': shortage.severityDisplay || shortage.severity || 'MODERATE',
+        'Status': shortage.statusDisplay || shortage.status || 'ACTIVE',
+        'Shortage Date': shortage.shortageDateDisplay || new Date(shortage.shortageDate || shortage.createdAt).toLocaleDateString(),
+        'Due Date': shortage.dueDateDisplay || (shortage.dueDate ? new Date(shortage.dueDate).toLocaleDateString() : 'No due date'),
+        '% Paid': shortage.amount > 0 ? 
+          ((shortage.amount - (shortage.amountRemaining || 0)) / shortage.amount * 100).toFixed(2) : 0
+      };
+    });
     
-    return {
-      id: shortage.id,
-      staffName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'Unknown',
-      station: station || 'Unknown',
-      amount: shortage.amount || 0,
-      amountDisplay: shortage.amountDisplay || `Ksh ${(shortage.amount || 0).toLocaleString()}`,
-      amountRemaining: shortage.amountRemaining || 0,
-      amountRemainingDisplay: `Ksh ${(shortage.amountRemaining || 0).toLocaleString()}`,
-      description: shortage.description || '',
-      shortageType: shortage.shortageTypeDisplay || shortage.shortageType || 'CASH',
-      severity: shortage.severityDisplay || shortage.severity || 'MODERATE',
-      status: shortage.statusDisplay || shortage.status || 'ACTIVE',
-      responsibleParty: shortage.responsiblePartyDisplay || shortage.responsibleParty || 'ATTENDANT',
-      shortageDate: shortage.shortageDateDisplay || new Date(shortage.shortageDate || shortage.createdAt).toLocaleDateString(),
-      dueDate: shortage.dueDateDisplay || (shortage.dueDate ? new Date(shortage.dueDate).toLocaleDateString() : 'No due date'),
-      daysUntilDue: shortage.daysUntilDueDisplay || shortage.daysUntilDue || '',
-      isOverdue: shortage.isOverdue || false,
-      isCritical: shortage.severity === 'CRITICAL',
-      totalDeducted: shortage.totalDeducted || 0,
-      totalDeductedDisplay: `Ksh ${(shortage.totalDeducted || 0).toLocaleString()}`,
-      percentagePaid: shortage.amount > 0 ? 
-        ((shortage.amount - (shortage.amountRemaining || 0)) / shortage.amount * 100).toFixed(2) : 0,
-      recordedBy: shortage.recordedByDisplay || ''
-    };
-  });
-  
-  setShortageReportData(formattedData);
-  
-  // Define report columns
-  const columns = [
-    {
-      title: 'Staff Name',
-      dataIndex: 'staffName',
-      type: 'text',
-      width: 150,
-      render: (text, record) => text
-    },
-    {
-      title: 'Station',
-      dataIndex: 'station',
-      type: 'text',
-      width: 120
-    },
-    {
-      title: 'Amount',
-      dataIndex: 'amount',
-      type: 'currency',
-      width: 100
-    },
-    {
-      title: 'Remaining',
-      dataIndex: 'amountRemaining',
-      type: 'currency',
-      width: 100
-    },
-    {
-      title: 'Description',
-      dataIndex: 'description',
-      type: 'text',
-      width: 200
-    },
-    {
-      title: 'Type',
-      dataIndex: 'shortageType',
-      type: 'text',
-      width: 80
-    },
-    {
-      title: 'Severity',
-      dataIndex: 'severity',
-      type: 'text',
-      width: 80
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      type: 'text',
-      width: 100
-    },
-    {
-      title: 'Shortage Date',
-      dataIndex: 'shortageDate',
-      type: 'date',
-      width: 100
-    },
-    {
-      title: 'Due Date',
-      dataIndex: 'dueDate',
-      type: 'date',
-      width: 100
-    },
-    {
-      title: 'Days Remaining',
-      dataIndex: 'daysUntilDue',
-      type: 'text',
-      width: 100
-    },
-    {
-      title: '% Paid',
-      dataIndex: 'percentagePaid',
-      type: 'percentage',
-      width: 80
-    }
-  ];
-  
-  setReportColumns(columns);
-};
+    setShortageReportData(formattedData);
+    
+    // Define report columns - SIMPLIFIED
+    const columns = [
+      { title: '#', dataIndex: '#', key: 'index', width: 50, type: 'number' },
+      { title: 'Staff Name', dataIndex: 'Staff Name', key: 'staffName', width: 150, type: 'text' },
+      { title: 'Station', dataIndex: 'Station', key: 'station', width: 120, type: 'text' },
+      { title: 'Amount (KES)', dataIndex: 'Amount (KES)', key: 'amount', width: 120, type: 'currency' },
+      { title: 'Remaining (KES)', dataIndex: 'Remaining (KES)', key: 'remaining', width: 120, type: 'currency' },
+      { title: 'Description', dataIndex: 'Description', key: 'description', width: 200, type: 'text' },
+      { title: 'Type', dataIndex: 'Type', key: 'type', width: 80, type: 'text' },
+      { title: 'Severity', dataIndex: 'Severity', key: 'severity', width: 80, type: 'text' },
+      { title: 'Status', dataIndex: 'Status', key: 'status', width: 100, type: 'text' },
+      { title: 'Shortage Date', dataIndex: 'Shortage Date', key: 'shortageDate', width: 100, type: 'date' },
+      { title: 'Due Date', dataIndex: 'Due Date', key: 'dueDate', width: 100, type: 'date' },
+      { title: '% Paid', dataIndex: '% Paid', key: 'percentagePaid', width: 80, type: 'percentage' }
+    ];
+    
+    setReportColumns(columns);
+  };
 
   // Refresh all data
   const refreshData = () => {
@@ -351,6 +278,50 @@ const prepareReportData = (shortagesData) => {
     }
   };
 
+  // ==================== REPORT GENERATION ====================
+
+  // Handle generate report
+  const handleGenerateReport = () => {
+    if (shortageReportData.length === 0) {
+      message.warning('No data to generate report');
+      return;
+    }
+
+    const summaryData = getReportSummaryData();
+    
+    const title = `Shortage Management Report - ${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} - ${new Date().toLocaleDateString()}`;
+    const fileName = `shortages_${activeTab}_${new Date().toISOString().split('T')[0]}`;
+    
+    const config = {
+      dataSource: shortageReportData,
+      columns: reportColumns,
+      summaryData: summaryData,
+      title: title,
+      fileName: fileName,
+      reportType: 'finance',
+      companyName: state?.currentCompany?.name || "Lynx Energy System",
+      stationInfo: selectedStation ? {
+        name: selectedStation.name,
+        code: selectedStation.code || '',
+        address: selectedStation.address || ''
+      } : null,
+      showFooter: true,
+      footerText: `Generated from Lynx Energy | User: ${currentUser?.firstName || ''} ${currentUser?.lastName || ''} | ${new Date().toLocaleString('en-KE')}`,
+      enableCustomization: true,
+      showGrandTotals: false
+    };
+    
+    setReportConfig(config);
+    setReportTitle(title);
+    setReportModalVisible(true);
+  };
+
+  const handleReportComplete = (format) => {
+    message.success(`${reportTitle} generated successfully as ${format.toUpperCase()}!`);
+    setReportModalVisible(false);
+    setReportConfig(null);
+  };
+
   // Handle export
   const handleExport = async (format = 'excel') => {
     try {
@@ -372,30 +343,6 @@ const prepareReportData = (shortagesData) => {
       message.error(error.message || `Failed to export ${format}`);
     } finally {
       setExportLoading(false);
-    }
-  };
-
-  // Handle form submission from modal
-  const handleCreateShortageSubmit = async () => {
-    try {
-      setFormSubmitting(true);
-      
-      // Use the form ref to submit
-      if (createShortageFormRef.current) {
-        const success = await createShortageFormRef.current.submit();
-        if (success) {
-          // Success will be handled by onSuccess callback
-          return;
-        }
-      }
-      
-      // If we get here, the form submission failed
-      message.warning('Please fill in all required fields correctly');
-    } catch (error) {
-      console.error('Error submitting shortage form:', error);
-      message.error('Failed to submit form');
-    } finally {
-      setFormSubmitting(false);
     }
   };
 
@@ -426,14 +373,17 @@ const prepareReportData = (shortagesData) => {
     const criticalCount = shortages.filter(s => s.severity === 'CRITICAL').length;
     
     return {
+      'Report Type': `Shortage Report - ${activeTab}`,
       'Total Shortages': shortages.length,
-      'Total Amount': totalAmount,
-      'Outstanding Amount': totalRemaining,
-      'Amount Collected': totalDeducted,
+      'Total Amount (KES)': totalAmount,
+      'Outstanding Amount (KES)': totalRemaining,
+      'Amount Collected (KES)': totalDeducted,
       'Active Shortages': activeCount,
       'Overdue Shortages': overdueCount,
       'Critical Shortages': criticalCount,
-      'Collection Rate': totalAmount > 0 ? `${((totalDeducted / totalAmount) * 100).toFixed(2)}%` : '0%'
+      'Collection Rate': totalAmount > 0 ? `${((totalDeducted / totalAmount) * 100).toFixed(2)}%` : '0%',
+      'Generated Date': new Date().toLocaleDateString('en-KE'),
+      'Generated Time': new Date().toLocaleTimeString('en-KE')
     };
   };
 
@@ -504,61 +454,38 @@ const prepareReportData = (shortagesData) => {
     {
       key: 'report',
       label: 'Generate Report',
-      icon: <DownloadOutlined />,
+      icon: <FileTextOutlined />,
+      onClick: handleGenerateReport,
       visible: canExportReports && shortages.length > 0,
-      type: 'default',
-      component: (
-        <AdvancedReportGenerator
-          dataSource={shortageReportData}
-          columns={reportColumns}
-          title={`Shortage Management Report - ${activeTab}`}
-          fileName={`shortages_${activeTab}_${new Date().toISOString().split('T')[0]}`}
-          reportType="finance"
-          summaryData={getReportSummaryData()}
-          showFooter={true}
-          footerText={`${state?.currentCompany?.name || 'Company'} • Shortage Management Report`}
-          companyName={state?.currentCompany?.name || 'Company'}
-          stationInfo={selectedStation ? {
-            name: selectedStation.name,
-            code: selectedStation.code || '',
-            address: selectedStation.address || ''
-          } : null}
-          includeLogo={false}
-          enableCustomization={true}
-          onReportGenerate={(format) => {
-            message.success(`Report generation started for ${format.toUpperCase()}`);
-          }}
-        />
-      )
+      type: 'default'
     }
   ];
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 p-4">
       {/* Header */}
-      <Card className="shadow-sm">
-        <Row gutter={[16, 16]} align="middle">
+      <Card size="small">
+        <Row gutter={[12, 12]} align="middle">
           <Col xs={24} md={12}>
             <Space direction="vertical" size={0}>
-              <Title level={2} className="m-0">
+              <Title level={3} style={{ margin: 0, fontSize: '20px' }}>
                 <AccountBookOutlined className="mr-2" />
                 Shortage Management
               </Title>
-              <Text type="secondary">
+              <Text type="secondary" style={{ fontSize: '12px' }}>
                 Manage staff shortages, deductions, and collections
-                {selectedStation && ` • Station: ${selectedStation.name}`}
-                {selectedCompany && companies.find(c => c.id === selectedCompany) && 
-                  ` • Company: ${companies.find(c => c.id === selectedCompany).name}`}
+                {selectedStation && ` • ${selectedStation.name}`}
               </Text>
             </Space>
           </Col>
           <Col xs={24} md={12}>
-            <Row gutter={[8, 8]} justify="end">
+            <Row gutter={[6, 6]} justify="end">
               <Col>
                 <Button
                   icon={<SyncOutlined />}
                   onClick={refreshData}
                   loading={loading}
+                  size="small"
                 >
                   Refresh
                 </Button>
@@ -566,20 +493,13 @@ const prepareReportData = (shortagesData) => {
               {quickActions.map(action => {
                 if (!action.visible) return null;
                 
-                if (action.key === 'report' && action.component) {
-                  return (
-                    <Col key={action.key}>
-                      {action.component}
-                    </Col>
-                  );
-                }
-                
                 return (
                   <Col key={action.key}>
                     <Button
                       type={action.type}
                       icon={action.icon}
                       onClick={action.onClick}
+                      size="small"
                     >
                       {action.label}
                     </Button>
@@ -591,29 +511,29 @@ const prepareReportData = (shortagesData) => {
         </Row>
       </Card>
 
-      {/* Station/Company Selection */}
+      {/* Station/Company Selection - COMPACT */}
       {(isCompanyAdmin || isSuperAdmin) && (
-        <Card size="small" className="shadow-sm">
-          <Row gutter={[16, 16]} align="middle">
+        <Card size="small" bodyStyle={{ padding: '8px 12px' }}>
+          <Row gutter={[8, 8]} align="middle">
             {/* Company Selection (for Super Admin only) */}
             {isSuperAdmin && (
               <Col xs={24} sm={8}>
                 <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                  <Text strong>Select Company</Text>
+                  <Text style={{ fontSize: '11px' }}>Company</Text>
                   <Select
                     style={{ width: '100%' }}
                     placeholder="Select company"
                     value={selectedCompany}
                     onChange={handleCompanyChange}
                     showSearch
-                    optionFilterProp="children"
                     allowClear
+                    size="small"
                   >
                     {companies.map(company => (
                       <Option key={company.id} value={company.id}>
-                        <Space>
-                          <BankOutlined />
-                          <span>{company.name}</span>
+                        <Space size="small">
+                          <BankOutlined style={{ fontSize: '12px' }} />
+                          <span style={{ fontSize: '12px' }}>{company.name}</span>
                         </Space>
                       </Option>
                     ))}
@@ -625,127 +545,125 @@ const prepareReportData = (shortagesData) => {
             {/* Station Selection */}
             <Col xs={24} sm={isSuperAdmin ? 8 : 12}>
               <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                <Text strong>Select Station</Text>
+                <Text style={{ fontSize: '11px' }}>Station</Text>
                 <Select
                   style={{ width: '100%' }}
                   placeholder="Select station"
                   value={selectedStation?.id}
                   onChange={handleStationChange}
                   showSearch
-                  optionFilterProp="children"
                   disabled={isSuperAdmin && !selectedCompany}
                   loading={loading}
+                  size="small"
                 >
                   {stations.map(station => (
                     <Option key={station.id} value={station.id}>
-                      <Space>
-                        <ShopOutlined />
-                        <span>{station.name}</span>
-                        {station.company?.name && (
-                          <Text type="secondary">({station.company.name})</Text>
-                        )}
+                      <Space size="small">
+                        <ShopOutlined style={{ fontSize: '12px' }} />
+                        <span style={{ fontSize: '12px' }}>{station.name}</span>
                       </Space>
                     </Option>
                   ))}
                 </Select>
-                {isSuperAdmin && !selectedCompany && (
-                  <Text type="secondary" style={{ fontSize: '12px' }}>
-                    Please select a company first
-                  </Text>
-                )}
               </Space>
             </Col>
             
             {/* Current Selection Info */}
             <Col xs={24} sm={isSuperAdmin ? 8 : 12}>
-              <Card size="small">
-                <Space direction="vertical" size={2}>
-                  <Text strong>Current Selection:</Text>
-                  {selectedStation ? (
-                    <>
-                      <Text>
-                        <ShopOutlined className="mr-2" />
-                        {selectedStation.name}
-                      </Text>
-                      {selectedCompany && (
-                        <Text type="secondary">
-                          <BankOutlined className="mr-2" />
-                          {companies.find(c => c.id === selectedCompany)?.name}
-                        </Text>
-                      )}
-                    </>
-                  ) : (
-                    <Text type="secondary">No station selected</Text>
-                  )}
-                </Space>
-              </Card>
+              <div style={{ fontSize: '12px' }}>
+                <Text type="secondary">Selected: </Text>
+                {selectedStation ? (
+                  <Text strong>{selectedStation.name}</Text>
+                ) : (
+                  <Text type="secondary">None</Text>
+                )}
+              </div>
             </Col>
           </Row>
         </Card>
       )}
 
-      {/* Statistics */}
-      {shortageStats && activeTab === 'stats' && (
-        <Card size="small" className="shadow-sm">
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={8} md={4}>
+      {/* Statistics - COMPACT */}
+      {shortageStats && (
+        <Row gutter={[8, 8]}>
+          <Col xs={12} sm={6} md={4}>
+            <Card size="small" bodyStyle={{ padding: '8px' }}>
               <Statistic
-                title="Total Shortages"
+                title={<span style={{ fontSize: '11px' }}>Total</span>}
                 value={shortageStats.overview?.totalShortages || 0}
-                prefix={<AccountBookOutlined />}
+                prefix={<AccountBookOutlined style={{ fontSize: '12px' }} />}
+                valueStyle={{ fontSize: '14px' }}
               />
-            </Col>
-            <Col xs={24} sm={8} md={4}>
+            </Card>
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Card size="small" bodyStyle={{ padding: '8px' }}>
               <Statistic
-                title="Total Amount"
-                value={shortageStats.overview?.totalAmountDisplay || 'Ksh 0'}
-                prefix={<DollarOutlined />}
+                title={<span style={{ fontSize: '11px' }}>Amount</span>}
+                value={shortageStats.overview?.totalAmount || 0}
+                formatter={value => `KES ${(value || 0).toLocaleString()}`}
+                valueStyle={{ fontSize: '12px' }}
               />
-            </Col>
-            <Col xs={24} sm={8} md={4}>
+            </Card>
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Card size="small" bodyStyle={{ padding: '8px' }}>
               <Statistic
-                title="Outstanding"
+                title={<span style={{ fontSize: '11px' }}>Outstanding</span>}
                 value={shortageStats.overview?.outstandingShortages || 0}
-                valueStyle={{ color: '#ff4d4f' }}
-                prefix={<WarningOutlined />}
+                valueStyle={{ color: '#ff4d4f', fontSize: '14px' }}
               />
-            </Col>
-            <Col xs={24} sm={8} md={4}>
+            </Card>
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Card size="small" bodyStyle={{ padding: '8px' }}>
               <Statistic
-                title="Outstanding Amount"
-                value={shortageStats.overview?.outstandingAmountDisplay || 'Ksh 0'}
-                valueStyle={{ color: '#ff4d4f' }}
-                prefix={<DollarOutlined />}
+                title={<span style={{ fontSize: '11px' }}>Overdue</span>}
+                value={shortageStats.byStatus?.OVERDUE || 0}
+                valueStyle={{ color: '#ff4d4f', fontSize: '14px' }}
               />
-            </Col>
-            <Col xs={24} sm={8} md={4}>
+            </Card>
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Card size="small" bodyStyle={{ padding: '8px' }}>
               <Statistic
-                title="Avg. Shortage"
-                value={shortageStats.overview?.avgShortageAmountDisplay || 'Ksh 0'}
-                prefix={<PercentageOutlined />}
+                title={<span style={{ fontSize: '11px' }}>Critical</span>}
+                value={shortageStats.bySeverity?.CRITICAL || 0}
+                valueStyle={{ color: '#ff4d4f', fontSize: '14px' }}
               />
-            </Col>
-            <Col xs={24} sm={8} md={4}>
+            </Card>
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Card size="small" bodyStyle={{ padding: '8px' }}>
               <Statistic
-                title="Collection Rate"
+                title={<span style={{ fontSize: '11px' }}>Collection</span>}
                 value={`${shortageStats.computedMetrics?.collectionRate || 0}%`}
-                prefix={<BarChartOutlined />}
+                valueStyle={{ fontSize: '14px' }}
               />
-            </Col>
-          </Row>
-        </Card>
+            </Card>
+          </Col>
+        </Row>
       )}
 
       {/* Tabs */}
-      <Card size="small" className="shadow-sm">
-        <Tabs activeKey={activeTab} onChange={setActiveTab}>
+      <Card size="small" bodyStyle={{ padding: '8px 12px' }}>
+        <Tabs 
+          activeKey={activeTab} 
+          onChange={setActiveTab}
+          size="small"
+          tabBarExtraContent={
+            <span style={{ fontSize: '11px', color: '#666' }}>
+              {shortages.length} records
+            </span>
+          }
+        >
           <TabPane 
             tab={
-              <Space>
-                <AppstoreOutlined />
-                All Shortages
+              <Space size="small">
+                <AppstoreOutlined style={{ fontSize: '12px' }} />
+                <span style={{ fontSize: '12px' }}>All</span>
                 {shortages.length > 0 && (
-                  <Badge count={shortages.length} style={{ backgroundColor: '#52c41a' }} />
+                  <Badge count={shortages.length} style={{ backgroundColor: '#52c41a', fontSize: '9px' }} />
                 )}
               </Space>
             } 
@@ -753,13 +671,13 @@ const prepareReportData = (shortagesData) => {
           />
           <TabPane 
             tab={
-              <Space>
-                <ExclamationCircleOutlined />
-                Active
+              <Space size="small">
+                <ExclamationCircleOutlined style={{ fontSize: '12px' }} />
+                <span style={{ fontSize: '12px' }}>Active</span>
                 {shortages.filter(s => s.status === 'ACTIVE').length > 0 && (
                   <Badge 
                     count={shortages.filter(s => s.status === 'ACTIVE').length} 
-                    style={{ backgroundColor: '#1890ff' }} 
+                    style={{ backgroundColor: '#1890ff', fontSize: '9px' }} 
                   />
                 )}
               </Space>
@@ -768,13 +686,13 @@ const prepareReportData = (shortagesData) => {
           />
           <TabPane 
             tab={
-              <Space>
-                <WarningOutlined />
-                Overdue
+              <Space size="small">
+                <WarningOutlined style={{ fontSize: '12px' }} />
+                <span style={{ fontSize: '12px' }}>Overdue</span>
                 {shortages.filter(s => s.isOverdue).length > 0 && (
                   <Badge 
                     count={shortages.filter(s => s.isOverdue).length} 
-                    style={{ backgroundColor: '#ff4d4f' }} 
+                    style={{ backgroundColor: '#ff4d4f', fontSize: '9px' }} 
                   />
                 )}
               </Space>
@@ -783,13 +701,13 @@ const prepareReportData = (shortagesData) => {
           />
           <TabPane 
             tab={
-              <Space>
-                <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />
-                Critical
+              <Space size="small">
+                <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: '12px' }} />
+                <span style={{ fontSize: '12px' }}>Critical</span>
                 {shortages.filter(s => s.severity === 'CRITICAL').length > 0 && (
                   <Badge 
                     count={shortages.filter(s => s.severity === 'CRITICAL').length} 
-                    style={{ backgroundColor: '#ff4d4f' }} 
+                    style={{ backgroundColor: '#ff4d4f', fontSize: '9px' }} 
                   />
                 )}
               </Space>
@@ -799,13 +717,13 @@ const prepareReportData = (shortagesData) => {
           {isAttendant && (
             <TabPane 
               tab={
-                <Space>
-                  <TeamOutlined />
-                  My Shortages
+                <Space size="small">
+                  <TeamOutlined style={{ fontSize: '12px' }} />
+                  <span style={{ fontSize: '12px' }}>My</span>
                   {shortages.filter(s => s.status === 'ACTIVE').length > 0 && (
                     <Badge 
                       count={shortages.filter(s => s.status === 'ACTIVE').length} 
-                      style={{ backgroundColor: '#722ed1' }} 
+                      style={{ backgroundColor: '#722ed1', fontSize: '9px' }} 
                     />
                   )}
                 </Space>
@@ -813,83 +731,47 @@ const prepareReportData = (shortagesData) => {
               key="my" 
             />
           )}
-          {isCompanyAdmin && (
-            <TabPane 
-              tab={
-                <Space>
-                  <BankOutlined />
-                  Company View
-                </Space>
-              } 
-              key="company" 
-            />
-          )}
-          <TabPane 
-            tab={
-              <Space>
-                <LineChartOutlined />
-                Statistics
-              </Space>
-            } 
-            key="stats" 
-          />
         </Tabs>
       </Card>
 
       {/* Main Content */}
-      <Card className="shadow-sm">
+      <Card size="small" bodyStyle={{ padding: '12px' }}>
         {activeTab === 'stats' ? (
           // Statistics View
           shortageStats ? (
             <div className="space-y-4">
-              <Card title="Detailed Statistics" size="small">
-                <Descriptions title="Overview" column={2} bordered>
-                  <Descriptions.Item label="Scope">
-                    {shortageStats.userScope?.role || 'Unknown'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Accessible Stations">
-                    {shortageStats.userScope?.accessibleStations || 0}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Accessible Companies">
-                    {shortageStats.userScope?.accessibleCompanies || 0}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Data Period">
-                    Last 30 Days
-                  </Descriptions.Item>
-                </Descriptions>
-              </Card>
-              
-              {/* By Type */}
-              {shortageStats.byType && shortageStats.byType.length > 0 && (
-                <Card title="Shortages by Type" size="small">
-                  <Row gutter={[16, 16]}>
-                    {shortageStats.byType.map((item, index) => (
-                      <Col xs={24} sm={12} md={8} key={index}>
-                        <Card size="small">
-                          <Statistic
-                            title={item.shortageTypeDisplay}
-                            value={item.count}
-                            suffix={`(${item.percentage}%)`}
-                          />
-                          <Text type="secondary">
-                            Total: {item.totalAmountDisplay}
-                          </Text>
-                        </Card>
-                      </Col>
-                    ))}
-                  </Row>
-                </Card>
-              )}
+              <Descriptions title="Overview" bordered size="small" column={2}>
+                <Descriptions.Item label="Scope" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
+                  {shortageStats.userScope?.role || 'Unknown'}
+                </Descriptions.Item>
+                <Descriptions.Item label="Stations" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
+                  {shortageStats.userScope?.accessibleStations || 0}
+                </Descriptions.Item>
+                <Descriptions.Item label="Total Shortages" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
+                  {shortageStats.overview?.totalShortages || 0}
+                </Descriptions.Item>
+                <Descriptions.Item label="Total Amount" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
+                  KES {(shortageStats.overview?.totalAmount || 0).toLocaleString()}
+                </Descriptions.Item>
+                <Descriptions.Item label="Outstanding" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
+                  {shortageStats.overview?.outstandingShortages || 0}
+                </Descriptions.Item>
+                <Descriptions.Item label="Outstanding Amount" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
+                  KES {(shortageStats.overview?.outstandingAmount || 0).toLocaleString()}
+                </Descriptions.Item>
+                <Descriptions.Item label="Collection Rate" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
+                  {shortageStats.computedMetrics?.collectionRate || 0}%
+                </Descriptions.Item>
+              </Descriptions>
             </div>
           ) : (
-            <div className="text-center py-8">
-              <Alert
-                message="No Statistics Available"
-                description="There are no shortage statistics to display at this time."
-                type="info"
-                showIcon
-              />
-            </div>
+            <Alert
+              message="No Statistics Available"
+              description="There are no shortage statistics to display at this time."
+              type="info"
+              showIcon
+              style={{ fontSize: '12px' }}
+            />
           )
         ) : (
           // Shortages List View
@@ -909,34 +791,30 @@ const prepareReportData = (shortagesData) => {
 
       {/* === MODALS === */}
 
-      {/* Create Shortage Modal - FIXED WITH REF */}
- {/* Create Shortage Modal - SIMPLE NO-REF APPROACH */}
-<Modal
-  title={
-    <Space>
-      <PlusOutlined />
-      Record New Shortage
-    </Space>
-  }
-  open={createShortageModalVisible}
-  onCancel={() => setCreateShortageModalVisible(false)}
-  width={700}
-  footer={null}
->
-  {/* Use a key to force re-render when modal opens */}
-  <div key={createShortageModalVisible ? 'open' : 'closed'}>
-    <CreateShortageForm
-      onSuccess={(shortage) => {
-        handleShortageCreated(shortage);
-        setCreateShortageModalVisible(false);
-      }}
-      onCancel={() => setCreateShortageModalVisible(false)}
-      currentUser={currentUser}
-      currentStation={selectedStation || currentStation}
-      currentCompany={selectedCompany || currentCompanyId}
-    />
-  </div>
-</Modal>
+      {/* Create Shortage Modal - SIMPLE APPROACH */}
+      <Modal
+        title={
+          <Space size="small">
+            <PlusOutlined />
+            <span>Record New Shortage</span>
+          </Space>
+        }
+        open={createShortageModalVisible}
+        onCancel={() => setCreateShortageModalVisible(false)}
+        width={700}
+        footer={null}
+        destroyOnClose
+      >
+        <CreateShortageForm
+          onSuccess={(shortage) => {
+            handleShortageCreated(shortage);
+          }}
+          onCancel={() => setCreateShortageModalVisible(false)}
+          currentUser={currentUser}
+          currentStation={selectedStation || currentStation}
+          currentCompany={selectedCompany || currentCompanyId}
+        />
+      </Modal>
 
       {/* Shortage Deduction Modal */}
       <ShortageDeductionModal
@@ -957,7 +835,7 @@ const prepareReportData = (shortagesData) => {
         open={exportModalVisible}
         onCancel={() => setExportModalVisible(false)}
         footer={[
-          <Button key="cancel" onClick={() => setExportModalVisible(false)}>
+          <Button key="cancel" onClick={() => setExportModalVisible(false)} size="small">
             Cancel
           </Button>,
           <Button 
@@ -966,16 +844,18 @@ const prepareReportData = (shortagesData) => {
             onClick={() => handleExport('excel')}
             loading={exportLoading}
             icon={<FileExcelOutlined />}
+            size="small"
           >
-            Export as Excel
+            Excel
           </Button>,
           <Button 
             key="pdf" 
             onClick={() => handleExport('pdf')}
             loading={exportLoading}
             icon={<FilePdfOutlined />}
+            size="small"
           >
-            Export as PDF
+            PDF
           </Button>
         ]}
         width={400}
@@ -986,23 +866,9 @@ const prepareReportData = (shortagesData) => {
             description="Select the format for exporting shortage data."
             type="info"
             showIcon
+            style={{ fontSize: '12px', padding: '8px' }}
           />
-          <Text strong>Current filters:</Text>
-          <Text type="secondary">
-            {selectedStation && `Station: ${selectedStation.name}`}
-            {selectedCompany && ` • Company: ${companies.find(c => c.id === selectedCompany)?.name}`}
-            {activeTab !== 'all' && ` • Tab: ${activeTab}`}
-          </Text>
-          <Divider />
-          <Text>Data will include:</Text>
-          <ul>
-            <li>All shortage details</li>
-            <li>Staff information</li>
-            <li>Deduction history</li>
-            <li>Status and dates</li>
-            <li>Summary statistics</li>
-          </ul>
-          <Text type="secondary" style={{ fontSize: '12px' }}>
+          <Text style={{ fontSize: '12px' }}>
             Total records: {shortages.length}
           </Text>
         </Space>
@@ -1018,7 +884,7 @@ const prepareReportData = (shortagesData) => {
         }}
         width={700}
         footer={[
-          <Button key="close" onClick={() => setViewDetailsModalVisible(false)}>
+          <Button key="close" onClick={() => setViewDetailsModalVisible(false)} size="small">
             Close
           </Button>,
           canViewDeductions && selectedShortage?.amountRemaining > 0 && (
@@ -1030,6 +896,7 @@ const prepareReportData = (shortagesData) => {
                 setViewDetailsModalVisible(false);
                 setTimeout(() => handleOpenDeduction(selectedShortage), 100);
               }}
+              size="small"
             >
               Add Deduction
             </Button>
@@ -1038,88 +905,58 @@ const prepareReportData = (shortagesData) => {
       >
         {selectedShortage && (
           <div>
-            <Descriptions title="Basic Information" bordered column={2}>
-              <Descriptions.Item label="Staff Member" span={2}>
-                <Space>
-                  <TeamOutlined />
-                  <Text strong>{selectedShortage.staffDisplayName}</Text>
-                  <Text type="secondary">({selectedShortage.stationDisplayName})</Text>
-                </Space>
+            <Descriptions bordered column={2} size="small">
+              <Descriptions.Item label="Staff" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
+                {selectedShortage.staffDisplayName || 'Unknown'}
               </Descriptions.Item>
-              <Descriptions.Item label="Amount">
-                <Text strong style={{ fontSize: '18px' }}>
-                  {selectedShortage.amountDisplay}
-                </Text>
+              <Descriptions.Item label="Station" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
+                {selectedShortage.stationDisplayName || 'Unknown'}
               </Descriptions.Item>
-              <Descriptions.Item label="Remaining">
-                <Text strong style={{ fontSize: '18px', color: '#ff4d4f' }}>
-                  {selectedShortage.amountRemainingDisplay}
-                </Text>
+              <Descriptions.Item label="Amount" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '12px', fontWeight: 'bold' }}>
+                KES {(selectedShortage.amount || 0).toLocaleString()}
               </Descriptions.Item>
-              <Descriptions.Item label="Type">
-                <Tag color="blue">{selectedShortage.shortageTypeDisplay}</Tag>
+              <Descriptions.Item label="Remaining" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '12px', color: '#ff4d4f', fontWeight: 'bold' }}>
+                KES {(selectedShortage.amountRemaining || 0).toLocaleString()}
               </Descriptions.Item>
-              <Descriptions.Item label="Severity">
-                <Tag color={selectedShortage.severity === 'CRITICAL' ? 'red' : 
-                           selectedShortage.severity === 'HIGH' ? 'orange' : 
-                           selectedShortage.severity === 'MODERATE' ? 'gold' : 'blue'}>
+              <Descriptions.Item label="Type" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
+                <Tag color="blue" style={{ fontSize: '10px' }}>{selectedShortage.shortageTypeDisplay}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Severity" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
+                <Tag color={selectedShortage.severity === 'CRITICAL' ? 'red' : 'orange'} style={{ fontSize: '10px' }}>
                   {selectedShortage.severityDisplay}
                 </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="Status">
-                <Tag color={selectedShortage.status === 'ACTIVE' ? 'red' : 
-                           selectedShortage.status === 'PARTIALLY_DEDUCTED' ? 'orange' : 
-                           selectedShortage.status === 'FULLY_DEDUCTED' ? 'green' : 'default'}>
+              <Descriptions.Item label="Status" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
+                <Tag color={selectedShortage.status === 'ACTIVE' ? 'red' : 'green'} style={{ fontSize: '10px' }}>
                   {selectedShortage.statusDisplay}
                 </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="Responsible Party">
-                {selectedShortage.responsiblePartyDisplay}
-              </Descriptions.Item>
-              <Descriptions.Item label="Shortage Date">
+              <Descriptions.Item label="Shortage Date" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
                 {selectedShortage.shortageDateDisplay}
               </Descriptions.Item>
-              <Descriptions.Item label="Due Date">
-                <Space>
-                  <Text>{selectedShortage.dueDateDisplay}</Text>
-                  {selectedShortage.daysUntilDueDisplay && (
-                    <Tag color={selectedShortage.isOverdue ? 'red' : 'green'}>
-                      {selectedShortage.daysUntilDueDisplay}
-                    </Tag>
-                  )}
-                </Space>
+              <Descriptions.Item label="Due Date" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
+                {selectedShortage.dueDateDisplay || 'No due date'}
               </Descriptions.Item>
-              <Descriptions.Item label="Description" span={2}>
+              <Descriptions.Item label="Description" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }} span={2}>
                 {selectedShortage.description}
               </Descriptions.Item>
-              <Descriptions.Item label="Comments" span={2}>
-                {selectedShortage.comments || 'No comments'}
-              </Descriptions.Item>
-              {selectedShortage.recordedByDisplay && (
-                <Descriptions.Item label="Recorded By">
-                  {selectedShortage.recordedByDisplay}
-                </Descriptions.Item>
-              )}
             </Descriptions>
             
             {/* Deductions History */}
             {selectedShortage.deductions && selectedShortage.deductions.length > 0 && (
-              <Card title="Deduction History" size="small" className="mt-4">
+              <Card title="Deduction History" size="small" style={{ marginTop: 12 }}>
                 <Space direction="vertical" style={{ width: '100%' }}>
                   {selectedShortage.deductions.map((deduction, index) => (
                     <Card key={index} size="small">
                       <Descriptions column={2} size="small">
-                        <Descriptions.Item label="Amount">
-                          <Text strong>{deduction.amountDisplay}</Text>
+                        <Descriptions.Item label="Amount" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
+                          KES {(deduction.amount || 0).toLocaleString()}
                         </Descriptions.Item>
-                        <Descriptions.Item label="Date">
+                        <Descriptions.Item label="Date" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
                           {deduction.deductionDateDisplay}
                         </Descriptions.Item>
-                        <Descriptions.Item label="Description" span={2}>
+                        <Descriptions.Item label="Description" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }} span={2}>
                           {deduction.description || 'No description'}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Recorded By">
-                          {deduction.recordedByDisplay}
                         </Descriptions.Item>
                       </Descriptions>
                     </Card>
@@ -1127,6 +964,54 @@ const prepareReportData = (shortagesData) => {
                 </Space>
               </Card>
             )}
+          </div>
+        )}
+      </Modal>
+
+      {/* Report Generator Modal */}
+      <Modal
+        title={
+          <Space size="small">
+            <FileTextOutlined />
+            <span>{reportTitle}</span>
+            <Tag color="blue">{reportConfig?.dataSource?.length || 0} records</Tag>
+          </Space>
+        }
+        open={reportModalVisible}
+        onCancel={() => {
+          setReportModalVisible(false);
+          setReportConfig(null);
+        }}
+        width="90%"
+        style={{ top: 20 }}
+        footer={null}
+        destroyOnClose
+      >
+        {reportConfig && (
+          <div style={{ padding: '20px 0' }}>
+            <AdvancedReportGenerator
+              key={`shortage-report-${Date.now()}`}
+              {...reportConfig}
+              onReportGenerate={handleReportComplete}
+              onSettingsSave={(settings) => {
+                console.log('Settings saved:', settings);
+                message.success('Report settings saved!');
+              }}
+            />
+            
+            <Divider />
+            
+            <Space style={{ justifyContent: 'flex-end', width: '100%' }}>
+              <Button 
+                onClick={() => {
+                  setReportModalVisible(false);
+                  setReportConfig(null);
+                }}
+                size="small"
+              >
+                Close
+              </Button>
+            </Space>
           </div>
         )}
       </Modal>

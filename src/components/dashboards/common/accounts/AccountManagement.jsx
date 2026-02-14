@@ -21,7 +21,8 @@ import {
   Popconfirm,
   DatePicker,
   Alert,
-  Badge
+  Badge,
+  Divider
 } from 'antd';
 import {
   BankOutlined,
@@ -36,21 +37,18 @@ import {
   HistoryOutlined,
   UserOutlined,
   ExclamationCircleOutlined,
-  SyncOutlined
+  SyncOutlined,
+  FileTextOutlined,
+  FilterOutlined,
+  DownloadOutlined
 } from '@ant-design/icons';
 import { bankingService } from '../../../../services/bankingService/bankingService';
 import { bankService } from '../../../../services/bankService/bankService';
 import { useApp } from '../../../../context/AppContext';
-
-// reports
-// Add this import at the top
-import ReportGenerator from '../../common/downloadable/ReportGenerator';
-// or for advanced features:
-import AdvancedReportGenerator from '../../common/downloadable/AdvancedReportGenerator';
-
+import AdvancedReportGenerator from '../downloadable/AdvancedReportGenerator';
+import dayjs from 'dayjs';
 
 const { Option } = Select;
-const { TabPane } = Tabs;
 const { RangePicker } = DatePicker;
 
 const AccountsManagement = () => {
@@ -61,17 +59,25 @@ const AccountsManagement = () => {
   const [transactions, setTransactions] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [transfers, setTransfers] = useState([]);
+  
+  // Report Generation State
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportConfig, setReportConfig] = useState(null);
+  const [reportTitle, setReportTitle] = useState('');
+  
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 10,
     total: 0
   });
+  
   const [filters, setFilters] = useState({
     search: '',
     type: '',
     status: '',
     dateRange: []
   });
+  
   const [depositModalVisible, setDepositModalVisible] = useState(false);
   const [transferModalVisible, setTransferModalVisible] = useState(false);
   const [activeTab, setActiveTab] = useState('wallet');
@@ -390,6 +396,158 @@ const AccountsManagement = () => {
     }
   };
 
+  // ==================== REPORT GENERATION ====================
+
+  // Prepare wallet transactions report data - SIMPLIFIED COLUMNS
+  const prepareWalletReportData = (data) => {
+    return data.map((item, index) => ({
+      '#': index + 1,
+      'Date': bankingService.formatDateTime(item.transactionDate),
+      'Type': item.type,
+      'Description': item.description || 'No description',
+      'Amount': Math.abs(item.amount),
+      'Direction': item.amount < 0 ? 'Outflow' : 'Inflow',
+      'Previous Balance': item.previousBalance,
+      'New Balance': item.newBalance,
+      'Recorded By': item.recordedByDisplay
+    }));
+  };
+
+  // Prepare bank transfers report data - SIMPLIFIED COLUMNS
+  const prepareTransferReportData = (data) => {
+    return data.map((item, index) => ({
+      '#': index + 1,
+      'Date': bankingService.formatDateTime(item.transactionDate),
+      'Reference': item.referenceNumber || 'N/A',
+      'Bank Account': item.bankAccount ? 
+        `${item.bankAccount.bank?.name || ''} ${item.bankAccount.accountNumber || ''}`.trim() : 
+        'Unknown',
+      'Amount': item.amount,
+      'Status': item.status,
+      'Description': item.description || 'No description',
+      'Recorded By': item.recordedByDisplay
+    }));
+  };
+
+  // Get wallet report columns - SIMPLIFIED
+  const getWalletReportColumns = () => [
+    { title: '#', dataIndex: '#', key: 'index', width: 50, type: 'number' },
+    { title: 'Date', dataIndex: 'Date', key: 'date', width: 150, type: 'datetime' },
+    { title: 'Type', dataIndex: 'Type', key: 'type', width: 100, type: 'text' },
+    { title: 'Description', dataIndex: 'Description', key: 'description', width: 200, type: 'text' },
+    { title: 'Amount (KES)', dataIndex: 'Amount', key: 'amount', width: 120, type: 'currency' },
+    { title: 'Direction', dataIndex: 'Direction', key: 'direction', width: 80, type: 'text' },
+    { title: 'Previous Balance', dataIndex: 'Previous Balance', key: 'prevBalance', width: 120, type: 'currency' },
+    { title: 'New Balance', dataIndex: 'New Balance', key: 'newBalance', width: 120, type: 'currency' },
+    { title: 'Recorded By', dataIndex: 'Recorded By', key: 'recordedBy', width: 150, type: 'text' }
+  ];
+
+  // Get transfer report columns - SIMPLIFIED
+  const getTransferReportColumns = () => [
+    { title: '#', dataIndex: '#', key: 'index', width: 50, type: 'number' },
+    { title: 'Date', dataIndex: 'Date', key: 'date', width: 150, type: 'datetime' },
+    { title: 'Reference', dataIndex: 'Reference', key: 'reference', width: 100, type: 'text' },
+    { title: 'Bank Account', dataIndex: 'Bank Account', key: 'bankAccount', width: 150, type: 'text' },
+    { title: 'Amount (KES)', dataIndex: 'Amount', key: 'amount', width: 120, type: 'currency' },
+    { title: 'Status', dataIndex: 'Status', key: 'status', width: 100, type: 'text' },
+    { title: 'Description', dataIndex: 'Description', key: 'description', width: 200, type: 'text' },
+    { title: 'Recorded By', dataIndex: 'Recorded By', key: 'recordedBy', width: 150, type: 'text' }
+  ];
+
+  // Calculate wallet report summary
+  const calculateWalletSummary = (data) => {
+    const totalInflow = data.filter(item => item.amount > 0)
+      .reduce((sum, item) => sum + Math.abs(item.amount), 0);
+    const totalOutflow = data.filter(item => item.amount < 0)
+      .reduce((sum, item) => sum + Math.abs(item.amount), 0);
+    
+    return {
+      'Report Type': 'Wallet Transactions Report',
+      'Total Transactions': data.length,
+      'Total Inflow': bankingService.formatCurrency(totalInflow),
+      'Total Outflow': bankingService.formatCurrency(totalOutflow),
+      'Net Flow': bankingService.formatCurrency(totalInflow - totalOutflow),
+      'Generated Date': new Date().toLocaleDateString('en-KE'),
+      'Generated Time': new Date().toLocaleTimeString('en-KE')
+    };
+  };
+
+  // Calculate transfer report summary
+  const calculateTransferSummary = (data) => {
+    const totalAmount = data.reduce((sum, item) => sum + (item.amount || 0), 0);
+    const completedCount = data.filter(item => item.status === 'COMPLETED').length;
+    
+    return {
+      'Report Type': 'Bank Transfers Report',
+      'Total Transfers': data.length,
+      'Completed Transfers': completedCount,
+      'Pending Transfers': data.filter(item => item.status === 'PENDING').length,
+      'Total Amount': bankingService.formatCurrency(totalAmount),
+      'Generated Date': new Date().toLocaleDateString('en-KE'),
+      'Generated Time': new Date().toLocaleTimeString('en-KE')
+    };
+  };
+
+  // Handle generate report for current tab
+  const handleGenerateReport = () => {
+    let reportData = [];
+    let reportColumns = [];
+    let summaryData = null;
+    let title = '';
+    let fileName = '';
+    
+    if (activeTab === 'wallet') {
+      if (transactions.length === 0) {
+        message.warning('No wallet transactions to export');
+        return;
+      }
+      reportData = prepareWalletReportData(transactions);
+      reportColumns = getWalletReportColumns();
+      summaryData = calculateWalletSummary(transactions);
+      title = `Wallet Transactions Report - ${formattedWallet?.stationDisplay || 'Station'}`;
+      fileName = `wallet_transactions_${new Date().toISOString().split('T')[0]}`;
+    } else {
+      if (transfers.length === 0) {
+        message.warning('No bank transfers to export');
+        return;
+      }
+      reportData = prepareTransferReportData(transfers);
+      reportColumns = getTransferReportColumns();
+      summaryData = calculateTransferSummary(transfers);
+      title = `Bank Transfers Report - ${formattedWallet?.stationDisplay || 'Station'}`;
+      fileName = `bank_transfers_${new Date().toISOString().split('T')[0]}`;
+    }
+    
+    const config = {
+      dataSource: reportData,
+      columns: reportColumns,
+      summaryData: summaryData,
+      title: title,
+      fileName: fileName,
+      reportType: 'finance',
+      companyName: state.currentCompany?.name || "Lynx Energy System",
+      stationInfo: state.currentStation ? {
+        name: state.currentStation.name,
+        code: state.currentStation.code,
+        address: state.currentStation.address
+      } : null,
+      showFooter: true,
+      footerText: `Generated from Lynx Energy | User: ${currentUser?.firstName || ''} ${currentUser?.lastName || ''} | ${new Date().toLocaleString('en-KE')}`,
+      enableCustomization: true,
+      showGrandTotals: false
+    };
+    
+    setReportConfig(config);
+    setReportTitle(title);
+    setReportModalVisible(true);
+  };
+
+  const handleReportComplete = (format) => {
+    message.success(`${reportTitle} generated successfully as ${format.toUpperCase()}!`);
+    setReportModalVisible(false);
+    setReportConfig(null);
+  };
+
   // Wallet Statistics
   const walletStats = useMemo(() => {
     if (!walletData) return null;
@@ -432,47 +590,57 @@ const AccountsManagement = () => {
     return negativeTypes.includes(type) || amount < 0;
   };
 
-  // Wallet Transactions Columns
+  // Wallet Transactions Columns - COMPACT
   const walletColumns = [
     {
-      title: 'Date & Time',
+      title: '#',
+      key: 'sequence',
+      width: 40,
+      align: 'center',
+      render: (_, __, index) => (
+        <span style={{ fontSize: '10px', color: '#666' }}>{index + 1}</span>
+      )
+    },
+    {
+      title: 'Date',
       dataIndex: 'transactionDate',
       key: 'transactionDate',
-      render: (date, record) => record.formattedDate || bankingService.formatDateTime(date),
-      sorter: (a, b) => new Date(a.transactionDate) - new Date(b.transactionDate)
+      width: 120,
+      render: (date, record) => (
+        <span style={{ fontSize: '10px' }}>{record.formattedDate || bankingService.formatDateTime(date)}</span>
+      )
     },
     {
       title: 'Type',
       dataIndex: 'type',
       key: 'type',
+      width: 80,
       render: (type) => {
         const typeConfig = {
-          'SHIFT_CASH_IN': { color: 'green', text: 'Shift Cash In' },
-          'BANK_DEPOSIT': { color: 'blue', text: 'Bank Deposit' },
+          'SHIFT_CASH_IN': { color: 'green', text: 'Cash In' },
+          'BANK_DEPOSIT': { color: 'blue', text: 'Deposit' },
           'CASH_IN': { color: 'green', text: 'Cash In' },
           'CASH_OUT': { color: 'red', text: 'Cash Out' },
-          'EXPENSE_PAYMENT': { color: 'red', text: 'Expense Payment' },
-          'EXPENSE': { color: 'red', text: 'Expense' },
-          'ADJUSTMENT': { color: 'purple', text: 'Adjustment' },
-          'WITHDRAWAL': { color: 'red', text: 'Withdrawal' },
-          'TRANSFER_OUT': { color: 'red', text: 'Transfer Out' }
+          'EXPENSE': { color: 'red', text: 'Expense' }
         };
         const config = typeConfig[type] || { color: 'default', text: type };
-        return <Tag color={config.color}>{config.text}</Tag>;
+        return <Tag color={config.color} style={{ fontSize: '9px' }}>{config.text}</Tag>;
       }
     },
     {
       title: 'Description',
       dataIndex: 'description',
       key: 'description',
+      width: 150,
       ellipsis: true,
-      width:180,
-      render: (description) => description || 'No description'
+      render: (description) => <span style={{ fontSize: '10px' }}>{description || 'No description'}</span>
     },
     {
       title: 'Amount',
       dataIndex: 'amount',
       key: 'amount',
+      width: 100,
+      align: 'right',
       render: (amount, record) => {
         const isNegative = isNegativeTransaction(record.type, amount);
         const displayAmount = Math.abs(amount);
@@ -480,152 +648,119 @@ const AccountsManagement = () => {
         return (
           <span style={{ 
             color: isNegative ? '#ff4d4f' : '#52c41a',
-    
+            fontWeight: '500',
+            fontSize: '11px'
           }}>
             {isNegative ? '-' : '+'}{bankingService.formatCurrency(displayAmount)}
           </span>
         );
-      },
-      width:150,
-      align: 'right'
+      }
     },
     {
-      title: 'Previous Balance',
-      key: 'previousBalance',
+      title: 'Balance',
+      key: 'balance',
+      width: 100,
+      align: 'right',
       render: (_, record) => (
-        <span style={{ color: '#666' }}>
-          {record.formattedPreviousBalance || bankingService.formatCurrency(record.previousBalance)}
-        </span>
-      ),
-        width:150,
-      align: 'right'
-    },
-    {
-      title: 'New Balance',
-      key: 'newBalance',
-      render: (_, record) => (
-        <span style={{ color: 'blue'}}>
+        <span style={{ fontSize: '10px', color: '#1890ff' }}>
           {record.formattedNewBalance || bankingService.formatCurrency(record.newBalance)}
         </span>
-      ),
-      align: 'right'
-    },
-    {
-      title: 'Recorded By',
-      key: 'recordedBy',
-      render: (_, record) => (
-        <Space>
-          <UserOutlined />
-          <span>{record.recordedByDisplay}</span>
-        </Space>
       )
     },
     {
       title: 'Actions',
       key: 'actions',
+      width: 50,
       render: (_, record) => (
-        <Space size="small">
-          <Tooltip title="View Details">
-            <Button 
-              icon={<EyeOutlined />} 
-              size="small"
-              onClick={() => handleViewTransaction(record)}
-            />
-          </Tooltip>
-        </Space>
+        <Button 
+          icon={<EyeOutlined />} 
+          size="small"
+          type="text"
+          onClick={() => handleViewTransaction(record)}
+          style={{ padding: '0 2px' }}
+        />
       )
     }
   ];
 
-  // Bank Transfers Columns
+  // Bank Transfers Columns - COMPACT
   const transferColumns = [
     {
-      title: 'Transfer Date',
+      title: '#',
+      key: 'sequence',
+      width: 40,
+      align: 'center',
+      render: (_, __, index) => (
+        <span style={{ fontSize: '10px', color: '#666' }}>{index + 1}</span>
+      )
+    },
+    {
+      title: 'Date',
       dataIndex: 'transactionDate',
       key: 'transactionDate',
-      render: (date, record) => record.formattedDate || bankingService.formatDateTime(date),
-      sorter: (a, b) => new Date(a.transactionDate) - new Date(b.transactionDate)
+      width: 120,
+      render: (date, record) => (
+        <span style={{ fontSize: '10px' }}>{record.formattedDate || bankingService.formatDateTime(date)}</span>
+      )
     },
     {
       title: 'Reference',
       dataIndex: 'referenceNumber',
       key: 'referenceNumber',
-      render: (ref) => ref ? <Tag color="blue">{ref}</Tag> : '-'
+      width: 80,
+      render: (ref) => ref ? <Tag color="blue" style={{ fontSize: '9px' }}>{ref}</Tag> : '-'
     },
     {
       title: 'Bank Account',
       key: 'bankAccount',
-      render: (_, record) => 
-        record.bankAccount ? 
-          `${record.bankAccount.bank.name} - ${record.bankAccount.accountNumber}` : 
-          'Unknown'
+      width: 120,
+      render: (_, record) => (
+        <span style={{ fontSize: '10px' }}>
+          {record.bankAccount ? 
+            `${record.bankAccount.bank?.name || ''}`.substring(0, 10) : 
+            'Unknown'}
+        </span>
+      )
     },
     {
       title: 'Amount',
       dataIndex: 'amount',
       key: 'amount',
+      width: 100,
+      align: 'right',
       render: (amount, record) => (
-        <span style={{ fontWeight: 'bold', color: '#1890ff' }}>
+        <span style={{ fontWeight: '500', fontSize: '11px', color: '#1890ff' }}>
           {record.formattedAmount || bankingService.formatCurrency(amount)}
         </span>
-      ),
-      align: 'right'
+      )
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
+      width: 80,
       render: (status) => {
         const statusConfig = {
-          COMPLETED: { color: 'green', text: 'Completed' },
-          PENDING: { color: 'orange', text: 'Pending' },
-          FAILED: { color: 'red', text: 'Failed' },
-          CANCELLED: { color: 'default', text: 'Cancelled' }
+          COMPLETED: { color: 'green', text: 'Done' },
+          PENDING: { color: 'orange', text: 'Pend' },
+          FAILED: { color: 'red', text: 'Fail' }
         };
         const config = statusConfig[status] || { color: 'default', text: status };
-        return <Tag color={config.color}>{config.text}</Tag>;
+        return <Tag color={config.color} style={{ fontSize: '9px' }}>{config.text}</Tag>;
       }
-    },
-    {
-      title: 'Description',
-      dataIndex: 'description',
-      key: 'description',
-      ellipsis: true
-    },
-    {
-      title: 'Recorded By',
-      key: 'recordedBy',
-      render: (_, record) => (
-        <Space>
-          <UserOutlined />
-          <span>{record.recordedByDisplay}</span>
-        </Space>
-      )
     },
     {
       title: 'Actions',
       key: 'actions',
+      width: 50,
       render: (_, record) => (
-        <Space size="small">
-          <Tooltip title="View Details">
-            <Button 
-              icon={<EyeOutlined />} 
-              size="small"
-              onClick={() => handleViewTransfer(record)}
-            />
-          </Tooltip>
-          {record.status === 'PENDING' && (
-            <Popconfirm
-              title="Cancel Transfer"
-              description="Are you sure you want to cancel this transfer?"
-              onConfirm={() => handleCancelTransfer(record.id)}
-            >
-              <Button size="small" danger>
-                Cancel
-              </Button>
-            </Popconfirm>
-          )}
-        </Space>
+        <Button 
+          icon={<EyeOutlined />} 
+          size="small"
+          type="text"
+          onClick={() => handleViewTransfer(record)}
+          style={{ padding: '0 2px' }}
+        />
       )
     }
   ];
@@ -636,15 +771,12 @@ const AccountsManagement = () => {
     Modal.info({
       title: 'Transaction Details',
       content: (
-        <Descriptions column={1} bordered>
-          <Descriptions.Item label="Date & Time">
+        <Descriptions column={1} bordered size="small">
+          <Descriptions.Item label="Date">
             {bankingService.formatDateTime(transaction.transactionDate)}
           </Descriptions.Item>
           <Descriptions.Item label="Type">
-            <Tag color={
-              isNegative ? 'red' : 
-              transaction.type === 'BANK_DEPOSIT' ? 'blue' : 'green'
-            }>
+            <Tag color={isNegative ? 'red' : transaction.type === 'BANK_DEPOSIT' ? 'blue' : 'green'}>
               {transaction.type}
             </Tag>
           </Descriptions.Item>
@@ -666,9 +798,9 @@ const AccountsManagement = () => {
             {transaction.description || 'No description'}
           </Descriptions.Item>
           <Descriptions.Item label="Recorded By">
-            <Space>
-              <UserOutlined />
-              <span>
+            <Space size="small">
+              <UserOutlined style={{ fontSize: '12px' }} />
+              <span style={{ fontSize: '12px' }}>
                 {transaction.recordedBy ? 
                   `${transaction.recordedBy.firstName} ${transaction.recordedBy.lastName}` : 
                   'System'
@@ -676,14 +808,10 @@ const AccountsManagement = () => {
               </span>
             </Space>
           </Descriptions.Item>
-          {transaction.shiftId && (
-            <Descriptions.Item label="Shift ID">
-              {transaction.shiftId}
-            </Descriptions.Item>
-          )}
         </Descriptions>
       ),
-      width: 600
+      width: 500,
+      okText: 'Close'
     });
   };
 
@@ -691,7 +819,7 @@ const AccountsManagement = () => {
     Modal.info({
       title: 'Transfer Details',
       content: (
-        <Descriptions column={1} bordered>
+        <Descriptions column={1} bordered size="small">
           <Descriptions.Item label="Transfer Date">
             {bankingService.formatDateTime(transfer.transactionDate)}
           </Descriptions.Item>
@@ -700,7 +828,7 @@ const AccountsManagement = () => {
           </Descriptions.Item>
           <Descriptions.Item label="Bank Account">
             {transfer.bankAccount ? 
-              `${transfer.bankAccount.bank.name} - ${transfer.bankAccount.accountNumber}` : 
+              `${transfer.bankAccount.bank?.name || ''} ${transfer.bankAccount.accountNumber || ''}` : 
               'N/A'
             }
           </Descriptions.Item>
@@ -713,12 +841,12 @@ const AccountsManagement = () => {
             </Tag>
           </Descriptions.Item>
           <Descriptions.Item label="Description">
-            {transfer.description}
+            {transfer.description || 'No description'}
           </Descriptions.Item>
           <Descriptions.Item label="Recorded By">
-            <Space>
-              <UserOutlined />
-              <span>
+            <Space size="small">
+              <UserOutlined style={{ fontSize: '12px' }} />
+              <span style={{ fontSize: '12px' }}>
                 {transfer.recordedBy ? 
                   `${transfer.recordedBy.firstName} ${transfer.recordedBy.lastName}` : 
                   'System'
@@ -728,7 +856,8 @@ const AccountsManagement = () => {
           </Descriptions.Item>
         </Descriptions>
       ),
-      width: 600
+      width: 500,
+      okText: 'Close'
     });
   };
 
@@ -742,15 +871,138 @@ const AccountsManagement = () => {
     }
   };
 
+  // Define tab items for antd v5 (replaces TabPane)
+  const tabItems = [
+    {
+      key: 'wallet',
+      label: (
+        <span style={{ fontSize: '12px' }}>
+          <WalletOutlined style={{ fontSize: '12px' }} />
+          Wallet ({transactions.length})
+        </span>
+      ),
+      children: (
+        <>
+          {transactions.length === 0 && !loading ? (
+            <Alert
+              message="No wallet transactions"
+              description="No transactions have been recorded for this station."
+              type="info"
+              showIcon
+              style={{ marginTop: 12 }}
+            />
+          ) : (
+            <Table
+              columns={walletColumns}
+              dataSource={transactions}
+              loading={loading}
+              rowKey="id"
+              pagination={{
+                current: pagination.page,
+                pageSize: pagination.limit,
+                total: transactions.length,
+                showSizeChanger: true,
+                showQuickJumper: true,
+                showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+                size: 'small'
+              }}
+              size="small"
+              scroll={{ x: 800 }}
+            />
+          )}
+        </>
+      )
+    },
+    {
+      key: 'transfers',
+      label: (
+        <span style={{ fontSize: '12px' }}>
+          <SwapOutlined style={{ fontSize: '12px' }} />
+          Transfers ({transfers.length})
+        </span>
+      ),
+      children: (
+        <>
+          {/* Filters - COMPACT */}
+          <Card size="small" style={{ marginBottom: 12 }} bodyStyle={{ padding: '8px' }}>
+            <Row gutter={[8, 8]} align="middle">
+              <Col xs={24} sm={12} md={8}>
+                <Input
+                  placeholder="Search transfers..."
+                  value={filters.search}
+                  onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                  prefix={<SearchOutlined style={{ fontSize: '12px' }} />}
+                  size="small"
+                />
+              </Col>
+              <Col xs={12} sm={6} md={4}>
+                <Select
+                  style={{ width: '100%' }}
+                  placeholder="Status"
+                  value={filters.status}
+                  onChange={(value) => setFilters(prev => ({ ...prev, status: value }))}
+                  allowClear
+                  size="small"
+                >
+                  <Option value="COMPLETED">Completed</Option>
+                  <Option value="PENDING">Pending</Option>
+                  <Option value="FAILED">Failed</Option>
+                </Select>
+              </Col>
+              <Col xs={12} sm={6} md={6}>
+                <Button
+                  icon={<FilterOutlined style={{ fontSize: '12px' }} />}
+                  onClick={() => setFilters({ search: '', status: '', dateRange: [] })}
+                  size="small"
+                >
+                  Clear
+                </Button>
+              </Col>
+            </Row>
+          </Card>
+
+          {/* Transfers Table */}
+          {transfers.length === 0 && !loading ? (
+            <Alert
+              message="No bank transfers"
+              description="No transfers have been recorded for this station."
+              type="info"
+              showIcon
+              style={{ marginTop: 12 }}
+            />
+          ) : (
+            <Table
+              columns={transferColumns}
+              dataSource={transfers}
+              loading={loading}
+              rowKey="id"
+              pagination={{
+                current: pagination.page,
+                pageSize: pagination.limit,
+                total: transfers.length,
+                showSizeChanger: true,
+                showQuickJumper: true,
+                showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+                size: 'small'
+              }}
+              size="small"
+              scroll={{ x: 800 }}
+            />
+          )}
+        </>
+      )
+    }
+  ];
+
   return (
-    <div className="space-y-4">
+    <div style={{ padding: '12px' }}>
       {/* Header */}
-      <Card>
-        <Row gutter={[16, 16]} align="middle">
+      <Card size="small" style={{ marginBottom: 12 }}>
+        <Row gutter={[12, 12]} align="middle">
           <Col xs={24} md={12}>
             <Space direction="vertical" size={0}>
-              <h2 style={{ margin: 0, fontSize: '20px' }}>
-                <WalletOutlined /> Station Banking Management
+              <h3 style={{ margin: 0, fontSize: '18px' }}>
+                <WalletOutlined /> Station Banking
                 {autoRefresh && (
                   <Badge 
                     dot 
@@ -760,27 +1012,28 @@ const AccountsManagement = () => {
                     }} 
                   />
                 )}
-              </h2>
-              <p style={{ margin: 0, color: '#666' }}>
-                {isStationLevel ? 'Manage your station wallet and bank transfers' : 'Monitor station banking activities'}
+              </h3>
+              <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>
+                {isStationLevel ? 'Manage wallet and bank transfers' : 'Monitor banking activities'}
                 {lastUpdated && (
-                  <span style={{ marginLeft: 8, fontSize: '12px', color: '#999' }}>
-                    (Updated: {lastUpdatedDisplay})
+                  <span style={{ marginLeft: 8, fontSize: '11px', color: '#999' }}>
+                    Updated: {lastUpdatedDisplay}
                   </span>
                 )}
               </p>
             </Space>
           </Col>
           <Col xs={24} md={12}>
-            <Row gutter={[8, 8]} justify="end">
+            <Row gutter={[6, 6]} justify="end">
               <Col>
-                <Space>
+                <Space size="small">
                   <Tooltip title="Auto Refresh">
                     <Switch
                       checked={autoRefresh}
                       onChange={handleAutoRefreshToggle}
-                      checkedChildren="Auto ON"
-                      unCheckedChildren="Auto OFF"
+                      checkedChildren="Auto"
+                      unCheckedChildren="Manual"
+                      size="small"
                     />
                   </Tooltip>
                   <Tooltip title={`Refresh (${refreshCount})`}>
@@ -788,11 +1041,22 @@ const AccountsManagement = () => {
                       icon={<SyncOutlined spin={loading} />}
                       onClick={handleManualRefresh}
                       loading={loading}
+                      size="small"
                     >
                       Refresh
                     </Button>
                   </Tooltip>
                 </Space>
+              </Col>
+              <Col>
+                <Button
+                  icon={<FileTextOutlined />}
+                  onClick={handleGenerateReport}
+                  disabled={activeTab === 'wallet' ? transactions.length === 0 : transfers.length === 0}
+                  size="small"
+                >
+                  Report
+                </Button>
               </Col>
               {isStationLevel && (
                 <Col>
@@ -801,8 +1065,9 @@ const AccountsManagement = () => {
                     icon={<PlusOutlined />}
                     onClick={() => setDepositModalVisible(true)}
                     disabled={!walletData || walletData.currentBalance <= 0}
+                    size="small"
                   >
-                    Bank Deposit
+                    Deposit
                   </Button>
                 </Col>
               )}
@@ -815,11 +1080,11 @@ const AccountsManagement = () => {
       {autoRefresh && (
         <Alert
           message="Auto-refresh Enabled"
-          description="Data is automatically updated every 15 seconds. Wallet balance updates every 5 seconds."
+          description="Data updates every 15 seconds"
           type="info"
           showIcon
           icon={<SyncOutlined />}
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 12, fontSize: '12px', padding: '8px 12px' }}
           action={
             <Button size="small" onClick={() => setAutoRefresh(false)}>
               Disable
@@ -828,226 +1093,100 @@ const AccountsManagement = () => {
         />
       )}
 
-      {/* Wallet Statistics */}
+      {/* Wallet Statistics - COMPACT */}
       {formattedWallet && (
-        <Row gutter={[16, 16]}>
-          <Col xs={24} sm={12} md={6}>
-            <Card size="small">
+        <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+          <Col xs={12} sm={6} md={4}>
+            <Card size="small" bodyStyle={{ padding: '8px' }}>
               <Statistic
-                title="Current Balance"
+                title={<span style={{ fontSize: '11px' }}>Balance</span>}
                 value={walletStats.currentBalance}
                 formatter={value => bankingService.formatCurrency(value)}
                 valueStyle={{ 
                   color: walletStats.balanceStatus.status === 'low' ? '#ff4d4f' : 
-                         walletStats.balanceStatus.status === 'high' ? '#faad14' : '#52c41a'
+                         walletStats.balanceStatus.status === 'high' ? '#faad14' : '#52c41a',
+                  fontSize: '14px'
                 }}
-                prefix={<WalletOutlined />}
               />
-              {walletStats.balanceStatus.status !== 'normal' && (
-                <div style={{ marginTop: 8, fontSize: '12px', color: '#ff4d4f' }}>
-                  {walletStats.balanceStatus.message}
-                </div>
-              )}
             </Card>
           </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card size="small">
+          <Col xs={12} sm={6} md={4}>
+            <Card size="small" bodyStyle={{ padding: '8px' }}>
               <Statistic
-                title="Latest Inflow"
+                title={<span style={{ fontSize: '11px' }}>Inflow</span>}
                 value={walletStats.latestInflow}
                 formatter={value => bankingService.formatCurrency(value)}
-                valueStyle={{ color: '#52c41a' }}
-                prefix={<ArrowDownOutlined />}
+                valueStyle={{ color: '#52c41a', fontSize: '14px' }}
               />
             </Card>
           </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card size="small">
+          <Col xs={12} sm={6} md={4}>
+            <Card size="small" bodyStyle={{ padding: '8px' }}>
               <Statistic
-                title="Latest Outflow"
+                title={<span style={{ fontSize: '11px' }}>Outflow</span>}
                 value={walletStats.latestOutflow}
                 formatter={value => bankingService.formatCurrency(value)}
-                valueStyle={{ color: '#ff4d4f' }}
-                prefix={<ArrowUpOutlined />}
+                valueStyle={{ color: '#ff4d4f', fontSize: '14px' }}
               />
             </Card>
           </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card size="small">
+          <Col xs={12} sm={6} md={4}>
+            <Card size="small" bodyStyle={{ padding: '8px' }}>
               <Statistic
-                title="Latest Net Flow"
+                title={<span style={{ fontSize: '11px' }}>Net Flow</span>}
                 value={walletStats.latestNetFlow}
                 formatter={value => bankingService.formatCurrency(value)}
                 valueStyle={{ 
-                  color: walletStats.latestNetFlow >= 0 ? '#52c41a' : '#ff4d4f'
+                  color: walletStats.latestNetFlow >= 0 ? '#52c41a' : '#ff4d4f',
+                  fontSize: '14px'
                 }}
-                prefix={walletStats.latestNetFlow >= 0 ? <ArrowDownOutlined /> : <ArrowUpOutlined />}
               />
             </Card>
           </Col>
         </Row>
       )}
 
-      {/* Station Information */}
+      {/* Station Information - COMPACT */}
       {formattedWallet && (
-        <Card size="small">
-          <Descriptions column={{ xs: 1, sm: 2, md: 3 }} size="small">
-            <Descriptions.Item label="Station">
-              {formattedWallet.stationDisplay}
-            </Descriptions.Item>
-            <Descriptions.Item label="Opening Balance">
-              {formattedWallet.openingBalanceDisplay}
-            </Descriptions.Item>
-            <Descriptions.Item label="Last Updated">
-              {formattedWallet.lastUpdatedDisplay}
-            </Descriptions.Item>
-            {formattedWallet.minBalance && (
-              <Descriptions.Item label="Minimum Balance">
-                {formattedWallet.minBalanceDisplay}
-              </Descriptions.Item>
-            )}
-            {formattedWallet.maxBalance && (
-              <Descriptions.Item label="Maximum Balance">
-                {formattedWallet.maxBalanceDisplay}
-              </Descriptions.Item>
-            )}
-          </Descriptions>
+        <Card size="small" style={{ marginBottom: 12 }} bodyStyle={{ padding: '8px 12px' }}>
+          <Row gutter={[8, 8]}>
+            <Col span={8}>
+              <span style={{ fontSize: '11px', color: '#666' }}>Station:</span>
+              <div style={{ fontSize: '12px', fontWeight: '500' }}>{formattedWallet.stationDisplay}</div>
+            </Col>
+            <Col span={8}>
+              <span style={{ fontSize: '11px', color: '#666' }}>Opening Balance:</span>
+              <div style={{ fontSize: '12px' }}>{formattedWallet.openingBalanceDisplay}</div>
+            </Col>
+            <Col span={8}>
+              <span style={{ fontSize: '11px', color: '#666' }}>Last Updated:</span>
+              <div style={{ fontSize: '12px' }}>{formattedWallet.lastUpdatedDisplay}</div>
+            </Col>
+          </Row>
         </Card>
       )}
 
-      {/* Tabs Section */}
-    {/* Tabs Section */}
-<Card>
-  <Tabs 
-    activeKey={activeTab} 
-    onChange={setActiveTab}
-  >
-    <TabPane 
-      tab={
-        <span>
-          <WalletOutlined />
-          Wallet Transactions ({transactions.length})
-        </span>
-      } 
-      key="wallet"
-    >
-      {/* Wallet Transactions Header with Export Button */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h3 style={{ margin: 0 }}>Wallet Transactions</h3>
-        <AdvancedReportGenerator
-          dataSource={transactions}
-          columns={walletColumns}
-          title={`Wallet Transactions Report - ${formattedWallet?.stationDisplay || 'Station'}`}
-          fileName={`wallet_transactions_${new Date().toISOString().split('T')[0]}`}
-          footerText={`Generated from Lynx Energy - ${formattedWallet?.stationDisplay || 'Station'} - ${new Date().toLocaleDateString()}`}
-          showFooter={true}
-        />
-      </div>
-
-      {/* Wallet Transactions Table */}
-      <Table
-        columns={walletColumns}
-        dataSource={transactions}
-        loading={loading}
-        rowKey="id"
-        pagination={{
-          current: pagination.page,
-          pageSize: pagination.limit,
-          total: pagination.total,
-          showSizeChanger: true,
-          showQuickJumper: true,
-          showTotal: (total, range) => 
-            `Showing ${range[0]}-${range[1]} of ${total} transactions`,
-          onChange: (page, pageSize) => {
-            setPagination(prev => ({ ...prev, page, limit: pageSize }));
+      {/* Tabs Section - Using items prop instead of TabPane */}
+      <Card size="small" bodyStyle={{ padding: '12px' }}>
+        <Tabs 
+          activeKey={activeTab} 
+          onChange={setActiveTab}
+          size="small"
+          items={tabItems}
+          tabBarExtraContent={
+            <span style={{ fontSize: '11px', color: '#666' }}>
+              {activeTab === 'wallet' ? transactions.length : transfers.length} records
+            </span>
           }
-        }}
-      />
-    </TabPane>
-    
-    <TabPane 
-      tab={
-        <span>
-          <SwapOutlined />
-          Bank Transfers ({transfers.length})
-        </span>
-      } 
-      key="transfers"
-    >
-      {/* Bank Transfers Header with Export Button */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h3 style={{ margin: 0 }}>Bank Transfers</h3>
-        <AdvancedReportGenerator
-          dataSource={transfers}
-          columns={transferColumns}
-          title={`Bank Transfers Report - ${formattedWallet?.stationDisplay || 'Station'}`}
-          fileName={`bank_transfers_${new Date().toISOString().split('T')[0]}`}
-          footerText={`Generated from Lynx Energy - ${formattedWallet?.stationDisplay || 'Station'} - ${new Date().toLocaleDateString()}`}
-          showFooter={true}
         />
-      </div>
-
-      {/* Filters */}
-      <Card size="small" style={{ marginBottom: 16 }}>
-        <Row gutter={[8, 8]} align="middle">
-          <Col xs={24} sm={8} md={6}>
-            <Input
-              placeholder="Search transfers..."
-              value={filters.search}
-              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-              prefix={<SearchOutlined />}
-            />
-          </Col>
-          <Col xs={12} sm={8} md={4}>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Status"
-              value={filters.status}
-              onChange={(value) => setFilters(prev => ({ ...prev, status: value }))}
-              allowClear
-            >
-              <Option value="COMPLETED">Completed</Option>
-              <Option value="PENDING">Pending</Option>
-              <Option value="FAILED">Failed</Option>
-            </Select>
-          </Col>
-          <Col xs={12} sm={8} md={6}>
-            <RangePicker
-              style={{ width: '100%' }}
-              onChange={(dates) => setFilters(prev => ({ ...prev, dateRange: dates }))}
-            />
-          </Col>
-        </Row>
       </Card>
 
-      {/* Transfers Table */}
-      <Table
-        columns={transferColumns}
-        dataSource={transfers}
-        loading={loading}
-        rowKey="id"
-        pagination={{
-          current: pagination.page,
-          pageSize: pagination.limit,
-          total: pagination.total,
-          showSizeChanger: true,
-          showQuickJumper: true,
-          showTotal: (total, range) => 
-            `Showing ${range[0]}-${range[1]} of ${total} transfers`,
-          onChange: (page, pageSize) => {
-            setPagination(prev => ({ ...prev, page, limit: pageSize }));
-          }
-        }}
-      />
-    </TabPane>
-  </Tabs>
-</Card>
       {/* Bank Deposit Modal */}
       <Modal
         title={
-          <Space>
+          <Space size="small">
             <BankOutlined />
-            Create Bank Deposit
+            <span>Create Bank Deposit</span>
           </Space>
         }
         open={depositModalVisible}
@@ -1059,14 +1198,14 @@ const AccountsManagement = () => {
         onOk={() => depositForm.submit()}
         okText="Create Deposit"
         cancelText="Cancel"
-        width={600}
+        width={500}
         confirmLoading={submitting}
       >
         {formErrors.length > 0 && (
           <Alert
             message="Validation Error"
             description={
-              <ul style={{ margin: 0, paddingLeft: '16px' }}>
+              <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12px' }}>
                 {formErrors.map((error, index) => (
                   <li key={index}>{error}</li>
                 ))}
@@ -1074,18 +1213,17 @@ const AccountsManagement = () => {
             }
             type="error"
             showIcon
-            style={{ marginBottom: 16 }}
+            style={{ marginBottom: 12 }}
           />
         )}
 
         {walletData && (
           <Alert
-            message="Available Balance"
-            description={`You can deposit up to ${bankingService.formatCurrency(walletData.currentBalance)}`}
+            message={`Available Balance: ${bankingService.formatCurrency(walletData.currentBalance)}`}
             type="info"
             showIcon
             icon={<ExclamationCircleOutlined />}
-            style={{ marginBottom: 16 }}
+            style={{ marginBottom: 12, fontSize: '12px', padding: '8px 12px' }}
           />
         )}
 
@@ -1096,6 +1234,7 @@ const AccountsManagement = () => {
           initialValues={{
             transactionMode: 'CASH'
           }}
+          size="small"
         >
           <Form.Item
             name="amount"
@@ -1121,41 +1260,31 @@ const AccountsManagement = () => {
               min={1}
               max={walletData?.currentBalance || 1000000}
               placeholder="Enter amount"
-              size="large"
               formatter={value => `KES ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
               parser={value => value.replace(/KES\s?|(,*)/g, '')}
               onChange={handleAmountChange}
+              size="small"
             />
           </Form.Item>
 
           <Form.Item
             name="bankAccountId"
             label="Bank Account"
-            rules={[{ 
-              required: true, 
-              message: 'Please select bank account' 
-            }]}
+            rules={[{ required: true, message: 'Please select bank account' }]}
           >
             <Select 
               placeholder="Select bank account" 
-              size="large"
               showSearch
               optionFilterProp="children"
-              filterOption={(input, option) =>
-                option.children.toLowerCase().includes(input.toLowerCase())
-              }
+              size="small"
             >
               {accounts.map(account => (
                 <Option key={account.id} value={account.id}>
-                  <Space>
-                    <BankOutlined />
-                    <span>
+                  <Space size="small">
+                    <BankOutlined style={{ fontSize: '12px' }} />
+                    <span style={{ fontSize: '12px' }}>
                       {account.bank?.name} - {account.accountNumber}
-                      {account.accountName && ` (${account.accountName})`}
                     </span>
-                    <Tag color="blue">
-                      {bankingService.formatCurrency(account.currentBalance || 0)}
-                    </Tag>
                   </Space>
                 </Option>
               ))}
@@ -1165,71 +1294,78 @@ const AccountsManagement = () => {
           <Form.Item
             name="transactionMode"
             label="Transaction Mode"
-            rules={[{ required: true, message: 'Please select transaction mode' }]}
+            rules={[{ required: true, message: 'Please select mode' }]}
           >
-            <Select placeholder="Select mode" size="large">
+            <Select placeholder="Select mode" size="small">
               <Option value="CASH">Cash</Option>
               <Option value="CHEQUE">Cheque</Option>
               <Option value="MPESA">M-Pesa</Option>
-              <Option value="EFT">Electronic Fund Transfer (EFT)</Option>
-              <Option value="RTGS">RTGS</Option>
-              <Option value="INTERNAL_TRANSFER">Internal Transfer</Option>
+              <Option value="EFT">EFT</Option>
             </Select>
           </Form.Item>
 
           <Form.Item
             name="referenceNumber"
-            label="Reference Number (Optional)"
+            label="Reference (Optional)"
           >
-            <Input
-              placeholder="e.g., CHQ-001, MT-2024"
-              size="large"
-              style={{ textTransform: 'uppercase' }}
-            />
+            <Input placeholder="e.g., CHQ-001" size="small" />
           </Form.Item>
 
           <Form.Item
             name="description"
             label="Description (Optional)"
-            rules={[
-              { max: 500, message: 'Description cannot exceed 500 characters' }
-            ]}
           >
-            <Input.TextArea
-              placeholder="Enter deposit description"
-              rows={3}
-              showCount
-              maxLength={500}
-            />
+            <Input.TextArea placeholder="Enter description" rows={2} />
           </Form.Item>
         </Form>
       </Modal>
 
-      {/* Transfer Modal (if needed for other types of transfers) */}
+      {/* Report Generator Modal */}
       <Modal
         title={
-          <Space>
-            <SwapOutlined />
-            Create Transfer
+          <Space size="small">
+            <FileTextOutlined />
+            <span>{reportTitle}</span>
+            <Tag color="blue">{reportConfig?.dataSource?.length || 0} records</Tag>
           </Space>
         }
-        open={transferModalVisible}
+        open={reportModalVisible}
         onCancel={() => {
-          setTransferModalVisible(false);
-          transferForm.resetFields();
+          setReportModalVisible(false);
+          setReportConfig(null);
         }}
-        onOk={() => transferForm.submit()}
-        okText="Create Transfer"
-        cancelText="Cancel"
-        width={500}
+        width="90%"
+        style={{ top: 20 }}
+        footer={null}
+        destroyOnClose
       >
-        <Form
-          form={transferForm}
-          layout="vertical"
-          onFinish={handleTransferSubmit}
-        >
-          {/* Transfer form fields would go here */}
-        </Form>
+        {reportConfig && (
+          <div style={{ padding: '20px 0' }}>
+            <AdvancedReportGenerator
+              key={`banking-report-${Date.now()}`}
+              {...reportConfig}
+              onReportGenerate={handleReportComplete}
+              onSettingsSave={(settings) => {
+                console.log('Settings saved:', settings);
+                message.success('Report settings saved!');
+              }}
+            />
+            
+            <Divider />
+            
+            <Space style={{ justifyContent: 'flex-end', width: '100%' }}>
+              <Button 
+                onClick={() => {
+                  setReportModalVisible(false);
+                  setReportConfig(null);
+                }}
+                size="small"
+              >
+                Close
+              </Button>
+            </Space>
+          </div>
+        )}
       </Modal>
     </div>
   );

@@ -326,6 +326,11 @@ const ExpenseManagement = () => {
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0 });
   const [sortOrder, setSortOrder] = useState({ field: 'createdAt', order: 'descend' });
   
+  // Report Generation State
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportConfig, setReportConfig] = useState(null);
+  const [reportTitle, setReportTitle] = useState('');
+  
   // Filter State
   const [filters, setFilters] = useState({
     search: '',
@@ -599,7 +604,101 @@ const ExpenseManagement = () => {
     }
   };
 
-  // Table Columns - OPTIMIZED FOR SPACE (800px total width)
+  // ==================== REPORT GENERATION ====================
+
+  const handleGenerateReport = () => {
+    if (sortedExpenses.length === 0) {
+      message.warning('No data to generate report');
+      return;
+    }
+
+    const reportData = prepareReportData(sortedExpenses);
+    const reportColumns = getReportColumns();
+    const summaryData = calculateReportSummary(sortedExpenses);
+    
+    const title = `Expense Report - ${currentStation?.name || 'All Stations'} - ${new Date().toLocaleDateString()}`;
+    const fileName = `expenses_${currentStation?.code || 'all'}_${new Date().toISOString().split('T')[0]}`;
+    
+    const config = {
+      dataSource: reportData,
+      columns: reportColumns,
+      summaryData: summaryData,
+      title: title,
+      fileName: fileName,
+      reportType: 'finance',
+      companyName: state.currentCompany?.name || "Lynx Energy System",
+      stationInfo: currentStation ? {
+        name: currentStation.name,
+        code: currentStation.code,
+        address: currentStation.address
+      } : null,
+      showFooter: true,
+      footerText: `Generated from Lynx Energy System | User: ${currentUser?.firstName} ${currentUser?.lastName} | ${new Date().toLocaleString('en-KE')}`,
+      enableCustomization: true,
+      showGrandTotals: false
+    };
+    
+    setReportConfig(config);
+    setReportTitle(title);
+    setReportModalVisible(true);
+  };
+
+  const handleReportComplete = (format) => {
+    message.success(`${reportTitle} generated successfully as ${format.toUpperCase()}!`);
+    setReportModalVisible(false);
+    setReportConfig(null);
+  };
+
+  // Prepare report data - SIMPLIFIED COLUMNS as requested
+  const prepareReportData = (data) => {
+    return data.map((item, index) => ({
+      '#': index + 1,
+      'Date': expenseService.formatDate(item.expenseDate),
+      'Expense #': item.expenseNumber,
+      'Details': item.title,
+      'Amount (KES)': item.amount,
+      'Payment': expenseService.getPaymentSourceDisplay(item.paymentSource),
+      'Status': expenseService.getStatusDisplay(item.status),
+      'Recorded By': item.recordedByDisplay
+    }));
+  };
+
+  // Get report columns - SIMPLIFIED as requested
+  const getReportColumns = () => {
+    return [
+      { title: '#', dataIndex: '#', key: 'index', width: 50, type: 'number' },
+      { title: 'Date', dataIndex: 'Date', key: 'date', width: 100, type: 'date' },
+      { title: 'Expense #', dataIndex: 'Expense #', key: 'expenseNumber', width: 100, type: 'text' },
+      { title: 'Details', dataIndex: 'Details', key: 'details', width: 200, type: 'text' },
+      { title: 'Amount (KES)', dataIndex: 'Amount (KES)', key: 'amount', width: 120, type: 'currency' },
+      { title: 'Payment', dataIndex: 'Payment', key: 'payment', width: 100, type: 'text' },
+      { title: 'Status', dataIndex: 'Status', key: 'status', width: 100, type: 'text' },
+      { title: 'Recorded By', dataIndex: 'Recorded By', key: 'recordedBy', width: 150, type: 'text' }
+    ];
+  };
+
+  // Calculate report summary
+  const calculateReportSummary = (data) => {
+    const totalAmount = data.reduce((sum, item) => sum + (item.amount || 0), 0);
+    const pendingAmount = data.filter(item => item.status === 'PENDING_APPROVAL')
+      .reduce((sum, item) => sum + (item.amount || 0), 0);
+    const approvedAmount = data.filter(item => item.status === 'APPROVED')
+      .reduce((sum, item) => sum + (item.amount || 0), 0);
+    
+    return {
+      'Report Type': 'Expense Report',
+      'Total Records': data.length,
+      'Total Amount (KES)': expenseService.formatCurrency(totalAmount),
+      'Pending Amount (KES)': expenseService.formatCurrency(pendingAmount),
+      'Approved Amount (KES)': expenseService.formatCurrency(approvedAmount),
+      'Pending Count': data.filter(item => item.status === 'PENDING_APPROVAL').length,
+      'Approved Count': data.filter(item => item.status === 'APPROVED').length,
+      'Generated Date': new Date().toLocaleDateString('en-KE'),
+      'Generated Time': new Date().toLocaleTimeString('en-KE')
+    };
+  };
+
+  // Table Columns - OPTIMIZED FOR SPACE
   const columns = useMemo(() => [
     {
       title: '#',
@@ -803,37 +902,6 @@ const ExpenseManagement = () => {
     }
   ], [userRole]);
 
-  // Export columns and data
-  const exportColumns = useMemo(() => [
-    { title: '#', key: 'sequence', render: (_, __, index) => index + 1 },
-    { title: 'Expense Number', dataIndex: 'expenseNumber' },
-    { title: 'Title', dataIndex: 'title' },
-    { title: 'Description', dataIndex: 'description' },
-    { title: 'Category', dataIndex: 'category', render: expenseService.getCategoryDisplay },
-    { title: 'Amount', dataIndex: 'amount' },
-    { title: 'Payment Source', dataIndex: 'paymentSource', render: expenseService.getPaymentSourceDisplay },
-    { title: 'Status', dataIndex: 'status', render: expenseService.getStatusDisplay },
-    { title: 'Expense Date', dataIndex: 'expenseDate', render: expenseService.formatDate },
-    { title: 'Created At', dataIndex: 'createdAt', render: (date) => expenseService.formatDate(date, true) },
-    { title: 'Company', key: 'company', render: (_, record) => record.company?.name || 'N/A' },
-    { title: 'Station', key: 'station', render: (_, record) => record.station?.name || 'N/A' },
-    { title: 'Recorded By', key: 'recordedBy', render: (_, record) => 
-      record.recordedBy ? `${record.recordedBy.firstName} ${record.recordedBy.lastName}` : 'System' 
-    }
-  ], []);
-
-  const summaryData = useMemo(() => ({
-    'Total Expenses': summaryStats.totalCount,
-    'Total Amount': expenseService.formatCurrency(summaryStats.totalAmount),
-    'Pending Amount': expenseService.formatCurrency(summaryStats.pendingAmount),
-    'Approved Amount': expenseService.formatCurrency(summaryStats.approvedAmount),
-    'Rejected Amount': expenseService.formatCurrency(summaryStats.rejectedAmount),
-    'Pending Count': summaryStats.pendingCount,
-    'Approved Count': summaryStats.approvedCount,
-    'Rejected Count': summaryStats.rejectedCount,
-    'Average Expense': expenseService.formatCurrency(summaryStats.totalAmount / summaryStats.totalCount || 0)
-  }), [summaryStats]);
-
   if (!userStationId) {
     return (
       <div style={{ textAlign: 'center', padding: '40px' }}>
@@ -883,18 +951,14 @@ const ExpenseManagement = () => {
                 </Button>
               </Col>
               <Col>
-                <AdvancedReportGenerator
-                  dataSource={filteredExpenses}
-                  columns={exportColumns}
-                  title={`Expense Report - ${currentStation?.name}`}
-                  fileName={`expenses_${currentStation?.code}_${new Date().toISOString().split('T')[0]}`}
-                  summaryData={summaryData}
-                  reportType="finance"
-                  stationInfo={currentStation}
-                  footerText={`Generated from Lynx Energy System - User: ${currentUser?.firstName} ${currentUser?.lastName}`}
-                  showFooter={true}
-                  enableCustomization={true}
-                />
+                <Button
+                  icon={<FileTextOutlined />}
+                  onClick={handleGenerateReport}
+                  disabled={sortedExpenses.length === 0}
+                  size="small"
+                >
+                  Report
+                </Button>
               </Col>
             </Row>
           </Col>
@@ -913,27 +977,26 @@ const ExpenseManagement = () => {
         loading={loading}
       />
 
-      {/* Data Status Alert - PROPERLY PLACED */}
+      {/* Data Status Alert - SIMPLE BLUE ALERT FOR NO DATA */}
       {loading ? (
         <Alert
           message="Loading expenses..."
-          description="Please wait while we fetch your expense data."
           type="info"
           showIcon
           icon={<ClockCircleOutlined />}
           style={{ marginBottom: 12 }}
         />
-      ) : filteredExpenses.length === 0 ? (
+      ) : sortedExpenses.length === 0 ? (
         <Alert
-          message="No expenses found"
+          message={expenses.length === 0 ? "No expenses recorded" : "No expenses match your filters"}
           description={
             expenses.length === 0 
-              ? "No expenses have been recorded yet for this station. Click 'New Expense' to create one."
-              : "Try adjusting your filters or clear them to see all expenses"
+              ? "Click 'New Expense' to create your first expense record."
+              : "Try adjusting your filters or clear them to see all expenses."
           }
-          type={expenses.length === 0 ? "info" : "warning"}
+          type="info"
           showIcon
-          icon={expenses.length === 0 ? <InfoCircleOutlined /> : <WarningOutlined />}
+          icon={<InfoCircleOutlined />}
           style={{ marginBottom: 12 }}
           action={
             expenses.length > 0 ? (
@@ -955,80 +1018,82 @@ const ExpenseManagement = () => {
       ) : null}
 
       {/* Main Table */}
-      <Card size="small" style={{ marginBottom: 12 }}>
-        <div style={{ 
-          backgroundColor: '#fafafa', 
-          padding: '8px 12px', 
-          borderBottom: '1px solid #f0f0f0',
-          fontSize: '11px'
-        }}>
-          <Row align="middle" justify="space-between">
-            <Col>
-              <Space>
-                <Text strong>Expense List</Text>
-                <Text type="secondary">({filteredExpenses.length} records)</Text>
-              </Space>
-            </Col>
-            <Col>
-              <Space>
-                <SortDescendingOutlined style={{ color: '#1890ff' }} />
-                <Text type="secondary">
-                  Sorted by: {sortOrder.field} ({sortOrder.order === 'descend' ? 'Desc' : 'Asc'})
-                </Text>
-              </Space>
-            </Col>
-          </Row>
-        </div>
-        
-        <Table
-          columns={columns}
-          dataSource={sortedExpenses}
-          rowKey="id"
-          loading={loading}
-          onChange={handleTableChange}
-          pagination={{
-            current: pagination.page,
-            pageSize: pagination.limit,
-            total: filteredExpenses.length,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
-            size: 'small',
-            pageSizeOptions: ['10', '20', '50', '100']
-          }}
-          size="small"
-          scroll={{ x: 800 }}
-          style={{ marginTop: 0 }}
-        />
-        
-        {/* Table Summary */}
-        <div style={{ 
-          backgroundColor: '#fafafa', 
-          padding: '8px 12px', 
-          borderTop: '1px solid #f0f0f0',
-          fontSize: '11px'
-        }}>
-          <Row align="middle" justify="space-between">
-            <Col>
-              <Space>
-                <Text strong>Total Amount:</Text>
-                <Text strong style={{ color: '#13c2c2' }}>
-                  KES {summaryStats.totalAmount.toLocaleString()}
-                </Text>
-              </Space>
-            </Col>
-            <Col>
-              <Space>
-                <Text type="secondary">
-                  {summaryStats.pendingCount > 0 && `${summaryStats.pendingCount} pending`}
-                  {summaryStats.approvedCount > 0 && `, ${summaryStats.approvedCount} approved`}
-                  {summaryStats.rejectedCount > 0 && `, ${summaryStats.rejectedCount} rejected`}
-                </Text>
-              </Space>
-            </Col>
-          </Row>
-        </div>
-      </Card>
+      {sortedExpenses.length > 0 && (
+        <Card size="small" style={{ marginBottom: 12 }}>
+          <div style={{ 
+            backgroundColor: '#fafafa', 
+            padding: '8px 12px', 
+            borderBottom: '1px solid #f0f0f0',
+            fontSize: '11px'
+          }}>
+            <Row align="middle" justify="space-between">
+              <Col>
+                <Space>
+                  <Text strong>Expense List</Text>
+                  <Text type="secondary">({sortedExpenses.length} records)</Text>
+                </Space>
+              </Col>
+              <Col>
+                <Space>
+                  <SortDescendingOutlined style={{ color: '#1890ff' }} />
+                  <Text type="secondary">
+                    Sorted by: {sortOrder.field} ({sortOrder.order === 'descend' ? 'Desc' : 'Asc'})
+                  </Text>
+                </Space>
+              </Col>
+            </Row>
+          </div>
+          
+          <Table
+            columns={columns}
+            dataSource={sortedExpenses}
+            rowKey="id"
+            loading={loading}
+            onChange={handleTableChange}
+            pagination={{
+              current: pagination.page,
+              pageSize: pagination.limit,
+              total: sortedExpenses.length,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+              size: 'small',
+              pageSizeOptions: ['10', '20', '50', '100']
+            }}
+            size="small"
+            scroll={{ x: 800 }}
+            style={{ marginTop: 0 }}
+          />
+          
+          {/* Table Summary */}
+          <div style={{ 
+            backgroundColor: '#fafafa', 
+            padding: '8px 12px', 
+            borderTop: '1px solid #f0f0f0',
+            fontSize: '11px'
+          }}>
+            <Row align="middle" justify="space-between">
+              <Col>
+                <Space>
+                  <Text strong>Total Amount:</Text>
+                  <Text strong style={{ color: '#13c2c2' }}>
+                    KES {summaryStats.totalAmount.toLocaleString()}
+                  </Text>
+                </Space>
+              </Col>
+              <Col>
+                <Space>
+                  <Text type="secondary">
+                    {summaryStats.pendingCount > 0 && `${summaryStats.pendingCount} pending`}
+                    {summaryStats.approvedCount > 0 && `, ${summaryStats.approvedCount} approved`}
+                    {summaryStats.rejectedCount > 0 && `, ${summaryStats.rejectedCount} rejected`}
+                  </Text>
+                </Space>
+              </Col>
+            </Row>
+          </div>
+        </Card>
+      )}
 
       {/* Edit Modal */}
       <Modal
@@ -1135,6 +1200,54 @@ const ExpenseManagement = () => {
           setCreateModalVisible(false);
         }}
       />
+
+      {/* Report Generator Modal */}
+      <Modal
+        title={
+          <Space>
+            <FileTextOutlined />
+            <span>{reportTitle}</span>
+            <Tag color="blue">{reportConfig?.dataSource?.length || 0} records</Tag>
+          </Space>
+        }
+        open={reportModalVisible}
+        onCancel={() => {
+          setReportModalVisible(false);
+          setReportConfig(null);
+        }}
+        width="90%"
+        style={{ top: 20 }}
+        footer={null}
+        destroyOnClose
+      >
+        {reportConfig && (
+          <div style={{ padding: '20px 0' }}>
+            <AdvancedReportGenerator
+              key={`expense-report-${Date.now()}`}
+              {...reportConfig}
+              onReportGenerate={handleReportComplete}
+              onSettingsSave={(settings) => {
+                console.log('Report settings saved:', settings);
+                message.success('Report settings saved successfully!');
+              }}
+            />
+            
+            <Divider />
+            
+            <Space style={{ justifyContent: 'flex-end', width: '100%' }}>
+              <Button 
+                onClick={() => {
+                  setReportModalVisible(false);
+                  setReportConfig(null);
+                }}
+                size="small"
+              >
+                Close
+              </Button>
+            </Space>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

@@ -190,7 +190,7 @@ const PumpSalesManagement = () => {
     });
   };
 
-  // ==================== REPORT GENERATION ====================
+  // ==================== SIMPLIFIED REPORT GENERATION ====================
 
   const generateReportForCurrentTab = () => {
     let dataSource = [];
@@ -240,7 +240,8 @@ const PumpSalesManagement = () => {
       } : null,
       showFooter: true,
       footerText: `Generated from Lynx Energy System | Station: ${state.currentStation?.name || 'All'} | ${new Date().toLocaleString('en-KE')}`,
-      enableCustomization: true
+      enableCustomization: true,
+      showGrandTotals: false
     };
     
     setReportConfig(config);
@@ -254,31 +255,30 @@ const PumpSalesManagement = () => {
     setReportConfig(null);
   };
 
-  // Prepare export data for each tab
+  // Prepare export data for each tab - SIMPLIFIED columns, starting with shift
   const prepareExportData = (data, tab) => {
     switch (tab) {
       case 'pump-sales':
         return data.map(item => ({
+          'Shift': item.shift?.shiftNumber || 'N/A',
           'Pump Name': item.pump?.asset?.name || item.pump?.name || 'Unknown',
           'Product': item.product?.name || 'Unknown',
-          'Fuel Code': item.product?.fuelCode || 'N/A',
-          'Shift Number': item.shift?.shiftNumber || 'N/A',
-          'Revenue': enhancedSalesService.formatCurrency(item.salesData?.salesValue || 0),
-          'Volume (L)': enhancedSalesService.formatVolume(item.salesData?.litersDispensed || 0),
-          'Unit Price': enhancedSalesService.formatCurrency(item.salesData?.unitPrice || 0),
+          'Revenue (KES)': item.salesData?.salesValue || 0,
+          'Volume (L)': item.salesData?.litersDispensed || 0,
+          'Unit Price (KES/L)': item.salesData?.unitPrice || 0,
           'Opening Meter': item.salesData?.openingMeter || 0,
           'Closing Meter': item.salesData?.closingMeter || 0,
           'Station': item.station?.name || 'Unknown',
-          'Calculated At': enhancedSalesService.formatDate(item.salesData?.calculatedAt)
+          'Date': enhancedSalesService.formatDate(item.salesData?.calculatedAt) || 'N/A'
         }));
         
       case 'product-sales':
         return data.map(item => ({
+          'Shift': item.sales?.[0]?.shift?.shiftNumber || 'N/A',
           'Product Name': item.product?.name || 'Unknown',
-          'Fuel Code': item.product?.fuelCode || 'N/A',
-          'Total Revenue': enhancedSalesService.formatCurrency(item.metrics?.totalRevenue || 0),
-          'Total Volume (L)': enhancedSalesService.formatVolume(item.metrics?.totalLiters || 0),
-          'Average Price/L': enhancedSalesService.formatCurrency(item.metrics?.averagePrice || 0),
+          'Total Revenue (KES)': item.metrics?.totalRevenue || 0,
+          'Total Volume (L)': item.metrics?.totalLiters || 0,
+          'Average Price (KES/L)': item.metrics?.averagePrice || 0,
           'Pump Count': item.metrics?.pumpCount || 0,
           'Shift Count': item.metrics?.shiftCount || 0,
           'Sales Records': item.sales?.length || 0
@@ -286,13 +286,13 @@ const PumpSalesManagement = () => {
         
       case 'shift-performance':
         return data.map(item => ({
-          'Shift Number': item.shift?.shiftNumber || 'Unknown',
-          'Start Time': enhancedSalesService.formatDate(item.shift?.startTime),
+          'Shift': item.shift?.shiftNumber || 'Unknown',
+          'Start Time': enhancedSalesService.formatDate(item.shift?.startTime) || 'N/A',
           'Supervisor': item.shift?.supervisor ? 
             `${item.shift.supervisor.firstName} ${item.shift.supervisor.lastName}` : 'N/A',
-          'Total Revenue': enhancedSalesService.formatCurrency(item.metrics?.totalRevenue || 0),
-          'Total Volume (L)': enhancedSalesService.formatVolume(item.metrics?.totalLiters || 0),
-          'Average per Pump': enhancedSalesService.formatCurrency(item.metrics?.averageRevenuePerPump || 0),
+          'Total Revenue (KES)': item.metrics?.totalRevenue || 0,
+          'Total Volume (L)': item.metrics?.totalLiters || 0,
+          'Average per Pump (KES)': item.metrics?.averageRevenuePerPump || 0,
           'Active Pumps': item.metrics?.pumpCount || 0,
           'Products Sold': item.metrics?.productCount || 0,
           'Sales Records': item.sales?.length || 0
@@ -319,11 +319,16 @@ const PumpSalesManagement = () => {
       case 'pump-sales':
         const pumpSalesSummary = {
           ...baseSummary,
-          'Total Revenue': enhancedSalesService.formatCurrency(
+          'Total Revenue (KES)': enhancedSalesService.formatCurrency(
             data.reduce((sum, item) => sum + (item.salesData?.salesValue || 0), 0)
           ),
           'Total Volume (L)': enhancedSalesService.formatVolume(
             data.reduce((sum, item) => sum + (item.salesData?.litersDispensed || 0), 0)
+          ),
+          'Average Price (KES/L)': enhancedSalesService.formatCurrency(
+            data.reduce((sum, item) => sum + (item.salesData?.litersDispensed || 0), 0) > 0 ?
+            data.reduce((sum, item) => sum + (item.salesData?.salesValue || 0), 0) /
+            data.reduce((sum, item) => sum + (item.salesData?.litersDispensed || 0), 0) : 0
           ),
           'Unique Pumps': [...new Set(data.map(item => item.pump?.id).filter(Boolean))].length,
           'Unique Products': [...new Set(data.map(item => item.product?.id).filter(Boolean))].length
@@ -333,11 +338,16 @@ const PumpSalesManagement = () => {
       case 'product-sales':
         const productSummary = {
           ...baseSummary,
-          'Total Revenue': enhancedSalesService.formatCurrency(
+          'Total Revenue (KES)': enhancedSalesService.formatCurrency(
             data.reduce((sum, item) => sum + (item.metrics?.totalRevenue || 0), 0)
           ),
           'Total Volume (L)': enhancedSalesService.formatVolume(
             data.reduce((sum, item) => sum + (item.metrics?.totalLiters || 0), 0)
+          ),
+          'Average Price (KES/L)': enhancedSalesService.formatCurrency(
+            data.reduce((sum, item) => sum + (item.metrics?.totalLiters || 0), 0) > 0 ?
+            data.reduce((sum, item) => sum + (item.metrics?.totalRevenue || 0), 0) /
+            data.reduce((sum, item) => sum + (item.metrics?.totalLiters || 0), 0) : 0
           ),
           'Product Count': data.length
         };
@@ -346,16 +356,16 @@ const PumpSalesManagement = () => {
       case 'shift-performance':
         const shiftSummary = {
           ...baseSummary,
-          'Total Revenue': enhancedSalesService.formatCurrency(
+          'Total Revenue (KES)': enhancedSalesService.formatCurrency(
             data.reduce((sum, item) => sum + (item.metrics?.totalRevenue || 0), 0)
           ),
           'Total Volume (L)': enhancedSalesService.formatVolume(
             data.reduce((sum, item) => sum + (item.metrics?.totalLiters || 0), 0)
           ),
-          'Shift Count': data.length,
-          'Average Revenue per Shift': enhancedSalesService.formatCurrency(
+          'Average Revenue per Shift (KES)': enhancedSalesService.formatCurrency(
             data.reduce((sum, item) => sum + (item.metrics?.totalRevenue || 0), 0) / data.length || 0
-          )
+          ),
+          'Shift Count': data.length
         };
         return shiftSummary;
         
@@ -364,42 +374,41 @@ const PumpSalesManagement = () => {
     }
   };
 
-  // Get export columns for each tab
+  // Get export columns for each tab - SIMPLIFIED, starting with shift, no fuel code or actions
   const getPumpSalesExportColumns = () => [
-    { title: 'Pump Name', dataIndex: 'Pump Name', key: 'pumpName', width: 120 },
-    { title: 'Product', dataIndex: 'Product', key: 'product', width: 100 },
-    { title: 'Fuel Code', dataIndex: 'Fuel Code', key: 'fuelCode', width: 80 },
-    { title: 'Shift Number', dataIndex: 'Shift Number', key: 'shiftNumber', width: 80 },
-    { title: 'Revenue', dataIndex: 'Revenue', key: 'revenue', width: 100, type: 'currency' },
+    { title: 'Shift', dataIndex: 'Shift', key: 'shift', width: 80, type: 'text' },
+    { title: 'Pump Name', dataIndex: 'Pump Name', key: 'pumpName', width: 120, type: 'text' },
+    { title: 'Product', dataIndex: 'Product', key: 'product', width: 100, type: 'text' },
+    { title: 'Revenue (KES)', dataIndex: 'Revenue (KES)', key: 'revenue', width: 100, type: 'currency' },
     { title: 'Volume (L)', dataIndex: 'Volume (L)', key: 'volume', width: 80, type: 'number' },
-    { title: 'Unit Price', dataIndex: 'Unit Price', key: 'unitPrice', width: 80, type: 'currency' },
+    { title: 'Unit Price (KES/L)', dataIndex: 'Unit Price (KES/L)', key: 'unitPrice', width: 100, type: 'currency' },
     { title: 'Opening Meter', dataIndex: 'Opening Meter', key: 'openingMeter', width: 80, type: 'number' },
     { title: 'Closing Meter', dataIndex: 'Closing Meter', key: 'closingMeter', width: 80, type: 'number' },
-    { title: 'Station', dataIndex: 'Station', key: 'station', width: 120 },
-    { title: 'Calculated At', dataIndex: 'Calculated At', key: 'calculatedAt', width: 120, type: 'datetime' }
+    { title: 'Station', dataIndex: 'Station', key: 'station', width: 120, type: 'text' },
+    { title: 'Date', dataIndex: 'Date', key: 'date', width: 100, type: 'date' }
   ];
 
   const getProductPerformanceExportColumns = () => [
-    { title: 'Product Name', dataIndex: 'Product Name', key: 'productName', width: 120 },
-    { title: 'Fuel Code', dataIndex: 'Fuel Code', key: 'fuelCode', width: 80 },
-    { title: 'Total Revenue', dataIndex: 'Total Revenue', key: 'totalRevenue', width: 100, type: 'currency' },
-    { title: 'Total Volume (L)', dataIndex: 'Total Volume (L)', key: 'totalVolume', width: 80, type: 'number' },
-    { title: 'Average Price/L', dataIndex: 'Average Price/L', key: 'averagePrice', width: 80, type: 'currency' },
-    { title: 'Pump Count', dataIndex: 'Pump Count', key: 'pumpCount', width: 60, type: 'number' },
-    { title: 'Shift Count', dataIndex: 'Shift Count', key: 'shiftCount', width: 60, type: 'number' },
-    { title: 'Sales Records', dataIndex: 'Sales Records', key: 'salesRecords', width: 60, type: 'number' }
+    { title: 'Shift', dataIndex: 'Shift', key: 'shift', width: 80, type: 'text' },
+    { title: 'Product Name', dataIndex: 'Product Name', key: 'productName', width: 120, type: 'text' },
+    { title: 'Total Revenue (KES)', dataIndex: 'Total Revenue (KES)', key: 'totalRevenue', width: 120, type: 'currency' },
+    { title: 'Total Volume (L)', dataIndex: 'Total Volume (L)', key: 'totalVolume', width: 100, type: 'number' },
+    { title: 'Average Price (KES/L)', dataIndex: 'Average Price (KES/L)', key: 'averagePrice', width: 120, type: 'currency' },
+    { title: 'Pump Count', dataIndex: 'Pump Count', key: 'pumpCount', width: 80, type: 'number' },
+    { title: 'Shift Count', dataIndex: 'Shift Count', key: 'shiftCount', width: 80, type: 'number' },
+    { title: 'Sales Records', dataIndex: 'Sales Records', key: 'salesRecords', width: 80, type: 'number' }
   ];
 
   const getShiftPerformanceExportColumns = () => [
-    { title: 'Shift Number', dataIndex: 'Shift Number', key: 'shiftNumber', width: 80 },
+    { title: 'Shift', dataIndex: 'Shift', key: 'shift', width: 80, type: 'text' },
     { title: 'Start Time', dataIndex: 'Start Time', key: 'startTime', width: 120, type: 'datetime' },
-    { title: 'Supervisor', dataIndex: 'Supervisor', key: 'supervisor', width: 120 },
-    { title: 'Total Revenue', dataIndex: 'Total Revenue', key: 'totalRevenue', width: 100, type: 'currency' },
-    { title: 'Total Volume (L)', dataIndex: 'Total Volume (L)', key: 'totalVolume', width: 80, type: 'number' },
-    { title: 'Average per Pump', dataIndex: 'Average per Pump', key: 'avgPerPump', width: 80, type: 'currency' },
-    { title: 'Active Pumps', dataIndex: 'Active Pumps', key: 'activePumps', width: 60, type: 'number' },
-    { title: 'Products Sold', dataIndex: 'Products Sold', key: 'productsSold', width: 60, type: 'number' },
-    { title: 'Sales Records', dataIndex: 'Sales Records', key: 'salesRecords', width: 60, type: 'number' }
+    { title: 'Supervisor', dataIndex: 'Supervisor', key: 'supervisor', width: 120, type: 'text' },
+    { title: 'Total Revenue (KES)', dataIndex: 'Total Revenue (KES)', key: 'totalRevenue', width: 120, type: 'currency' },
+    { title: 'Total Volume (L)', dataIndex: 'Total Volume (L)', key: 'totalVolume', width: 100, type: 'number' },
+    { title: 'Average per Pump (KES)', dataIndex: 'Average per Pump (KES)', key: 'avgPerPump', width: 120, type: 'currency' },
+    { title: 'Active Pumps', dataIndex: 'Active Pumps', key: 'activePumps', width: 80, type: 'number' },
+    { title: 'Products Sold', dataIndex: 'Products Sold', key: 'productsSold', width: 80, type: 'number' },
+    { title: 'Sales Records', dataIndex: 'Sales Records', key: 'salesRecords', width: 80, type: 'number' }
   ];
 
   // Statistics for dashboard
@@ -464,19 +473,36 @@ const PumpSalesManagement = () => {
 
   const pumpSalesColumns = [
     {
+      title: '#',
+      key: 'index',
+      width: 50,
+      fixed: 'left',
+      render: (_, __, index) => (
+        <div style={{ textAlign: 'center', fontSize: '12px', color: '#666' }}>
+          {((pagination.page - 1) * pagination.limit) + index + 1}
+        </div>
+      )
+    },
+    {
+      title: 'Shift',
+      key: 'shift',
+      width: 70,
+      render: (_, record) => (
+        <div style={{ fontWeight: '500', fontSize: '12px', color: '#1890ff' }}>
+          #{record.shift?.shiftNumber || '-'}
+        </div>
+      )
+    },
+    {
       title: 'Pump',
       dataIndex: 'pump',
       key: 'pump',
       width: 140,
-      fixed: 'left',
       render: (pump) => (
         <div>
-          <div style={{ fontWeight: '500', fontSize: '13px' }}>
+          <div style={{ fontWeight: '500', fontSize: '12px' }}>
             <FireOutlined style={{ fontSize: '10px', marginRight: '4px', color: '#ff4d4f' }} />
             {pump?.asset?.name || pump?.name || 'Unknown'}
-          </div>
-          <div style={{ fontSize: '11px', color: '#666' }}>
-            {pump?.asset?.stationLabel || pump?.label || ''}
           </div>
         </div>
       )
@@ -488,21 +514,7 @@ const PumpSalesManagement = () => {
       width: 100,
       render: (product) => (
         <div>
-          <div style={{ fontWeight: '500', fontSize: '12px' }}>{product?.name || 'Unknown'}</div>
-          <div style={{ fontSize: '11px', color: '#666' }}>{product?.fuelCode || 'N/A'}</div>
-        </div>
-      )
-    },
-    {
-      title: 'Shift',
-      dataIndex: 'shift',
-      key: 'shift',
-      width: 80,
-      render: (shift) => (
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontWeight: '500', fontSize: '13px', color: '#1890ff' }}>
-            #{shift?.shiftNumber || '-'}
-          </div>
+          <div style={{ fontSize: '12px' }}>{product?.name || 'Unknown'}</div>
         </div>
       )
     },
@@ -512,13 +524,19 @@ const PumpSalesManagement = () => {
       width: 100,
       align: 'right',
       render: (_, record) => (
-        <div>
-          <div style={{ fontWeight: '600', fontSize: '13px', color: '#cf1322' }}>
-            {enhancedSalesService.formatCurrency(record.salesData?.salesValue || 0)}
-          </div>
-          <div style={{ fontSize: '11px', color: '#666' }}>
-            {enhancedSalesService.formatVolume(record.salesData?.litersDispensed || 0)}
-          </div>
+        <div style={{ fontWeight: '500', fontSize: '12px', color: '#cf1322' }}>
+          {enhancedSalesService.formatCurrency(record.salesData?.salesValue || 0)}
+        </div>
+      )
+    },
+    {
+      title: 'Volume',
+      key: 'volume',
+      width: 80,
+      align: 'right',
+      render: (_, record) => (
+        <div style={{ fontSize: '12px' }}>
+          {enhancedSalesService.formatVolume(record.salesData?.litersDispensed || 0)}
         </div>
       )
     },
@@ -530,17 +548,6 @@ const PumpSalesManagement = () => {
       render: (_, record) => (
         <div style={{ color: '#52c41a', fontWeight: '500', fontSize: '12px' }}>
           {enhancedSalesService.formatCurrency(record.salesData?.unitPrice || 0)}/L
-        </div>
-      )
-    },
-    {
-      title: 'Meters',
-      key: 'meters',
-      width: 110,
-      render: (_, record) => (
-        <div style={{ fontSize: '11px' }}>
-          <div>Open: {record.salesData?.openingMeter || 0}</div>
-          <div>Close: {record.salesData?.closingMeter || 0}</div>
         </div>
       )
     },
@@ -562,18 +569,36 @@ const PumpSalesManagement = () => {
 
   const productPerformanceColumns = [
     {
+      title: '#',
+      key: 'index',
+      width: 50,
+      render: (_, __, index) => (
+        <div style={{ textAlign: 'center', fontSize: '12px', color: '#666' }}>
+          {index + 1}
+        </div>
+      )
+    },
+    {
+      title: 'Shift',
+      key: 'shift',
+      width: 70,
+      render: (_, record) => (
+        <div style={{ fontWeight: '500', fontSize: '12px', color: '#1890ff' }}>
+          #{record.sales?.[0]?.shift?.shiftNumber || '-'}
+        </div>
+      )
+    },
+    {
       title: 'Product',
       dataIndex: 'product',
       key: 'product',
       width: 140,
-      fixed: 'left',
       render: (product) => (
         <div>
-          <div style={{ fontWeight: '500', fontSize: '13px' }}>
+          <div style={{ fontWeight: '500', fontSize: '12px' }}>
             <ProductOutlined style={{ fontSize: '10px', marginRight: '4px', color: '#1890ff' }} />
             {product?.name || 'Unknown'}
           </div>
-          <div style={{ fontSize: '11px', color: '#666' }}>Code: {product?.fuelCode || 'N/A'}</div>
         </div>
       )
     },
@@ -583,13 +608,19 @@ const PumpSalesManagement = () => {
       width: 100,
       align: 'right',
       render: (_, record) => (
-        <div>
-          <div style={{ fontWeight: '600', fontSize: '13px', color: '#cf1322' }}>
-            {enhancedSalesService.formatCurrency(record.metrics?.totalRevenue || 0)}
-          </div>
-          <div style={{ fontSize: '11px', color: '#666' }}>
-            {enhancedSalesService.formatVolume(record.metrics?.totalLiters || 0)}
-          </div>
+        <div style={{ fontWeight: '500', fontSize: '12px', color: '#cf1322' }}>
+          {enhancedSalesService.formatCurrency(record.metrics?.totalRevenue || 0)}
+        </div>
+      )
+    },
+    {
+      title: 'Volume',
+      key: 'volume',
+      width: 80,
+      align: 'right',
+      render: (_, record) => (
+        <div style={{ fontSize: '12px' }}>
+          {enhancedSalesService.formatVolume(record.metrics?.totalLiters || 0)}
         </div>
       )
     },
@@ -605,58 +636,35 @@ const PumpSalesManagement = () => {
       )
     },
     {
-      title: 'Pumps/Shifts',
-      key: 'counts',
-      width: 100,
+      title: 'Pumps',
+      key: 'pumps',
+      width: 60,
+      align: 'center',
       render: (_, record) => (
-        <div style={{ fontSize: '11px' }}>
-          <div>Pumps: <Badge count={record.metrics?.pumpCount || 0} style={{ backgroundColor: '#1890ff' }} /></div>
-          <div>Shifts: <Badge count={record.metrics?.shiftCount || 0} style={{ backgroundColor: '#52c41a' }} /></div>
-        </div>
+        <Badge count={record.metrics?.pumpCount || 0} style={{ backgroundColor: '#1890ff' }} />
       )
-    },
-    {
-      title: 'Market Share',
-      key: 'share',
-      width: 120,
-      render: (_, record) => {
-        const totalRevenue = productPerformance.reduce((sum, r) => sum + (r.metrics?.totalRevenue || 0), 0);
-        const share = totalRevenue > 0 ? ((record.metrics?.totalRevenue || 0) / totalRevenue) * 100 : 0;
-        
-        return (
-          <div>
-            <Progress 
-              percent={Math.round(share)} 
-              size="small" 
-              strokeColor={record === productPerformance[0] ? '#52c41a' : '#1890ff'}
-              style={{ marginBottom: '4px' }}
-            />
-            <div style={{ fontSize: '10px', color: '#666', textAlign: 'center' }}>
-              {Math.round(share)}%
-            </div>
-          </div>
-        );
-      }
     }
   ];
 
   const shiftPerformanceColumns = [
     {
+      title: '#',
+      key: 'index',
+      width: 50,
+      render: (_, __, index) => (
+        <div style={{ textAlign: 'center', fontSize: '12px', color: '#666' }}>
+          {index + 1}
+        </div>
+      )
+    },
+    {
       title: 'Shift',
       dataIndex: 'shift',
       key: 'shift',
-      width: 140,
-      fixed: 'left',
+      width: 70,
       render: (shift) => (
-        <div>
-          <div style={{ fontWeight: '500', fontSize: '13px', color: '#1890ff' }}>
-            🕐 #{shift?.shiftNumber || 'Unknown'}
-          </div>
-          {shift?.startTime && (
-            <div style={{ fontSize: '11px', color: '#666' }}>
-              {enhancedSalesService.formatDate(shift.startTime)}
-            </div>
-          )}
+        <div style={{ fontWeight: '500', fontSize: '12px', color: '#1890ff' }}>
+          #{shift?.shiftNumber || 'Unknown'}
         </div>
       )
     },
@@ -666,13 +674,19 @@ const PumpSalesManagement = () => {
       width: 100,
       align: 'right',
       render: (_, record) => (
-        <div>
-          <div style={{ fontWeight: '600', fontSize: '13px', color: '#cf1322' }}>
-            {enhancedSalesService.formatCurrency(record.metrics?.totalRevenue || 0)}
-          </div>
-          <div style={{ fontSize: '11px', color: '#666' }}>
-            {enhancedSalesService.formatVolume(record.metrics?.totalLiters || 0)}
-          </div>
+        <div style={{ fontWeight: '500', fontSize: '12px', color: '#cf1322' }}>
+          {enhancedSalesService.formatCurrency(record.metrics?.totalRevenue || 0)}
+        </div>
+      )
+    },
+    {
+      title: 'Volume',
+      key: 'volume',
+      width: 80,
+      align: 'right',
+      render: (_, record) => (
+        <div style={{ fontSize: '12px' }}>
+          {enhancedSalesService.formatVolume(record.metrics?.totalLiters || 0)}
         </div>
       )
     },
@@ -688,34 +702,30 @@ const PumpSalesManagement = () => {
       )
     },
     {
-      title: 'Activity',
-      key: 'activity',
-      width: 120,
+      title: 'Pumps',
+      key: 'pumpCount',
+      width: 60,
+      align: 'center',
       render: (_, record) => (
-        <div style={{ fontSize: '11px' }}>
-          <div>
-            Pumps: <Badge count={record.metrics?.pumpCount || 0} style={{ backgroundColor: '#1890ff' }} />
-          </div>
-          <div>
-            Products: <Badge count={record.metrics?.productCount || 0} style={{ backgroundColor: '#52c41a' }} />
-          </div>
-          <div>
-            Records: <Badge count={record.sales?.length || 0} style={{ backgroundColor: '#faad14' }} />
-          </div>
-        </div>
+        <Badge count={record.metrics?.pumpCount || 0} style={{ backgroundColor: '#1890ff' }} />
       )
     },
     {
-      title: 'Supervisor',
-      key: 'supervisor',
-      width: 100,
+      title: 'Products',
+      key: 'productCount',
+      width: 60,
+      align: 'center',
       render: (_, record) => (
-        <div style={{ fontSize: '11px' }}>
-          {record.shift?.supervisor ? 
-            `${record.shift.supervisor.firstName} ${record.shift.supervisor.lastName}` : 
-            'N/A'
-          }
-        </div>
+        <Badge count={record.metrics?.productCount || 0} style={{ backgroundColor: '#52c41a' }} />
+      )
+    },
+    {
+      title: 'Records',
+      key: 'recordCount',
+      width: 60,
+      align: 'center',
+      render: (_, record) => (
+        <Badge count={record.sales?.length || 0} style={{ backgroundColor: '#faad14' }} />
       )
     }
   ];

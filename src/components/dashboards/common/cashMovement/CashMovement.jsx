@@ -66,17 +66,15 @@ const { RangePicker } = DatePicker;
 const { Option } = Select;
 const { Panel } = Collapse;
 
-// ==================== COMPONENT BREAKDOWN ====================
-
-// 1. Filter Section Component - SIMPLIFIED
+// ==================== SIMPLIFIED FILTER SECTION ====================
 const FilterSection = ({ activeTab, filters, onFilterChange, onFetchData, loading, 
   stations, islands, shifts, attendants, currentUser }) => {
   
   const renderTabFilters = () => {
     const commonFilters = (
-      <Row gutter={[12, 12]} align="middle">
+      <Row gutter={[8, 8]} align="middle">
         <Col xs={24} sm={12} md={8}>
-          <Form.Item label="Date Range" style={{ marginBottom: 8 }}>
+          <Form.Item style={{ marginBottom: 0 }}>
             <RangePicker
               value={[dayjs(filters.startDate), dayjs(filters.endDate)]}
               onChange={(dates, dateStrings) => {
@@ -86,17 +84,18 @@ const FilterSection = ({ activeTab, filters, onFilterChange, onFetchData, loadin
               style={{ width: '100%' }}
               format="YYYY-MM-DD"
               size="small"
+              placeholder={['Start', 'End']}
             />
           </Form.Item>
         </Col>
         
         {(currentUser?.isSuperAdmin || currentUser?.isCompanyAdmin) && (
-          <Col xs={24} sm={12} md={6}>
-            <Form.Item label="Station" style={{ marginBottom: 8 }}>
+          <Col xs={24} sm={12} md={5}>
+            <Form.Item style={{ marginBottom: 0 }}>
               <Select
                 value={filters.stationId}
                 onChange={(value) => onFilterChange('stationId', value)}
-                placeholder="All Stations"
+                placeholder="Station"
                 style={{ width: '100%' }}
                 size="small"
                 allowClear
@@ -111,12 +110,12 @@ const FilterSection = ({ activeTab, filters, onFilterChange, onFetchData, loadin
           </Col>
         )}
         
-        <Col xs={24} sm={12} md={4}>
-          <Form.Item label="Status" style={{ marginBottom: 8 }}>
+        <Col xs={24} sm={12} md={5}>
+          <Form.Item style={{ marginBottom: 0 }}>
             <Select
               value={filters.status}
               onChange={(value) => onFilterChange('status', value)}
-              placeholder="All"
+              placeholder="Status"
               style={{ width: '100%' }}
               size="small"
               allowClear
@@ -135,195 +134,48 @@ const FilterSection = ({ activeTab, filters, onFilterChange, onFetchData, loadin
     switch (activeTab) {
       case 'island':
         return (
-          <Row gutter={[12, 12]} align="middle">
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="Island" style={{ marginBottom: 8 }}>
-                <Select
-                  value={filters.islandId}
-                  onChange={(value) => onFilterChange('islandId', value)}
-                  placeholder="All Islands"
-                  style={{ width: '100%' }}
-                  size="small"
-                  allowClear
-                >
-                  {islands.map(island => (
-                    <Option key={island.id} value={island.id}>
-                      {island.name}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="Attendant" style={{ marginBottom: 8 }}>
-                <Select
-                  value={filters.attendantId}
-                  onChange={(value) => onFilterChange('attendantId', value)}
-                  placeholder="All Attendants"
-                  style={{ width: '100%' }}
-                  size="small"
-                  allowClear
-                >
-                  {attendants.map(attendant => (
-                    <Option key={attendant.id} value={attendant.id}>
-                      {attendant.firstName} {attendant.lastName}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="Include" style={{ marginBottom: 8 }}>
-                <div>
-                  <Checkbox
-                    checked={filters.includeExpenses}
-                    onChange={(e) => onFilterChange('includeExpenses', e.target.checked)}
-                    style={{ fontSize: '12px' }}
+          <div>
+            <Row gutter={[8, 8]} align="middle">
+              <Col xs={24} sm={12} md={5}>
+                <Form.Item style={{ marginBottom: 0 }}>
+                  <Select
+                    value={filters.islandId}
+                    onChange={(value) => onFilterChange('islandId', value)}
+                    placeholder="Island"
+                    style={{ width: '100%' }}
+                    size="small"
+                    allowClear
                   >
-                    Expenses
-                  </Checkbox>
-                  <Checkbox
-                    checked={filters.includeDebts}
-                    onChange={(e) => onFilterChange('includeDebts', e.target.checked)}
-                    style={{ fontSize: '12px' }}
+                    {islands.map(island => (
+                      <Option key={island.id} value={island.id}>
+                        {island.name}
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+              
+              <Col xs={24} sm={12} md={5}>
+                <Form.Item style={{ marginBottom: 0 }}>
+                  <Select
+                    value={filters.attendantId}
+                    onChange={(value) => onFilterChange('attendantId', value)}
+                    placeholder="Attendant"
+                    style={{ width: '100%' }}
+                    size="small"
+                    allowClear
                   >
-                    Debts
-                  </Checkbox>
-                </div>
-              </Form.Item>
-            </Col>
-            
-            <Col xs={24} sm={12} md={6}>
-              <Space style={{ marginTop: 24 }}>
-                <Button
-                  type="primary"
-                  onClick={onFetchData}
-                  loading={loading}
-                  icon={<ReloadOutlined />}
-                  size="small"
-                >
-                  Load
-                </Button>
-                <Button
-                  onClick={() => {
-                    // Clear all filters except date range
-                    onFilterChange('islandId', null);
-                    onFilterChange('attendantId', null);
-                    onFilterChange('status', null);
-                    onFilterChange('includeExpenses', false);
-                    onFilterChange('includeDebts', false);
-                  }}
-                  size="small"
-                >
-                  Clear
-                </Button>
-              </Space>
-            </Col>
-            
-            {commonFilters}
-          </Row>
-        );
-
-      case 'shift':
-        return (
-          <Row gutter={[12, 12]} align="middle">
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="Shift" style={{ marginBottom: 8 }}>
-                <Select
-                  value={filters.shiftId}
-                  onChange={(value) => onFilterChange('shiftId', value)}
-                  placeholder="All Shifts"
-                  style={{ width: '100%' }}
-                  size="small"
-                  allowClear
-                >
-                  {shifts.map(shift => (
-                    <Option key={shift.id} value={shift.id}>
-                      Shift #{shift.shiftNumber}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="Sort By" style={{ marginBottom: 8 }}>
-                <Select
-                  value={filters.sortBy}
-                  onChange={(value) => onFilterChange('sortBy', value)}
-                  style={{ width: '100%' }}
-                  size="small"
-                >
-                  <Option value="countedAt">Counted Date</Option>
-                  <Option value="cashAmount">Cash Amount</Option>
-                  <Option value="grandTotal">Grand Total</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="Order" style={{ marginBottom: 8 }}>
-                <Select
-                  value={filters.sortOrder}
-                  onChange={(value) => onFilterChange('sortOrder', value)}
-                  style={{ width: '100%' }}
-                  size="small"
-                >
-                  <Option value="desc">Newest First</Option>
-                  <Option value="asc">Oldest First</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            
-            <Col xs={24} sm={12} md={6}>
-              <Space style={{ marginTop: 24 }}>
-                <Button
-                  type="primary"
-                  onClick={onFetchData}
-                  loading={loading}
-                  icon={<ReloadOutlined />}
-                  size="small"
-                >
-                  Load
-                </Button>
-                <Button
-                  onClick={() => {
-                    onFilterChange('shiftId', null);
-                    onFilterChange('status', null);
-                    onFilterChange('sortBy', 'countedAt');
-                    onFilterChange('sortOrder', 'desc');
-                  }}
-                  size="small"
-                >
-                  Clear
-                </Button>
-              </Space>
-            </Col>
-            
-            {commonFilters}
-          </Row>
-        );
-
-      case 'daily':
-        return (
-          <Row gutter={[12, 12]} align="middle">
-            <Col xs={24} sm={12} md={8}>
-              <Form.Item label="Report Date" style={{ marginBottom: 8 }}>
-                <DatePicker
-                  value={dayjs(filters.reportDate)}
-                  onChange={(date, dateString) => onFilterChange('reportDate', dateString)}
-                  style={{ width: '100%' }}
-                  format="YYYY-MM-DD"
-                  size="small"
-                />
-              </Form.Item>
-            </Col>
-            
-            <Col xs={24} sm={12} md={8}>
-              <Form.Item label="Include Details" style={{ marginBottom: 8 }}>
-                <Space direction="vertical" size={0}>
+                    {attendants.map(attendant => (
+                      <Option key={attendant.id} value={attendant.id}>
+                        {attendant.firstName} {attendant.lastName}
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+              
+              <Col xs={24} sm={12} md={6}>
+                <Space size="small">
                   <Checkbox
                     checked={filters.includeExpenses}
                     onChange={(e) => onFilterChange('includeExpenses', e.target.checked)}
@@ -339,30 +191,173 @@ const FilterSection = ({ activeTab, filters, onFilterChange, onFetchData, loadin
                     Debts
                   </Checkbox>
                 </Space>
+              </Col>
+              
+              <Col xs={24} sm={12} md={4}>
+                <Space>
+                  <Button
+                    type="primary"
+                    onClick={onFetchData}
+                    loading={loading}
+                    icon={<ReloadOutlined />}
+                    size="small"
+                  >
+                    Load
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      onFilterChange('islandId', null);
+                      onFilterChange('attendantId', null);
+                      onFilterChange('includeExpenses', false);
+                      onFilterChange('includeDebts', false);
+                    }}
+                    size="small"
+                  >
+                    Clear
+                  </Button>
+                </Space>
+              </Col>
+            </Row>
+            <Divider style={{ margin: '12px 0' }} />
+            {commonFilters}
+          </div>
+        );
+
+      case 'shift':
+        return (
+          <div>
+            <Row gutter={[8, 8]} align="middle">
+              <Col xs={24} sm={12} md={5}>
+                <Form.Item style={{ marginBottom: 0 }}>
+                  <Select
+                    value={filters.shiftId}
+                    onChange={(value) => onFilterChange('shiftId', value)}
+                    placeholder="Shift"
+                    style={{ width: '100%' }}
+                    size="small"
+                    allowClear
+                  >
+                    {shifts.map(shift => (
+                      <Option key={shift.id} value={shift.id}>
+                        #{shift.shiftNumber}
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+              
+              <Col xs={24} sm={12} md={5}>
+                <Form.Item style={{ marginBottom: 0 }}>
+                  <Select
+                    value={filters.sortBy}
+                    onChange={(value) => onFilterChange('sortBy', value)}
+                    style={{ width: '100%' }}
+                    size="small"
+                  >
+                    <Option value="countedAt">Counted Date</Option>
+                    <Option value="cashAmount">Cash Amount</Option>
+                    <Option value="grandTotal">Grand Total</Option>
+                  </Select>
+                </Form.Item>
+              </Col>
+              
+              <Col xs={24} sm={12} md={4}>
+                <Form.Item style={{ marginBottom: 0 }}>
+                  <Select
+                    value={filters.sortOrder}
+                    onChange={(value) => onFilterChange('sortOrder', value)}
+                    style={{ width: '100%' }}
+                    size="small"
+                  >
+                    <Option value="desc">Newest</Option>
+                    <Option value="asc">Oldest</Option>
+                  </Select>
+                </Form.Item>
+              </Col>
+              
+              <Col xs={24} sm={12} md={6}>
+                <Space>
+                  <Button
+                    type="primary"
+                    onClick={onFetchData}
+                    loading={loading}
+                    icon={<ReloadOutlined />}
+                    size="small"
+                  >
+                    Load
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      onFilterChange('shiftId', null);
+                      onFilterChange('sortBy', 'countedAt');
+                      onFilterChange('sortOrder', 'desc');
+                    }}
+                    size="small"
+                  >
+                    Clear
+                  </Button>
+                </Space>
+              </Col>
+            </Row>
+            <Divider style={{ margin: '12px 0' }} />
+            {commonFilters}
+          </div>
+        );
+
+      case 'daily':
+        return (
+          <Row gutter={[8, 8]} align="middle">
+            <Col xs={24} sm={12} md={6}>
+              <Form.Item style={{ marginBottom: 0 }}>
+                <DatePicker
+                  value={dayjs(filters.reportDate)}
+                  onChange={(date, dateString) => onFilterChange('reportDate', dateString)}
+                  style={{ width: '100%' }}
+                  format="YYYY-MM-DD"
+                  size="small"
+                  placeholder="Report Date"
+                />
               </Form.Item>
             </Col>
             
-            <Col xs={24} sm={12} md={8}>
-              <Space style={{ marginTop: 24 }}>
-                <Button
-                  type="primary"
-                  onClick={onFetchData}
-                  loading={loading}
-                  icon={<ReloadOutlined />}
-                  size="small"
+            <Col xs={24} sm={12} md={6}>
+              <Space size="small">
+                <Checkbox
+                  checked={filters.includeExpenses}
+                  onChange={(e) => onFilterChange('includeExpenses', e.target.checked)}
+                  style={{ fontSize: '12px' }}
                 >
-                  Generate
-                </Button>
+                  Expenses
+                </Checkbox>
+                <Checkbox
+                  checked={filters.includeDebts}
+                  onChange={(e) => onFilterChange('includeDebts', e.target.checked)}
+                  style={{ fontSize: '12px' }}
+                >
+                  Debts
+                </Checkbox>
               </Space>
+            </Col>
+            
+            <Col xs={24} sm={12} md={6}>
+              <Button
+                type="primary"
+                onClick={onFetchData}
+                loading={loading}
+                icon={<ReloadOutlined />}
+                size="small"
+              >
+                Generate
+              </Button>
             </Col>
           </Row>
         );
 
       case 'performance':
         return (
-          <Row gutter={[12, 12]} align="middle">
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="Period" style={{ marginBottom: 8 }}>
+          <Row gutter={[8, 8]} align="middle">
+            <Col xs={24} sm={12} md={5}>
+              <Form.Item style={{ marginBottom: 0 }}>
                 <Select
                   value={filters.reportPeriod}
                   onChange={(value) => onFilterChange('reportPeriod', value)}
@@ -376,8 +371,8 @@ const FilterSection = ({ activeTab, filters, onFilterChange, onFetchData, loadin
               </Form.Item>
             </Col>
             
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="Group By" style={{ marginBottom: 8 }}>
+            <Col xs={24} sm={12} md={5}>
+              <Form.Item style={{ marginBottom: 0 }}>
                 <Select
                   value={filters.reportGroupBy}
                   onChange={(value) => onFilterChange('reportGroupBy', value)}
@@ -391,26 +386,22 @@ const FilterSection = ({ activeTab, filters, onFilterChange, onFetchData, loadin
             </Col>
             
             <Col xs={24} sm={12} md={6}>
-              <Space style={{ marginTop: 24 }}>
-                <Button
-                  type="primary"
-                  onClick={onFetchData}
-                  loading={loading}
-                  icon={<ReloadOutlined />}
-                  size="small"
-                >
-                  Generate
-                </Button>
-              </Space>
+              <Button
+                type="primary"
+                onClick={onFetchData}
+                loading={loading}
+                icon={<ReloadOutlined />}
+                size="small"
+              >
+                Generate
+              </Button>
             </Col>
-            
-            {commonFilters}
           </Row>
         );
 
       case 'dashboard':
         return (
-          <Row gutter={[12, 12]} align="middle">
+          <Row>
             <Col xs={24}>
               <Button
                 type="primary"
@@ -431,27 +422,13 @@ const FilterSection = ({ activeTab, filters, onFilterChange, onFetchData, loadin
   };
 
   return (
-    <Card
-      title={
-        <Space size="small">
-          <FilterOutlined />
-          <Text>Filters</Text>
-        </Space>
-      }
-      size="small"
-      style={{ marginBottom: 16 }}
-      extra={
-        <Text type="secondary" style={{ fontSize: '12px' }}>
-          Tab: {activeTab.replace('-', ' ')}
-        </Text>
-      }
-    >
+    <Card size="small" style={{ marginBottom: 16 }}>
       {renderTabFilters()}
     </Card>
   );
 };
 
-// 2. Summary Cards Component
+// ==================== COMPACT SUMMARY CARDS ====================
 const SummaryCards = ({ summary, tableData, activeTab }) => {
   if (!summary && !tableData?.length) return null;
 
@@ -501,41 +478,40 @@ const SummaryCards = ({ summary, tableData, activeTab }) => {
   const tabSummary = getTabSummary();
 
   return (
-    <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+    <Row gutter={[8, 8]} style={{ marginBottom: 16 }}>
       <Col xs={12} sm={6} md={4}>
-        <Card size="small">
+        <Card size="small" bodyStyle={{ padding: '8px' }}>
           <Statistic
-            title="Total Records"
+            title={<span style={{ fontSize: '11px' }}>Records</span>}
             value={tabSummary.totalRecords}
-            valueStyle={{ color: '#1890ff', fontSize: '16px' }}
-            prefix={<FileTextOutlined />}
+            valueStyle={{ color: '#1890ff', fontSize: '14px' }}
           />
         </Card>
       </Col>
       
       <Col xs={12} sm={6} md={4}>
-        <Card size="small">
+        <Card size="small" bodyStyle={{ padding: '8px' }}>
           <Statistic
-            title="Total Cash"
+            title={<span style={{ fontSize: '11px' }}>Cash</span>}
             value={tabSummary.totalCash || 0}
             precision={0}
             prefix="KES"
-            valueStyle={{ color: '#52c41a', fontSize: '16px' }}
+            valueStyle={{ color: '#52c41a', fontSize: '14px' }}
           />
         </Card>
       </Col>
       
       {(tabSummary.totalShortage !== undefined || tabSummary.totalVariance !== undefined) && (
         <Col xs={12} sm={6} md={4}>
-          <Card size="small">
+          <Card size="small" bodyStyle={{ padding: '8px' }}>
             <Statistic
-              title={tabSummary.totalShortage !== undefined ? "Shortage" : "Variance"}
+              title={<span style={{ fontSize: '11px' }}>{tabSummary.totalShortage !== undefined ? "Shortage" : "Variance"}</span>}
               value={tabSummary.totalShortage || tabSummary.totalVariance || 0}
               precision={0}
               prefix="KES"
               valueStyle={{ 
                 color: (tabSummary.totalShortage || tabSummary.totalVariance) < 0 ? '#ff4d4f' : '#52c41a',
-                fontSize: '16px'
+                fontSize: '14px'
               }}
             />
           </Card>
@@ -544,13 +520,13 @@ const SummaryCards = ({ summary, tableData, activeTab }) => {
       
       {tabSummary.totalOverage !== undefined && (
         <Col xs={12} sm={6} md={4}>
-          <Card size="small">
+          <Card size="small" bodyStyle={{ padding: '8px' }}>
             <Statistic
-              title="Overage"
+              title={<span style={{ fontSize: '11px' }}>Overage</span>}
               value={tabSummary.totalOverage || 0}
               precision={0}
               prefix="KES"
-              valueStyle={{ color: '#722ed1', fontSize: '16px' }}
+              valueStyle={{ color: '#722ed1', fontSize: '14px' }}
             />
           </Card>
         </Col>
@@ -559,7 +535,7 @@ const SummaryCards = ({ summary, tableData, activeTab }) => {
   );
 };
 
-// 3. Table Column Definitions - OPTIMIZED FOR SPACE
+// ==================== SIMPLIFIED TABLE COLUMNS ====================
 const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow) => {
   return useMemo(() => {
     const getStatusTag = (status) => {
@@ -575,7 +551,7 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
       const config = statusMap[status?.toUpperCase()] || { color: 'default', icon: null };
       
       return (
-        <Tag color={config.color} icon={config.icon} style={{ fontSize: '11px', padding: '2px 6px' }}>
+        <Tag color={config.color} icon={config.icon} style={{ fontSize: '10px', padding: '0 4px' }}>
           {status}
         </Tag>
       );
@@ -585,10 +561,10 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
       {
         title: '#',
         key: 'sequence',
-        width: 50,
+        width: 40,
         align: 'center',
         render: (_, __, index) => (
-          <Text type="secondary" style={{ fontSize: '11px' }}>
+          <Text type="secondary" style={{ fontSize: '10px' }}>
             {index + 1}
           </Text>
         )
@@ -598,27 +574,27 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
     const actionsColumn = {
       title: '',
       key: 'actions',
-      width: 60,
+      width: 50,
       fixed: 'right',
       render: (_, record) => (
-        <Space size={0}>
+        <Space size={2}>
           <Tooltip title="View Details">
             <Button
               type="link"
-              icon={<EyeOutlined />}
+              icon={<EyeOutlined style={{ fontSize: '12px' }} />}
               onClick={() => onViewDetails(record)}
               size="small"
-              style={{ padding: '0 4px' }}
+              style={{ padding: '0 2px' }}
             />
           </Tooltip>
           {activeTab === 'shift' && (
             <Tooltip title="Money Flow">
               <Button
                 type="link"
-                icon={<TransactionOutlined />}
+                icon={<TransactionOutlined style={{ fontSize: '12px' }} />}
                 onClick={() => onViewMoneyFlow(record.id)}
                 size="small"
-                style={{ padding: '0 4px' }}
+                style={{ padding: '0 2px' }}
               />
             </Tooltip>
           )}
@@ -633,17 +609,12 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
           {
             title: 'Island',
             key: 'island',
-            width: 120,
+            width: 100,
             render: (_, record) => (
               <div>
-                <div style={{ fontWeight: '500', fontSize: '12px' }}>
+                <div style={{ fontWeight: '500', fontSize: '11px' }}>
                   {record.islandName || record.island?.name || 'N/A'}
                 </div>
-                {record.islandCode && (
-                  <div style={{ fontSize: '10px', color: '#666' }}>
-                    {record.islandCode}
-                  </div>
-                )}
               </div>
             )
           },
@@ -651,68 +622,65 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
             title: 'Attendant',
             dataIndex: 'attendantName',
             key: 'attendantName',
-            width: 100,
+            width: 80,
             render: (value) => (
-              <Text style={{ fontSize: '11px' }}>{value || 'N/A'}</Text>
+              <Text style={{ fontSize: '10px' }}>{value || 'N/A'}</Text>
             )
           },
           {
             title: 'Cash',
             key: 'cash',
-            width: 90,
+            width: 80,
             align: 'right',
             render: (_, record) => (
               <div>
-                <div style={{ fontWeight: '500', fontSize: '12px', color: '#1890ff' }}>
+                <div style={{ fontWeight: '500', fontSize: '11px', color: '#1890ff' }}>
                   {formatCurrency(record.cashAmount || 0)}
                 </div>
               </div>
-            ),
-            sorter: (a, b) => (a.cashAmount || 0) - (b.cashAmount || 0)
+            )
           },
           {
             title: 'Short/Overage',
             key: 'variance',
-            width: 100,
+            width: 80,
             render: (_, record) => {
               const shortage = parseFloat(record.shortageAmount) || 0;
               const overage = parseFloat(record.overageAmount) || 0;
               
               if (shortage > 0) {
                 return (
-                  <Text type="danger" style={{ fontSize: '11px' }}>
+                  <Text type="danger" style={{ fontSize: '10px' }}>
                     -{formatCurrency(shortage)}
                   </Text>
                 );
               } else if (overage > 0) {
                 return (
-                  <Text type="success" style={{ fontSize: '11px' }}>
+                  <Text type="success" style={{ fontSize: '10px' }}>
                     +{formatCurrency(overage)}
                   </Text>
                 );
               }
-              return <Text type="secondary" style={{ fontSize: '11px' }}>-</Text>;
+              return <Text type="secondary" style={{ fontSize: '10px' }}>-</Text>;
             }
           },
           {
             title: 'Status',
             dataIndex: 'status',
             key: 'status',
-            width: 90,
+            width: 70,
             render: getStatusTag
           },
           {
             title: 'Time',
             dataIndex: 'countedAt',
             key: 'countedAt',
-            width: 110,
+            width: 90,
             render: (value) => (
-              <Text style={{ fontSize: '10px' }}>
+              <Text style={{ fontSize: '9px' }}>
                 {value ? formatDate(value, 'time') : 'N/A'}
               </Text>
-            ),
-            sorter: (a, b) => new Date(a.countedAt) - new Date(b.countedAt),
-            defaultSortOrder: 'descend'
+            )
           },
           actionsColumn
         ];
@@ -724,32 +692,29 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
             title: 'Shift',
             dataIndex: 'shiftNumber',
             key: 'shiftNumber',
-            width: 70,
+            width: 50,
             render: (value) => (
-              <Text strong style={{ fontSize: '12px' }}>#{value}</Text>
+              <Text strong style={{ fontSize: '11px' }}>#{value}</Text>
             )
           },
           {
             title: 'Supervisor',
             dataIndex: 'supervisorName',
             key: 'supervisorName',
-            width: 100,
+            width: 80,
             render: (value) => (
-              <Text style={{ fontSize: '11px' }}>{value || 'N/A'}</Text>
+              <Text style={{ fontSize: '10px' }}>{value || 'N/A'}</Text>
             )
           },
           {
             title: 'Cash',
             key: 'cash',
-            width: 90,
+            width: 80,
             align: 'right',
             render: (_, record) => (
               <div>
-                <div style={{ fontWeight: '500', fontSize: '12px', color: '#1890ff' }}>
+                <div style={{ fontWeight: '500', fontSize: '11px', color: '#1890ff' }}>
                   {formatCurrency(record.cashAmount || 0)}
-                </div>
-                <div style={{ fontSize: '10px', color: '#666' }}>
-                  Total: {formatCurrency(record.grandTotal || 0)}
                 </div>
               </div>
             )
@@ -758,7 +723,7 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
             title: 'Variance',
             dataIndex: 'cashVariance',
             key: 'cashVariance',
-            width: 90,
+            width: 70,
             align: 'right',
             render: (value) => {
               const numValue = parseFloat(value) || 0;
@@ -766,33 +731,30 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
                 <Text style={{
                   color: numValue >= 0 ? '#52c41a' : '#ff4d4f',
                   fontWeight: '500',
-                  fontSize: '11px'
+                  fontSize: '10px'
                 }}>
                   {formatCurrency(numValue)}
                 </Text>
               );
-            },
-            sorter: (a, b) => (a.cashVariance || 0) - (b.cashVariance || 0)
+            }
           },
           {
             title: 'Status',
             dataIndex: 'status',
             key: 'status',
-            width: 90,
+            width: 70,
             render: getStatusTag
           },
           {
             title: 'Counted',
             dataIndex: 'countedAt',
             key: 'countedAt',
-            width: 110,
+            width: 90,
             render: (value) => (
-              <Text style={{ fontSize: '10px' }}>
+              <Text style={{ fontSize: '9px' }}>
                 {value ? formatDate(value, 'short') : 'N/A'}
               </Text>
-            ),
-            sorter: (a, b) => new Date(a.countedAt) - new Date(b.countedAt),
-            defaultSortOrder: 'descend'
+            )
           },
           actionsColumn
         ];
@@ -804,38 +766,38 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
             title: 'Date',
             dataIndex: 'date',
             key: 'date',
-            width: 90,
+            width: 70,
             render: (value) => (
-              <Text style={{ fontSize: '11px' }}>{formatDate(value, 'short')}</Text>
+              <Text style={{ fontSize: '10px' }}>{formatDate(value, 'short')}</Text>
             )
           },
           {
             title: 'Station',
             dataIndex: 'stationName',
             key: 'stationName',
-            width: 120,
+            width: 100,
             render: (value) => (
-              <Text style={{ fontSize: '11px' }}>{value || 'N/A'}</Text>
+              <Text style={{ fontSize: '10px' }}>{value || 'N/A'}</Text>
             )
           },
           {
             title: 'Collections',
             dataIndex: 'totalShiftCollections',
             key: 'totalShiftCollections',
-            width: 80,
+            width: 60,
             align: 'right',
             render: (value) => (
-              <Badge count={value || 0} style={{ backgroundColor: '#1890ff' }} />
+              <Badge count={value || 0} style={{ backgroundColor: '#1890ff', fontSize: '9px' }} />
             )
           },
           {
             title: 'Cash',
             dataIndex: 'totalCash',
             key: 'totalCash',
-            width: 90,
+            width: 80,
             align: 'right',
             render: (value) => (
-              <Text strong style={{ fontSize: '12px', color: '#1890ff' }}>
+              <Text strong style={{ fontSize: '11px', color: '#1890ff' }}>
                 {formatCurrency(value || 0)}
               </Text>
             )
@@ -844,10 +806,10 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
             title: 'Shortage',
             dataIndex: 'totalShortage',
             key: 'totalShortage',
-            width: 90,
+            width: 70,
             align: 'right',
             render: (value) => (
-              <Text type="danger" style={{ fontSize: '11px' }}>
+              <Text type="danger" style={{ fontSize: '10px' }}>
                 {formatCurrency(value || 0)}
               </Text>
             )
@@ -856,10 +818,10 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
             title: 'Overage',
             dataIndex: 'totalOverage',
             key: 'totalOverage',
-            width: 90,
+            width: 70,
             align: 'right',
             render: (value) => (
-              <Text type="success" style={{ fontSize: '11px' }}>
+              <Text type="success" style={{ fontSize: '10px' }}>
                 {formatCurrency(value || 0)}
               </Text>
             )
@@ -873,7 +835,7 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
             title: 'Rank',
             dataIndex: 'rank',
             key: 'rank',
-            width: 60,
+            width: 40,
             align: 'center',
             render: (value) => (
               <Badge
@@ -882,7 +844,8 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
                   backgroundColor: value <= 3 ? 
                     value === 1 ? '#f5222d' : 
                     value === 2 ? '#fa8c16' : 
-                    '#52c41a' : '#d9d9d9'
+                    '#52c41a' : '#d9d9d9',
+                  fontSize: '9px'
                 }}
               />
             )
@@ -891,29 +854,29 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
             title: 'Name',
             dataIndex: 'name',
             key: 'name',
-            width: 140,
+            width: 120,
             render: (value) => (
-              <Text style={{ fontSize: '12px' }}>{value}</Text>
+              <Text style={{ fontSize: '11px' }}>{value}</Text>
             )
           },
           {
             title: 'Collections',
             dataIndex: 'shiftCount',
             key: 'shiftCount',
-            width: 80,
+            width: 60,
             align: 'right',
             render: (value) => (
-              <Badge count={value || 0} style={{ backgroundColor: '#1890ff' }} />
+              <Badge count={value || 0} style={{ backgroundColor: '#1890ff', fontSize: '9px' }} />
             )
           },
           {
             title: 'Cash',
             dataIndex: 'totalCash',
             key: 'totalCash',
-            width: 100,
+            width: 90,
             align: 'right',
             render: (value) => (
-              <Text strong style={{ fontSize: '12px', color: '#1890ff' }}>
+              <Text strong style={{ fontSize: '11px', color: '#1890ff' }}>
                 {formatCurrency(value || 0)}
               </Text>
             )
@@ -922,10 +885,10 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
             title: 'Debts',
             dataIndex: 'totalDebts',
             key: 'totalDebts',
-            width: 90,
+            width: 80,
             align: 'right',
             render: (value) => (
-              <Text style={{ fontSize: '11px', color: '#fa8c16' }}>
+              <Text style={{ fontSize: '10px', color: '#fa8c16' }}>
                 {formatCurrency(value || 0)}
               </Text>
             )
@@ -934,10 +897,10 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
             title: 'Grand Total',
             dataIndex: 'totalGrandTotal',
             key: 'totalGrandTotal',
-            width: 100,
+            width: 90,
             align: 'right',
             render: (value) => (
-              <Text strong style={{ fontSize: '12px', color: '#52c41a' }}>
+              <Text strong style={{ fontSize: '11px', color: '#52c41a' }}>
                 {formatCurrency(value || 0)}
               </Text>
             )
@@ -950,7 +913,156 @@ const useTableColumns = (activeTab, currentUser, onViewDetails, onViewMoneyFlow)
   }, [activeTab, currentUser, onViewDetails, onViewMoneyFlow]);
 };
 
-// 4. Main Component
+// ==================== REPORT GENERATION ====================
+const getReportColumnsForTab = (activeTab) => {
+  switch (activeTab) {
+    case 'island':
+      return [
+        { title: '#', dataIndex: '#', key: 'index', width: 50, type: 'number' },
+        { title: 'Island', dataIndex: 'Island', key: 'island', width: 120, type: 'text' },
+        { title: 'Attendant', dataIndex: 'Attendant', key: 'attendant', width: 120, type: 'text' },
+        { title: 'Cash (KES)', dataIndex: 'Cash', key: 'cash', width: 100, type: 'currency' },
+        { title: 'Shortage (KES)', dataIndex: 'Shortage', key: 'shortage', width: 100, type: 'currency' },
+        { title: 'Overage (KES)', dataIndex: 'Overage', key: 'overage', width: 100, type: 'currency' },
+        { title: 'Status', dataIndex: 'Status', key: 'status', width: 80, type: 'text' },
+        { title: 'Counted At', dataIndex: 'Counted At', key: 'countedAt', width: 120, type: 'datetime' },
+        { title: 'Station', dataIndex: 'Station', key: 'station', width: 120, type: 'text' }
+      ];
+      
+    case 'shift':
+      return [
+        { title: '#', dataIndex: '#', key: 'index', width: 50, type: 'number' },
+        { title: 'Shift', dataIndex: 'Shift', key: 'shift', width: 80, type: 'text' },
+        { title: 'Supervisor', dataIndex: 'Supervisor', key: 'supervisor', width: 120, type: 'text' },
+        { title: 'Cash (KES)', dataIndex: 'Cash', key: 'cash', width: 100, type: 'currency' },
+        { title: 'Grand Total (KES)', dataIndex: 'Grand Total', key: 'grandTotal', width: 120, type: 'currency' },
+        { title: 'Variance (KES)', dataIndex: 'Variance', key: 'variance', width: 100, type: 'currency' },
+        { title: 'Status', dataIndex: 'Status', key: 'status', width: 80, type: 'text' },
+        { title: 'Counted At', dataIndex: 'Counted At', key: 'countedAt', width: 120, type: 'datetime' },
+        { title: 'Station', dataIndex: 'Station', key: 'station', width: 120, type: 'text' }
+      ];
+      
+    case 'daily':
+      return [
+        { title: '#', dataIndex: '#', key: 'index', width: 50, type: 'number' },
+        { title: 'Date', dataIndex: 'Date', key: 'date', width: 100, type: 'date' },
+        { title: 'Station', dataIndex: 'Station', key: 'station', width: 120, type: 'text' },
+        { title: 'Collections', dataIndex: 'Collections', key: 'collections', width: 80, type: 'number' },
+        { title: 'Total Cash (KES)', dataIndex: 'Total Cash', key: 'totalCash', width: 120, type: 'currency' },
+        { title: 'Total Shortage (KES)', dataIndex: 'Total Shortage', key: 'totalShortage', width: 120, type: 'currency' },
+        { title: 'Total Overage (KES)', dataIndex: 'Total Overage', key: 'totalOverage', width: 120, type: 'currency' }
+      ];
+      
+    case 'performance':
+      return [
+        { title: '#', dataIndex: '#', key: 'index', width: 50, type: 'number' },
+        { title: 'Rank', dataIndex: 'Rank', key: 'rank', width: 50, type: 'number' },
+        { title: 'Name', dataIndex: 'Name', key: 'name', width: 150, type: 'text' },
+        { title: 'Collections', dataIndex: 'Collections', key: 'collections', width: 80, type: 'number' },
+        { title: 'Total Cash (KES)', dataIndex: 'Total Cash', key: 'totalCash', width: 120, type: 'currency' },
+        { title: 'Total Debts (KES)', dataIndex: 'Total Debts', key: 'totalDebts', width: 120, type: 'currency' },
+        { title: 'Grand Total (KES)', dataIndex: 'Grand Total', key: 'grandTotal', width: 120, type: 'currency' }
+      ];
+      
+    default:
+      return [];
+  }
+};
+
+const prepareReportData = (data, activeTab) => {
+  if (!data || data.length === 0) return [];
+  
+  switch (activeTab) {
+    case 'island':
+      return data.map((item, index) => ({
+        '#': index + 1,
+        'Island': item.islandName || item.island?.name || 'N/A',
+        'Attendant': item.attendantName || 'N/A',
+        'Cash': item.cashAmount || 0,
+        'Shortage': item.shortageAmount || 0,
+        'Overage': item.overageAmount || 0,
+        'Status': item.status || 'N/A',
+        'Counted At': item.countedAt || 'N/A',
+        'Station': item.stationName || item.station?.name || 'N/A'
+      }));
+      
+    case 'shift':
+      return data.map((item, index) => ({
+        '#': index + 1,
+        'Shift': item.shiftNumber || 'N/A',
+        'Supervisor': item.supervisorName || 'N/A',
+        'Cash': item.cashAmount || 0,
+        'Grand Total': item.grandTotal || 0,
+        'Variance': item.cashVariance || 0,
+        'Status': item.status || 'N/A',
+        'Counted At': item.countedAt || 'N/A',
+        'Station': item.stationName || item.station?.name || 'N/A'
+      }));
+      
+    case 'daily':
+      return data.map((item, index) => ({
+        '#': index + 1,
+        'Date': item.date || 'N/A',
+        'Station': item.stationName || 'N/A',
+        'Collections': item.totalShiftCollections || 0,
+        'Total Cash': item.totalCash || 0,
+        'Total Shortage': item.totalShortage || 0,
+        'Total Overage': item.totalOverage || 0
+      }));
+      
+    case 'performance':
+      return data.map((item, index) => ({
+        '#': index + 1,
+        'Rank': item.rank || index + 1,
+        'Name': item.name || 'N/A',
+        'Collections': item.shiftCount || 0,
+        'Total Cash': item.totalCash || 0,
+        'Total Debts': item.totalDebts || 0,
+        'Grand Total': item.totalGrandTotal || 0
+      }));
+      
+    default:
+      return [];
+  }
+};
+
+const calculateReportSummary = (data, activeTab) => {
+  if (!data || data.length === 0) return null;
+  
+  const totalRecords = data.length;
+  let totalCash = 0;
+  let totalShortage = 0;
+  let totalOverage = 0;
+  
+  data.forEach(item => {
+    if (activeTab === 'island') {
+      totalCash += parseFloat(item.cashAmount) || 0;
+      totalShortage += parseFloat(item.shortageAmount) || 0;
+      totalOverage += parseFloat(item.overageAmount) || 0;
+    } else if (activeTab === 'shift') {
+      totalCash += parseFloat(item.cashAmount) || 0;
+      totalShortage += parseFloat(item.cashVariance) || 0;
+    } else if (activeTab === 'daily') {
+      totalCash += parseFloat(item.totalCash) || 0;
+      totalShortage += parseFloat(item.totalShortage) || 0;
+      totalOverage += parseFloat(item.totalOverage) || 0;
+    } else if (activeTab === 'performance') {
+      totalCash += parseFloat(item.totalCash) || 0;
+    }
+  });
+  
+  return {
+    'Report Type': `${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Collections Report`,
+    'Total Records': totalRecords,
+    'Total Cash (KES)': totalCash,
+    'Total Shortage (KES)': totalShortage,
+    'Total Overage (KES)': totalOverage,
+    'Generated Date': new Date().toLocaleDateString('en-KE'),
+    'Generated Time': new Date().toLocaleTimeString('en-KE')
+  };
+};
+
+// ==================== MAIN COMPONENT ====================
 const CashMovement = () => {
   const { state } = useApp();
   const userStationId = state.currentStation?.id;
@@ -964,6 +1076,11 @@ const CashMovement = () => {
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
   const [tableData, setTableData] = useState([]);
+
+  // Report generation state
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportConfig, setReportConfig] = useState(null);
+  const [reportTitle, setReportTitle] = useState('');
 
   // Dropdown data
   const [shifts, setShifts] = useState([]);
@@ -1077,7 +1194,7 @@ const CashMovement = () => {
     setFilters(prev => ({
       ...prev,
       [key]: value,
-      page: key !== 'page' ? 1 : value // Reset to page 1 for filter changes
+      page: key !== 'page' ? 1 : value
     }));
   };
 
@@ -1206,6 +1323,50 @@ const CashMovement = () => {
   // Get columns for current tab
   const columns = useTableColumns(activeTab, currentUser, handleViewDetails, handleMoneyFlow);
 
+  // Handle report generation
+  const handleGenerateReport = () => {
+    if (tableData.length === 0) {
+      message.warning('No data to generate report');
+      return;
+    }
+
+    const reportData = prepareReportData(tableData, activeTab);
+    const reportColumns = getReportColumnsForTab(activeTab);
+    const summaryData = calculateReportSummary(tableData, activeTab);
+    
+    const title = `${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Collections Report - ${currentStation?.name || 'All Stations'}`;
+    const fileName = `cash_movement_${activeTab}_${new Date().toISOString().split('T')[0]}`;
+    
+    const config = {
+      dataSource: reportData,
+      columns: reportColumns,
+      summaryData: summaryData,
+      title: title,
+      fileName: fileName,
+      reportType: 'finance',
+      companyName: state.currentCompany?.name || "Lynx Energy System",
+      stationInfo: currentStation ? {
+        name: currentStation.name,
+        code: currentStation.code,
+        address: currentStation.address
+      } : null,
+      showFooter: true,
+      footerText: `Generated from Lynx Energy System | ${new Date().toLocaleString('en-KE')}`,
+      enableCustomization: true,
+      showGrandTotals: false
+    };
+    
+    setReportConfig(config);
+    setReportTitle(title);
+    setReportModalVisible(true);
+  };
+
+  const handleReportComplete = (format) => {
+    message.success(`${reportTitle} generated successfully as ${format.toUpperCase()}!`);
+    setReportModalVisible(false);
+    setReportConfig(null);
+  };
+
   // Render dashboard
   const renderDashboard = () => {
     if (!data) {
@@ -1254,44 +1415,17 @@ const CashMovement = () => {
     );
   };
 
-  // Export functionality
-  const handleExport = () => {
-    if (tableData.length === 0) {
-      message.warning('No data to export');
-      return;
-    }
-
-    // Prepare export configuration based on active tab
-    const exportConfig = {
-      dataSource: tableData,
-      columns: columns.filter(col => !col.fixed || col.key !== 'actions'),
-      title: `${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Collections Report`,
-      fileName: `cash_movement_${activeTab}_${new Date().toISOString().split('T')[0]}`,
-      reportType: 'finance',
-      companyName: state.currentCompany?.name || "Lynx Energy System",
-      stationInfo: currentStation ? {
-        name: currentStation.name,
-        code: currentStation.code,
-        address: currentStation.address
-      } : null
-    };
-
-    // In a real implementation, you would pass this to AdvancedReportGenerator
-    console.log('Export config:', exportConfig);
-    message.success('Export functionality ready - connect to AdvancedReportGenerator');
-  };
-
   return (
-    <div className="cash-movement" style={{ padding: 16 }}>
+    <div className="cash-movement" style={{ padding: 12 }}>
       {/* Header */}
-      <Card style={{ marginBottom: 16 }}>
-        <Row gutter={[16, 16]} align="middle">
+      <Card style={{ marginBottom: 12 }} size="small">
+        <Row gutter={[12, 12]} align="middle">
           <Col xs={24} md={12}>
             <div>
-              <Title level={2} style={{ margin: 0, fontSize: '24px' }}>
+              <Title level={3} style={{ margin: 0, fontSize: '20px' }}>
                 <DollarOutlined /> Cash Movement
               </Title>
-              <Text type="secondary">
+              <Text type="secondary" style={{ fontSize: '12px' }}>
                 Track and analyze cash collections
               </Text>
             </div>
@@ -1300,12 +1434,13 @@ const CashMovement = () => {
             <Row gutter={[8, 8]} justify="end">
               <Col>
                 <Button
-                  icon={<DownloadOutlined />}
-                  onClick={handleExport}
+                  icon={<FileTextOutlined />}
+                  onClick={handleGenerateReport}
                   disabled={tableData.length === 0}
                   size="small"
+                  type="primary"
                 >
-                  Export
+                  Report
                 </Button>
               </Col>
               <Col>
@@ -1346,7 +1481,8 @@ const CashMovement = () => {
           showIcon
           closable
           onClose={() => setError(null)}
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 12 }}
+          size="small"
         />
       )}
 
@@ -1358,13 +1494,14 @@ const CashMovement = () => {
       />
 
       {/* Main Content Tabs */}
-      <Card>
+      <Card size="small" bodyStyle={{ padding: '12px' }}>
         <Tabs
           activeKey={activeTab}
           onChange={handleTabChange}
           type="card"
+          size="small"
           tabBarExtraContent={
-            <Text type="secondary" style={{ fontSize: '12px' }}>
+            <Text type="secondary" style={{ fontSize: '11px' }}>
               {tableData.length} records
             </Text>
           }
@@ -1372,27 +1509,25 @@ const CashMovement = () => {
           <TabPane
             tab={
               <span>
-                <ShopOutlined />
-                Island Collections
+                <ShopOutlined style={{ fontSize: '12px' }} />
+                <span style={{ fontSize: '12px' }}>Island</span>
               </span>
             }
             key="island"
           >
             {loading && !tableData.length ? (
-              <div style={{ textAlign: 'center', padding: 40 }}>
-                <Spin size="large" />
-                <div style={{ marginTop: 16 }}>
-                  <Text type="secondary">Loading island collections...</Text>
+              <div style={{ textAlign: 'center', padding: 30 }}>
+                <Spin size="small" />
+                <div style={{ marginTop: 8 }}>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>Loading...</Text>
                 </div>
               </div>
             ) : tableData.length === 0 ? (
               <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={
                   <div>
-                    <Text>No island collections found</Text>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>
-                      Adjust filters or try different criteria
-                    </Text>
+                    <Text style={{ fontSize: '12px' }}>No island collections found</Text>
                   </div>
                 }
               />
@@ -1432,15 +1567,17 @@ const CashMovement = () => {
           <TabPane
             tab={
               <span>
-                <ClockCircleOutlined />
-                Shift Collections
+                <ClockCircleOutlined style={{ fontSize: '12px' }} />
+                <span style={{ fontSize: '12px' }}>Shift</span>
               </span>
             }
             key="shift"
           >
-            {/* Similar table rendering for shift tab */}
             {tableData.length === 0 && !loading ? (
-              <Empty description="No shift collections found" />
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={<Text style={{ fontSize: '12px' }}>No shift collections found</Text>}
+              />
             ) : (
               <Table
                 columns={columns}
@@ -1462,22 +1599,22 @@ const CashMovement = () => {
           <TabPane
             tab={
               <span>
-                <CalendarOutlined />
-                Daily Report
+                <CalendarOutlined style={{ fontSize: '12px' }} />
+                <span style={{ fontSize: '12px' }}>Daily</span>
               </span>
             }
             key="daily"
           >
             {activeTab === 'daily' && data?.data && (
               <div>
-                <Descriptions bordered size="small" column={3} style={{ marginBottom: 16 }}>
-                  <Descriptions.Item label="Date">
+                <Descriptions bordered size="small" column={3} style={{ marginBottom: 12 }}>
+                  <Descriptions.Item label="Date" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
                     {formatDate(data.data.date, 'long')}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Collections">
+                  <Descriptions.Item label="Collections" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
                     {data.data.totalShiftCollections || 0}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Total Cash">
+                  <Descriptions.Item label="Total Cash" labelStyle={{ fontSize: '11px' }} contentStyle={{ fontSize: '11px' }}>
                     {formatCurrency(data.data.totalCash || 0)}
                   </Descriptions.Item>
                 </Descriptions>
@@ -1499,14 +1636,17 @@ const CashMovement = () => {
           <TabPane
             tab={
               <span>
-                <LineChartOutlined />
-                Performance
+                <LineChartOutlined style={{ fontSize: '12px' }} />
+                <span style={{ fontSize: '12px' }}>Performance</span>
               </span>
             }
             key="performance"
           >
             {tableData.length === 0 && !loading ? (
-              <Empty description="No performance data found" />
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={<Text style={{ fontSize: '12px' }}>No performance data found</Text>}
+              />
             ) : (
               <Table
                 columns={columns}
@@ -1523,8 +1663,8 @@ const CashMovement = () => {
           <TabPane
             tab={
               <span>
-                <DashboardOutlined />
-                Dashboard
+                <DashboardOutlined style={{ fontSize: '12px' }} />
+                <span style={{ fontSize: '12px' }}>Dashboard</span>
               </span>
             }
             key="dashboard"
@@ -1540,7 +1680,7 @@ const CashMovement = () => {
         open={detailModalVisible}
         onCancel={() => setDetailModalVisible(false)}
         footer={[
-          <Button key="close" onClick={() => setDetailModalVisible(false)}>
+          <Button key="close" onClick={() => setDetailModalVisible(false)} size="small">
             Close
           </Button>
         ]}
@@ -1596,10 +1736,58 @@ const CashMovement = () => {
           </div>
         ) : (
           <div style={{ textAlign: 'center', padding: 20 }}>
-            <Spin />
-            <div style={{ marginTop: 16 }}>
-              <Text type="secondary">Loading money flow data...</Text>
+            <Spin size="small" />
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: '12px' }}>Loading money flow data...</Text>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Report Generator Modal */}
+      <Modal
+        title={
+          <Space>
+            <FileTextOutlined />
+            <span>{reportTitle}</span>
+            <Tag color="blue">{reportConfig?.dataSource?.length || 0} records</Tag>
+          </Space>
+        }
+        open={reportModalVisible}
+        onCancel={() => {
+          setReportModalVisible(false);
+          setReportConfig(null);
+        }}
+        width="90%"
+        style={{ top: 20 }}
+        footer={null}
+        destroyOnClose
+      >
+        {reportConfig && (
+          <div style={{ padding: '20px 0' }}>
+            <AdvancedReportGenerator
+              key={`cash-report-${Date.now()}`}
+              {...reportConfig}
+              onReportGenerate={handleReportComplete}
+              onSettingsSave={(settings) => {
+                console.log('Report settings saved:', settings);
+                message.success('Report settings saved successfully!');
+              }}
+            />
+            
+            <Divider />
+            
+            <Space style={{ justifyContent: 'flex-end', width: '100%' }}>
+              <Button 
+                onClick={() => {
+                  setReportModalVisible(false);
+                  setReportConfig(null);
+                }}
+                size="small"
+              >
+                Close
+              </Button>
+            </Space>
           </div>
         )}
       </Modal>
