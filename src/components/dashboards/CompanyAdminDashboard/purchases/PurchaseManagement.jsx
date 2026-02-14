@@ -1,5 +1,5 @@
 // src/components/purchases/PurchaseManagement.js
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   PlusOutlined,
   EyeOutlined,
@@ -23,7 +23,13 @@ import {
   CheckOutlined,
   ClockCircleOutlined,
   CloseCircleOutlined,
-  ExclamationCircleOutlined
+  ExclamationCircleOutlined,
+  PrinterOutlined,
+  MailOutlined,
+  EnvironmentOutlined,
+  UserOutlined,
+  IdcardOutlined,
+  BankOutlined
 } from '@ant-design/icons';
 import {
   Button,
@@ -50,7 +56,8 @@ import {
   Form,
   Radio,
   InputNumber,
-  Switch
+  Switch,
+  Avatar
 } from 'antd';
 import { purchaseService } from '../../../../services/purchaseService/purchaseService';
 import { supplierService } from '../../../../services/supplierService/supplierService';
@@ -58,6 +65,8 @@ import CreateEditPurchaseModal from './create/CreateEditPurchaseModal';
 import AdvancedReportGenerator from '../../common/downloadable/AdvancedReportGenerator';
 import { useApp } from '../../../../context/AppContext';
 import dayjs from 'dayjs';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const { Option } = Select;
 const { Search } = Input;
@@ -72,6 +81,7 @@ const PurchaseManagement = () => {
   
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState(null);
+  const [purchaseModalVisible, setPurchaseModalVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [purchases, setPurchases] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -82,7 +92,7 @@ const PurchaseManagement = () => {
     startDate: dayjs().subtract(30, 'days').format('YYYY-MM-DD'),
     endDate: dayjs().format('YYYY-MM-DD'),
     sortBy: 'purchaseDate',
-    sortOrder: 'desc', // Default to descending order
+    sortOrder: 'desc',
     page: 1,
     limit: 20
   });
@@ -128,20 +138,21 @@ const PurchaseManagement = () => {
       if (filters.startDate) queryFilters.startDate = filters.startDate;
       if (filters.endDate) queryFilters.endDate = filters.endDate;
       
-      // Add sorting parameters - FIXED: Ensure DESC order by default
       queryFilters.sortBy = filters.sortBy;
       queryFilters.sortOrder = filters.sortOrder;
       queryFilters.page = filters.page;
       queryFilters.limit = filters.limit;
 
       const purchasesData = await purchaseService.getPurchases(queryFilters);
+      console.log("purchase fetched filtered \n", purchasesData);
+      
       const purchasesArray = purchasesData.purchases || purchasesData.data || purchasesData || [];
       
       // Sort purchases in DESC order by purchase date for display
       const sortedPurchases = [...purchasesArray].sort((a, b) => {
         const dateA = new Date(a.purchaseDate || a.createdAt);
         const dateB = new Date(b.purchaseDate || b.createdAt);
-        return dateB - dateA; // DESC order
+        return dateB - dateA;
       });
       
       setPurchases(sortedPurchases);
@@ -188,10 +199,10 @@ const PurchaseManagement = () => {
       p.deliveryStatus === 'FULLY_ACCEPTED' || p.deliveryStatus === 'PARTIALLY_ACCEPTED'
     );
     const onTimeDeliveries = deliveredPurchases.filter(p => {
-      if (!p.expectedDeliveryDate || !p.actualDeliveryDate) return false;
-      const expected = new Date(p.expectedDeliveryDate);
-      const actual = new Date(p.actualDeliveryDate);
-      return actual <= expected || (actual - expected) <= (24 * 60 * 60 * 1000); // Within 1 day
+      if (!p.expectedDate || !p.receivedDate) return false;
+      const expected = new Date(p.expectedDate);
+      const actual = new Date(p.receivedDate);
+      return actual <= expected || (actual - expected) <= (24 * 60 * 60 * 1000);
     });
     const onTimeDeliveryRate = deliveredPurchases.length > 0 
       ? (onTimeDeliveries.length / deliveredPurchases.length) * 100 
@@ -217,7 +228,7 @@ const PurchaseManagement = () => {
     setFilters(prev => ({
       ...prev,
       [key]: value,
-      page: 1 // Reset to first page when filters change
+      page: 1
     }));
   };
 
@@ -286,29 +297,334 @@ const PurchaseManagement = () => {
     message.success('Purchase updated successfully');
   };
 
+  // View single purchase order
+  const handleViewPurchase = async (purchase) => {
+    try {
+      const purchaseDetails = await purchaseService.getPurchaseById(purchase.id);
+      setSelectedPurchase(purchaseDetails);
+      setPurchaseModalVisible(true);
+    } catch (error) {
+      message.error(error.message || 'Failed to load purchase details');
+    }
+  };
+
+  // Generate PDF for single purchase order
+  const generatePurchaseOrderPDF = (purchase) => {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 15;
+
+    // =========== COMPANY HEADER ===========
+    doc.setFillColor(41, 128, 185);
+    doc.rect(0, 0, pageWidth, 40, 'F');
+    
+    doc.setFontSize(22);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text((currentCompany?.name || "LYNX ENERGY").toUpperCase(), pageWidth / 2, 15, { align: 'center' });
+    
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'normal');
+    doc.text("PURCHASE ORDER", pageWidth / 2, 25, { align: 'center' });
+    
+    doc.setFontSize(8);
+    doc.setTextColor(240, 240, 240);
+    doc.text(`Generated: ${new Date().toLocaleString('en-KE')}`, margin, 35);
+    doc.text(`By: ${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`, pageWidth - margin, 35, { align: 'right' });
+
+    // =========== PO HEADER ===========
+    let yPos = 50;
+
+    // PO Number and Date Box
+    doc.setFillColor(245, 245, 245);
+    doc.rect(margin, yPos - 5, pageWidth - (margin * 2), 25, 'F');
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    
+    doc.text(`PO NUMBER:`, margin + 5, yPos);
+    doc.text(`DATE:`, pageWidth / 2 + 5, yPos);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.text(purchase.purchaseNumber || 'N/A', margin + 25, yPos);
+    doc.text(formatDate(purchase.purchaseDate, 'long'), pageWidth / 2 + 25, yPos);
+
+    yPos += 8;
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text(`STATUS:`, margin + 5, yPos);
+    doc.text(`DELIVERY:`, pageWidth / 2 + 5, yPos);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.text(purchase.status || 'N/A', margin + 25, yPos);
+    doc.text(purchase.deliveryStatus || 'N/A', pageWidth / 2 + 25, yPos);
+
+    yPos += 20;
+
+    // =========== SUPPLIER INFORMATION ===========
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SUPPLIER INFORMATION', margin, yPos);
+    
+    yPos += 6;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    
+    const supplier = purchase.supplier || {};
+    
+    // Supplier details in two columns
+    doc.text(`Name:`, margin + 5, yPos);
+    doc.text(supplier.name || 'N/A', margin + 25, yPos);
+    
+    doc.text(`Code:`, pageWidth / 2 + 5, yPos);
+    doc.text(supplier.code || 'N/A', pageWidth / 2 + 25, yPos);
+    
+    yPos += 5;
+    doc.text(`Contact:`, margin + 5, yPos);
+    doc.text(supplier.contactPerson || 'N/A', margin + 25, yPos);
+    
+    doc.text(`Phone:`, pageWidth / 2 + 5, yPos);
+    doc.text(supplier.phone || 'N/A', pageWidth / 2 + 25, yPos);
+    
+    yPos += 5;
+    doc.text(`Email:`, margin + 5, yPos);
+    doc.text(supplier.email || 'N/A', margin + 25, yPos);
+    
+    doc.text(`Payment Terms:`, pageWidth / 2 + 5, yPos);
+    doc.text(supplier.paymentTerms ? `Net ${supplier.paymentTerms} days` : 'N/A', pageWidth / 2 + 25, yPos);
+
+    yPos += 15;
+
+    // =========== DELIVERY INFORMATION ===========
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('DELIVERY INFORMATION', margin, yPos);
+    
+    yPos += 6;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    
+    const station = purchase.station || {};
+    
+    doc.text(`Station:`, margin + 5, yPos);
+    doc.text(station.name || 'N/A', margin + 25, yPos);
+    
+    doc.text(`Expected Date:`, pageWidth / 2 + 5, yPos);
+    doc.text(formatDate(purchase.expectedDate, 'short') || 'N/A', pageWidth / 2 + 25, yPos);
+    
+    yPos += 5;
+    doc.text(`Location:`, margin + 5, yPos);
+    doc.text(station.location || 'N/A', margin + 25, yPos);
+    
+    doc.text(`Received Date:`, pageWidth / 2 + 5, yPos);
+    doc.text(purchase.receivedDate ? formatDate(purchase.receivedDate, 'short') : 'Not received', pageWidth / 2 + 25, yPos);
+    
+    yPos += 5;
+    doc.text(`Delivery Address:`, margin + 5, yPos);
+    doc.text(purchase.deliveryAddress || 'N/A', margin + 25, yPos);
+
+    yPos += 15;
+
+    // =========== ITEMS TABLE ===========
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('PURCHASE ITEMS', margin, yPos);
+    
+    yPos += 6;
+
+    const tableHeaders = [['#', 'Product', 'Code', 'Qty', 'Unit Cost', 'Tax', 'Total']];
+    const tableData = [];
+
+    if (purchase.items && purchase.items.length > 0) {
+      purchase.items.forEach((item, index) => {
+        const product = item.product || {};
+        const lineTotal = (item.unitCost || 0) * (item.orderedQty || 0);
+        const taxAmount = item.taxAmount || (lineTotal * (item.taxRate || 0));
+        const totalWithTax = lineTotal + taxAmount;
+
+        tableData.push([
+          (index + 1).toString(),
+          product.name || 'N/A',
+          product.fuelCode || 'N/A',
+          (item.orderedQty || 0).toString(),
+          `KES ${(item.unitCost || 0).toLocaleString()}`,
+          `${((item.taxRate || 0) * 100).toFixed(0)}%`,
+          `KES ${(totalWithTax || 0).toLocaleString()}`
+        ]);
+      });
+    } else {
+      tableData.push(['No items found']);
+    }
+
+    autoTable(doc, {
+      head: tableHeaders,
+      body: tableData,
+      startY: yPos,
+      margin: { left: margin, right: margin },
+      styles: {
+        fontSize: 8,
+        cellPadding: 2
+      },
+      headStyles: {
+        fillColor: [41, 128, 185],
+        textColor: 255,
+        fontStyle: 'bold'
+      },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 40 },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 20, halign: 'right' },
+        4: { cellWidth: 30, halign: 'right' },
+        5: { cellWidth: 20, halign: 'right' },
+        6: { cellWidth: 35, halign: 'right' }
+      }
+    });
+
+    yPos = doc.lastAutoTable.finalY + 10;
+
+    // =========== FINANCIAL SUMMARY ===========
+    const summaryStartX = pageWidth - 80;
+    const summaryWidth = 65;
+    
+    doc.setFillColor(250, 250, 250);
+    doc.rect(summaryStartX, yPos - 5, summaryWidth, 40, 'F');
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SUMMARY', summaryStartX + 5, yPos);
+    
+    yPos += 6;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    
+    doc.text('Gross Amount:', summaryStartX + 5, yPos);
+    doc.text(`KES ${(purchase.grossAmount || 0).toLocaleString()}`, summaryStartX + summaryWidth - 10, yPos, { align: 'right' });
+    
+    yPos += 5;
+    doc.text('Tax Amount:', summaryStartX + 5, yPos);
+    doc.text(`KES ${(purchase.totalTaxAmount || 0).toLocaleString()}`, summaryStartX + summaryWidth - 10, yPos, { align: 'right' });
+    
+    yPos += 5;
+    doc.text('Discount:', summaryStartX + 5, yPos);
+    doc.text(`KES ${(purchase.discountAmount || 0).toLocaleString()}`, summaryStartX + summaryWidth - 10, yPos, { align: 'right' });
+    
+    yPos += 5;
+    doc.setFont('helvetica', 'bold');
+    doc.text('NET PAYABLE:', summaryStartX + 5, yPos);
+    doc.text(`KES ${(purchase.netPayable || 0).toLocaleString()}`, summaryStartX + summaryWidth - 10, yPos, { align: 'right' });
+
+    yPos += 20;
+
+    // =========== ADDITIONAL INFORMATION ===========
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('ADDITIONAL INFORMATION', margin, yPos);
+    
+    yPos += 6;
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    
+    // Notes
+    doc.text(`Notes:`, margin + 5, yPos);
+    doc.text(purchase.notes || 'No notes provided', margin + 20, yPos);
+    
+    yPos += 4;
+    doc.text(`Reference:`, margin + 5, yPos);
+    doc.text(purchase.reference || 'N/A', margin + 20, yPos);
+    
+    yPos += 4;
+    doc.text(`Internal Ref:`, margin + 5, yPos);
+    doc.text(purchase.internalRef || 'N/A', margin + 20, yPos);
+    
+    yPos += 8;
+
+    // =========== AUDIT TRAIL ===========
+    doc.setFillColor(245, 245, 245);
+    doc.rect(margin, yPos - 3, pageWidth - (margin * 2), 15, 'F');
+    
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text('AUDIT TRAIL', margin + 5, yPos);
+    
+    yPos += 4;
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Created: ${formatDateTime(purchase.createdAt)} by ${purchase.createdBy?.firstName || ''} ${purchase.createdBy?.lastName || ''}`, margin + 10, yPos);
+    
+    yPos += 3;
+    doc.text(`Last Updated: ${formatDateTime(purchase.updatedAt)}`, margin + 10, yPos);
+    
+    if (purchase.receivedById) {
+      yPos += 3;
+      doc.text(`Received: ${formatDateTime(purchase.receivedDate)}`, margin + 10, yPos);
+    }
+    
+    if (purchase.approvedById) {
+      yPos += 3;
+      doc.text(`Approved: ${formatDateTime(purchase.approvedAt)}`, margin + 10, yPos);
+    }
+
+    yPos += 10;
+
+    // =========== STATUS FOOTER ===========
+    const status = purchase.status || 'DRAFT';
+    const statusColor = status === 'COMPLETED' ? [82, 196, 26] : 
+                       status === 'CANCELLED' ? [255, 77, 79] : 
+                       status === 'APPROVED' ? [24, 144, 255] : 
+                       [250, 173, 20];
+    
+    doc.setFillColor(...statusColor);
+    doc.rect(margin, pageHeight - 20, pageWidth - (margin * 2), 8, 'F');
+    
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text(`Status: ${status}`, pageWidth / 2, pageHeight - 15, { align: 'center' });
+
+    // =========== FOOTER ===========
+    doc.setFontSize(6);
+    doc.setTextColor(150, 150, 150);
+    doc.text('This is a computer generated purchase order', pageWidth / 2, pageHeight - 8, { align: 'center' });
+    doc.text(`PO: ${purchase.purchaseNumber} | Generated: ${new Date().toLocaleString()}`, pageWidth / 2, pageHeight - 4, { align: 'center' });
+
+    // Save PDF
+    const fileName = `PO_${purchase.purchaseNumber}_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(fileName);
+    message.success('Purchase order PDF downloaded successfully');
+  };
+
+  const handleEditPurchase = (purchase) => {
+    if (purchase.status !== 'DRAFT') {
+      message.error('Only draft purchases can be edited');
+      return;
+    }
+    setSelectedPurchase(purchase);
+    setIsCreateModalOpen(true);
+  };
+
   // Status tag configuration
   const getStatusTag = (status) => {
     const statusConfig = {
       DRAFT: { color: 'default', label: 'Draft', icon: <FileExcelOutlined /> },
-      PENDING_APPROVAL: { color: 'orange', label: 'Pending Approval', icon: <ClockCircleOutlined /> },
+      PENDING_APPROVAL: { color: 'orange', label: 'Pending', icon: <ClockCircleOutlined /> },
       APPROVED: { color: 'blue', label: 'Approved', icon: <CheckCircleOutlined /> },
-      ORDER_CONFIRMED: { color: 'purple', label: 'Order Confirmed', icon: <CheckOutlined /> },
+      ORDER_CONFIRMED: { color: 'purple', label: 'Confirmed', icon: <CheckOutlined /> },
       IN_TRANSIT: { color: 'orange', label: 'In Transit', icon: <ExclamationCircleOutlined /> },
-      ARRIVED_AT_SITE: { color: 'cyan', label: 'Arrived at Site', icon: <InfoCircleOutlined /> },
+      ARRIVED_AT_SITE: { color: 'cyan', label: 'Arrived', icon: <InfoCircleOutlined /> },
       QUALITY_CHECK: { color: 'gold', label: 'Quality Check', icon: <ExclamationCircleOutlined /> },
-      PARTIALLY_RECEIVED: { color: 'geekblue', label: 'Partially Received', icon: <InfoCircleOutlined /> },
+      PARTIALLY_RECEIVED: { color: 'geekblue', label: 'Partial', icon: <InfoCircleOutlined /> },
       COMPLETED: { color: 'green', label: 'Completed', icon: <CheckCircleOutlined /> },
       CANCELLED: { color: 'red', label: 'Cancelled', icon: <CloseCircleOutlined /> },
       REJECTED: { color: 'red', label: 'Rejected', icon: <CloseCircleOutlined /> },
       ON_HOLD: { color: 'default', label: 'On Hold', icon: <ClockCircleOutlined /> }
     };
-
-    const config = statusConfig[status] || statusConfig.DRAFT;
-    return (
-      <Tag color={config.color} icon={config.icon}>
-        {config.label}
-      </Tag>
-    );
+    return statusConfig[status] || statusConfig.DRAFT;
   };
 
   // Type tag configuration
@@ -318,13 +634,7 @@ const PurchaseManagement = () => {
       NON_FUEL: { color: 'green', label: 'Non-Fuel', icon: <ShoppingOutlined /> },
       MIXED: { color: 'purple', label: 'Mixed', icon: <CalculatorOutlined /> }
     };
-
-    const config = typeConfig[type] || typeConfig.FUEL;
-    return (
-      <Tag color={config.color} icon={config.icon}>
-        {config.label}
-      </Tag>
-    );
+    return typeConfig[type] || typeConfig.FUEL;
   };
 
   // Delivery status tag
@@ -336,18 +646,12 @@ const PurchaseManagement = () => {
       ARRIVED: { color: 'cyan', label: 'Arrived', icon: <InfoCircleOutlined /> },
       UNLOADING: { color: 'purple', label: 'Unloading', icon: <ExclamationCircleOutlined /> },
       QUALITY_VERIFICATION: { color: 'gold', label: 'Quality Check', icon: <ExclamationCircleOutlined /> },
-      PARTIALLY_ACCEPTED: { color: 'geekblue', label: 'Partially Accepted', icon: <InfoCircleOutlined /> },
-      FULLY_ACCEPTED: { color: 'green', label: 'Fully Accepted', icon: <CheckCircleOutlined /> },
+      PARTIALLY_ACCEPTED: { color: 'geekblue', label: 'Partial', icon: <InfoCircleOutlined /> },
+      FULLY_ACCEPTED: { color: 'green', label: 'Accepted', icon: <CheckCircleOutlined /> },
       REJECTED: { color: 'red', label: 'Rejected', icon: <CloseCircleOutlined /> },
       RETURNED: { color: 'red', label: 'Returned', icon: <CloseCircleOutlined /> }
     };
-
-    const config = statusConfig[status] || statusConfig.PENDING;
-    return (
-      <Tag color={config.color} icon={config.icon}>
-        {config.label}
-      </Tag>
-    );
+    return statusConfig[status] || statusConfig.PENDING;
   };
 
   // Currency formatting
@@ -395,499 +699,219 @@ const PurchaseManagement = () => {
       }
       return dateObj.toLocaleDateString();
     } catch (error) {
-      console.error('Date formatting error:', error);
       return 'N/A';
     }
   };
 
-  const handleViewDetails = async (purchase) => {
-    try {
-      const purchaseDetails = await purchaseService.getPurchaseById(purchase.id);
-      setSelectedPurchase(purchaseDetails);
-      message.info('View details for ' + purchase.purchaseNumber);
-    } catch (error) {
-      message.error(error.message || 'Failed to load purchase details');
-    }
+  const formatDateTime = (date) => {
+    return formatDate(date, 'datetime');
   };
 
-  const handleEditPurchase = (purchase) => {
-    if (purchase.status !== 'DRAFT') {
-      message.error('Only draft purchases can be edited');
-      return;
-    }
-    setSelectedPurchase(purchase);
-    setIsCreateModalOpen(true);
-  };
-
-  // Enhanced column definitions with sequential numbering
-  const getColumnDefinitions = () => {
-    return [
-      {
-        title: '#',
-        key: 'sequence',
-        width: 60,
-        fixed: 'left',
-        type: 'number',
-        render: (_, __, index) => {
-          // Calculate sequential number based on pagination for DESC order
-          const page = filters.page || 1;
-          const pageSize = filters.limit || 20;
-          const sequentialNumber = ((page - 1) * pageSize) + index + 1;
-          return (
-            <Badge
-              count={sequentialNumber}
-              style={{ 
-                backgroundColor: sequentialNumber <= 3 ? 
-                  sequentialNumber === 1 ? '#f5222d' : 
-                  sequentialNumber === 2 ? '#fa8c16' : 
-                  '#52c41a' : '#d9d9d9'
-              }}
+  // =========== COMPACT TABLE COLUMNS (NO HORIZONTAL SCROLL) ===========
+  const columns = [
+    {
+      title: '#',
+      key: 'index',
+      width: 40,
+      render: (_, __, index) => (
+        <Text style={{ fontSize: '11px', color: '#999' }}>
+          {((filters.page - 1) * filters.limit) + index + 1}
+        </Text>
+      )
+    },
+    {
+      title: 'PO Number',
+      dataIndex: 'purchaseNumber',
+      key: 'purchaseNumber',
+      width: 100,
+      render: (text, record) => (
+        <Space direction="vertical" size={0}>
+          <Text strong style={{ fontSize: '12px' }}>{text}</Text>
+          <Text type="secondary" style={{ fontSize: '9px' }}>{record.reference || ''}</Text>
+        </Space>
+      ),
+      sorter: true
+    },
+    {
+      title: 'Supplier',
+      key: 'supplier',
+      width: 120,
+      render: (_, record) => (
+        <Space direction="vertical" size={0}>
+          <Text style={{ fontSize: '12px', fontWeight: 500 }}>{record.supplier?.name || 'N/A'}</Text>
+          <Text type="secondary" style={{ fontSize: '9px' }}>{record.supplier?.code || ''}</Text>
+        </Space>
+      )
+    },
+    {
+      title: 'Type',
+      dataIndex: 'type',
+      key: 'type',
+      width: 60,
+      render: (type) => {
+        const config = getTypeTag(type);
+        return (
+          <Tag color={config.color} style={{ fontSize: '10px', margin: 0 }}>
+            {config.label}
+          </Tag>
+        );
+      }
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      width: 80,
+      render: (status) => {
+        const config = getStatusTag(status);
+        return (
+          <Tag color={config.color} style={{ fontSize: '10px', margin: 0 }}>
+            {config.label}
+          </Tag>
+        );
+      },
+      filters: [
+        { text: 'Draft', value: 'DRAFT' },
+        { text: 'Pending', value: 'PENDING_APPROVAL' },
+        { text: 'Approved', value: 'APPROVED' },
+        { text: 'Completed', value: 'COMPLETED' },
+        { text: 'Cancelled', value: 'CANCELLED' }
+      ]
+    },
+    {
+      title: 'Delivery',
+      dataIndex: 'deliveryStatus',
+      key: 'deliveryStatus',
+      width: 70,
+      render: (status) => {
+        const config = getDeliveryTag(status);
+        return (
+          <Tag color={config.color} style={{ fontSize: '9px', margin: 0 }}>
+            {config.label}
+          </Tag>
+        );
+      }
+    },
+    {
+      title: 'Amount',
+      dataIndex: 'netPayable',
+      key: 'netPayable',
+      width: 100,
+      align: 'right',
+      render: (amount) => (
+        <Text style={{ fontSize: '12px', fontWeight: 500, color: '#1890ff' }}>
+          {formatCurrency(amount)}
+        </Text>
+      ),
+      sorter: true
+    },
+    {
+      title: 'Date',
+      dataIndex: 'purchaseDate',
+      key: 'purchaseDate',
+      width: 80,
+      render: (date) => (
+        <Text style={{ fontSize: '11px' }}>{formatDate(date, 'short')}</Text>
+      ),
+      sorter: true,
+      defaultSortOrder: 'descend'
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 60,
+      fixed: 'right',
+      render: (_, record) => (
+        <Space size={2}>
+          <Tooltip title="View Purchase Order">
+            <Button
+              type="text"
+              icon={<EyeOutlined style={{ fontSize: '14px' }} />}
+              size="small"
+              onClick={() => handleViewPurchase(record)}
+              style={{ padding: '4px' }}
             />
-          );
-        }
-      },
-      {
-        title: 'Purchase #',
-        dataIndex: 'purchaseNumber',
-        key: 'purchaseNumber',
-        width: 140,
-        type: 'text',
-        render: (text, record) => (
-          <Space direction="vertical" size={2}>
-            <Text strong style={{ fontSize: '12px' }}>{text}</Text>
-            {record.reference && (
-              <Text type="secondary" style={{ fontSize: '10px' }}>
-                Ref: {record.reference}
-              </Text>
-            )}
-          </Space>
-        ),
-        sorter: (a, b) => a.purchaseNumber?.localeCompare(b.purchaseNumber || ''),
-        defaultSortOrder: 'descend'
-      },
-      {
-        title: 'Supplier',
-        dataIndex: 'supplier',
-        key: 'supplier',
-        width: 160,
-        type: 'text',
-        render: (supplier) => (
-          <Space direction="vertical" size={2}>
-            <Text strong style={{ fontSize: '12px' }}>{supplier?.name || 'N/A'}</Text>
-            {supplier?.code && (
-              <Text type="secondary" style={{ fontSize: '10px' }}>
-                Code: {supplier.code}
-              </Text>
-            )}
-            {supplier?.contactPerson && (
-              <Text type="secondary" style={{ fontSize: '10px' }}>
-                Contact: {supplier.contactPerson}
-              </Text>
-            )}
-          </Space>
-        )
-      },
-      {
-        title: 'Type',
-        dataIndex: 'type',
-        key: 'type',
-        width: 100,
-        type: 'status',
-        render: (type) => getTypeTag(type)
-      },
-      {
-        title: 'Status',
-        dataIndex: 'status',
-        key: 'status',
-        width: 150,
-        type: 'status',
-        render: (status) => getStatusTag(status),
-        filters: [
-          { text: 'Draft', value: 'DRAFT' },
-          { text: 'Pending', value: 'PENDING_APPROVAL' },
-          { text: 'Approved', value: 'APPROVED' },
-          { text: 'Completed', value: 'COMPLETED' },
-          { text: 'Cancelled', value: 'CANCELLED' }
-        ]
-      },
-      {
-        title: 'Delivery',
-        dataIndex: 'deliveryStatus',
-        key: 'deliveryStatus',
-        width: 140,
-        type: 'status',
-        render: (status) => getDeliveryTag(status)
-      },
-      {
-        title: 'Gross Amount',
-        dataIndex: 'grossAmount',
-        key: 'grossAmount',
-        width: 130,
-        type: 'currency',
-        render: (amount) => {
-          const formatted = formatCurrency(amount);
-          return (
-            <Text style={{ fontWeight: 500, fontSize: '12px' }}>
-              {formatted}
-            </Text>
-          );
-        },
-        sorter: (a, b) => (parseFloat(a.grossAmount) || 0) - (parseFloat(b.grossAmount) || 0),
-        defaultSortOrder: 'descend'
-      },
-      {
-        title: 'Tax',
-        dataIndex: 'totalTaxAmount',
-        key: 'totalTaxAmount',
-        width: 120,
-        type: 'currency',
-        render: (amount) => {
-          const formatted = formatCurrency(amount);
-          return (
-            <Text type="secondary" style={{ fontSize: '12px' }}>
-              {formatted}
-            </Text>
-          );
-        }
-      },
-      {
-        title: 'Discount',
-        dataIndex: 'discountAmount',
-        key: 'discountAmount',
-        width: 120,
-        type: 'currency',
-        render: (amount) => {
-          const formatted = formatCurrency(amount);
-          return (
-            <Text type="success" style={{ fontSize: '12px' }}>
-              {formatted}
-            </Text>
-          );
-        }
-      },
-      {
-        title: 'Net Payable',
-        dataIndex: 'netPayable',
-        key: 'netPayable',
-        width: 130,
-        type: 'currency',
-        render: (amount) => {
-          const formatted = formatCurrency(amount);
-          return (
-            <Text strong style={{ color: '#52c41a', fontSize: '12px' }}>
-              {formatted}
-            </Text>
-          );
-        },
-        sorter: (a, b) => (parseFloat(a.netPayable) || 0) - (parseFloat(b.netPayable) || 0)
-      },
-      {
-        title: 'Purchase Date',
-        dataIndex: 'purchaseDate',
-        key: 'purchaseDate',
-        width: 140,
-        type: 'date',
-        render: (date) => (
-          <Space direction="vertical" size={2}>
-            <Text style={{ fontSize: '12px' }}>{formatDate(date, 'short')}</Text>
-            <Text type="secondary" style={{ fontSize: '10px' }}>
-              Expected: {formatDate(date, 'short')}
-            </Text>
-          </Space>
-        ),
-        sorter: (a, b) => new Date(a.purchaseDate) - new Date(b.purchaseDate),
-        defaultSortOrder: 'descend'
-      },
-      {
-        title: 'Actions',
-        key: 'actions',
-        width: 180,
-        fixed: 'right',
-        render: (_, record) => (
-          <Space size="small">
-            <Tooltip title="View Details">
-              <Button 
-                icon={<EyeOutlined />} 
+          </Tooltip>
+          <Tooltip title="Download PDF">
+            <Button
+              type="text"
+              icon={<FilePdfOutlined style={{ fontSize: '14px', color: '#ff4d4f' }} />}
+              size="small"
+              onClick={() => generatePurchaseOrderPDF(record)}
+              style={{ padding: '4px' }}
+            />
+          </Tooltip>
+          {record.status === 'DRAFT' && (
+            <Tooltip title="Edit">
+              <Button
+                type="text"
+                icon={<EditOutlined style={{ fontSize: '14px' }} />}
                 size="small"
-                onClick={() => handleViewDetails(record)}
+                onClick={() => handleEditPurchase(record)}
+                style={{ padding: '4px' }}
               />
             </Tooltip>
-            
-            {record.status === 'DRAFT' && (
-              <Tooltip title="Edit">
-                <Button 
-                  icon={<EditOutlined />} 
-                  size="small"
-                  onClick={() => handleEditPurchase(record)}
-                />
-              </Tooltip>
-            )}
-            
-            {record.status === 'PENDING_APPROVAL' && (
-              <Tooltip title="Approve">
-                <Button 
-                  icon={<CheckCircleOutlined />} 
-                  size="small"
-                  type="primary"
-                  onClick={() => handleUpdateStatus(record.id, 'APPROVED')}
-                />
-              </Tooltip>
-            )}
-            
-            {record.status === 'DRAFT' && (
-              <Tooltip title="Delete">
-                <Button 
-                  icon={<DeleteOutlined />} 
-                  size="small"
-                  danger
-                  onClick={() => handleDeletePurchase(record.id)}
-                />
-              </Tooltip>
-            )}
-          </Space>
-        )
-      }
-    ];
-  };
+          )}
+        </Space>
+      )
+    }
+  ];
 
-  // Prepare data for export with sequential numbering
+  // Total width calculation: 40+100+120+60+80+70+100+80+60 = 710px (fits without scroll)
+
+  // Prepare data for export
   const prepareExportData = () => {
     if (!purchases || purchases.length === 0) return [];
     
-    const columnDefinitions = getColumnDefinitions();
-    
-    return purchases.map((record, index) => {
-      const exportRecord = { ...record };
-      
-      // Add sequential number
-      exportRecord.sequenceNumber = index + 1;
-      
-      // Process each column to ensure proper values
-      columnDefinitions.forEach(col => {
-        if (col.dataIndex) {
-          const value = record[col.dataIndex];
-          
-          // Handle supplier object
-          if (col.dataIndex === 'supplier' && value && typeof value === 'object') {
-            exportRecord.supplierName = value.name || 'N/A';
-            exportRecord.supplierCode = value.code || '';
-            exportRecord.supplierContact = value.contactPerson || '';
-          }
-          
-          // Handle missing or null values for currency columns
-          if (col.type === 'currency') {
-            if (value === null || value === undefined || value === '') {
-              exportRecord[col.dataIndex] = 0;
-            } else {
-              exportRecord[col.dataIndex] = parseFloat(value) || 0;
-            }
-          }
-          // Handle missing values for number columns
-          else if (col.type === 'number') {
-            if (value === null || value === undefined || value === '') {
-              exportRecord[col.dataIndex] = 0;
-            } else {
-              exportRecord[col.dataIndex] = parseFloat(value) || 0;
-            }
-          }
-          // Handle missing text values
-          else if (col.type === 'text') {
-            if (value === null || value === undefined) {
-              exportRecord[col.dataIndex] = 'N/A';
-            }
-          }
-          // Handle missing status values
-          else if (col.type === 'status') {
-            if (value === null || value === undefined) {
-              exportRecord[col.dataIndex] = 'Unknown';
-            }
-          }
-          // Handle missing date values
-          else if (col.type === 'date' || col.type === 'datetime') {
-            if (value === null || value === undefined) {
-              exportRecord[col.dataIndex] = 'N/A';
-            }
-          }
-        }
-      });
-      
-      return exportRecord;
-    });
+    return purchases.map((record, index) => ({
+      '#': index + 1,
+      'PO Number': record.purchaseNumber,
+      'Supplier': record.supplier?.name || 'N/A',
+      'Type': record.type || 'N/A',
+      'Status': record.status || 'N/A',
+      'Delivery Status': record.deliveryStatus || 'N/A',
+      'Gross Amount': record.grossAmount || 0,
+      'Tax Amount': record.totalTaxAmount || 0,
+      'Net Payable': record.netPayable || 0,
+      'Purchase Date': formatDate(record.purchaseDate, 'short'),
+      'Expected Date': formatDate(record.expectedDate, 'short'),
+      'Received Date': record.receivedDate ? formatDate(record.receivedDate, 'short') : 'Not received',
+      'Supplier Contact': record.supplier?.contactPerson || 'N/A',
+      'Supplier Phone': record.supplier?.phone || 'N/A',
+      'Station': record.station?.name || 'N/A',
+      'Created By': record.createdBy ? `${record.createdBy.firstName} ${record.createdBy.lastName}` : 'N/A',
+      'Created At': formatDateTime(record.createdAt),
+      'Notes': record.notes || ''
+    }));
   };
 
   // Calculate summary data for reports
   const calculateSummaryData = () => {
     if (!purchases || purchases.length === 0) return null;
 
-    const columnDefinitions = getColumnDefinitions();
-    const currencyColumns = columnDefinitions.filter(col => 
-      col.type === 'currency' && col.dataIndex
-    );
-
-    const totals = {};
+    const totalGross = purchases.reduce((sum, p) => sum + (p.grossAmount || 0), 0);
+    const totalTax = purchases.reduce((sum, p) => sum + (p.totalTaxAmount || 0), 0);
+    const totalNet = purchases.reduce((sum, p) => sum + (p.netPayable || 0), 0);
+    const totalDiscount = purchases.reduce((sum, p) => sum + (p.discountAmount || 0), 0);
     
-    // Initialize all currency totals
-    currencyColumns.forEach(col => {
-      if (col.dataIndex) {
-        totals[col.dataIndex] = 0;
-      }
-    });
-    
-    // Calculate totals
-    purchases.forEach(record => {
-      currencyColumns.forEach(col => {
-        if (col.dataIndex) {
-          const value = parseFloat(record[col.dataIndex]) || 0;
-          totals[col.dataIndex] += value;
-        }
-      });
-    });
-
-    // Add record count
-    totals.totalRecords = purchases.length;
-    totals.averagePurchaseValue = totals.totalRecords > 0 ? totals.netPayable / totals.totalRecords : 0;
-    
-    // Add summary info
-    totals.summaryInfo = {
-      'Total Purchases': totals.totalRecords,
-      'Total Spend': formatCurrency(totals.netPayable || 0),
-      'Average Purchase Value': formatCurrency(totals.averagePurchaseValue || 0),
-      'Total Tax': formatCurrency(totals.totalTaxAmount || 0),
-      'Total Discount': formatCurrency(totals.discountAmount || 0),
+    return {
+      'Total Purchases': purchases.length,
+      'Total Gross Amount': formatCurrency(totalGross),
+      'Total Tax Amount': formatCurrency(totalTax),
+      'Total Net Payable': formatCurrency(totalNet),
+      'Total Discount': formatCurrency(totalDiscount),
+      'Average Purchase Value': formatCurrency(totalNet / (purchases.length || 1)),
+      'Completed Purchases': purchases.filter(p => p.status === 'COMPLETED').length,
+      'Pending Purchases': purchases.filter(p => p.status === 'PENDING_APPROVAL').length,
+      'Date Range': `${formatDate(filters.startDate, 'short')} - ${formatDate(filters.endDate, 'short')}`,
       'Generated At': new Date().toLocaleString(),
-      'Company': currentCompany?.name || 'All Companies',
-      'Date Range': `${formatDate(filters.startDate, 'short')} to ${formatDate(filters.endDate, 'short')}`,
-      'Report Type': 'Purchase Management Report'
+      'Generated By': `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`,
+      'Company': currentCompany?.name || 'All Companies'
     };
-    
-    // Format totals for display
-    const formattedTotals = {};
-    Object.entries(totals).forEach(([key, value]) => {
-      if (typeof value === 'number') {
-        formattedTotals[key] = {
-          raw: value,
-          formatted: formatCurrency(value)
-        };
-      } else {
-        formattedTotals[key] = value;
-      }
-    });
-
-    return formattedTotals;
-  };
-
-  // Render export button with AdvancedReportGenerator
-  const renderExportButton = () => {
-    if (!purchases || purchases.length === 0) {
-      return (
-        <Button icon={<DownloadOutlined />} disabled>
-          Export
-        </Button>
-      );
-    }
-
-    const columnDefinitions = getColumnDefinitions();
-    const summaryData = calculateSummaryData();
-    const exportDataSource = prepareExportData();
-    
-    // Get report title
-    const getReportTitle = () => {
-      const companyName = currentCompany?.name || 'All Companies';
-      const dateRange = `${formatDate(filters.startDate, 'short')} to ${formatDate(filters.endDate, 'short')}`;
-      
-      return `Purchase Management Report - ${companyName} - ${dateRange}`;
-    };
-
-    // Get file name
-    const getFileName = () => {
-      const companyCode = currentCompany?.code ? `_${currentCompany.code}` : '';
-      return `purchases_${filters.startDate}_to_${filters.endDate}${companyCode}_${new Date().toISOString().split('T')[0]}`;
-    };
-
-    // Enhanced column configuration for export
-    const enhancedExportColumns = columnDefinitions.map(col => {
-      const enhancedCol = { ...col };
-      
-      // Override render functions to ensure consistent values for export
-      if (col.type === 'currency') {
-        enhancedCol.render = (value) => {
-          if (value === null || value === undefined || value === '') {
-            return 0;
-          }
-          return parseFloat(value) || 0;
-        };
-      } else if (col.type === 'number') {
-        enhancedCol.render = (value) => {
-          if (value === null || value === undefined || value === '') {
-            return 0;
-          }
-          return parseFloat(value) || 0;
-        };
-      } else if (col.type === 'text') {
-        enhancedCol.render = (value) => {
-          if (value === null || value === undefined) {
-            return 'N/A';
-          }
-          return String(value);
-        };
-      } else if (col.type === 'status') {
-        enhancedCol.render = (value) => {
-          if (value === null || value === undefined) {
-            return 'Unknown';
-          }
-          return String(value);
-        };
-      } else if (col.type === 'date' || col.type === 'datetime') {
-        enhancedCol.render = (value) => {
-          if (value === null || value === undefined) {
-            return 'N/A';
-          }
-          return formatDate(value, col.type === 'date' ? 'short' : 'datetime');
-        };
-      }
-      
-      return enhancedCol;
-    });
-
-    return (
-      <AdvancedReportGenerator
-        dataSource={exportDataSource}
-        columns={enhancedExportColumns}
-        summaryData={summaryData}
-        title={getReportTitle()}
-        fileName={getFileName()}
-        reportType="operations"
-        companyName={currentCompany?.name || "Lynx Energy System"}
-        stationInfo={currentStation ? {
-          name: currentStation.name,
-          code: currentStation.code,
-          address: currentStation.address
-        } : null}
-        showFooter={true}
-        footerText={`Generated from Lynx Energy System | User: ${currentUser?.firstName || ''} ${currentUser?.lastName || ''} | ${new Date().toLocaleString()}`}
-        enableCustomization={true}
-        includeLogo={false}
-        onReportGenerate={(format) => {
-          console.log(`Exporting ${exportDataSource.length} purchase records as ${format}`);
-          message.success(`Purchase report generated successfully with ${exportDataSource.length} records`);
-        }}
-        customStyles={{
-          fontSize: 9,
-          cellPadding: 3,
-          showGridLines: true,
-          alternateRowColors: true,
-          includeTimestamp: true,
-          includeStationInfo: !!currentStation,
-          autoWrapText: true
-        }}
-      />
-    );
   };
 
   // Handle table sort change
   const handleTableChange = (pagination, _, sorter) => {
-    console.log('Table sort changed:', sorter);
-    
     if (sorter.field) {
       handleFilterChange('sortBy', sorter.field);
       handleFilterChange('sortOrder', sorter.order === 'ascend' ? 'asc' : 'desc');
@@ -904,152 +928,120 @@ const PurchaseManagement = () => {
 
   // Get permissions
   const canManagePurchases = () => true;
-  const canApprovePurchases = () => true;
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Title level={2} style={{ margin: 0 }}>
-            <ShoppingOutlined /> Purchase Management
-          </Title>
-          <Text type="secondary">
-            Manage purchase orders, track deliveries, and monitor supplier performance
-          </Text>
-        </Space>
-        
-        <Space style={{ marginTop: '16px' }}>
-          {canManagePurchases() && (
+    <div style={{ padding: '16px' }}>
+      {/* Header */}
+      <Row gutter={[8, 8]} style={{ marginBottom: 16 }} align="middle">
+        <Col xs={24} md={12}>
+          <Space direction="vertical" size={0}>
+            <Title level={3} style={{ margin: 0, fontSize: '18px' }}>
+              <ShoppingOutlined /> Purchase Management
+            </Title>
+            <Text type="secondary" style={{ fontSize: '11px' }}>
+              {purchases.length} purchase orders • Last 30 days
+            </Text>
+          </Space>
+        </Col>
+        <Col xs={24} md={12}>
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }} size={4}>
             <Button 
               type="primary" 
               icon={<PlusOutlined />}
               onClick={() => setIsCreateModalOpen(true)}
+              size="small"
             >
-              New Purchase
+              New PO
             </Button>
-          )}
-          {renderExportButton()}
-          <Button icon={<BarChartOutlined />}>
-            Analytics
-          </Button>
-        </Space>
-      </div>
-
-      {/* Statistics Section */}
-      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-        <Col xs={24} sm={12} md={6}>
-          <Card size="small" hoverable>
-            <Statistic
-              title="Total Purchases"
-              value={stats.total}
-              prefix={<ShoppingOutlined />}
-              valueStyle={{ color: '#1890ff' }}
+            
+            <AdvancedReportGenerator
+              dataSource={prepareExportData()}
+              columns={[
+                { title: '#', dataIndex: '#', key: 'index', width: 50, type: 'number' },
+                { title: 'PO Number', dataIndex: 'PO Number', key: 'poNumber', width: 120, type: 'text' },
+                { title: 'Supplier', dataIndex: 'Supplier', key: 'supplier', width: 150, type: 'text' },
+                { title: 'Type', dataIndex: 'Type', key: 'type', width: 80, type: 'text' },
+                { title: 'Status', dataIndex: 'Status', key: 'status', width: 100, type: 'text' },
+                { title: 'Delivery Status', dataIndex: 'Delivery Status', key: 'delivery', width: 100, type: 'text' },
+                { title: 'Gross Amount', dataIndex: 'Gross Amount', key: 'gross', width: 120, type: 'currency' },
+                { title: 'Tax Amount', dataIndex: 'Tax Amount', key: 'tax', width: 120, type: 'currency' },
+                { title: 'Net Payable', dataIndex: 'Net Payable', key: 'net', width: 120, type: 'currency' },
+                { title: 'Purchase Date', dataIndex: 'Purchase Date', key: 'date', width: 100, type: 'date' }
+              ]}
+              summaryData={calculateSummaryData()}
+              title={`Purchase Report - ${formatDate(filters.startDate, 'short')} to ${formatDate(filters.endDate, 'short')}`}
+              fileName={`purchases_${filters.startDate}_to_${filters.endDate}`}
+              reportType="operations"
+              companyName={currentCompany?.name}
+              stationInfo={currentStation}
+              showFooter={true}
+              footerText={`Generated by ${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`}
+              enableCustomization={true}
+              showGrandTotals={true}
             />
-            <Text type="secondary">
-              Last 30 days: {purchases.filter(p => 
-                new Date(p.purchaseDate) > new Date(dayjs().subtract(30, 'days'))
-              ).length}
-            </Text>
+            
+            <Button icon={<ReloadOutlined />} onClick={loadPurchases} loading={loading} size="small" />
+          </Space>
+        </Col>
+      </Row>
+
+      {/* Statistics Cards - COMPACT */}
+      <Row gutter={[4, 4]} style={{ marginBottom: 16 }}>
+        <Col xs={24} sm={12} md={6}>
+          <Card size="small" bodyStyle={{ padding: '8px' }}>
+            <Statistic
+              title={<span style={{ fontSize: '11px' }}>Total Purchases</span>}
+              value={stats.total}
+              valueStyle={{ color: '#1890ff', fontSize: '16px' }}
+              prefix={<ShoppingOutlined />}
+            />
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card size="small" hoverable>
+          <Card size="small" bodyStyle={{ padding: '8px' }}>
             <Statistic
-              title="Total Spend"
+              title={<span style={{ fontSize: '11px' }}>Total Spend</span>}
               value={stats.totalSpent}
               precision={0}
-              prefix="KES"
-              valueStyle={{ color: '#52c41a' }}
+              formatter={value => `KES ${value.toLocaleString()}`}
+              valueStyle={{ color: '#52c41a', fontSize: '16px' }}
             />
-            <Text type="secondary">
-              Avg: {formatCurrency(stats.averagePurchaseValue)}
-            </Text>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card size="small" hoverable>
+          <Card size="small" bodyStyle={{ padding: '8px' }}>
             <Statistic
-              title="Total Tax"
-              value={stats.totalTax}
-              precision={0}
-              prefix="KES"
-              valueStyle={{ color: '#722ed1' }}
+              title={<span style={{ fontSize: '11px' }}>Completed</span>}
+              value={stats.completed}
+              valueStyle={{ color: '#722ed1', fontSize: '16px' }}
+              suffix={`/ ${stats.total}`}
             />
-            <Text type="secondary">
-              {((stats.totalTax / stats.totalSpent) * 100).toFixed(1)}% of spend
-            </Text>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card size="small" hoverable>
+          <Card size="small" bodyStyle={{ padding: '8px' }}>
             <Statistic
-              title="On-Time Delivery"
+              title={<span style={{ fontSize: '11px' }}>On-Time</span>}
               value={stats.onTimeDeliveryRate}
               precision={1}
               suffix="%"
-              valueStyle={{ color: stats.onTimeDeliveryRate >= 90 ? '#52c41a' : stats.onTimeDeliveryRate >= 75 ? '#fa8c16' : '#f5222d' }}
-            />
-            <Progress 
-              percent={stats.onTimeDeliveryRate} 
-              size="small" 
-              status={stats.onTimeDeliveryRate >= 90 ? 'success' : stats.onTimeDeliveryRate >= 75 ? 'active' : 'exception'}
+              valueStyle={{ color: stats.onTimeDeliveryRate >= 90 ? '#52c41a' : '#fa8c16', fontSize: '16px' }}
             />
           </Card>
         </Col>
       </Row>
 
-      {/* Status Summary */}
-      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-        <Col xs={24} sm={8} md={4}>
-          <Card size="small" style={{ textAlign: 'center' }}>
-            <Text type="secondary">Draft</Text>
-            <Badge count={stats.draft} style={{ backgroundColor: '#666' }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8} md={4}>
-          <Card size="small" style={{ textAlign: 'center' }}>
-            <Text type="secondary">Pending</Text>
-            <Badge count={stats.pending} style={{ backgroundColor: '#faad14' }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8} md={4}>
-          <Card size="small" style={{ textAlign: 'center' }}>
-            <Text type="secondary">Approved</Text>
-            <Badge count={stats.approved} style={{ backgroundColor: '#1890ff' }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8} md={4}>
-          <Card size="small" style={{ textAlign: 'center' }}>
-            <Text type="secondary">Completed</Text>
-            <Badge count={stats.completed} style={{ backgroundColor: '#52c41a' }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8} md={4}>
-          <Card size="small" style={{ textAlign: 'center' }}>
-            <Text type="secondary">Cancelled</Text>
-            <Badge count={stats.cancelled} style={{ backgroundColor: '#f5222d' }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8} md={4}>
-          <Card size="small" style={{ textAlign: 'center' }}>
-            <Text type="secondary">Discount</Text>
-            <Text strong style={{ color: '#52c41a' }}>
-              {formatCurrency(stats.totalDiscount)}
-            </Text>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Filters Section */}
-      <Card style={{ marginBottom: '24px' }} size="small">
-        <Row gutter={[16, 16]} align="middle">
+      {/* Filters - COMPACT */}
+      <Card size="small" style={{ marginBottom: 16 }} bodyStyle={{ padding: '8px' }}>
+        <Row gutter={[4, 4]} align="middle">
           <Col xs={24} sm={12} md={6}>
-            <Search
-              placeholder="Search purchases..."
+            <Input
+              placeholder="Search POs..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              onSearch={loadPurchases}
-              enterButton={<SearchOutlined />}
+              onPressEnter={loadPurchases}
+              prefix={<SearchOutlined style={{ fontSize: '12px' }} />}
+              size="small"
               allowClear
             />
           </Col>
@@ -1059,13 +1051,13 @@ const PurchaseManagement = () => {
               placeholder="Status"
               value={filters.status}
               onChange={(value) => handleFilterChange('status', value)}
+              size="small"
             >
-              <Option value="all">All Statuses</Option>
+              <Option value="all">All Status</Option>
               <Option value="DRAFT">Draft</Option>
-              <Option value="PENDING_APPROVAL">Pending Approval</Option>
+              <Option value="PENDING_APPROVAL">Pending</Option>
               <Option value="APPROVED">Approved</Option>
               <Option value="COMPLETED">Completed</Option>
-              <Option value="CANCELLED">Cancelled</Option>
             </Select>
           </Col>
           <Col xs={24} sm={12} md={4}>
@@ -1074,109 +1066,44 @@ const PurchaseManagement = () => {
               placeholder="Type"
               value={filters.type}
               onChange={(value) => handleFilterChange('type', value)}
+              size="small"
             >
               <Option value="all">All Types</Option>
               <Option value="FUEL">Fuel</Option>
               <Option value="NON_FUEL">Non-Fuel</Option>
-              <Option value="MIXED">Mixed</Option>
             </Select>
           </Col>
           <Col xs={24} sm={12} md={6}>
+            <RangePicker
+              value={[dayjs(filters.startDate), dayjs(filters.endDate)]}
+              onChange={handleDateRangeChange}
+              style={{ width: '100%' }}
+              format="YYYY-MM-DD"
+              size="small"
+            />
+          </Col>
+          <Col xs={24} sm={12} md={4}>
             <Select
+              value={filters.sortBy}
+              onChange={(value) => handleFilterChange('sortBy', value)}
               style={{ width: '100%' }}
-              placeholder="Supplier"
-              value={filters.supplier}
-              onChange={(value) => handleFilterChange('supplier', value)}
-              loading={loading}
+              size="small"
             >
-              <Option value="all">All Suppliers</Option>
-              {suppliers.map(supplier => (
-                <Option key={supplier.id} value={supplier.id}>
-                  {supplier.name} {supplier.code ? `(${supplier.code})` : ''}
-                </Option>
-              ))}
+              <Option value="purchaseDate">Date</Option>
+              <Option value="netPayable">Amount</Option>
+              <Option value="purchaseNumber">PO #</Option>
             </Select>
-          </Col>
-          <Col xs={24} sm={12} md={4}>
-            <Button 
-              icon={<ReloadOutlined />} 
-              onClick={loadPurchases}
-              loading={loading}
-              style={{ width: '100%' }}
-            >
-              Refresh
-            </Button>
-          </Col>
-        </Row>
-        
-        <Divider style={{ margin: '16px 0' }} />
-        
-        <Row gutter={[16, 16]}>
-          <Col xs={24} sm={12} md={8}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Text strong>Date Range</Text>
-              <RangePicker
-                value={[dayjs(filters.startDate), dayjs(filters.endDate)]}
-                onChange={handleDateRangeChange}
-                style={{ width: '100%' }}
-                format="YYYY-MM-DD"
-              />
-            </Space>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Text strong>Sort By</Text>
-              <Select
-                value={filters.sortBy}
-                onChange={(value) => handleFilterChange('sortBy', value)}
-                style={{ width: '100%' }}
-              >
-                <Option value="purchaseDate">Purchase Date (DESC)</Option>
-                <Option value="netPayable">Net Amount (DESC)</Option>
-                <Option value="grossAmount">Gross Amount (DESC)</Option>
-                <Option value="createdAt">Created Date (DESC)</Option>
-              </Select>
-            </Space>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Text strong>Sort Order</Text>
-              <Select
-                value={filters.sortOrder}
-                onChange={(value) => handleFilterChange('sortOrder', value)}
-                style={{ width: '100%' }}
-              >
-                <Option value="desc">Newest First (Desc)</Option>
-                <Option value="asc">Oldest First (Asc)</Option>
-              </Select>
-            </Space>
-          </Col>
-          <Col xs={24} sm={12} md={4}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Text strong>Records Per Page</Text>
-              <Select
-                value={filters.limit}
-                onChange={(value) => handleFilterChange('limit', value)}
-                style={{ width: '100%' }}
-              >
-                <Option value={10}>10</Option>
-                <Option value={20}>20</Option>
-                <Option value={50}>50</Option>
-                <Option value={100}>100</Option>
-              </Select>
-            </Space>
           </Col>
         </Row>
       </Card>
 
-      {/* Main Table */}
-      <Card>
+      {/* Main Table - COMPACT */}
+      <Card size="small" bodyStyle={{ padding: 0 }}>
         <Table
-          columns={getColumnDefinitions()}
+          columns={columns}
           dataSource={purchases}
           loading={loading}
           rowKey="id"
-          scroll={{ x: 1500 }}
           pagination={{
             current: filters.page,
             pageSize: filters.limit,
@@ -1190,83 +1117,277 @@ const PurchaseManagement = () => {
             showSizeChanger: true,
             showQuickJumper: true,
             showTotal: (total, range) => 
-              `Showing ${range[0]}-${range[1]} of ${total} purchases (Sorted: ${filters.sortBy} ${filters.sortOrder === 'desc' ? 'DESC' : 'ASC'})`
+              `${range[0]}-${range[1]} of ${total}`,
+            size: 'small'
           }}
           onChange={handleTableChange}
-          locale={{
-            emptyText: searchQuery || filters.status !== 'all' || filters.type !== 'all' || filters.supplier !== 'all'
-              ? 'No purchases match your search criteria.' 
-              : 'No purchases found. Create your first purchase order to get started.'
-          }}
-          summary={() => {
-            if (purchases.length === 0) return null;
-            
-            const summaryData = calculateSummaryData();
-            if (!summaryData) return null;
-
-            return (
-              <Table.Summary fixed>
-                <Table.Summary.Row style={{ backgroundColor: '#fafafa', fontWeight: 'bold' }}>
-                  <Table.Summary.Cell index={0} colSpan={4}>
-                    <Text strong>TOTAL ({purchases.length} purchases)</Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={1} align="right">
-                    <Text strong style={{ color: '#1890ff' }}>
-                      {formatCurrency(summaryData.grossAmount?.raw || 0)}
-                    </Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={2} align="right">
-                    <Text strong type="secondary">
-                      {formatCurrency(summaryData.totalTaxAmount?.raw || 0)}
-                    </Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={3} align="right">
-                    <Text strong type="success">
-                      {formatCurrency(summaryData.discountAmount?.raw || 0)}
-                    </Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={4} align="right">
-                    <Text strong style={{ color: '#52c41a' }}>
-                      {formatCurrency(summaryData.netPayable?.raw || 0)}
-                    </Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={5} colSpan={6}>
-                    <Text type="secondary">
-                      Sorted by: {filters.sortBy} ({filters.sortOrder === 'desc' ? 'Descending' : 'Ascending'})
-                    </Text>
-                  </Table.Summary.Cell>
-                </Table.Summary.Row>
-              </Table.Summary>
-            );
-          }}
+          size="small"
+          scroll={{ x: 710 }} // Exactly the width of our columns
         />
       </Card>
 
-      {/* Info Section */}
-      {purchases.length > 0 && (
-        <Alert
-          message="Purchase Management Information"
-          description={
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Text>
-                • Total purchases: <Text strong>{stats.total}</Text> with total spend of <Text strong>{formatCurrency(stats.totalSpent)}</Text>
-              </Text>
-              <Text>
-                • On-time delivery rate: <Text strong>{stats.onTimeDeliveryRate.toFixed(1)}%</Text>
-              </Text>
-              <Text>
-                • Average purchase value: <Text strong>{formatCurrency(stats.averagePurchaseValue)}</Text>
-              </Text>
-              <Text>
-                • Date range: {formatDate(filters.startDate, 'short')} to {formatDate(filters.endDate, 'short')}
-              </Text>
-            </Space>
-          }
-          type="info"
-          showIcon
-          style={{ marginTop: 16 }}
-        />
-      )}
+      {/* Single Purchase Order Modal */}
+      <Modal
+        title={
+          <Space size={8}>
+            <ShoppingOutlined style={{ color: '#1890ff' }} />
+            <span>Purchase Order: {selectedPurchase?.purchaseNumber}</span>
+            {selectedPurchase && (
+              <Tag color={getStatusTag(selectedPurchase.status).color}>
+                {getStatusTag(selectedPurchase.status).label}
+              </Tag>
+            )}
+          </Space>
+        }
+        open={purchaseModalVisible}
+        onCancel={() => {
+          setPurchaseModalVisible(false);
+          setSelectedPurchase(null);
+        }}
+        width={800}
+        footer={[
+          <Button 
+            key="pdf" 
+            type="primary"
+            icon={<FilePdfOutlined />}
+            onClick={() => generatePurchaseOrderPDF(selectedPurchase)}
+            size="small"
+          >
+            Download PDF
+          </Button>,
+          <Button 
+            key="print" 
+            icon={<PrinterOutlined />}
+            onClick={() => window.print()}
+            size="small"
+          >
+            Print
+          </Button>,
+          <Button 
+            key="close" 
+            onClick={() => {
+              setPurchaseModalVisible(false);
+              setSelectedPurchase(null);
+            }}
+            size="small"
+          >
+            Close
+          </Button>
+        ]}
+      >
+        {selectedPurchase && (
+          <div>
+            {/* PO Header */}
+            <Card size="small" style={{ marginBottom: 12, backgroundColor: '#f5f5f5' }}>
+              <Row gutter={[8, 8]}>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>PO Number</Text>
+                  <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
+                    {selectedPurchase.purchaseNumber}
+                  </div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>PO Date</Text>
+                  <div style={{ fontSize: '14px' }}>
+                    {formatDate(selectedPurchase.purchaseDate, 'long')}
+                  </div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Status</Text>
+                  <div>
+                    <Tag color={getStatusTag(selectedPurchase.status).color}>
+                      {getStatusTag(selectedPurchase.status).label}
+                    </Tag>
+                    <Tag color={getDeliveryTag(selectedPurchase.deliveryStatus).color} style={{ marginLeft: 4 }}>
+                      {getDeliveryTag(selectedPurchase.deliveryStatus).label}
+                    </Tag>
+                  </div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Type</Text>
+                  <div>
+                    <Tag color={getTypeTag(selectedPurchase.type).color}>
+                      {getTypeTag(selectedPurchase.type).label}
+                    </Tag>
+                  </div>
+                </Col>
+              </Row>
+            </Card>
+
+            {/* Supplier Information */}
+            <Card title="Supplier Information" size="small" style={{ marginBottom: 12 }}>
+              <Row gutter={[8, 8]}>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Supplier Name</Text>
+                  <div style={{ fontWeight: 500 }}>{selectedPurchase.supplier?.name || 'N/A'}</div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Supplier Code</Text>
+                  <div>{selectedPurchase.supplier?.code || 'N/A'}</div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Contact Person</Text>
+                  <div>{selectedPurchase.supplier?.contactPerson || 'N/A'}</div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Phone</Text>
+                  <div>{selectedPurchase.supplier?.phone || 'N/A'}</div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Email</Text>
+                  <div>{selectedPurchase.supplier?.email || 'N/A'}</div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Payment Terms</Text>
+                  <div>{selectedPurchase.supplier?.paymentTerms ? `Net ${selectedPurchase.supplier.paymentTerms}` : 'N/A'}</div>
+                </Col>
+              </Row>
+            </Card>
+
+            {/* Delivery Information */}
+            <Card title="Delivery Information" size="small" style={{ marginBottom: 12 }}>
+              <Row gutter={[8, 8]}>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Station</Text>
+                  <div>{selectedPurchase.station?.name || 'N/A'}</div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Location</Text>
+                  <div>{selectedPurchase.station?.location || 'N/A'}</div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Expected Date</Text>
+                  <div>{formatDate(selectedPurchase.expectedDate, 'short')}</div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Received Date</Text>
+                  <div>{selectedPurchase.receivedDate ? formatDate(selectedPurchase.receivedDate, 'short') : 'Not received'}</div>
+                </Col>
+                <Col span={24}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Delivery Address</Text>
+                  <div>{selectedPurchase.deliveryAddress || 'N/A'}</div>
+                </Col>
+              </Row>
+            </Card>
+
+            {/* Items Table */}
+            <Card title="Purchase Items" size="small" style={{ marginBottom: 12 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#fafafa' }}>
+                    <th style={{ padding: '6px', textAlign: 'left', fontSize: '11px' }}>#</th>
+                    <th style={{ padding: '6px', textAlign: 'left', fontSize: '11px' }}>Product</th>
+                    <th style={{ padding: '6px', textAlign: 'right', fontSize: '11px' }}>Qty</th>
+                    <th style={{ padding: '6px', textAlign: 'right', fontSize: '11px' }}>Unit Cost</th>
+                    <th style={{ padding: '6px', textAlign: 'right', fontSize: '11px' }}>Tax</th>
+                    <th style={{ padding: '6px', textAlign: 'right', fontSize: '11px' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedPurchase.items?.map((item, index) => {
+                    const lineTotal = (item.unitCost || 0) * (item.orderedQty || 0);
+                    const taxAmount = item.taxAmount || (lineTotal * (item.taxRate || 0));
+                    const totalWithTax = lineTotal + taxAmount;
+                    
+                    return (
+                      <tr key={index}>
+                        <td style={{ padding: '6px', fontSize: '11px' }}>{index + 1}</td>
+                        <td style={{ padding: '6px', fontSize: '11px' }}>
+                          <div>{item.product?.name || 'N/A'}</div>
+                          <Text type="secondary" style={{ fontSize: '9px' }}>{item.product?.fuelCode || ''}</Text>
+                        </td>
+                        <td style={{ padding: '6px', fontSize: '11px', textAlign: 'right' }}>{item.orderedQty?.toLocaleString() || 0}</td>
+                        <td style={{ padding: '6px', fontSize: '11px', textAlign: 'right' }}>KES {(item.unitCost || 0).toLocaleString()}</td>
+                        <td style={{ padding: '6px', fontSize: '11px', textAlign: 'right' }}>{((item.taxRate || 0) * 100).toFixed(0)}%</td>
+                        <td style={{ padding: '6px', fontSize: '11px', textAlign: 'right', fontWeight: 'bold' }}>
+                          KES {totalWithTax.toLocaleString()}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </Card>
+
+            {/* Financial Summary */}
+            <Card size="small" style={{ marginBottom: 12, backgroundColor: '#f0f5ff' }}>
+              <Row gutter={[8, 8]}>
+                <Col span={8}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Gross Amount</Text>
+                  <div style={{ fontSize: '14px' }}>KES {selectedPurchase.grossAmount?.toLocaleString() || 0}</div>
+                </Col>
+                <Col span={8}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Tax Amount</Text>
+                  <div style={{ fontSize: '14px' }}>KES {selectedPurchase.totalTaxAmount?.toLocaleString() || 0}</div>
+                </Col>
+                <Col span={8}>
+                  <Text type="secondary" style={{ fontSize: '11px' }}>Discount</Text>
+                  <div style={{ fontSize: '14px', color: '#52c41a' }}>KES {selectedPurchase.discountAmount?.toLocaleString() || 0}</div>
+                </Col>
+                <Col span={24}>
+                  <Divider style={{ margin: '8px 0' }} />
+                  <Text strong style={{ fontSize: '14px' }}>NET PAYABLE: </Text>
+                  <Text strong style={{ fontSize: '16px', color: '#1890ff', marginLeft: 8 }}>
+                    KES {selectedPurchase.netPayable?.toLocaleString() || 0}
+                  </Text>
+                </Col>
+              </Row>
+            </Card>
+
+            {/* Additional Information */}
+            {(selectedPurchase.notes || selectedPurchase.reference || selectedPurchase.internalRef) && (
+              <Card title="Additional Information" size="small" style={{ marginBottom: 12 }}>
+                {selectedPurchase.notes && (
+                  <div style={{ marginBottom: 4 }}>
+                    <Text type="secondary" style={{ fontSize: '11px' }}>Notes: </Text>
+                    <Text style={{ fontSize: '12px' }}>{selectedPurchase.notes}</Text>
+                  </div>
+                )}
+                {selectedPurchase.reference && (
+                  <div style={{ marginBottom: 4 }}>
+                    <Text type="secondary" style={{ fontSize: '11px' }}>Reference: </Text>
+                    <Text style={{ fontSize: '12px' }}>{selectedPurchase.reference}</Text>
+                  </div>
+                )}
+                {selectedPurchase.internalRef && (
+                  <div>
+                    <Text type="secondary" style={{ fontSize: '11px' }}>Internal Ref: </Text>
+                    <Text style={{ fontSize: '12px' }}>{selectedPurchase.internalRef}</Text>
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* Audit Trail */}
+            <Card title="Audit Trail" size="small" style={{ backgroundColor: '#fafafa' }}>
+              <Row gutter={[8, 8]}>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '10px' }}>Created</Text>
+                  <div style={{ fontSize: '11px' }}>
+                    {formatDateTime(selectedPurchase.createdAt)} by {selectedPurchase.createdBy?.firstName} {selectedPurchase.createdBy?.lastName}
+                  </div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary" style={{ fontSize: '10px' }}>Last Updated</Text>
+                  <div style={{ fontSize: '11px' }}>{formatDateTime(selectedPurchase.updatedAt)}</div>
+                </Col>
+                {selectedPurchase.receivedById && (
+                  <Col span={12}>
+                    <Text type="secondary" style={{ fontSize: '10px' }}>Received</Text>
+                    <div style={{ fontSize: '11px' }}>{formatDateTime(selectedPurchase.receivedDate)}</div>
+                  </Col>
+                )}
+                {selectedPurchase.approvedById && (
+                  <Col span={12}>
+                    <Text type="secondary" style={{ fontSize: '10px' }}>Approved</Text>
+                    <div style={{ fontSize: '11px' }}>{formatDateTime(selectedPurchase.approvedAt)}</div>
+                  </Col>
+                )}
+              </Row>
+            </Card>
+          </div>
+        )}
+      </Modal>
 
       <CreateEditPurchaseModal 
         isOpen={isCreateModalOpen}

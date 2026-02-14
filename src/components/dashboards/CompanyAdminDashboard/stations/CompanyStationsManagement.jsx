@@ -206,9 +206,6 @@ const CompanyStationsManagement = () => {
             <div>
               <Text strong>{name || 'Unnamed Station'}</Text>
               <br />
-              <Text type="secondary" style={{ fontSize: '12px' }}>
-                ID: {record.id || 'N/A'}
-              </Text>
             </div>
           </Space>
         );
