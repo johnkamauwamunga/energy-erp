@@ -414,7 +414,7 @@ const PumpMeterReadings = () => {
     setViewModalVisible(true);
   };
   
-  // Generate report
+  // Generate report with EXACT columns requested
   const generateReport = () => {
     if (!filteredPumpData.length) {
       message.warning('No data available to generate report');
@@ -424,6 +424,8 @@ const PumpMeterReadings = () => {
     const stationName = shiftInfo?.station?.name || 'Unknown Station';
     const shiftNum = shiftInfo?.shiftNumber || shiftNumber || 'Unknown Shift';
     
+    // Create report data with the EXACT columns requested:
+    // shift, station, pump, product, unit price, cash(start, end), manual(start, end), electric(start, end), liters, sales
     const reportData = filteredPumpData.map((pump, index) => {
       const product = pump.pumpInfo?.tank?.product;
       const startReading = pump.readings?.startReading;
@@ -432,21 +434,19 @@ const PumpMeterReadings = () => {
       
       return {
         '#': index + 1,
-        'Pump Name': pump.pumpInfo?.name || 'Unknown',
+        'Shift': shiftNum,
+        'Station': stationName,
+        'Pump': pump.pumpInfo?.name || 'Unknown',
         'Product': product?.name || 'Unknown',
-        'Fuel Code': product?.fuelCode || 'N/A',
-        'Unit Price': formatCurrency(endReading?.unitPrice || calculated?.unitPrice || 0),
+        'Unit Price (KES)': endReading?.unitPrice || calculated?.unitPrice || 0,
         'Cash Start': startReading?.cashMeter || 0,
-        'Cash Closing': endReading?.cashMeter || 0,
-        'Cash Differential': calculated?.cashDifferential || calculateDifferential(startReading?.cashMeter, endReading?.cashMeter),
+        'Cash End': endReading?.cashMeter || 0,
         'Manual Start': startReading?.manualMeter || 0,
-        'Manual Closing': endReading?.manualMeter || 0,
-        'Manual Differential': calculated?.manualDifferential || calculateDifferential(startReading?.manualMeter, endReading?.manualMeter),
+        'Manual End': endReading?.manualMeter || 0,
         'Electric Start': startReading?.electricMeter || 0,
-        'Electric Closing': endReading?.electricMeter || 0,
-        'Electric Differential': calculated?.electricDifferential || calculateDifferential(startReading?.electricMeter, endReading?.electricMeter),
-        'Liters Dispensed': formatVolume(endReading?.litersDispensed || calculated?.litersDispensed || 0),
-        'Sales Value': formatCurrency(endReading?.salesValue || calculated?.salesValue || 0),
+        'Electric End': endReading?.electricMeter || 0,
+        'Liters (L)': endReading?.litersDispensed || calculated?.litersDispensed || 0,
+        'Sales (KES)': endReading?.salesValue || calculated?.salesValue || 0,
         'Recorded By': endReading?.recordedBy ? 
           `${endReading.recordedBy.firstName || ''} ${endReading.recordedBy.lastName || ''}`.trim() : 
           'N/A',
@@ -454,6 +454,7 @@ const PumpMeterReadings = () => {
       };
     });
     
+    // Summary data for metadata (not shown in table)
     const summaryData = {
       'Station Name': stationName,
       'Shift Number': shiftNum,
@@ -471,25 +472,21 @@ const PumpMeterReadings = () => {
       'Generated At': new Date().toLocaleTimeString('en-KE')
     };
     
+    // EXACT columns as requested, with proper typing
     const exportColumns = [
-      { title: '#', dataIndex: '#', key: 'index', width: 50 },
-      { title: 'Pump Name', dataIndex: 'Pump Name', key: 'pumpName', width: 120 },
-      { title: 'Product', dataIndex: 'Product', key: 'product', width: 100 },
-      { title: 'Fuel Code', dataIndex: 'Fuel Code', key: 'fuelCode', width: 80 },
-      { title: 'Unit Price', dataIndex: 'Unit Price', key: 'unitPrice', width: 90, type: 'currency' },
+      { title: 'Shift', dataIndex: 'Shift', key: 'shift', width: 100, type: 'text' },
+      { title: 'Station', dataIndex: 'Station', key: 'station', width: 120, type: 'text' },
+      { title: 'Pump', dataIndex: 'Pump', key: 'pump', width: 100, type: 'text' },
+      { title: 'Product', dataIndex: 'Product', key: 'product', width: 120, type: 'text' },
+      { title: 'Unit Price (KES)', dataIndex: 'Unit Price (KES)', key: 'unitPrice', width: 90, type: 'currency' },
       { title: 'Cash Start', dataIndex: 'Cash Start', key: 'cashStart', width: 80, type: 'number' },
-      { title: 'Cash Closing', dataIndex: 'Cash Closing', key: 'cashEnd', width: 80, type: 'number' },
-      { title: 'Cash Diff', dataIndex: 'Cash Differential', key: 'cashDiff', width: 80, type: 'number' },
+      { title: 'Cash End', dataIndex: 'Cash End', key: 'cashEnd', width: 80, type: 'number' },
       { title: 'Manual Start', dataIndex: 'Manual Start', key: 'manualStart', width: 80, type: 'number' },
-      { title: 'Manual Closing', dataIndex: 'Manual Closing', key: 'manualEnd', width: 80, type: 'number' },
-      { title: 'Manual Diff', dataIndex: 'Manual Differential', key: 'manualDiff', width: 80, type: 'number' },
+      { title: 'Manual End', dataIndex: 'Manual End', key: 'manualEnd', width: 80, type: 'number' },
       { title: 'Electric Start', dataIndex: 'Electric Start', key: 'electricStart', width: 80, type: 'number' },
-      { title: 'Electric Closing', dataIndex: 'Electric Closing', key: 'electricEnd', width: 80, type: 'number' },
-      { title: 'Electric Diff', dataIndex: 'Electric Differential', key: 'electricDiff', width: 80, type: 'number' },
-      { title: 'Liters Dispensed', dataIndex: 'Liters Dispensed', key: 'litersDispensed', width: 90, type: 'volume' },
-      { title: 'Sales Value', dataIndex: 'Sales Value', key: 'salesValue', width: 100, type: 'currency' },
-      { title: 'Recorded By', dataIndex: 'Recorded By', key: 'recordedBy', width: 120 },
-      { title: 'Recorded At', dataIndex: 'Recorded At', key: 'recordedAt', width: 120, type: 'datetime' }
+      { title: 'Electric End', dataIndex: 'Electric End', key: 'electricEnd', width: 80, type: 'number' },
+      { title: 'Liters (L)', dataIndex: 'Liters (L)', key: 'liters', width: 80, type: 'volume' },
+      { title: 'Sales (KES)', dataIndex: 'Sales (KES)', key: 'sales', width: 90, type: 'currency' }
     ];
     
     const title = `Pump Meter Readings - ${stationName} - Shift ${shiftNum}`;
@@ -499,7 +496,7 @@ const PumpMeterReadings = () => {
       columns: exportColumns,
       summaryData: summaryData,
       title: title,
-      fileName: `pump_meter_readings_${stationName.replace(/\s+/g, '_')}_${shiftNum}_${new Date().toISOString().split('T')[0]}`,
+      fileName: `pump_readings_${stationName.replace(/\s+/g, '_')}_${shiftNum}_${new Date().toISOString().split('T')[0]}`,
       reportType: 'pump-readings',
       companyName: shiftInfo?.station?.company || "Lynx Energy System",
       stationInfo: shiftInfo?.station ? {
@@ -509,7 +506,9 @@ const PumpMeterReadings = () => {
       } : null,
       showFooter: true,
       footerText: `Generated from Lynx Energy System | Station: ${stationName} | Shift: ${shiftNum} | ${new Date().toLocaleString('en-KE')}`,
-      enableCustomization: true
+      enableCustomization: true,
+      // IMPORTANT: Hide grand totals for this report
+      showGrandTotals: false
     };
     
     setReportConfig(config);

@@ -548,28 +548,37 @@ const handleNavigateToTankReadings = (shiftId) => {
     return colorMap[status] || 'default';
   };
 
-  // Enhanced shifts data for reporting
-  const enhancedShifts = useMemo(() => 
-    shiftsHistory.map((shift, index) => ({
-      ...shift,
-      sequentialNumber: index + 1,
-      statusDisplay: getStatusDisplay(shift.status),
-      statusColor: getStatusColor(shift.status),
-      formattedStartTime: formatDateForReport(shift.startTime),
-      formattedEndTime: formatDateForReport(shift.endTime),
-      duration: getShiftDuration(shift),
-      supervisorName: shift.supervisor ? 
-        `${shift.supervisor.firstName} ${shift.supervisor.lastName}` : 
-        'Unassigned',
-      stationName: shift.station?.name || 'Unknown Station',
-      tankReadingsCount: shift.summary?.tankReadings || 0,
-      pumpReadingsCount: shift.summary?.pumpReadings || 0,
-      attendantsCount: shift.summary?.attendants || 0,
-      isOpen: shift.status === 'OPEN',
-      isPending: shift.status === 'PENDING',
-      isClosed: shift.status === 'CLOSED'
-    })),
-  [shiftsHistory]);
+      // Enhanced shifts data for reporting - Minimal version
+const enhancedShifts = useMemo(() => 
+  shiftsHistory.map((shift, index) => ({
+    ...shift,
+    sequentialNumber: index + 1,
+    
+    // For display/export
+    exportStatus: getStatusDisplay(shift.status),
+    exportSupervisor: shift.supervisor ? 
+      `${shift.supervisor.firstName} ${shift.supervisor.lastName}` : 
+      'Unassigned',
+    exportStartTime: formatDateForReport(shift.startTime),
+    exportEndTime: formatDateForReport(shift.endTime),
+    exportDuration: getShiftDuration(shift),
+    
+    // Keep original status for reference
+    statusDisplay: getStatusDisplay(shift.status),
+    statusColor: getStatusColor(shift.status),
+    supervisorName: shift.supervisor ? 
+      `${shift.supervisor.firstName} ${shift.supervisor.lastName}` : 
+      'Unassigned',
+    formattedStartTime: formatDateForReport(shift.startTime),
+    formattedEndTime: formatDateForReport(shift.endTime),
+    duration: getShiftDuration(shift),
+    
+    // Flags
+    isOpen: shift.status === 'OPEN',
+    isPending: shift.status === 'PENDING',
+    isClosed: shift.status === 'CLOSED'
+  })),
+[shiftsHistory]);
 
   // Filter shifts based on search term
   const filteredShifts = useMemo(() => {
@@ -600,73 +609,52 @@ const handleNavigateToTankReadings = (shiftId) => {
       'Report Generated': new Date().toLocaleString()
     };
   }, [enhancedShifts, state.currentStation]);
-
-  // Export columns for shift reports
-  const exportColumns = [
-    {
-      title: '#',
-      key: 'sequence',
-      render: (_, record, index) => index + 1,
-      type: 'number',
-      width: 50
-    },
-    {
-      title: 'Shift Number',
-      dataIndex: 'shiftNumber',
-      key: 'shiftNumber',
-      type: 'text'
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status) => getStatusDisplay(status),
-      type: 'status'
-    },
-    {
-      title: 'Supervisor',
-      key: 'supervisor',
-      render: (_, record) => record.supervisorName,
-      type: 'text'
-    },
-    {
-      title: 'Start Time',
-      key: 'startTime',
-      render: (_, record) => record.formattedStartTime,
-      type: 'datetime'
-    },
-    {
-      title: 'End Time',
-      key: 'endTime',
-      render: (_, record) => record.formattedEndTime,
-      type: 'datetime'
-    },
-    {
-      title: 'Duration',
-      key: 'duration',
-      render: (_, record) => record.duration,
-      type: 'text'
-    },
-    {
-      title: 'Tank Readings',
-      key: 'tankReadings',
-      render: (_, record) => record.tankReadingsCount,
-      type: 'number'
-    },
-    {
-      title: 'Pump Readings',
-      key: 'pumpReadings',
-      render: (_, record) => record.pumpReadingsCount,
-      type: 'number'
-    },
-    {
-      title: 'Attendants',
-      key: 'attendants',
-      render: (_, record) => record.attendantsCount,
-      type: 'number'
-    }
-  ];
-
+      
+  // Export columns for shift reports - SIMPLIFIED VERSION
+const exportColumns = [
+  {
+    title: 'Shift #',
+    dataIndex: 'shiftNumber',
+    key: 'shiftNumber',
+    type: 'text',
+    width: 100
+  },
+  {
+    title: 'Status',
+    dataIndex: 'statusDisplay',  // Using the pre-formatted status
+    key: 'status',
+    type: 'status',
+    width: 100
+  },
+  {
+    title: 'Supervisor',
+    dataIndex: 'supervisorName',  // Using the pre-formatted supervisor name
+    key: 'supervisor',
+    type: 'text',
+    width: 150
+  },
+  {
+    title: 'Start Time',
+    dataIndex: 'formattedStartTime',  // Using the pre-formatted date
+    key: 'startTime',
+    type: 'datetime',
+    width: 150
+  },
+  {
+    title: 'End Time',
+    dataIndex: 'formattedEndTime',  // Using the pre-formatted date
+    key: 'endTime',
+    type: 'datetime',
+    width: 150
+  },
+  {
+    title: 'Duration',
+    dataIndex: 'duration',  // Using the pre-formatted duration
+    key: 'duration',
+    type: 'text',
+    width: 100
+  }
+];
   // ========== MAIN RENDER FUNCTIONS ==========
 
   // Columns for shifts history table
@@ -1057,19 +1045,35 @@ const handleNavigateToTankReadings = (shiftId) => {
                 />
               </Tooltip>
               {/* Export Button */}
-              <AdvancedReportGenerator
-                dataSource={enhancedShifts}
-                columns={exportColumns}
-                title={`Shift Management Report - ${state.currentStation?.name || 'System'} Level`}
-                fileName={`shifts_report_${new Date().toISOString().split('T')[0]}`}
-                summaryData={summaryData}
-                reportType="operations"
-                stationInfo={state.currentStation}
-                footerText={`Generated from Lynx Energy System - ${currentUser ? `User: ${currentUser.firstName} ${currentUser.lastName}` : ''} - ${new Date().toLocaleDateString()}`}
-                showFooter={true}
-                enableCustomization={true}
-                onReportGenerate={handleExport}
-              />
+{/* Export Button - With exactly the columns you specified */}
+      <AdvancedReportGenerator
+        dataSource={enhancedShifts}
+        columns={exportColumns}
+        title={`Shift Management Report - ${state.currentStation?.name || 'System'}`}
+        fileName={`shifts_report_${new Date().toISOString().split('T')[0]}`}
+        summaryData={{
+          'Total Shifts': enhancedShifts.length,
+          'Open Shifts': enhancedShifts.filter(s => s.status === 'OPEN').length,
+          'Pending Shifts': enhancedShifts.filter(s => s.status === 'PENDING').length,
+          'Closed Shifts': enhancedShifts.filter(s => s.status === 'CLOSED').length,
+          'Station': state.currentStation?.name || 'Unknown',
+          'Report Generated': new Date().toLocaleString()
+        }}
+        reportType="operations"
+        stationInfo={state.currentStation}
+        footerText={`Generated from Lynx Energy System - ${currentUser ? `User: ${currentUser.firstName} ${currentUser.lastName}` : ''}`}
+        showFooter={true}
+        enableCustomization={true}
+        onReportGenerate={handleExport}
+        // NEW: Control grand totals (not needed for shift reports)
+        showGrandTotals={false}
+        // NEW: Enable horizontal scrolling for better viewing
+        horizontalScroll={true}
+        maxVisibleColumns={10}
+        // NEW: Clean UI without advanced buttons
+        compactMode={true}
+        hideAdvancedButtons={false}
+      />
             </Space>
           }
         >

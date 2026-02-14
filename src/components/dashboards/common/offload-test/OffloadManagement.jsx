@@ -192,95 +192,99 @@ const OffloadManagement = () => {
     return totalOrdered > 0 ? (totalReceived / totalOrdered) * 100 : 0;
   };
 
-  // Enhanced purchases data for reporting
+  // Enhanced purchases data for reporting with the exact columns requested
   const enhancedPurchases = purchases.map(purchase => {
     const formattedPurchase = purchaseService.formatPurchase(purchase);
     const receivedPercentage = calculateReceivedPercentage(purchase);
     const totalOrdered = purchase.items?.reduce((sum, item) => sum + (item.orderedQty || 0), 0) || 0;
     const totalReceived = purchase.items?.reduce((sum, item) => sum + (item.receivedQty || 0), 0) || 0;
     const remaining = totalOrdered - totalReceived;
+    const mainProduct = purchase.items?.[0]?.product?.name || 'N/A';
+    const unitCost = purchase.items?.[0]?.unitCost || 0;
+    
+    // Format product with fuel code
+    const productDisplay = purchase.items?.[0]?.product?.fuelCode 
+      ? `${mainProduct} (${purchase.items[0].product.fuelCode})` 
+      : mainProduct;
+    
+    // Format quantity with unit
+    const quantityDisplay = purchase.type === 'FUEL' 
+      ? `${totalOrdered.toLocaleString()} L` 
+      : `${totalOrdered.toLocaleString()} units`;
     
     return {
       ...purchase,
       ...formattedPurchase,
-      formattedStatus: getPurchaseStatusConfig(purchase.status).label,
-      receivedPercentage: Math.round(receivedPercentage),
-      totalOrdered,
-      totalReceived,
-      remaining,
-      mainProduct: purchase.items?.[0]?.product?.name || 'N/A',
-      productCode: purchase.items?.[0]?.product?.fuelCode || 'N/A',
-      supplierName: purchase.supplier?.name || 'N/A',
-      formattedPurchaseDate: purchase.purchaseDate ? new Date(purchase.purchaseDate).toLocaleDateString() : 'N/A'
+      // The exact 9 columns requested
+      purchaseDate: purchase.purchaseDate ? new Date(purchase.purchaseDate).toLocaleDateString() : 'N/A',
+      status: getPurchaseStatusConfig(purchase.status).label,
+      purchaseNumber: purchase.purchaseNumber || 'N/A',
+      supplier: purchase.supplier?.name || 'N/A',
+      product: productDisplay,
+      quantity: quantityDisplay,
+      unitCost: unitCost ? `Ksh ${unitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Ksh 0.00',
+      taxAmount: purchase.totalTaxAmount || 0,
+      netPayable: purchase.netPayable || 0
     };
   });
 
-  // Export columns for reports
+  // Export columns - EXACTLY the 9 columns requested in the specified order
   const exportColumns = [
     {
-      title: 'Purchase Number',
-      dataIndex: 'purchaseNumber',
-      key: 'purchaseNumber'
-    },
-    {
-      title: 'Supplier',
-      dataIndex: 'supplierName',
-      key: 'supplierName'
-    },
-    {
-      title: 'Product',
-      dataIndex: 'mainProduct',
-      key: 'mainProduct'
-    },
-    {
-      title: 'Product Code',
-      dataIndex: 'productCode',
-      key: 'productCode'
-    },
-    {
-      title: 'Type',
-      dataIndex: 'type',
-      key: 'type'
-    },
-    {
-      title: 'Ordered Quantity',
-      dataIndex: 'totalOrdered',
-      key: 'totalOrdered',
-      render: (qty, record) => `${qty} ${record.type === 'FUEL' ? 'L' : 'units'}`
-    },
-    {
-      title: 'Received Quantity',
-      dataIndex: 'totalReceived',
-      key: 'totalReceived',
-      render: (qty, record) => `${qty} ${record.type === 'FUEL' ? 'L' : 'units'}`
-    },
-    {
-      title: 'Remaining',
-      dataIndex: 'remaining',
-      key: 'remaining',
-      render: (qty, record) => `${qty} ${record.type === 'FUEL' ? 'L' : 'units'}`
-    },
-    {
-      title: 'Received %',
-      dataIndex: 'receivedPercentage',
-      key: 'receivedPercentage',
-      render: (percent) => `${percent}%`
+      title: 'Purchase Date',
+      dataIndex: 'purchaseDate',
+      key: 'purchaseDate',
+      type: 'date'
     },
     {
       title: 'Status',
-      dataIndex: 'formattedStatus',
-      key: 'formattedStatus'
+      dataIndex: 'status',
+      key: 'status',
+      type: 'text'
+    },
+    {
+      title: 'Purchase #',
+      dataIndex: 'purchaseNumber',
+      key: 'purchaseNumber',
+      type: 'text'
+    },
+    {
+      title: 'Supplier',
+      dataIndex: 'supplier',
+      key: 'supplier',
+      type: 'text'
+    },
+    {
+      title: 'Product',
+      dataIndex: 'product',
+      key: 'product',
+      type: 'text'
+    },
+    {
+      title: 'Quantity',
+      dataIndex: 'quantity',
+      key: 'quantity',
+      type: 'text'
+    },
+    {
+      title: 'Unit Cost',
+      dataIndex: 'unitCost',
+      key: 'unitCost',
+      type: 'text'
+    },
+    {
+      title: 'Tax Amount',
+      dataIndex: 'taxAmount',
+      key: 'taxAmount',
+      type: 'currency',
+      render: (amount) => `Ksh ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     },
     {
       title: 'Net Payable',
       dataIndex: 'netPayable',
       key: 'netPayable',
-      render: (amount) => amount ? `Ksh ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'
-    },
-    {
-      title: 'Purchase Date',
-      dataIndex: 'formattedPurchaseDate',
-      key: 'formattedPurchaseDate'
+      type: 'currency',
+      render: (amount) => `Ksh ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     }
   ];
 
@@ -313,7 +317,6 @@ const OffloadManagement = () => {
         return (
           <div>
             <div><Text style={{fontSize:"10px", color:"blue"}}>{mainProduct.product?.name}</Text></div>
-      
           </div>
         );
       }
@@ -327,7 +330,6 @@ const OffloadManagement = () => {
         
         const totalOrdered = record.items.reduce((sum, item) => sum + (item.orderedQty || 0), 0);
         const totalReceived = record.items.reduce((sum, item) => sum + (item.receivedQty || 0), 0);
-        const remaining = totalOrdered - totalReceived;
         
         return (
           <div>
@@ -339,13 +341,6 @@ const OffloadManagement = () => {
                 </Text>
               </div>
             )}
-            {/* {remaining > 0 && (
-              <div>
-                <Text type="secondary" style={{ fontSize: '12px', color: '#ff4d4f' }}>
-                  Remaining: {remaining.toLocaleString()} L
-                </Text>
-              </div>
-            )} */}
           </div>
         );
       }
@@ -366,7 +361,7 @@ const OffloadManagement = () => {
       dataIndex: 'totalTaxAmount',
       key: 'tax',
       width: 120,
-      render: (taxAmount) => taxAmount ? `Ksh ${taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'
+      render: (taxAmount) => taxAmount ? `Ksh ${taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Ksh 0.00'
     },
     {
       title: 'Net Payable',
@@ -414,6 +409,7 @@ const OffloadManagement = () => {
       title: 'Actions',
       key: 'actions',
       width: 150,
+      fixed: 'right',
       render: (_, record) => (
         <Space size="small">
           <Tooltip title="View Details">
@@ -638,14 +634,16 @@ const OffloadManagement = () => {
           </Col>
           <Col>
             <Space>
-              {/* Export Button */}
+              {/* Export Button - Only one instance with the 9 columns */}
               <AdvancedReportGenerator
                 dataSource={enhancedPurchases}
                 columns={exportColumns}
                 title={`Purchase Management Report - ${currentStationName}`}
                 fileName={`purchases_${new Date().toISOString().split('T')[0]}`}
-                footerText={`Generated from Lynx Energy  System - Station: ${currentStationName} - User: ${state.currentUser?.firstName} ${state.currentUser?.lastName} - ${new Date().toLocaleDateString()}`}
+                footerText={`Generated from Lynx Energy System - Station: ${currentStationName} - User: ${state.currentUser?.firstName} ${state.currentUser?.lastName} - ${new Date().toLocaleDateString()}`}
                 showFooter={true}
+                showGrandTotals={true}
+                reportType="finance"
               />
               <Button
                 type="primary"
@@ -670,7 +668,7 @@ const OffloadManagement = () => {
             <Statistic
               title="Total Purchases"
               value={stats.total}
-              valueStyle={{ color: '#1890ff',fontSize:"20px"  }}
+              valueStyle={{ color: '#1890ff', fontSize: "20px" }}
             />
           </Card>
         </Col>
@@ -679,7 +677,7 @@ const OffloadManagement = () => {
             <Statistic
               title="Pending Approval"
               value={stats.pending}
-              valueStyle={{ color: '#fa8c16',fontSize:"20px"  }}
+              valueStyle={{ color: '#fa8c16', fontSize: "20px" }}
             />
           </Card>
         </Col>
@@ -688,7 +686,7 @@ const OffloadManagement = () => {
             <Statistic
               title="Ready to Receive"
               value={stats.receivable}
-              valueStyle={{ color: '#52c41a',fontSize:"20px"  }}
+              valueStyle={{ color: '#52c41a', fontSize: "20px" }}
             />
           </Card>
         </Col>
@@ -697,7 +695,7 @@ const OffloadManagement = () => {
             <Statistic
               title="In Transit"
               value={stats.inTransit}
-              valueStyle={{ color: '#722ed1', fontSize:"20px"  }}
+              valueStyle={{ color: '#722ed1', fontSize: "20px" }}
             />
           </Card>
         </Col>
@@ -706,7 +704,7 @@ const OffloadManagement = () => {
             <Statistic
               title="Completed"
               value={stats.completed}
-              valueStyle={{ color: '#52c41a',fontSize:"20px"  }}
+              valueStyle={{ color: '#52c41a', fontSize: "20px" }}
             />
           </Card>
         </Col>
@@ -716,7 +714,7 @@ const OffloadManagement = () => {
               title="Total Value"
               value={stats.totalValue}
               prefix="Ksh"
-              valueStyle={{ color: '#faad14', fontSize:"20px" }}
+              valueStyle={{ color: '#faad14', fontSize: "20px" }}
             />
           </Card>
         </Col>
@@ -810,15 +808,6 @@ const OffloadManagement = () => {
               >
                 Clear All Filters
               </Button>
-              {/* Export Button in Filters */}
-              <AdvancedReportGenerator
-                dataSource={enhancedPurchases}
-                columns={exportColumns}
-                title={`Purchase Management Report - ${currentStationName}`}
-                fileName={`purchases_${new Date().toISOString().split('T')[0]}`}
-                footerText={`Generated from Lynx Energy  System - Station: ${currentStationName} - ${new Date().toLocaleDateString()}`}
-                showFooter={true}
-              />
               {(filters.search || filters.status || filters.type || filters.productId || filters.dateRange) && (
                 <Text type="secondary">
                   Filtered by: 
@@ -841,6 +830,7 @@ const OffloadManagement = () => {
           dataSource={formattedPurchases}
           loading={loading}
           rowKey="id"
+          scroll={{ x: 1300 }}
           pagination={{
             current: pagination.page,
             pageSize: pagination.limit,

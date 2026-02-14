@@ -4,7 +4,7 @@ import { useApp } from '../../../../context/AppContext';
 import { assetService } from '../../../../services/assetService/assetService';
 import { assetConnectionService } from '../../../../services/assetConnection/assetConnectionService';
 import { fuelService } from '../../../../services/fuelService/fuelService';
-import { Fuel, Zap, Package, Link, Unlink, Warehouse, Edit, Download, BarChart3 } from 'lucide-react';
+import { Fuel, Zap, Package, Link, Unlink, Warehouse, Edit, Download, BarChart3, ChevronDown, Filter } from 'lucide-react';
 import AdvancedReportGenerator from '../../../dashboards/common/downloadable/AdvancedReportGenerator';
 
 // Helper function to add sequential numbers to data
@@ -63,7 +63,7 @@ const EditAssetModal = ({ asset, onSave, onClose, userRole }) => {
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
               </div>
@@ -73,25 +73,16 @@ const EditAssetModal = ({ asset, onSave, onClose, userRole }) => {
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Station Label
-                  <span className="text-xs text-gray-500 ml-2">(Local name for this station)</span>
+                  <span className="text-xs text-gray-500 ml-2">(Local name)</span>
                 </label>
                 <input
                   type="text"
                   value={formData.stationLabel}
                   onChange={(e) => setFormData(prev => ({ ...prev, stationLabel: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder={`e.g., ${asset.name}#shell@${asset.station?.name?.toLowerCase()}`}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Local name for this station"
                   maxLength={100}
                 />
-                <p className="text-xs text-gray-500 mt-1">This label will be used within this station only</p>
-              </div>
-            )}
-
-            {!canEditStationLabel && asset.stationId && (
-              <div className="mb-4 p-3 bg-yellow-50 rounded-md">
-                <p className="text-sm text-yellow-800">
-                  Station label can only be edited when asset is assigned to a station
-                </p>
               </div>
             )}
 
@@ -101,7 +92,7 @@ const EditAssetModal = ({ asset, onSave, onClose, userRole }) => {
                 <select
                   value={formData.status}
                   onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="REGISTERED">Registered</option>
                   <option value="ASSIGNED">Assigned</option>
@@ -113,8 +104,8 @@ const EditAssetModal = ({ asset, onSave, onClose, userRole }) => {
             )}
 
             <div className="flex justify-end space-x-3">
-              <Button type="button" variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
-              <Button type="submit" disabled={loading}>{loading ? 'Saving...' : 'Save Changes'}</Button>
+              <Button type="button" variant="outline" onClick={onClose} disabled={loading} size="sm">Cancel</Button>
+              <Button type="submit" disabled={loading} size="sm">{loading ? 'Saving...' : 'Save Changes'}</Button>
             </div>
           </form>
         </div>
@@ -138,6 +129,12 @@ const StationAssetManagement = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [editingAsset, setEditingAsset] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({
+    search: '',
+    status: '',
+    connection: ''
+  });
 
   // Fetch products
   useEffect(() => {
@@ -215,7 +212,7 @@ const StationAssetManagement = () => {
     }
   }, [userInfo, loadAssetsAndConnections]);
 
-  // Enhanced assets data for reporting WITH SEQUENTIAL NUMBERING
+  // Enhanced assets data for reporting
   const enhancedAssets = useMemo(() => {
     const getAssetTypeLabel = (type) => {
       const types = {
@@ -269,7 +266,7 @@ const StationAssetManagement = () => {
     // Add sequence numbers while enhancing
     return assets.map((asset, index) => ({
       ...asset,
-      sequenceNumber: index + 1, // Add sequence number here
+      sequenceNumber: index + 1,
       assetTypeDisplay: getAssetTypeLabel(asset.type),
       statusDisplay: getStatusLabel(asset.status),
       stationName: asset.station?.name || 'Unassigned',
@@ -321,7 +318,7 @@ const StationAssetManagement = () => {
     };
   }, [enhancedAssets, userInfo]);
 
-  // Enhanced station assets by type WITH SEQUENCE NUMBERS
+  // Enhanced station assets by type
   const enhancedStationTanks = useMemo(() => 
     addSequenceNumbers(enhancedAssets.filter(asset => 
       asset.type === 'STORAGE_TANK' && asset.stationId === userInfo?.station?.id
@@ -364,6 +361,114 @@ const StationAssetManagement = () => {
     'Available Assets': summaryStats.availableAssetsCount,
     'Report Generated': new Date().toLocaleString(),
     'Generated By': userInfo?.user ? `${userInfo.user.firstName} ${userInfo.user.lastName}` : 'System'
+  };
+
+  // ========== REPORT GENERATION FUNCTIONS ==========
+
+  // Prepare data for report - SIMPLIFIED COLUMNS as requested
+  const prepareReportData = () => {
+    const dataSource = getExportDataSource();
+    
+    return dataSource.map((asset, index) => {
+      // Base data for all asset types
+      const baseData = {
+        '#': index + 1,
+        'Asset Name': asset.name || 'Unknown',
+        'Station Label': asset.stationLabel || 'Not set',
+        'Status': asset.statusDisplay || 'Unknown',
+        'Connection Status': asset.connectionStatus || 'Unconnected'
+      };
+
+      // Add type-specific fields
+      if (asset.type === 'STORAGE_TANK') {
+        return {
+          ...baseData,
+          'Product': asset.tank?.product?.name || 'No product',
+          'Capacity (L)': asset.tank?.capacity || 0,
+          'Type': 'Tank'
+        };
+      } else if (asset.type === 'FUEL_PUMP') {
+        return {
+          ...baseData,
+          'Product': asset.tank?.product?.name || 'N/A',
+          'Capacity (L)': 'N/A',
+          'Type': 'Pump'
+        };
+      } else if (asset.type === 'ISLAND') {
+        return {
+          ...baseData,
+          'Product': 'N/A',
+          'Capacity (L)': 'N/A',
+          'Type': 'Island'
+        };
+      } else {
+        return {
+          ...baseData,
+          'Product': 'N/A',
+          'Capacity (L)': 'N/A',
+          'Type': asset.assetTypeDisplay
+        };
+      }
+    });
+  };
+
+  // Get columns for report - SIMPLIFIED as requested
+  const getReportColumns = () => {
+    return [
+      { title: '#', dataIndex: '#', key: 'index', width: 50, type: 'number' },
+      { title: 'Asset Name', dataIndex: 'Asset Name', key: 'assetName', width: 150, type: 'text' },
+      { title: 'Station Label', dataIndex: 'Station Label', key: 'stationLabel', width: 120, type: 'text' },
+      { title: 'Type', dataIndex: 'Type', key: 'type', width: 80, type: 'text' },
+      { title: 'Product', dataIndex: 'Product', key: 'product', width: 120, type: 'text' },
+      { title: 'Capacity (L)', dataIndex: 'Capacity (L)', key: 'capacity', width: 100, type: 'number' },
+      { title: 'Status', dataIndex: 'Status', key: 'status', width: 100, type: 'text' },
+      { title: 'Connection', dataIndex: 'Connection Status', key: 'connection', width: 100, type: 'text' }
+    ];
+  };
+
+  // Calculate summary data for report
+  const calculateReportSummary = () => {
+    const dataSource = getExportDataSource();
+    const tanks = dataSource.filter(a => a.type === 'STORAGE_TANK');
+    const pumps = dataSource.filter(a => a.type === 'FUEL_PUMP');
+    
+    return {
+      'Report Type': `${getTabTitle()} Report`,
+      'Total Assets': dataSource.length,
+      'Tanks': tanks.length,
+      'Pumps': pumps.length,
+      'Islands': dataSource.filter(a => a.type === 'ISLAND').length,
+      'Active Assets': dataSource.filter(a => a.status === 'ACTIVE').length,
+      'Connected Assets': dataSource.filter(a => a.connectionStatus === 'Connected').length,
+      'Total Capacity': tanks.reduce((sum, tank) => sum + (tank.capacity || 0), 0) + 'L',
+      'Generated Date': new Date().toLocaleDateString('en-KE'),
+      'Generated Time': new Date().toLocaleTimeString('en-KE'),
+      'Generated By': userInfo?.user ? `${userInfo.user.firstName} ${userInfo.user.lastName}` : 'System'
+    };
+  };
+
+  // Get tab title
+  const getTabTitle = () => {
+    const titles = {
+      'tanks': 'Storage Tanks',
+      'pumps': 'Fuel Pumps',
+      'islands': 'Allocation Islands',
+      'warehouses': 'Warehouses',
+      'relationships': 'Asset Relationships'
+    };
+    return titles[activeTab] || 'Assets';
+  };
+
+  // Get file name
+  const getFileName = () => {
+    const dateStr = new Date().toISOString().split('T')[0];
+    const stationCode = userInfo?.station?.code || 'station';
+    return `station_assets_${activeTab}_${stationCode}_${dateStr}`;
+  };
+
+  // Handle export
+  const handleExport = (format) => {
+    console.log(`Exporting ${getExportDataSource().length} ${activeTab} assets as ${format}`);
   };
 
   // Handle updating asset
@@ -495,493 +600,42 @@ const StationAssetManagement = () => {
     }
   };
 
-  // Get export columns based on active tab - FIXED with proper sequence column
-  const getExportColumns = () => {
-    const commonColumns = [
-      {
-        title: '#',
-        dataIndex: 'sequenceNumber',
-        key: 'sequence',
-        type: 'number',
-        width: 50
-      },
-      {
-        title: 'Asset ID',
-        dataIndex: 'id',
-        key: 'assetId',
-        type: 'text'
-      },
-      {
-        title: 'Asset Name',
-        dataIndex: 'name',
-        key: 'assetName',
-        type: 'text'
-      },
-      {
-        title: 'Asset Type',
-        key: 'assetType',
-        render: (_, record) => record.assetTypeDisplay,
-        type: 'text'
-      },
-      {
-        title: 'Station Label',
-        dataIndex: 'stationLabel',
-        key: 'stationLabel',
-        render: (label) => label || 'Not set',
-        type: 'text'
-      },
-      {
-        title: 'Status',
-        key: 'status',
-        render: (_, record) => record.statusDisplay,
-        type: 'text'
-      },
-      {
-        title: 'Connection Status',
-        key: 'connectionStatus',
-        render: (_, record) => record.connectionStatus,
-        type: 'text'
-      },
-      {
-        title: 'Station Name',
-        key: 'stationName',
-        render: (_, record) => record.stationName,
-        type: 'text'
-      },
-      {
-        title: 'Station Code',
-        key: 'stationCode',
-        render: (_, record) => record.stationCode,
-        type: 'text'
-      },
-      {
-        title: 'Company Name',
-        key: 'companyName',
-        render: (_, record) => record.companyName,
-        type: 'text'
-      },
-      {
-        title: 'Created Date',
-        key: 'createdDate',
-        render: (_, record) => record.formattedCreatedAt,
-        type: 'date'
-      },
-      {
-        title: 'Last Updated',
-        key: 'lastUpdated',
-        render: (_, record) => record.formattedUpdatedAt,
-        type: 'date'
+  // Get filtered data based on search
+  const getFilteredData = (data) => {
+    if (!filters.search && !filters.status && !filters.connection) return data;
+    
+    return data.filter(item => {
+      let matches = true;
+      
+      if (filters.search) {
+        const searchLower = filters.search.toLowerCase();
+        matches = matches && (
+          (item.name && item.name.toLowerCase().includes(searchLower)) ||
+          (item.stationLabel && item.stationLabel.toLowerCase().includes(searchLower)) ||
+          (item.tank?.product?.name && item.tank.product.name.toLowerCase().includes(searchLower))
+        );
       }
-    ];
-
-    const typeSpecificColumns = {
-      tanks: [
-        {
-          title: 'Capacity (Liters)',
-          key: 'capacity',
-          render: (_, record) => record.capacity || 0,
-          type: 'number'
-        },
-        {
-          title: 'Product Name',
-          key: 'productName',
-          render: (_, record) => record.productName,
-          type: 'text'
-        }
-      ],
-      pumps: [
-        {
-          title: 'Flow Rate',
-          dataIndex: 'flowRate',
-          key: 'flowRate',
-          render: (rate) => rate ? `${rate} L/min` : 'N/A',
-          type: 'text'
-        }
-      ],
-      islands: [
-        {
-          title: 'Island Number',
-          dataIndex: 'islandNumber',
-          key: 'islandNumber',
-          render: (number) => number || 'N/A',
-          type: 'text'
-        }
-      ],
-      warehouses: [
-        {
-          title: 'Warehouse Type',
-          dataIndex: 'warehouseType',
-          key: 'warehouseType',
-          render: (type) => type || 'N/A',
-          type: 'text'
-        }
-      ],
-      relationships: [
-        {
-          title: 'Connected Assets Count',
-          key: 'connectedAssetsCount',
-          render: (_, record) => {
-            const connectionsCount = connections.filter(conn => 
-              conn.assetA.id === record.id || conn.assetB.id === record.id
-            ).length;
-            return connectionsCount;
-          },
-          type: 'number'
-        }
-      ]
-    };
-
-    return [...commonColumns, ...(typeSpecificColumns[activeTab] || [])];
+      
+      if (filters.status && filters.status !== 'all') {
+        matches = matches && item.status === filters.status;
+      }
+      
+      if (filters.connection && filters.connection !== 'all') {
+        matches = matches && item.connectionStatus === filters.connection;
+      }
+      
+      return matches;
+    });
   };
 
-  // Get tab title
-  const getTabTitle = () => {
-    const titles = {
-      'tanks': 'Storage Tanks',
-      'pumps': 'Fuel Pumps',
-      'islands': 'Allocation Islands',
-      'warehouses': 'Warehouses',
-      'relationships': 'Asset Relationships'
-    };
-    return titles[activeTab] || 'Assets';
+  // Clear filters
+  const clearFilters = () => {
+    setFilters({
+      search: '',
+      status: '',
+      connection: ''
+    });
   };
-
-  // Get file name
-  const getFileName = () => {
-    const dateStr = new Date().toISOString().split('T')[0];
-    const stationCode = userInfo?.station?.code || 'station';
-    return `station_assets_${activeTab}_${stationCode}_${dateStr}`;
-  };
-
-  // Handle export
-  const handleExport = (format) => {
-    console.log(`Exporting ${getExportDataSource().length} ${activeTab} assets as ${format}`);
-  };
-
-  // Column definitions WITH FIXED SEQUENCE NUMBERS
-  const pumpColumns = [
-    { 
-      header: '#', 
-      accessor: '_sequence',
-      width: '50px'
-    },
-    { header: 'Name', accessor: 'name' },
-    { 
-      header: 'Station Label', 
-      render: (_, pump) => (
-        <div className="flex items-center">
-          {pump.stationLabel ? (
-            <span className="font-medium text-blue-600">{pump.stationLabel}</span>
-          ) : (
-            <span className="text-gray-500 italic">Not set</span>
-          )}
-        </div>
-      )
-    },
-    { 
-      header: 'Tank Attachment', 
-      render: (_, pump) => {
-        const tankConnection = connections ? 
-          connections.find(conn => 
-            conn.type === 'TANK_TO_PUMP' && conn.assetB.id === pump.id
-          ) : null;
-        
-        return tankConnection ? (
-          <div className="flex items-center">
-            <Fuel className="w-4 h-4 text-blue-500 mr-1" />
-            {tankConnection.assetA.name}
-          </div>
-        ) : (
-          <Badge variant="outline">Unattached</Badge>
-        );
-      }
-    },
-    { 
-      header: 'Island Attachment', 
-      render: (_, pump) => {
-        const islandConnection = connections ? 
-          connections.find(conn => 
-            conn.type === 'PUMP_TO_ISLAND' && conn.assetA.id === pump.id
-          ) : null;
-        
-        return islandConnection ? (
-          <div className="flex items-center">
-            <Package className="w-4 h-4 text-green-500 mr-1" />
-            {islandConnection.assetB.name}
-          </div>
-        ) : (
-          <Badge variant="outline">Unattached</Badge>
-        );
-      }
-    },
-    { 
-      header: 'Status', 
-      render: (_, pump) => {
-        const hasTank = connections?.some(conn => 
-          conn.type === 'TANK_TO_PUMP' && conn.assetB.id === pump.id
-        );
-        const hasIsland = connections?.some(conn => 
-          conn.type === 'PUMP_TO_ISLAND' && conn.assetA.id === pump.id
-        );
-        
-        if (hasTank && hasIsland) {
-          return <Badge variant="success">Fully Connected</Badge>;
-        } else if (hasTank || hasIsland) {
-          return <Badge variant="warning">Partially Connected</Badge>;
-        } else {
-          return <Badge variant="error">Unattached</Badge>;
-        }
-      }
-    },
-    { 
-      header: 'Actions', 
-      render: (_, pump) => (
-        <div className="flex space-x-2">
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => {
-              setEditingAsset(pump);
-              setShowEditModal(true);
-            }}
-          >
-            <Edit size={14} className="mr-1" /> Edit
-          </Button>
-          <Button 
-            variant="destructive" 
-            size="sm"
-            onClick={() => handleDetachAsset(pump.id, 'pumps')}
-          >
-            <Unlink size={14} className="mr-1" /> Detach
-          </Button>
-        </div>
-      )
-    }
-  ];
-
-  const tankColumns = [
-    { 
-      header: '#', 
-      accessor: '_sequence',
-      width: '50px'
-    },
-    { header: 'Name', accessor: 'name' },
-    { 
-      header: 'Station Label', 
-      render: (_, tank) => (
-        <div className="flex items-center">
-          {tank.stationLabel ? (
-            <span className="font-medium text-blue-600">{tank.stationLabel}</span>
-          ) : (
-            <span className="text-gray-500 italic">Not set</span>
-          )}
-        </div>
-      )
-    },
-    { 
-      header: 'Pumps Attached', 
-      render: (_, tank) => {
-        const pumpConnections = connections ? 
-          connections.filter(conn => 
-            conn.type === 'TANK_TO_PUMP' && conn.assetA.id === tank.id
-          ) : [];
-        
-        return (
-          <div className="flex flex-wrap gap-1">
-            {pumpConnections.map(connection => (
-              <Badge key={connection.id} variant="outline">
-                <Zap className="w-3 h-3 mr-1" />
-                {connection.assetB.name}
-              </Badge>
-            ))}
-            {pumpConnections.length === 0 && <Badge variant="outline">No pumps</Badge>}
-          </div>
-        );
-      }
-    },
-    { 
-      header: 'Island Attachment', 
-      render: (_, tank) => {
-        const islandConnection = connections ? 
-          connections.find(conn => 
-            conn.type === 'TANK_TO_ISLAND' && conn.assetA.id === tank.id
-          ) : null;
-        
-        return islandConnection ? (
-          <div className="flex items-center">
-            <Package className="w-4 h-4 text-green-500 mr-1" />
-            {islandConnection.assetB.name}
-          </div>
-        ) : (
-          <Badge variant="outline">Unattached</Badge>
-        );
-      }
-    },
-    { 
-      header: 'Product', 
-      render: (_, tank) => tank.tank?.product?.name || 'No product'
-    },
-    { 
-      header: 'Capacity', 
-      render: (_, tank) => tank.tank?.capacity ? `${tank.tank.capacity}L` : 'N/A'
-    },
-    { 
-      header: 'Actions', 
-      render: (_, tank) => (
-        <div className="flex space-x-2">
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => {
-              setEditingAsset(tank);
-              setShowEditModal(true);
-            }}
-          >
-            <Edit size={14} className="mr-1" /> Edit
-          </Button>
-          <Button 
-            variant="destructive" 
-            size="sm"
-            onClick={() => handleDetachAsset(tank.id, 'tanks')}
-          >
-            <Unlink size={14} className="mr-1" /> Detach
-          </Button>
-        </div>
-      )
-    }
-  ];
-
-  const islandColumns = [
-    { 
-      header: '#', 
-      accessor: '_sequence',
-      width: '50px'
-    },
-    { header: 'Name', accessor: 'name' },
-    { 
-      header: 'Station Label', 
-      render: (_, island) => (
-        <div className="flex items-center">
-          {island.stationLabel ? (
-            <span className="font-medium text-blue-600">{island.stationLabel}</span>
-          ) : (
-            <span className="text-gray-500 italic">Not set</span>
-          )}
-        </div>
-      )
-    },
-    { 
-      header: 'Tanks Attached', 
-      render: (_, island) => {
-        const tankConnections = connections ? 
-          connections.filter(conn => 
-            conn.type === 'TANK_TO_ISLAND' && conn.assetB.id === island.id
-          ) : [];
-        
-        return (
-          <div className="flex flex-wrap gap-1">
-            {tankConnections.map(connection => (
-              <Badge key={connection.id} variant="blue">
-                <Fuel className="w-3 h-3 mr-1" />
-                {connection.assetA.name}
-              </Badge>
-            ))}
-            {tankConnections.length === 0 && <Badge variant="outline">No tanks</Badge>}
-          </div>
-        );
-      }
-    },
-    { 
-      header: 'Pumps Attached', 
-      render: (_, island) => {
-        const pumpConnections = connections ? 
-          connections.filter(conn => 
-            conn.type === 'PUMP_TO_ISLAND' && conn.assetB.id === island.id
-          ) : [];
-        
-        return (
-          <div className="flex flex-wrap gap-1">
-            {pumpConnections.map(connection => (
-              <Badge key={connection.id} variant="yellow">
-                <Zap className="w-3 h-3 mr-1" />
-                {connection.assetA.name}
-              </Badge>
-            ))}
-            {pumpConnections.length === 0 && <Badge variant="outline">No pumps</Badge>}
-          </div>
-        );
-      }
-    },
-    { 
-      header: 'Actions', 
-      render: (_, island) => (
-        <div className="flex space-x-2">
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => {
-              setEditingAsset(island);
-              setShowEditModal(true);
-            }}
-          >
-            <Edit size={14} className="mr-1" /> Edit
-          </Button>
-          <Button 
-            variant="destructive" 
-            size="sm"
-            onClick={() => handleDetachAsset(island.id, 'islands')}
-          >
-            <Unlink size={14} className="mr-1" /> Detach
-          </Button>
-        </div>
-      )
-    }
-  ];
-
-  const warehouseColumns = [
-    { 
-      header: '#', 
-      accessor: '_sequence',
-      width: '50px'
-    },
-    { header: 'Name', accessor: 'name' },
-    { 
-      header: 'Station Label', 
-      render: (_, warehouse) => (
-        <div className="flex items-center">
-          {warehouse.stationLabel ? (
-            <span className="font-medium text-blue-600">{warehouse.stationLabel}</span>
-          ) : (
-            <span className="text-gray-500 italic">Not set</span>
-          )}
-        </div>
-      )
-    },
-    { 
-      header: 'Actions', 
-      render: (_, warehouse) => (
-        <div className="flex space-x-2">
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => {
-              setEditingAsset(warehouse);
-              setShowEditModal(true);
-            }}
-          >
-            <Edit size={14} className="mr-1" /> Edit
-          </Button>
-          <Button 
-            variant="destructive" 
-            size="sm"
-            onClick={() => handleDetachAsset(warehouse.id, 'warehouses')}
-          >
-            <Unlink size={14} className="mr-1" /> Detach
-          </Button>
-        </div>
-      )
-    }
-  ];
 
   // Get assets for current user
   const userStationId = userInfo?.station?.id;
@@ -1020,7 +674,7 @@ const StationAssetManagement = () => {
     asset.type === 'WAREHOUSE' && asset.stationId === userStationId
   ));
 
-  // Get unattached assets in the same company WITH SEQUENCE NUMBERS
+  // Get unattached assets in the same company
   const unattachedTanks = addSequenceNumbers(assets.filter(asset => 
     asset.type === 'STORAGE_TANK' && (!asset.stationId || asset.stationId !== userStationId) && asset.companyId === userCompanyId
   ));
@@ -1092,97 +746,388 @@ const StationAssetManagement = () => {
     );
   }
 
+  // COMPACT COLUMN DEFINITIONS
+  const pumpColumns = [
+    { 
+      header: '#', 
+      accessor: '_sequence',
+      width: '40px',
+      cell: (_, pump) => <span className="text-xs text-gray-500">{pump._sequence}</span>
+    },
+    { 
+      header: 'Name', 
+      accessor: 'name',
+      cell: (_, pump) => (
+        <div className="flex items-center">
+          <Zap className="w-3 h-3 text-yellow-500 mr-1" />
+          <span className="text-xs font-medium">{pump.name}</span>
+        </div>
+      )
+    },
+    { 
+      header: 'Label', 
+      render: (_, pump) => (
+        <span className="text-xs">{pump.stationLabel || <span className="text-gray-400">-</span>}</span>
+      )
+    },
+    { 
+      header: 'Tank', 
+      render: (_, pump) => {
+        const tankConnection = connections ? 
+          connections.find(conn => 
+            conn.type === 'TANK_TO_PUMP' && conn.assetB.id === pump.id
+          ) : null;
+        
+        return tankConnection ? (
+          <span className="text-xs text-blue-600">{tankConnection.assetA.name}</span>
+        ) : (
+          <Badge variant="outline" size="sm">None</Badge>
+        );
+      }
+    },
+    { 
+      header: 'Island', 
+      render: (_, pump) => {
+        const islandConnection = connections ? 
+          connections.find(conn => 
+            conn.type === 'PUMP_TO_ISLAND' && conn.assetA.id === pump.id
+          ) : null;
+        
+        return islandConnection ? (
+          <span className="text-xs text-green-600">{islandConnection.assetB.name}</span>
+        ) : (
+          <Badge variant="outline" size="sm">None</Badge>
+        );
+      }
+    },
+    { 
+      header: 'Status', 
+      render: (_, pump) => {
+        const hasTank = connections?.some(conn => 
+          conn.type === 'TANK_TO_PUMP' && conn.assetB.id === pump.id
+        );
+        const hasIsland = connections?.some(conn => 
+          conn.type === 'PUMP_TO_ISLAND' && conn.assetA.id === pump.id
+        );
+        
+        if (hasTank && hasIsland) {
+          return <Badge variant="success" size="sm">Full</Badge>;
+        } else if (hasTank || hasIsland) {
+          return <Badge variant="warning" size="sm">Partial</Badge>;
+        } else {
+          return <Badge variant="error" size="sm">None</Badge>;
+        }
+      }
+    },
+    { 
+      header: 'Actions', 
+      render: (_, pump) => (
+        <div className="flex space-x-1">
+          <Button 
+            variant="ghost" 
+            size="xs"
+            onClick={() => {
+              setEditingAsset(pump);
+              setShowEditModal(true);
+            }}
+          >
+            <Edit size={12} />
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="xs"
+            onClick={() => handleDetachAsset(pump.id, 'pumps')}
+          >
+            <Unlink size={12} />
+          </Button>
+        </div>
+      )
+    }
+  ];
+
+  const tankColumns = [
+    { 
+      header: '#', 
+      accessor: '_sequence',
+      width: '40px',
+      cell: (_, tank) => <span className="text-xs text-gray-500">{tank._sequence}</span>
+    },
+    { 
+      header: 'Name', 
+      accessor: 'name',
+      cell: (_, tank) => (
+        <div className="flex items-center">
+          <Fuel className="w-3 h-3 text-blue-500 mr-1" />
+          <span className="text-xs font-medium">{tank.name}</span>
+        </div>
+      )
+    },
+    { 
+      header: 'Label', 
+      render: (_, tank) => (
+        <span className="text-xs">{tank.stationLabel || <span className="text-gray-400">-</span>}</span>
+      )
+    },
+    { 
+      header: 'Product', 
+      render: (_, tank) => (
+        <span className="text-xs">{tank.tank?.product?.name || 'No product'}</span>
+      )
+    },
+    { 
+      header: 'Capacity', 
+      render: (_, tank) => (
+        <span className="text-xs">{tank.tank?.capacity ? `${tank.tank.capacity}L` : 'N/A'}</span>
+      )
+    },
+    { 
+      header: 'Pumps', 
+      render: (_, tank) => {
+        const pumpConnections = connections ? 
+          connections.filter(conn => 
+            conn.type === 'TANK_TO_PUMP' && conn.assetA.id === tank.id
+          ) : [];
+        
+        return (
+          <span className="text-xs">{pumpConnections.length} connected</span>
+        );
+      }
+    },
+    { 
+      header: 'Actions', 
+      render: (_, tank) => (
+        <div className="flex space-x-1">
+          <Button 
+            variant="ghost" 
+            size="xs"
+            onClick={() => {
+              setEditingAsset(tank);
+              setShowEditModal(true);
+            }}
+          >
+            <Edit size={12} />
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="xs"
+            onClick={() => handleDetachAsset(tank.id, 'tanks')}
+          >
+            <Unlink size={12} />
+          </Button>
+        </div>
+      )
+    }
+  ];
+
+  const islandColumns = [
+    { 
+      header: '#', 
+      accessor: '_sequence',
+      width: '40px',
+      cell: (_, island) => <span className="text-xs text-gray-500">{island._sequence}</span>
+    },
+    { 
+      header: 'Name', 
+      accessor: 'name',
+      cell: (_, island) => (
+        <div className="flex items-center">
+          <Package className="w-3 h-3 text-green-500 mr-1" />
+          <span className="text-xs font-medium">{island.name}</span>
+        </div>
+      )
+    },
+    { 
+      header: 'Label', 
+      render: (_, island) => (
+        <span className="text-xs">{island.stationLabel || <span className="text-gray-400">-</span>}</span>
+      )
+    },
+    { 
+      header: 'Tanks', 
+      render: (_, island) => {
+        const tankConnections = connections ? 
+          connections.filter(conn => 
+            conn.type === 'TANK_TO_ISLAND' && conn.assetB.id === island.id
+          ) : [];
+        
+        return <span className="text-xs">{tankConnections.length}</span>;
+      }
+    },
+    { 
+      header: 'Pumps', 
+      render: (_, island) => {
+        const pumpConnections = connections ? 
+          connections.filter(conn => 
+            conn.type === 'PUMP_TO_ISLAND' && conn.assetB.id === island.id
+          ) : [];
+        
+        return <span className="text-xs">{pumpConnections.length}</span>;
+      }
+    },
+    { 
+      header: 'Actions', 
+      render: (_, island) => (
+        <div className="flex space-x-1">
+          <Button 
+            variant="ghost" 
+            size="xs"
+            onClick={() => {
+              setEditingAsset(island);
+              setShowEditModal(true);
+            }}
+          >
+            <Edit size={12} />
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="xs"
+            onClick={() => handleDetachAsset(island.id, 'islands')}
+          >
+            <Unlink size={12} />
+          </Button>
+        </div>
+      )
+    }
+  ];
+
+  const warehouseColumns = [
+    { 
+      header: '#', 
+      accessor: '_sequence',
+      width: '40px',
+      cell: (_, warehouse) => <span className="text-xs text-gray-500">{warehouse._sequence}</span>
+    },
+    { 
+      header: 'Name', 
+      accessor: 'name',
+      cell: (_, warehouse) => (
+        <div className="flex items-center">
+          <Warehouse className="w-3 h-3 text-purple-500 mr-1" />
+          <span className="text-xs font-medium">{warehouse.name}</span>
+        </div>
+      )
+    },
+    { 
+      header: 'Label', 
+      render: (_, warehouse) => (
+        <span className="text-xs">{warehouse.stationLabel || <span className="text-gray-400">-</span>}</span>
+      )
+    },
+    { 
+      header: 'Status', 
+      render: (_, warehouse) => (
+        <Badge variant={warehouse.status === 'ACTIVE' ? 'success' : 'default'} size="sm">
+          {warehouse.statusDisplay}
+        </Badge>
+      )
+    },
+    { 
+      header: 'Actions', 
+      render: (_, warehouse) => (
+        <div className="flex space-x-1">
+          <Button 
+            variant="ghost" 
+            size="xs"
+            onClick={() => {
+              setEditingAsset(warehouse);
+              setShowEditModal(true);
+            }}
+          >
+            <Edit size={12} />
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="xs"
+            onClick={() => handleDetachAsset(warehouse.id, 'warehouses')}
+          >
+            <Unlink size={12} />
+          </Button>
+        </div>
+      )
+    }
+  ];
+
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
+    <div className="p-4">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">
+          <h2 className="text-lg font-bold text-gray-900">
             Asset Management - {userInfo.station?.name}
           </h2>
-          <p className="text-gray-600">
-            Manage tanks, pumps, islands, and warehouses for this station
-          </p>
+          <p className="text-xs text-gray-600">Manage tanks, pumps, islands, and warehouses</p>
         </div>
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-2">
           <AdvancedReportGenerator
-            dataSource={getExportDataSource()}
-            columns={getExportColumns()}
+            dataSource={prepareReportData()}
+            columns={getReportColumns()}
             title={`${getTabTitle()} Report - ${userInfo.station?.name}`}
             fileName={getFileName()}
-            summaryData={summaryData}
+            summaryData={calculateReportSummary()}
             reportType="operations"
             stationInfo={userInfo.station}
-            footerText={`Generated from Lynx Energy System - ${userInfo.user ? `User: ${userInfo.user.firstName} ${userInfo.user.lastName}` : ''} - ${new Date().toLocaleDateString()}`}
+            footerText={`Generated from Lynx Energy System - ${new Date().toLocaleDateString()}`}
             showFooter={true}
             enableCustomization={true}
+            showGrandTotals={false}
             onReportGenerate={handleExport}
           />
-          <Badge variant="outline" className="text-sm">
-            Station Manager: {userInfo.user?.firstName} {userInfo.user?.lastName}
+          <Badge variant="outline" size="sm">
+            {userInfo.user?.firstName} {userInfo.user?.lastName}
           </Badge>
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <Card className="bg-blue-50">
-          <div className="p-4">
-            <div className="flex items-center">
-              <Fuel className="w-8 h-8 text-blue-500 mr-3" />
-              <div>
-                <div className="text-2xl font-bold">{summaryStats.tanksCount}</div>
-                <div className="text-sm text-gray-600">Storage Tanks</div>
-                <div className="text-xs text-gray-500">{summaryStats.totalCapacity}L total capacity</div>
-              </div>
+      {/* COMPACT SUMMARY CARDS */}
+      <div className="grid grid-cols-4 gap-2 mb-4">
+        <Card className="bg-blue-50 p-2">
+          <div className="flex items-center">
+            <Fuel className="w-4 h-4 text-blue-500 mr-2" />
+            <div>
+              <div className="text-xs text-gray-600">Tanks</div>
+              <div className="text-sm font-bold">{summaryStats.tanksCount}</div>
+              <div className="text-[10px] text-gray-500">{summaryStats.totalCapacity}L</div>
             </div>
           </div>
         </Card>
         
-        <Card className="bg-yellow-50">
-          <div className="p-4">
-            <div className="flex items-center">
-              <Zap className="w-8 h-8 text-yellow-500 mr-3" />
-              <div>
-                <div className="text-2xl font-bold">{summaryStats.pumpsCount}</div>
-                <div className="text-sm text-gray-600">Fuel Pumps</div>
-                <div className="text-xs text-gray-500">{summaryStats.connectedAssetsCount} connected</div>
-              </div>
+        <Card className="bg-yellow-50 p-2">
+          <div className="flex items-center">
+            <Zap className="w-4 h-4 text-yellow-500 mr-2" />
+            <div>
+              <div className="text-xs text-gray-600">Pumps</div>
+              <div className="text-sm font-bold">{summaryStats.pumpsCount}</div>
+              <div className="text-[10px] text-gray-500">{summaryStats.connectedAssetsCount} connected</div>
             </div>
           </div>
         </Card>
         
-        <Card className="bg-green-50">
-          <div className="p-4">
-            <div className="flex items-center">
-              <Package className="w-8 h-8 text-green-500 mr-3" />
-              <div>
-                <div className="text-2xl font-bold">{summaryStats.islandsCount}</div>
-                <div className="text-sm text-gray-600">Allocation Islands</div>
-                <div className="text-xs text-gray-500">Service points</div>
-              </div>
+        <Card className="bg-green-50 p-2">
+          <div className="flex items-center">
+            <Package className="w-4 h-4 text-green-500 mr-2" />
+            <div>
+              <div className="text-xs text-gray-600">Islands</div>
+              <div className="text-sm font-bold">{summaryStats.islandsCount}</div>
             </div>
           </div>
         </Card>
         
-        <Card className="bg-purple-50">
-          <div className="p-4">
-            <div className="flex items-center">
-              <Warehouse className="w-8 h-8 text-purple-500 mr-3" />
-              <div>
-                <div className="text-2xl font-bold">{summaryStats.warehousesCount}</div>
-                <div className="text-sm text-gray-600">Warehouses</div>
-                <div className="text-xs text-gray-500">Storage facilities</div>
-              </div>
+        <Card className="bg-purple-50 p-2">
+          <div className="flex items-center">
+            <Warehouse className="w-4 h-4 text-purple-500 mr-2" />
+            <div>
+              <div className="text-xs text-gray-600">Warehouses</div>
+              <div className="text-sm font-bold">{summaryStats.warehousesCount}</div>
             </div>
           </div>
         </Card>
       </div>
 
-      {error && <Alert variant="error" className="mb-6">{error}</Alert>}
+      {error && <Alert variant="error" className="mb-4 text-sm">{error}</Alert>}
 
       {/* Asset Type Tabs */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="flex space-x-8">
+      <div className="border-b border-gray-200 mb-4">
+        <nav className="flex space-x-4">
           {[
             { id: 'tanks', label: 'Tanks', icon: Fuel, count: summaryStats.tanksCount },
             { id: 'pumps', label: 'Pumps', icon: Zap, count: summaryStats.pumpsCount },
@@ -1196,59 +1141,131 @@ const StationAssetManagement = () => {
               icon={tab.icon}
               isActive={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id)}
+              size="sm"
             >
-              <div className="flex items-center">
+              <div className="flex items-center text-xs">
                 {tab.label}
-                <Badge variant="outline" className="ml-2 text-xs">{tab.count}</Badge>
+                <Badge variant="outline" className="ml-1 text-[10px]">{tab.count}</Badge>
               </div>
             </Tab>
           ))}
         </nav>
       </div>
 
+      {/* COMPACT FILTERS */}
+      <div className="mb-4">
+        <div className="flex items-center space-x-2">
+          <div className="flex-1">
+            <input
+              type="text"
+              placeholder="Search assets..."
+              value={filters.search}
+              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+              className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs"
+            />
+          </div>
+          <Button 
+            variant="outline" 
+            size="xs"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter size={12} className="mr-1" /> Filters
+          </Button>
+          <Button 
+            variant="outline" 
+            size="xs"
+            onClick={clearFilters}
+            disabled={!filters.search && !filters.status && !filters.connection}
+          >
+            Clear
+          </Button>
+        </div>
+        
+        {showFilters && (
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <select
+              className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+              value={filters.status}
+              onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+            >
+              <option value="">All Status</option>
+              <option value="ACTIVE">Active</option>
+              <option value="INACTIVE">Inactive</option>
+              <option value="MAINTENANCE">Maintenance</option>
+            </select>
+            
+            <select
+              className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+              value={filters.connection}
+              onChange={(e) => setFilters(prev => ({ ...prev, connection: e.target.value }))}
+            >
+              <option value="">All Connections</option>
+              <option value="Connected">Connected</option>
+              <option value="Unconnected">Unconnected</option>
+            </select>
+          </div>
+        )}
+      </div>
+
       {/* Tanks Tab */}
       <TabPanel value={activeTab} tabId="tanks">
-        <div className="space-y-6">
-          <Card title={`Station Tanks (${stationTanks.length})`}>
+        <div className="space-y-4">
+          <Card title={`Station Tanks (${stationTanks.length})`} size="small">
             <Table
               columns={tankColumns}
-              data={stationTanks}
+              data={getFilteredData(stationTanks)}
               emptyMessage="No tanks attached to this station"
+              size="sm"
             />
           </Card>
 
           {unattachedTanks.length > 0 && (
-            <Card title="Available Tanks" className="bg-blue-50">
+            <Card title="Available Tanks" className="bg-blue-50" size="small">
               <Table
                 columns={[
                   { 
                     header: '#', 
                     accessor: '_sequence',
-                    width: '50px'
+                    width: '40px',
+                    cell: (_, tank) => <span className="text-xs text-gray-500">{tank._sequence}</span>
                   },
-                  { header: 'Name', accessor: 'name' },
+                  { 
+                    header: 'Name', 
+                    accessor: 'name',
+                    cell: (_, tank) => (
+                      <div className="flex items-center">
+                        <Fuel className="w-3 h-3 text-blue-500 mr-1" />
+                        <span className="text-xs">{tank.name}</span>
+                      </div>
+                    )
+                  },
                   { 
                     header: 'Capacity', 
-                    render: (_, tank) => tank.tank?.capacity ? `${tank.tank.capacity}L` : 'N/A'
+                    render: (_, tank) => (
+                      <span className="text-xs">{tank.tank?.capacity ? `${tank.tank.capacity}L` : 'N/A'}</span>
+                    )
                   },
                   { 
                     header: 'Product', 
-                    render: (_, tank) => tank.tank?.product?.name || 'No product'
+                    render: (_, tank) => (
+                      <span className="text-xs">{tank.tank?.product?.name || 'No product'}</span>
+                    )
                   },
                   { 
                     header: 'Actions', 
                     render: (_, tank) => (
                       <Button 
                         variant="success"
-                        size="sm"
+                        size="xs"
                         onClick={() => handleAttachAsset(tank.id, 'tanks')}
                       >
-                        <Link size={16} className="mr-1" /> Attach to Station
+                        <Link size={10} className="mr-1" /> Attach
                       </Button>
                     )
                   }
                 ]}
                 data={unattachedTanks}
+                size="sm"
               />
             </Card>
           )}
@@ -1257,39 +1274,51 @@ const StationAssetManagement = () => {
 
       {/* Pumps Tab */}
       <TabPanel value={activeTab} tabId="pumps">
-        <div className="space-y-6">
-          <Card title={`Station Pumps (${stationPumps.length})`}>
+        <div className="space-y-4">
+          <Card title={`Station Pumps (${stationPumps.length})`} size="small">
             <Table
               columns={pumpColumns}
-              data={stationPumps}
+              data={getFilteredData(stationPumps)}
               emptyMessage="No pumps attached to this station"
+              size="sm"
             />
           </Card>
 
           {unattachedPumps.length > 0 && (
-            <Card title="Available Pumps" className="bg-yellow-50">
+            <Card title="Available Pumps" className="bg-yellow-50" size="small">
               <Table
                 columns={[
                   { 
                     header: '#', 
                     accessor: '_sequence',
-                    width: '50px'
+                    width: '40px',
+                    cell: (_, pump) => <span className="text-xs text-gray-500">{pump._sequence}</span>
                   },
-                  { header: 'Name', accessor: 'name' },
+                  { 
+                    header: 'Name', 
+                    accessor: 'name',
+                    cell: (_, pump) => (
+                      <div className="flex items-center">
+                        <Zap className="w-3 h-3 text-yellow-500 mr-1" />
+                        <span className="text-xs">{pump.name}</span>
+                      </div>
+                    )
+                  },
                   { 
                     header: 'Actions', 
                     render: (_, pump) => (
                       <Button 
                         variant="success"
-                        size="sm"
+                        size="xs"
                         onClick={() => handleAttachAsset(pump.id, 'pumps')}
                       >
-                        <Link size={16} className="mr-1" /> Attach to Station
+                        <Link size={10} className="mr-1" /> Attach
                       </Button>
                     )
                   }
                 ]}
                 data={unattachedPumps}
+                size="sm"
               />
             </Card>
           )}
@@ -1298,39 +1327,51 @@ const StationAssetManagement = () => {
 
       {/* Islands Tab */}
       <TabPanel value={activeTab} tabId="islands">
-        <div className="space-y-6">
-          <Card title={`Allocation Points (${stationIslands.length})`}>
+        <div className="space-y-4">
+          <Card title={`Allocation Points (${stationIslands.length})`} size="small">
             <Table
               columns={islandColumns}
-              data={stationIslands}
+              data={getFilteredData(stationIslands)}
               emptyMessage="No allocation points attached to this station"
+              size="sm"
             />
           </Card>
 
           {unattachedIslands.length > 0 && (
-            <Card title="Available Allocation Points" className="bg-green-50">
+            <Card title="Available Allocation Points" className="bg-green-50" size="small">
               <Table
                 columns={[
                   { 
                     header: '#', 
                     accessor: '_sequence',
-                    width: '50px'
+                    width: '40px',
+                    cell: (_, island) => <span className="text-xs text-gray-500">{island._sequence}</span>
                   },
-                  { header: 'Name', accessor: 'name' },
+                  { 
+                    header: 'Name', 
+                    accessor: 'name',
+                    cell: (_, island) => (
+                      <div className="flex items-center">
+                        <Package className="w-3 h-3 text-green-500 mr-1" />
+                        <span className="text-xs">{island.name}</span>
+                      </div>
+                    )
+                  },
                   { 
                     header: 'Actions', 
                     render: (_, island) => (
                       <Button 
                         variant="success"
-                        size="sm"
+                        size="xs"
                         onClick={() => handleAttachAsset(island.id, 'islands')}
                       >
-                        <Link size={16} className="mr-1" /> Attach to Station
+                        <Link size={10} className="mr-1" /> Attach
                       </Button>
                     )
                   }
                 ]}
                 data={unattachedIslands}
+                size="sm"
               />
             </Card>
           )}
@@ -1339,39 +1380,51 @@ const StationAssetManagement = () => {
 
       {/* Warehouses Tab */}
       <TabPanel value={activeTab} tabId="warehouses">
-        <div className="space-y-6">
-          <Card title={`Station Warehouses (${stationWarehouses.length})`}>
+        <div className="space-y-4">
+          <Card title={`Station Warehouses (${stationWarehouses.length})`} size="small">
             <Table
               columns={warehouseColumns}
-              data={stationWarehouses}
+              data={getFilteredData(stationWarehouses)}
               emptyMessage="No warehouses attached to this station"
+              size="sm"
             />
           </Card>
 
           {unattachedWarehouses.length > 0 && (
-            <Card title="Available Warehouses" className="bg-purple-50">
+            <Card title="Available Warehouses" className="bg-purple-50" size="small">
               <Table
                 columns={[
                   { 
                     header: '#', 
                     accessor: '_sequence',
-                    width: '50px'
+                    width: '40px',
+                    cell: (_, warehouse) => <span className="text-xs text-gray-500">{warehouse._sequence}</span>
                   },
-                  { header: 'Name', accessor: 'name' },
+                  { 
+                    header: 'Name', 
+                    accessor: 'name',
+                    cell: (_, warehouse) => (
+                      <div className="flex items-center">
+                        <Warehouse className="w-3 h-3 text-purple-500 mr-1" />
+                        <span className="text-xs">{warehouse.name}</span>
+                      </div>
+                    )
+                  },
                   { 
                     header: 'Actions', 
                     render: (_, warehouse) => (
                       <Button 
                         variant="success"
-                        size="sm"
+                        size="xs"
                         onClick={() => handleAttachAsset(warehouse.id, 'warehouses')}
                       >
-                        <Link size={16} className="mr-1" /> Attach to Station
+                        <Link size={10} className="mr-1" /> Attach
                       </Button>
                     )
                   }
                 ]}
                 data={unattachedWarehouses}
+                size="sm"
               />
             </Card>
           )}
@@ -1380,33 +1433,26 @@ const StationAssetManagement = () => {
 
       {/* Relationships Tab */}
       <TabPanel value={activeTab} tabId="relationships">
-        <div className="space-y-8">
+        <div className="space-y-4">
           {/* Tank-Pump Relationship */}
-          <Card title="Attach Pumps to Tank">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Card title="Attach Pumps to Tank" size="small">
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <h3 className="font-medium mb-3">Select Tank</h3>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
+                <h4 className="text-xs font-medium mb-2">Select Tank</h4>
+                <div className="space-y-1 max-h-48 overflow-y-auto">
                   {stationTanks.map((tank) => (
                     <div
                       key={tank.id}
-                      className={`p-3 rounded-lg cursor-pointer ${
+                      className={`p-2 rounded cursor-pointer ${
                         selectedTank === tank.id
                           ? 'bg-blue-100 border border-blue-300'
                           : 'bg-gray-50 hover:bg-gray-100'
                       }`}
                       onClick={() => setSelectedTank(tank.id)}
                     >
-                      <div className="flex items-center">
-                        <div className="mr-2 text-sm font-medium text-gray-600">{tank._sequence}</div>
-                        <Fuel className="w-5 h-5 text-blue-500 mr-2" />
-                        <div>
-                          <div className="font-medium">{tank.name}</div>
-                          <div className="text-sm text-gray-500">Tank</div>
-                          {tanksConnectedToIslands.has(tank.id) && (
-                            <Badge variant="blue" className="mt-1">Connected to Island</Badge>
-                          )}
-                        </div>
+                      <div className="flex items-center text-xs">
+                        <Fuel className="w-3 h-3 text-blue-500 mr-1" />
+                        <span>{tank.name}</span>
                       </div>
                     </div>
                   ))}
@@ -1414,23 +1460,23 @@ const StationAssetManagement = () => {
               </div>
 
               <div>
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-medium">Select Pumps</h3>
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="text-xs font-medium">Select Pumps</h4>
                   {selectedTank && (
                     <Button 
-                      size="sm"
+                      size="xs"
                       onClick={handleCreateTankToPumpConnection}
                       disabled={selectedPumps.length === 0}
                     >
-                      Attach Selected Pumps
+                      Attach
                     </Button>
                   )}
                 </div>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
+                <div className="space-y-1 max-h-48 overflow-y-auto">
                   {pumpsAvailableForTankConnection.map((pump) => (
                     <div
                       key={pump.id}
-                      className={`p-3 rounded-lg cursor-pointer ${
+                      className={`p-2 rounded cursor-pointer ${
                         selectedPumps.includes(pump.id)
                           ? 'bg-yellow-100 border border-yellow-300'
                           : 'bg-gray-50 hover:bg-gray-100'
@@ -1444,52 +1490,38 @@ const StationAssetManagement = () => {
                       }}
                     >
                       <div className="flex justify-between items-center">
-                        <div className="flex items-center">
-                          <div className="mr-2 text-sm font-medium text-gray-600">{pump._sequence}</div>
-                          <Zap className="w-5 h-5 text-yellow-500 mr-2" />
-                          <div>
-                            <div className="font-medium">{pump.name}</div>
-                            <div className="text-sm text-gray-500">Pump</div>
-                            {pumpsConnectedToIslands.has(pump.id) && (
-                              <Badge variant="yellow" className="mt-1">Connected to Island</Badge>
-                            )}
-                          </div>
+                        <div className="flex items-center text-xs">
+                          <Zap className="w-3 h-3 text-yellow-500 mr-1" />
+                          <span>{pump.name}</span>
                         </div>
-                        {selectedPumps.includes(pump.id) && <Badge variant="yellow">Selected</Badge>}
+                        {selectedPumps.includes(pump.id) && <Badge variant="yellow" size="sm">✓</Badge>}
                       </div>
                     </div>
                   ))}
-                  {pumpsAvailableForTankConnection.length === 0 && (
-                    <div className="text-center text-gray-500 py-4">All pumps are already connected to tanks</div>
-                  )}
                 </div>
               </div>
             </div>
           </Card>
 
           {/* Island-Asset Relationship */}
-          <Card title="Attach Assets to Island">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card title="Attach Assets to Island" size="small">
+            <div className="grid grid-cols-3 gap-4">
               <div>
-                <h3 className="font-medium mb-3">Select Island</h3>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
+                <h4 className="text-xs font-medium mb-2">Select Island</h4>
+                <div className="space-y-1 max-h-48 overflow-y-auto">
                   {stationIslands.map((island) => (
                     <div
                       key={island.id}
-                      className={`p-3 rounded-lg cursor-pointer ${
+                      className={`p-2 rounded cursor-pointer ${
                         selectedIsland === island.id
                           ? 'bg-green-100 border border-green-300'
                           : 'bg-gray-50 hover:bg-gray-100'
                       }`}
                       onClick={() => setSelectedIsland(island.id)}
                     >
-                      <div className="flex items-center">
-                        <div className="mr-2 text-sm font-medium text-gray-600">{island._sequence}</div>
-                        <Package className="w-5 h-5 text-green-500 mr-2" />
-                        <div>
-                          <div className="font-medium">{island.name}</div>
-                          <div className="text-sm text-gray-500">Island</div>
-                        </div>
+                      <div className="flex items-center text-xs">
+                        <Package className="w-3 h-3 text-green-500 mr-1" />
+                        <span>{island.name}</span>
                       </div>
                     </div>
                   ))}
@@ -1497,12 +1529,12 @@ const StationAssetManagement = () => {
               </div>
 
               <div>
-                <h3 className="font-medium mb-3">Select Tanks</h3>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
+                <h4 className="text-xs font-medium mb-2">Select Tanks</h4>
+                <div className="space-y-1 max-h-48 overflow-y-auto">
                   {tanksAvailableForIslandConnection.map((tank) => (
                     <div
                       key={tank.id}
-                      className={`p-3 rounded-lg cursor-pointer ${
+                      className={`p-2 rounded cursor-pointer ${
                         assetsForIsland.tanks.includes(tank.id)
                           ? 'bg-blue-100 border border-blue-300'
                           : 'bg-gray-50 hover:bg-gray-100'
@@ -1517,42 +1549,35 @@ const StationAssetManagement = () => {
                       }}
                     >
                       <div className="flex justify-between items-center">
-                        <div className="flex items-center">
-                          <div className="mr-2 text-sm font-medium text-gray-600">{tank._sequence}</div>
-                          <Fuel className="w-5 h-5 text-blue-500 mr-2" />
-                          <div>
-                            <div className="font-medium">{tank.name}</div>
-                            <div className="text-sm text-gray-500">Tank</div>
-                          </div>
+                        <div className="flex items-center text-xs">
+                          <Fuel className="w-3 h-3 text-blue-500 mr-1" />
+                          <span>{tank.name}</span>
                         </div>
-                        {assetsForIsland.tanks.includes(tank.id) && <Badge variant="blue">Selected</Badge>}
+                        {assetsForIsland.tanks.includes(tank.id) && <Badge variant="blue" size="sm">✓</Badge>}
                       </div>
                     </div>
                   ))}
-                  {tanksAvailableForIslandConnection.length === 0 && (
-                    <div className="text-center text-gray-500 py-4">All tanks are already connected to islands</div>
-                  )}
                 </div>
               </div>
 
               <div>
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-medium">Select Pumps</h3>
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="text-xs font-medium">Select Pumps</h4>
                   {selectedIsland && (
                     <Button 
-                      size="sm"
+                      size="xs"
                       onClick={handleCreateIslandConnections}
                       disabled={assetsForIsland.tanks.length === 0 && assetsForIsland.pumps.length === 0}
                     >
-                      Attach Assets
+                      Attach
                     </Button>
                   )}
                 </div>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
+                <div className="space-y-1 max-h-48 overflow-y-auto">
                   {pumpsAvailableForIslandConnection.map((pump) => (
                     <div
                       key={pump.id}
-                      className={`p-3 rounded-lg cursor-pointer ${
+                      className={`p-2 rounded cursor-pointer ${
                         assetsForIsland.pumps.includes(pump.id)
                           ? 'bg-yellow-100 border border-yellow-300'
                           : 'bg-gray-50 hover:bg-gray-100'
@@ -1567,24 +1592,14 @@ const StationAssetManagement = () => {
                       }}
                     >
                       <div className="flex justify-between items-center">
-                        <div className="flex items-center">
-                          <div className="mr-2 text-sm font-medium text-gray-600">{pump._sequence}</div>
-                          <Zap className="w-5 h-5 text-yellow-500 mr-2" />
-                          <div>
-                            <div className="font-medium">{pump.name}</div>
-                            <div className="text-sm text-gray-500">Pump</div>
-                            {pumpsConnectedToTanks.has(pump.id) && (
-                              <Badge variant="yellow" className="mt-1">Connected to Tank</Badge>
-                            )}
-                          </div>
+                        <div className="flex items-center text-xs">
+                          <Zap className="w-3 h-3 text-yellow-500 mr-1" />
+                          <span>{pump.name}</span>
                         </div>
-                        {assetsForIsland.pumps.includes(pump.id) && <Badge variant="yellow">Selected</Badge>}
+                        {assetsForIsland.pumps.includes(pump.id) && <Badge variant="yellow" size="sm">✓</Badge>}
                       </div>
                     </div>
                   ))}
-                  {pumpsAvailableForIslandConnection.length === 0 && (
-                    <div className="text-center text-gray-500 py-4">All pumps are already connected to islands</div>
-                  )}
                 </div>
               </div>
             </div>

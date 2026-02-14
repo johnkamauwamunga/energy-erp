@@ -23,7 +23,6 @@ import {
   EyeOutlined,
   ReloadOutlined,
   FilterOutlined,
-  ExportOutlined,
   FileTextOutlined,
   DatabaseOutlined,
   ArrowLeftOutlined,
@@ -210,7 +209,7 @@ const TankFuelReadings = () => {
     return Array.from(productsMap.values());
   }, [tankData]);
   
-  // Generate report
+  // Generate report with simplified columns
   const generateReport = () => {
     if (!filteredTankData.length) {
       message.warning('No data available to generate report');
@@ -220,6 +219,7 @@ const TankFuelReadings = () => {
     const stationName = shiftInfo?.station?.name || 'Unknown Station';
     const shiftNum = shiftInfo?.shiftNumber || shiftNumber || 'Unknown Shift';
     
+    // Prepare report data with the requested columns
     const reportData = filteredTankData.map((tank, index) => {
       const product = tank.tankInfo?.product;
       const startReading = tank.readings?.startReading;
@@ -229,35 +229,50 @@ const TankFuelReadings = () => {
       
       return {
         '#': index + 1,
-        'Tank Name': tank.tankInfo?.name || 'Unknown',
+        'Shift': shiftNum,
+        'Tank': tank.tankInfo?.name || 'Unknown',
         'Product': product?.name || 'Unknown',
-        'Opening Volume (L)': startReading?.volume ? parseFloat(startReading.volume).toLocaleString('en-KE') : '0',
-        'Closing Volume (L)': endReading?.volume ? parseFloat(endReading.volume).toLocaleString('en-KE') : '0',
-        'Volume Reduction (L)': calculated?.volumeReduction ? parseFloat(calculated.volumeReduction).toLocaleString('en-KE') : '0',
-        'Percentage Reduction': `${(calculated?.percentageReduction || 
+        'Opening (L)': startReading?.volume ? parseFloat(startReading.volume).toLocaleString('en-KE') : '0',
+        'Closing (L)': endReading?.volume ? parseFloat(endReading.volume).toLocaleString('en-KE') : '0',
+        'Reduction (L)': calculated?.volumeReduction ? parseFloat(calculated.volumeReduction).toLocaleString('en-KE') : '0',
+        'Reduction %': `${(calculated?.percentageReduction || 
           calculateReductionPercentage(startReading?.volume, endReading?.volume)).toFixed(2)}%`,
-        'Status': status.text,
-        'Verification': endReading?.isVerified ? 'Verified' : 'Pending',
+        'Status': status.text
       };
     });
     
+    // Summary data for metadata sheet
     const summaryData = {
       'Station Name': stationName,
       'Shift Number': shiftNum,
+      'Shift Status': shiftInfo?.status || 'N/A',
+      'Start Time': shiftInfo?.startTime ? dayjs(shiftInfo.startTime).format('DD/MM/YYYY HH:mm:ss') : 'N/A',
+      'End Time': shiftInfo?.endTime ? dayjs(shiftInfo.endTime).format('DD/MM/YYYY HH:mm:ss') : 'N/A',
       'Total Tanks': filteredTankData.length,
+      'Total Opening Volume': filteredTankData.reduce((sum, tank) => 
+        sum + (parseFloat(tank.readings?.startReading?.volume) || 0), 0
+      ).toLocaleString('en-KE') + ' L',
+      'Total Closing Volume': filteredTankData.reduce((sum, tank) => 
+        sum + (parseFloat(tank.readings?.endReading?.volume) || 0), 0
+      ).toLocaleString('en-KE') + ' L',
+      'Total Reduction': filteredTankData.reduce((sum, tank) => 
+        sum + (parseFloat(tank.readings?.calculated?.volumeReduction) || 0), 0
+      ).toLocaleString('en-KE') + ' L',
       'Report Date': new Date().toLocaleDateString('en-KE'),
+      'Generated At': new Date().toLocaleTimeString('en-KE')
     };
     
+    // Simplified columns as requested: shift, tank, product, opening, closing, reduction, status
     const exportColumns = [
-      { title: '#', dataIndex: '#', key: 'index', width: 50 },
-      { title: 'Tank Name', dataIndex: 'Tank Name', key: 'tankName', width: 100 },
-      { title: 'Product', dataIndex: 'Product', key: 'product', width: 120 },
-      { title: 'Opening Volume (L)', dataIndex: 'Opening Volume (L)', key: 'openingVolume', width: 120 },
-      { title: 'Closing Volume (L)', dataIndex: 'Closing Volume (L)', key: 'closingVolume', width: 120 },
-      { title: 'Volume Reduction (L)', dataIndex: 'Volume Reduction (L)', key: 'volumeReduction', width: 120 },
-      { title: '% Reduction', dataIndex: 'Percentage Reduction', key: 'percentageReduction', width: 80 },
-      { title: 'Status', dataIndex: 'Status', key: 'status', width: 80 },
-      { title: 'Verification', dataIndex: 'Verification', key: 'verification', width: 80 },
+      { title: '#', dataIndex: '#', key: 'index', width: 50, type: 'number' },
+      { title: 'Shift', dataIndex: 'Shift', key: 'shift', width: 100, type: 'text' },
+      { title: 'Tank', dataIndex: 'Tank', key: 'tank', width: 120, type: 'text' },
+      { title: 'Product', dataIndex: 'Product', key: 'product', width: 120, type: 'text' },
+      { title: 'Opening (L)', dataIndex: 'Opening (L)', key: 'openingVolume', width: 120, type: 'volume' },
+      { title: 'Closing (L)', dataIndex: 'Closing (L)', key: 'closingVolume', width: 120, type: 'volume' },
+      { title: 'Reduction (L)', dataIndex: 'Reduction (L)', key: 'volumeReduction', width: 120, type: 'volume' },
+      { title: 'Reduction %', dataIndex: 'Reduction %', key: 'percentageReduction', width: 100, type: 'percentage' },
+      { title: 'Status', dataIndex: 'Status', key: 'status', width: 100, type: 'text' }
     ];
     
     const title = `Tank Fuel Readings - ${stationName} - Shift ${shiftNum}`;
@@ -268,11 +283,16 @@ const TankFuelReadings = () => {
       summaryData: summaryData,
       title: title,
       fileName: `tank_fuel_readings_${stationName.replace(/\s+/g, '_')}_${shiftNum}_${new Date().toISOString().split('T')[0]}`,
-      reportType: 'tank-readings',
+      reportType: 'inventory', // Using inventory theme for fuel readings
       companyName: shiftInfo?.station?.company || "Fuel Management System",
-      showFooter: true,
-      footerText: `Generated from Fuel Management System`,
-      enableCustomization: true
+      stationInfo: shiftInfo?.station ? {
+        name: shiftInfo.station.name,
+        code: shiftInfo.station.code,
+        location: shiftInfo.station.location
+      } : null,
+      footerText: `Generated from Fuel Management System | Station: ${stationName} | Shift: ${shiftNum} | ${new Date().toLocaleString('en-KE')}`,
+      enableCustomization: true,
+      showGrandTotals: false // Hide grand totals in table
     };
     
     setReportConfig(config);
@@ -300,7 +320,7 @@ const TankFuelReadings = () => {
     navigate(-1);
   };
   
-  // Optimized table columns
+  // Optimized table columns - removed temperature column
   const tankReadingsColumns = [
     {
       title: 'Tank',
@@ -435,23 +455,6 @@ const TankFuelReadings = () => {
           </Tooltip>
         );
       }
-    },
-    {
-      title: 'Temperature (°C)',
-      dataIndex: 'readings',
-      key: 'temperature',
-      width: 130,
-      align: 'center',
-      render: (readings) => (
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '12px' }}>
-            <span style={{ color: '#666', fontSize: '11px' }}>Start:</span> {readings?.startReading?.temperature || 'N/A'}°
-          </div>
-          <div style={{ fontSize: '12px' }}>
-            <span style={{ color: '#666', fontSize: '11px' }}>End:</span> {readings?.endReading?.temperature || 'N/A'}°
-          </div>
-        </div>
-      )
     },
     {
       title: 'Verification',
@@ -745,7 +748,7 @@ const TankFuelReadings = () => {
                 showQuickJumper: true,
                 pageSizeOptions: ['10', '15', '20', '50']
               }}
-              scroll={{ x: 1300 }}
+              scroll={{ x: 1200 }}
               style={{ 
                 ...tableDensityStyles[tableConfig.density],
                 minWidth: '100%'
@@ -790,7 +793,7 @@ const TankFuelReadings = () => {
                           {totalReduction.toLocaleString('en-KE')} L
                         </strong>
                       </Table.Summary.Cell>
-                      <Table.Summary.Cell index={4} colSpan={5}>
+                      <Table.Summary.Cell index={4} colSpan={4}>
                         {/* Empty cells for remaining columns */}
                       </Table.Summary.Cell>
                     </Table.Summary.Row>

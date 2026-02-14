@@ -1,4 +1,4 @@
-// Updated StationUserManagement.jsx - with direct report triggering
+// Updated StationUserManagement.jsx - with compact filters and simplified report columns
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
@@ -19,7 +19,6 @@ import {
   Col,
   Typography,
   Badge,
-  DatePicker,
   Input,
   Modal,
   Descriptions,
@@ -49,7 +48,8 @@ import {
   ReloadOutlined,
   InfoCircleOutlined,
   SearchOutlined,
-  DownOutlined
+  DownOutlined,
+  CompressOutlined
 } from '@ant-design/icons';
 import { formatDate } from '../../../../utils/helpers';
 import { useApp } from '../../../../context/AppContext';
@@ -58,10 +58,9 @@ import { stationService } from '../../../../services/stationService/stationServi
 import AdvancedReportGenerator from '../../../dashboards/common/downloadable/AdvancedReportGenerator';
 import dayjs from 'dayjs';
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 const { Option } = Select;
 const { Search } = Input;
-const { RangePicker } = DatePicker;
 
 const StationUserManagement = () => {
   const { state } = useApp();
@@ -75,15 +74,11 @@ const StationUserManagement = () => {
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [stations, setStations] = useState([]);
   
-  // Enhanced filters
+  // COMPACT FILTERS - Reduced to essential only
   const [filters, setFilters] = useState({
+    search: '',
     station: '',
     status: '',
-    searchQuery: '',
-    startDate: dayjs().subtract(30, 'days').format('YYYY-MM-DD'),
-    endDate: dayjs().format('YYYY-MM-DD'),
-    sortBy: 'createdAt',
-    sortOrder: 'desc',
     page: 1,
     limit: 20
   });
@@ -110,6 +105,7 @@ const StationUserManagement = () => {
   // Modals
   const [userDetailsModal, setUserDetailsModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [showFilters, setShowFilters] = useState(false); // Toggle for advanced filters
 
   // Fetch stations and users on component mount
   useEffect(() => {
@@ -121,20 +117,6 @@ const StationUserManagement = () => {
   useEffect(() => {
     filterUsers();
   }, [filters, allUsers, activeTab]);
-
-  // Trigger report generation when showReportGenerator changes
-  useEffect(() => {
-    if (showReportGenerator && reportGeneratorRef.current) {
-      // Simulate a click on the AdvancedReportGenerator button
-      setTimeout(() => {
-        const reportButton = reportGeneratorRef.current?.querySelector('.ant-btn');
-        if (reportButton) {
-          console.log('🖱️ Clicking report generator button');
-          reportButton.click();
-        }
-      }, 100);
-    }
-  }, [showReportGenerator]);
 
   const fetchStations = async () => {
     try {
@@ -164,11 +146,8 @@ const StationUserManagement = () => {
       // Process user data
       const processedUsers = usersArray.map(user => ({
         ...user,
-        // Ensure stationAssignments is always an array
         stationAssignments: user.stationAssignments || [],
-        // Ensure status has a default
         status: user.status || 'ACTIVE',
-        // Extract first station assignment details
         primaryStation: user.stationAssignments?.[0] || null
       }));
       
@@ -185,18 +164,6 @@ const StationUserManagement = () => {
       console.error('❌ Failed to fetch users:', error);
       message.error('Failed to load users');
       setAllUsers([]);
-      setStats({
-        total: 0,
-        active: 0,
-        inactive: 0,
-        suspended: 0,
-        onLeave: 0,
-        managers: 0,
-        supervisors: 0,
-        attendants: 0,
-        avgUsersPerStation: 0,
-        recentlyAdded: 0
-      });
     } finally {
       setIsLoading(false);
     }
@@ -249,9 +216,21 @@ const StationUserManagement = () => {
     });
   };
 
-  // Filter users by station and role
+  // Filter users - simplified
   const filterUsers = () => {
     let filtered = [...allUsers];
+
+    // Filter by search
+    if (filters.search) {
+      const query = filters.search.toLowerCase();
+      filtered = filtered.filter(user => 
+        (user.firstName && user.firstName.toLowerCase().includes(query)) ||
+        (user.lastName && user.lastName.toLowerCase().includes(query)) ||
+        (user.email && user.email.toLowerCase().includes(query)) ||
+        (user.phoneNumber && user.phoneNumber.includes(query)) ||
+        (user.employeeId && user.employeeId.toLowerCase().includes(query))
+      );
+    }
 
     // Filter by station if selected
     if (filters.station) {
@@ -267,18 +246,6 @@ const StationUserManagement = () => {
       filtered = filtered.filter(user => user.status === filters.status);
     }
 
-    // Filter by search query
-    if (filters.searchQuery) {
-      const query = filters.searchQuery.toLowerCase();
-      filtered = filtered.filter(user => 
-        (user.firstName && user.firstName.toLowerCase().includes(query)) ||
-        (user.lastName && user.lastName.toLowerCase().includes(query)) ||
-        (user.email && user.email.toLowerCase().includes(query)) ||
-        (user.phoneNumber && user.phoneNumber.includes(query)) ||
-        (user.employeeId && user.employeeId.toLowerCase().includes(query))
-      );
-    }
-
     // Filter by role based on active tab
     const roleMap = {
       'managers': 'STATION_MANAGER',
@@ -290,30 +257,6 @@ const StationUserManagement = () => {
     if (currentRole) {
       filtered = filtered.filter(user => user.role === currentRole);
     }
-
-    // Sort filtered users
-    filtered.sort((a, b) => {
-      const aValue = a[filters.sortBy] || '';
-      const bValue = b[filters.sortBy] || '';
-      
-      if (filters.sortBy === 'createdAt' || filters.sortBy === 'joinDate') {
-        const aDate = new Date(aValue).getTime();
-        const bDate = new Date(bValue).getTime();
-        return filters.sortOrder === 'desc' ? bDate - aDate : aDate - bDate;
-      }
-      
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
-        return filters.sortOrder === 'desc' 
-          ? bValue.localeCompare(aValue)
-          : aValue.localeCompare(bValue);
-      }
-      
-      if (typeof aValue === 'number' && typeof bValue === 'number') {
-        return filters.sortOrder === 'desc' ? bValue - aValue : aValue - bValue;
-      }
-      
-      return 0;
-    });
 
     setFilteredUsers(filtered);
   };
@@ -327,12 +270,15 @@ const StationUserManagement = () => {
     }));
   };
 
-  // Handle date range change
-  const handleDateRangeChange = (dates, dateStrings) => {
-    if (dates) {
-      handleFilterChange('startDate', dateStrings[0]);
-      handleFilterChange('endDate', dateStrings[1]);
-    }
+  // Clear all filters
+  const clearFilters = () => {
+    setFilters({
+      search: '',
+      station: '',
+      status: '',
+      page: 1,
+      limit: 20
+    });
   };
 
   // Get station name from stationId
@@ -354,23 +300,6 @@ const StationUserManagement = () => {
     }
     
     return stationNames;
-  };
-
-  // Get station code from stationId
-  const getStationCode = (user) => {
-    if (!user.stationAssignments || user.stationAssignments.length === 0) {
-      return 'N/A';
-    }
-    
-    const stationCodes = user.stationAssignments
-      .map(assignment => {
-        const station = stations.find(s => s.id === assignment.stationId);
-        return station ? station.code : 'N/A';
-      })
-      .filter(code => code !== 'N/A')
-      .join(', ');
-    
-    return stationCodes || 'N/A';
   };
 
   // Get status color and icon
@@ -396,19 +325,16 @@ const StationUserManagement = () => {
     return configMap[role] || { label: role, icon: <UserOutlined />, color: 'default' };
   };
 
-  // Enhanced column definitions with sequential numbering
+  // Table columns
   const getColumnDefinitions = () => {
-    const commonColumns = [
+    return [
       {
         title: '#',
         key: 'sequence',
         width: 60,
         fixed: 'left',
-        type: 'number',
         render: (_, __, index) => {
-          const page = filters.page || 1;
-          const pageSize = filters.limit || 20;
-          const sequentialNumber = ((page - 1) * pageSize) + index + 1;
+          const sequentialNumber = ((filters.page - 1) * filters.limit) + index + 1;
           return (
             <Badge
               count={sequentialNumber}
@@ -426,7 +352,6 @@ const StationUserManagement = () => {
         title: 'User',
         key: 'name',
         width: 180,
-        type: 'text',
         render: (user) => (
           <Space>
             <Avatar 
@@ -447,14 +372,12 @@ const StationUserManagement = () => {
               </Text>
             </Space>
           </Space>
-        ),
-        sorter: (a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`)
+        )
       },
       {
         title: 'Role',
         key: 'role',
         width: 140,
-        type: 'status',
         render: (user) => {
           const roleConfig = getRoleConfig(user.role);
           return (
@@ -462,18 +385,12 @@ const StationUserManagement = () => {
               {roleConfig.label}
             </Tag>
           );
-        },
-        filters: [
-          { text: 'Station Manager', value: 'STATION_MANAGER' },
-          { text: 'Supervisor', value: 'SUPERVISOR' },
-          { text: 'Attendant', value: 'ATTENDANT' }
-        ]
+        }
       },
       {
         title: 'Contact',
         key: 'contact',
         width: 200,
-        type: 'text',
         render: (user) => (
           <Space direction="vertical" size={2}>
             <Space>
@@ -492,8 +409,7 @@ const StationUserManagement = () => {
       {
         title: 'Status',
         key: 'status',
-        width: 120,
-        type: 'status',
+        width: 100,
         render: (user) => {
           const statusConfig = getStatusConfig(user.status);
           return (
@@ -501,425 +417,123 @@ const StationUserManagement = () => {
               {statusConfig.label}
             </Tag>
           );
-        },
-        filters: [
-          { text: 'Active', value: 'ACTIVE' },
-          { text: 'Inactive', value: 'INACTIVE' },
-          { text: 'Suspended', value: 'SUSPENDED' },
-          { text: 'On Leave', value: 'ON_LEAVE' }
-        ]
+        }
       },
       {
-        title: 'Joined Date',
+        title: 'Join Date',
         key: 'joinDate',
-        width: 140,
-        type: 'date',
+        width: 120,
         render: (user) => (
           <Space direction="vertical" size={2}>
             <Text style={{ fontSize: '12px' }}>
               {formatDate(user.createdAt || user.joinDate)}
             </Text>
-            <Text type="secondary" style={{ fontSize: '10px' }}>
-              {formatDate(user.createdAt || user.joinDate, 'time')}
-            </Text>
           </Space>
-        ),
-        sorter: (a, b) => new Date(a.createdAt || a.joinDate) - new Date(b.createdAt || b.joinDate),
-        defaultSortOrder: 'descend'
+        )
       },
       {
         title: 'Station',
         key: 'station',
-        width: 200,
-        type: 'text',
-        render: (user) => (
-          <Space direction="vertical" size={2} style={{ maxWidth: '180px' }}>
-            <Text style={{ fontSize: '12px' }}>
-              {getStationName(user)}
-            </Text>
-            {user.stationAssignments && user.stationAssignments.length > 0 && (
-              <Text type="secondary" style={{ fontSize: '10px' }}>
-                {user.stationAssignments.length} assignment(s)
-              </Text>
-            )}
-          </Space>
-        )
-      }
-    ];
-
-    // Add shift column for supervisors
-    const supervisorColumns = [
-      ...commonColumns.slice(0, 5),
-      {
-        title: 'Shift',
-        key: 'shift',
-        width: 100,
-        type: 'text',
+        width: 180,
         render: (user) => (
           <div style={{ fontSize: '12px' }}>
-            {user.shift || 'N/A'}
+            {getStationName(user)}
           </div>
         )
       },
-      ...commonColumns.slice(5)
-    ];
-
-    return activeTab === 'supervisors' ? supervisorColumns : commonColumns;
-  };
-
-  // Add actions column
-  const getColumnsWithActions = () => {
-    const baseColumns = getColumnDefinitions();
-    
-    return [
-      ...baseColumns,
       {
         title: 'Actions',
         key: 'actions',
-        width: 120,
+        width: 80,
         fixed: 'right',
         render: (user) => (
-          <Space size="small">
-            <Tooltip title="View Details">
-              <Button
-                type="text"
-                icon={<EyeOutlined />}
-                size="small"
-                onClick={() => {
-                  setSelectedUser(user);
-                  setUserDetailsModal(true);
-                }}
-              />
-            </Tooltip>
-            <Tooltip title="Edit User">
-              <Button
-                type="text"
-                icon={<EditOutlined />}
-                size="small"
-                onClick={() => console.log('Edit', user.id)}
-              />
-            </Tooltip>
-          </Space>
+          <Tooltip title="View Details">
+            <Button
+              type="text"
+              icon={<EyeOutlined />}
+              size="small"
+              onClick={() => {
+                setSelectedUser(user);
+                setUserDetailsModal(true);
+              }}
+            />
+          </Tooltip>
         )
       }
     ];
   };
 
-  // ========== REPORT GENERATION FUNCTIONS ==========
+  // ========== SIMPLIFIED REPORT GENERATION ==========
 
-  // Prepare data for ALL users report (unified)
+  // Prepare data for ALL users report - SIMPLIFIED COLUMNS as requested
   const prepareAllUsersExportData = () => {
     if (!allUsers || allUsers.length === 0) return [];
     
     return allUsers.map((user, index) => {
-      // Get station information
-      const stationNames = getStationName(user);
-      const stationCodes = getStationCode(user);
-      
       return {
-        sequence: index + 1,
-        name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-        employeeId: user.employeeId || 'N/A',
-        role: getRoleConfig(user.role).label,
-        email: user.email || 'N/A',
-        phone: user.phoneNumber || 'N/A',
-        status: getStatusConfig(user.status).label,
-        joinDate: formatDate(user.createdAt || user.joinDate),
-        joinDateTime: user.createdAt || user.joinDate,
-        stationNames: stationNames,
-        stationCodes: stationCodes,
-        assignmentsCount: user.stationAssignments?.length || 0,
-        shift: user.shift || 'N/A',
-        statusCode: user.status,
-        roleCode: user.role,
-        createdAt: user.createdAt || user.joinDate,
-        companyId: user.companyId,
-        userId: user.id
+        '#': index + 1,
+        'Join Date': formatDate(user.createdAt || user.joinDate),
+        'Name': `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        'Role': getRoleConfig(user.role).label,
+        'Email': user.email || 'N/A',
+        'Phone': user.phoneNumber || 'N/A',
+        'Status': getStatusConfig(user.status).label,
+        'Station': getStationName(user)
       };
     });
   };
 
-  // Calculate summary data for ALL users report
-  const calculateAllUsersSummaryData = () => {
-    if (!allUsers || allUsers.length === 0) return null;
-
-    const totals = {
-      totalRecords: allUsers.length,
-      activeUsers: allUsers.filter(u => u.status === 'ACTIVE').length,
-      managers: allUsers.filter(u => u.role === 'STATION_MANAGER').length,
-      supervisors: allUsers.filter(u => u.role === 'SUPERVISOR').length,
-      attendants: allUsers.filter(u => u.role === 'ATTENDANT').length,
-      recentlyAdded: allUsers.filter(u => {
-        const userDate = new Date(u.createdAt || u.joinDate || Date.now());
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        return userDate >= thirtyDaysAgo;
-      }).length
-    };
-    
-    // Calculate percentages
-    const activePercentage = totals.totalRecords > 0 ? (totals.activeUsers / totals.totalRecords * 100) : 0;
-    const managerPercentage = totals.totalRecords > 0 ? (totals.managers / totals.totalRecords * 100) : 0;
-    const supervisorPercentage = totals.totalRecords > 0 ? (totals.supervisors / totals.totalRecords * 100) : 0;
-    const attendantPercentage = totals.totalRecords > 0 ? (totals.attendants / totals.totalRecords * 100) : 0;
-    
-    // Create summary object with display values
-    const summaryData = {
-      'Total Users': totals.totalRecords,
-      'Active Users': `${totals.activeUsers} (${activePercentage.toFixed(1)}%)`,
-      'Inactive Users': `${stats.inactive} (${((stats.inactive / totals.totalRecords) * 100).toFixed(1)}%)`,
-      'Station Managers': `${totals.managers} (${managerPercentage.toFixed(1)}%)`,
-      'Supervisors': `${totals.supervisors} (${supervisorPercentage.toFixed(1)}%)`,
-      'Attendants': `${totals.attendants} (${attendantPercentage.toFixed(1)}%)`,
-      'Recently Added (30 days)': totals.recentlyAdded,
-      'Average per Station': stats.avgUsersPerStation,
-      'Total Stations': stations.length,
-      'Report Date': new Date().toLocaleDateString('en-KE'),
-      'Generated Time': new Date().toLocaleTimeString('en-KE'),
-      'Generated By': `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`,
-      'User Role': currentUser?.role || 'N/A'
-    };
-    
-    return summaryData;
-  };
-
-  // Get columns for ALL users report
-  const getAllUsersExportColumns = () => {
-    return [
-      {
-        title: '#',
-        dataIndex: 'sequence',
-        key: 'sequence',
-        width: 60,
-        type: 'number'
-      },
-      {
-        title: 'Full Name',
-        dataIndex: 'name',
-        key: 'name',
-        width: 150,
-        type: 'text'
-      },
-      {
-        title: 'Employee ID',
-        dataIndex: 'employeeId',
-        key: 'employeeId',
-        width: 120,
-        type: 'text'
-      },
-      {
-        title: 'Role',
-        dataIndex: 'role',
-        key: 'role',
-        width: 120,
-        type: 'status'
-      },
-      {
-        title: 'Email',
-        dataIndex: 'email',
-        key: 'email',
-        width: 180,
-        type: 'email'
-      },
-      {
-        title: 'Phone',
-        dataIndex: 'phone',
-        key: 'phone',
-        width: 120,
-        type: 'phone'
-      },
-      {
-        title: 'Status',
-        dataIndex: 'status',
-        key: 'status',
-        width: 100,
-        type: 'status'
-      },
-      {
-        title: 'Join Date',
-        dataIndex: 'joinDate',
-        key: 'joinDate',
-        width: 120,
-        type: 'date'
-      },
-      {
-        title: 'Station(s)',
-        dataIndex: 'stationNames',
-        key: 'stationNames',
-        width: 180,
-        type: 'text'
-      },
-      {
-        title: 'Station Code(s)',
-        dataIndex: 'stationCodes',
-        key: 'stationCodes',
-        width: 120,
-        type: 'text'
-      },
-      {
-        title: 'Assignments',
-        dataIndex: 'assignmentsCount',
-        key: 'assignmentsCount',
-        width: 100,
-        type: 'number'
-      }
-    ];
-  };
-
-  // Prepare data for current tab report
+  // Prepare data for current tab report - SIMPLIFIED COLUMNS as requested
   const prepareTabExportData = () => {
     if (!filteredUsers || filteredUsers.length === 0) return [];
     
     return filteredUsers.map((user, index) => {
-      const stationNames = getStationName(user);
-      const stationCodes = getStationCode(user);
-      
       return {
-        sequence: index + 1,
-        name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-        employeeId: user.employeeId || 'N/A',
-        role: getRoleConfig(user.role).label,
-        email: user.email || 'N/A',
-        phone: user.phoneNumber || 'N/A',
-        status: getStatusConfig(user.status).label,
-        joinDate: formatDate(user.createdAt || user.joinDate),
-        stationNames: stationNames,
-        stationCodes: stationCodes,
-        assignmentsCount: user.stationAssignments?.length || 0,
-        shift: user.shift || 'N/A',
-        statusCode: user.status,
-        roleCode: user.role,
-        createdAt: user.createdAt || user.joinDate,
-        userId: user.id
+        '#': index + 1,
+        'Join Date': formatDate(user.createdAt || user.joinDate),
+        'Name': `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        'Role': getRoleConfig(user.role).label,
+        'Email': user.email || 'N/A',
+        'Phone': user.phoneNumber || 'N/A',
+        'Status': getStatusConfig(user.status).label,
+        'Station': getStationName(user)
       };
     });
   };
 
-  // Calculate summary for current tab
-  const calculateTabSummaryData = () => {
-    if (!filteredUsers || filteredUsers.length === 0) return null;
+  // Calculate summary data for reports
+  const calculateSummaryData = (users, type) => {
+    if (!users || users.length === 0) return null;
 
-    const totals = {
-      totalRecords: filteredUsers.length,
-      activeUsers: filteredUsers.filter(u => u.status === 'ACTIVE').length,
-      recentlyAdded: filteredUsers.filter(u => {
-        const userDate = new Date(u.createdAt || u.joinDate || Date.now());
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        return userDate >= thirtyDaysAgo;
-      }).length
-    };
+    const activeUsers = users.filter(u => u.status === 'ACTIVE').length;
+    const activePercentage = ((activeUsers / users.length) * 100).toFixed(1);
     
-    const activePercentage = totals.totalRecords > 0 ? (totals.activeUsers / totals.totalRecords * 100) : 0;
     const tabName = activeTab === 'managers' ? 'Station Managers' : 
                    activeTab === 'supervisors' ? 'Supervisors' : 'Attendants';
     
-    const summaryData = {
-      [`Total ${tabName}`]: totals.totalRecords,
-      [`Active ${tabName}`]: `${totals.activeUsers} (${activePercentage.toFixed(1)}%)`,
-      'Recently Added (30 days)': totals.recentlyAdded,
-      'Report Type': `${tabName} Report`,
+    return {
+      'Report Type': type === 'all' ? 'All Users Report' : `${tabName} Report`,
+      'Total Records': users.length,
+      'Active Users': `${activeUsers} (${activePercentage}%)`,
       'Generated Date': new Date().toLocaleDateString('en-KE'),
       'Generated Time': new Date().toLocaleTimeString('en-KE'),
       'Generated By': `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`,
-      'Company': currentCompany?.name || 'All Companies',
-      'Current Station': currentStation?.name || 'All Stations'
+      'Company': currentCompany?.name || 'All Companies'
     };
-    
-    if (filters.station) {
-      const selectedStation = stations.find(s => s.id === filters.station);
-      if (selectedStation) {
-        summaryData['Filtered Station'] = `${selectedStation.code} - ${selectedStation.name}`;
-      }
-    }
-    
-    if (filters.status) {
-      summaryData['Filtered Status'] = getStatusConfig(filters.status).label;
-    }
-    
-    return summaryData;
   };
 
-  // Get columns for tab report
-  const getTabExportColumns = () => {
-    const baseColumns = [
-      {
-        title: '#',
-        dataIndex: 'sequence',
-        key: 'sequence',
-        width: 60,
-        type: 'number'
-      },
-      {
-        title: 'Full Name',
-        dataIndex: 'name',
-        key: 'name',
-        width: 150,
-        type: 'text'
-      },
-      {
-        title: 'Employee ID',
-        dataIndex: 'employeeId',
-        key: 'employeeId',
-        width: 120,
-        type: 'text'
-      },
-      {
-        title: 'Email',
-        dataIndex: 'email',
-        key: 'email',
-        width: 180,
-        type: 'email'
-      },
-      {
-        title: 'Phone',
-        dataIndex: 'phone',
-        key: 'phone',
-        width: 120,
-        type: 'phone'
-      },
-      {
-        title: 'Status',
-        dataIndex: 'status',
-        key: 'status',
-        width: 100,
-        type: 'status'
-      },
-      {
-        title: 'Join Date',
-        dataIndex: 'joinDate',
-        key: 'joinDate',
-        width: 120,
-        type: 'date'
-      },
-      {
-        title: 'Station(s)',
-        dataIndex: 'stationNames',
-        key: 'stationNames',
-        width: 180,
-        type: 'text'
-      },
-      {
-        title: 'Assignments',
-        dataIndex: 'assignmentsCount',
-        key: 'assignmentsCount',
-        width: 100,
-        type: 'number'
-      }
+  // Get columns for report - SIMPLIFIED as requested
+  const getReportColumns = () => {
+    return [
+      { title: '#', dataIndex: '#', key: 'index', width: 60, type: 'number' },
+      { title: 'Join Date', dataIndex: 'Join Date', key: 'joinDate', width: 120, type: 'date' },
+      { title: 'Name', dataIndex: 'Name', key: 'name', width: 150, type: 'text' },
+      { title: 'Role', dataIndex: 'Role', key: 'role', width: 120, type: 'text' },
+      { title: 'Email', dataIndex: 'Email', key: 'email', width: 200, type: 'email' },
+      { title: 'Phone', dataIndex: 'Phone', key: 'phone', width: 120, type: 'phone' },
+      { title: 'Status', dataIndex: 'Status', key: 'status', width: 100, type: 'status' },
+      { title: 'Station', dataIndex: 'Station', key: 'station', width: 180, type: 'text' }
     ];
-
-    // Add shift column for supervisors
-    if (activeTab === 'supervisors') {
-      baseColumns.splice(6, 0, {
-        title: 'Shift',
-        dataIndex: 'shift',
-        key: 'shift',
-        width: 100,
-        type: 'text'
-      });
-    }
-
-    return baseColumns;
   };
 
   // Get report title based on type
@@ -942,10 +556,9 @@ const StationUserManagement = () => {
     const dateStr = new Date().toISOString().split('T')[0];
     
     if (type === 'all') {
-      return `complete_users_report${companyCode}_${dateStr}`;
+      return `all_users_report${companyCode}_${dateStr}`;
     } else {
-      const stationCode = filters.station ? `_${stations.find(s => s.id === filters.station)?.code || 'filtered'}` : '';
-      return `${activeTab}_report${stationCode}${companyCode}_${dateStr}`;
+      return `${activeTab}_report${companyCode}_${dateStr}`;
     }
   };
 
@@ -958,73 +571,7 @@ const StationUserManagement = () => {
     return `Generated from ${company} | User: ${generatedBy} | ${timestamp}`;
   };
 
-  // Handle table sort change
-  const handleTableChange = (pagination, _, sorter) => {
-    if (sorter.field || sorter.columnKey) {
-      const sortField = sorter.field || sorter.columnKey;
-      handleFilterChange('sortBy', sortField);
-      handleFilterChange('sortOrder', sorter.order === 'ascend' ? 'asc' : 'desc');
-    }
-    
-    if (pagination.current !== filters.page) {
-      handleFilterChange('page', pagination.current);
-    }
-    
-    if (pagination.pageSize !== filters.limit) {
-      handleFilterChange('limit', pagination.pageSize);
-    }
-  };
-
-  // Get tab items with counts
-  const getTabItems = () => {
-    const items = [
-      {
-        key: 'managers',
-        label: (
-          <Space>
-            <SafetyCertificateOutlined />
-            <span>Managers</span>
-            <Badge 
-              count={stats.managers} 
-              style={{ backgroundColor: '#1890ff' }}
-              overflowCount={999}
-            />
-          </Space>
-        )
-      },
-      {
-        key: 'supervisors',
-        label: (
-          <Space>
-            <SettingOutlined />
-            <span>Supervisors</span>
-            <Badge 
-              count={stats.supervisors} 
-              style={{ backgroundColor: '#722ed1' }}
-              overflowCount={999}
-            />
-          </Space>
-        )
-      },
-      {
-        key: 'attendants',
-        label: (
-          <Space>
-            <UserOutlined />
-            <span>Attendants</span>
-            <Badge 
-              count={stats.attendants} 
-              style={{ backgroundColor: '#52c41a' }}
-              overflowCount={999}
-            />
-          </Space>
-        )
-      }
-    ];
-    return { items };
-  };
-
-  // Handle export action - SIMPLIFIED VERSION
+  // Handle export action - SIMPLIFIED
   const handleExportAction = (type) => {
     console.log('🚀 Export action triggered:', type);
     
@@ -1033,7 +580,6 @@ const StationUserManagement = () => {
         message.warning('No users available to export');
         return;
       }
-      console.log('📊 Setting active report to "all"');
       setActiveReport('all');
       setShowReportGenerator(true);
     } else {
@@ -1041,7 +587,6 @@ const StationUserManagement = () => {
         message.warning(`No ${activeTab} available to export`);
         return;
       }
-      console.log('📊 Setting active report to "current"');
       setActiveReport('current');
       setShowReportGenerator(true);
     }
@@ -1055,21 +600,21 @@ const StationUserManagement = () => {
     setActiveReport(null);
   };
 
-  // Get current report configuration based on activeReport
+  // Get current report configuration
   const getCurrentReportConfig = () => {
     if (activeReport === 'all') {
       return {
         dataSource: prepareAllUsersExportData(),
-        columns: getAllUsersExportColumns(),
-        summaryData: calculateAllUsersSummaryData(),
+        columns: getReportColumns(),
+        summaryData: calculateSummaryData(allUsers, 'all'),
         title: getReportTitle('all'),
         fileName: getFileName('all')
       };
     } else if (activeReport === 'current') {
       return {
         dataSource: prepareTabExportData(),
-        columns: getTabExportColumns(),
-        summaryData: calculateTabSummaryData(),
+        columns: getReportColumns(),
+        summaryData: calculateSummaryData(filteredUsers, 'tab'),
         title: getReportTitle('tab'),
         fileName: getFileName('tab')
       };
@@ -1077,211 +622,163 @@ const StationUserManagement = () => {
     return null;
   };
 
+  // Handle table change
+  const handleTableChange = (pagination) => {
+    if (pagination.current !== filters.page) {
+      handleFilterChange('page', pagination.current);
+    }
+    if (pagination.pageSize !== filters.limit) {
+      handleFilterChange('limit', pagination.pageSize);
+    }
+  };
+
+  // Get tab items with counts
+  const getTabItems = () => {
+    return {
+      items: [
+        {
+          key: 'managers',
+          label: (
+            <Space>
+              <SafetyCertificateOutlined />
+              <span>Managers</span>
+              <Badge count={stats.managers} style={{ backgroundColor: '#1890ff' }} />
+            </Space>
+          )
+        },
+        {
+          key: 'supervisors',
+          label: (
+            <Space>
+              <SettingOutlined />
+              <span>Supervisors</span>
+              <Badge count={stats.supervisors} style={{ backgroundColor: '#722ed1' }} />
+            </Space>
+          )
+        },
+        {
+          key: 'attendants',
+          label: (
+            <Space>
+              <UserOutlined />
+              <span>Attendants</span>
+              <Badge count={stats.attendants} style={{ backgroundColor: '#52c41a' }} />
+            </Space>
+          )
+        }
+      ]
+    };
+  };
+
   return (
-    <div style={{ padding: '24px' }}>
-      <Space direction="vertical" style={{ width: '100%' }}>
-        <Title level={2} style={{ margin: 0 }}>
-          <ShopOutlined /> Station User Management
-        </Title>
-        <Text type="secondary">
-          Manage station staff, assign roles, and track user activity
-        </Text>
-      </Space>
+    <div style={{ padding: '16px' }}>
+      {/* Header */}
+      <Row justify="space-between" align="middle" style={{ marginBottom: '16px' }}>
+        <Col>
+          <Title level={3} style={{ margin: 0 }}>
+            <ShopOutlined /> Station User Management
+          </Title>
+        </Col>
+        <Col>
+          <Space>
+            <Button 
+              icon={<ReloadOutlined />}
+              onClick={fetchUsers}
+              loading={isLoading}
+              size="small"
+            >
+              Refresh
+            </Button>
+            <Button 
+              type="primary" 
+              icon={<PlusOutlined />}
+              size="small"
+            >
+              Add User
+            </Button>
+          </Space>
+        </Col>
+      </Row>
 
-      {/* Action Buttons */}
-      <Space style={{ margin: '24px 0' }} wrap>
-        <Button 
-          type="primary" 
-          icon={<PlusOutlined />}
-        >
-          Add New Staff
-        </Button>
-        
-        {/* Export Dropdown */}
-        <Dropdown
-          menu={{
-            items: [
-              {
-                key: 'all',
-                label: 'Export All Users Report',
-                icon: <TeamOutlined />,
-                disabled: allUsers.length === 0
-              },
-              {
-                key: 'current',
-                label: 'Export Current Tab Report',
-                icon: <FileTextOutlined />,
-                disabled: filteredUsers.length === 0
-              }
-            ],
-            onClick: ({ key }) => handleExportAction(key)
-          }}
-          placement="bottomLeft"
-          trigger={['click']}
-        >
-          <Button type="primary" icon={<DownloadOutlined />}>
-            Export Reports <DownOutlined />
-          </Button>
-        </Dropdown>
-        
-        <Button 
-          icon={<ReloadOutlined />}
-          onClick={fetchUsers}
-          loading={isLoading}
-        >
-          Refresh
-        </Button>
-      </Space>
-
-      {/* Statistics Section */}
-      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-        <Col xs={24} sm={12} md={6}>
+      {/* COMPACT STATISTICS - Row 1 */}
+      <Row gutter={[8, 8]} style={{ marginBottom: '8px' }}>
+        <Col xs={12} sm={6} md={3}>
           <Card size="small" hoverable>
             <Statistic
-              title="Total Users"
+              title="Total"
               value={stats.total}
               prefix={<TeamOutlined />}
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{ fontSize: '16px' }}
             />
-            <Text type="secondary">
-              Active: {stats.active} ({((stats.active / stats.total) * 100 || 0).toFixed(1)}%)
-            </Text>
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={6}>
+        <Col xs={12} sm={6} md={3}>
           <Card size="small" hoverable>
             <Statistic
-              title="Active Users"
+              title="Active"
               value={stats.active}
-              prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: '#52c41a' }}
-            />
-            <Progress 
-              percent={((stats.active / stats.total) * 100) || 0} 
-              size="small" 
-              status="active"
+              valueStyle={{ color: '#52c41a', fontSize: '16px' }}
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={6}>
+        <Col xs={12} sm={6} md={3}>
           <Card size="small" hoverable>
             <Statistic
-              title="Recent Additions"
+              title="Managers"
+              value={stats.managers}
+              valueStyle={{ color: '#1890ff', fontSize: '16px' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6} md={3}>
+          <Card size="small" hoverable>
+            <Statistic
+              title="Supervisors"
+              value={stats.supervisors}
+              valueStyle={{ color: '#722ed1', fontSize: '16px' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6} md={3}>
+          <Card size="small" hoverable>
+            <Statistic
+              title="Attendants"
+              value={stats.attendants}
+              valueStyle={{ color: '#52c41a', fontSize: '16px' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6} md={3}>
+          <Card size="small" hoverable>
+            <Statistic
+              title="Recent"
               value={stats.recentlyAdded}
-              prefix={<CalendarOutlined />}
-              valueStyle={{ color: '#fa8c16' }}
+              valueStyle={{ color: '#fa8c16', fontSize: '16px' }}
             />
-            <Text type="secondary">Last 7 days</Text>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card size="small" hoverable>
-            <Statistic
-              title="Avg per Station"
-              value={stats.avgUsersPerStation}
-              precision={1}
-              prefix={<ShopOutlined />}
-              valueStyle={{ color: '#722ed1' }}
-            />
-            <Text type="secondary">Average staff per station</Text>
           </Card>
         </Col>
       </Row>
 
-      {/* Status Summary */}
-      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-        <Col span={24}>
-          <Card size="small" title="User Status Summary">
-            <Row gutter={[16, 16]}>
-              <Col xs={12} sm={6} md={3}>
-                <div style={{ textAlign: 'center' }}>
-                  <Tag color="green" style={{ marginBottom: 8 }}>
-                    Active
-                  </Tag>
-                  <Text strong style={{ fontSize: '18px' }}>{stats.active}</Text>
-                </div>
-              </Col>
-              <Col xs={12} sm={6} md={3}>
-                <div style={{ textAlign: 'center' }}>
-                  <Tag color="red" style={{ marginBottom: 8 }}>
-                    Inactive
-                  </Tag>
-                  <Text strong style={{ fontSize: '18px' }}>{stats.inactive}</Text>
-                </div>
-              </Col>
-              <Col xs={12} sm={6} md={3}>
-                <div style={{ textAlign: 'center' }}>
-                  <Tag color="orange" style={{ marginBottom: 8 }}>
-                    Suspended
-                  </Tag>
-                  <Text strong style={{ fontSize: '18px' }}>{stats.suspended}</Text>
-                </div>
-              </Col>
-              <Col xs={12} sm={6} md={3}>
-                <div style={{ textAlign: 'center' }}>
-                  <Tag color="blue" style={{ marginBottom: 8 }}>
-                    On Leave
-                  </Tag>
-                  <Text strong style={{ fontSize: '18px' }}>{stats.onLeave}</Text>
-                </div>
-              </Col>
-              <Col xs={12} sm={6} md={3}>
-                <div style={{ textAlign: 'center' }}>
-                  <Tag color="blue" style={{ marginBottom: 8 }}>
-                    Managers
-                  </Tag>
-                  <Text strong style={{ fontSize: '18px' }}>{stats.managers}</Text>
-                </div>
-              </Col>
-              <Col xs={12} sm={6} md={3}>
-                <div style={{ textAlign: 'center' }}>
-                  <Tag color="purple" style={{ marginBottom: 8 }}>
-                    Supervisors
-                  </Tag>
-                  <Text strong style={{ fontSize: '18px' }}>{stats.supervisors}</Text>
-                </div>
-              </Col>
-              <Col xs={12} sm={6} md={3}>
-                <div style={{ textAlign: 'center' }}>
-                  <Tag color="green" style={{ marginBottom: 8 }}>
-                    Attendants
-                  </Tag>
-                  <Text strong style={{ fontSize: '18px' }}>{stats.attendants}</Text>
-                </div>
-              </Col>
-              <Col xs={12} sm={6} md={3}>
-                <div style={{ textAlign: 'center' }}>
-                  <Tag color="gold" style={{ marginBottom: 8 }}>
-                    Total
-                  </Tag>
-                  <Text strong style={{ fontSize: '18px' }}>{stats.total}</Text>
-                </div>
-              </Col>
-            </Row>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Filters Section */}
-      <Card style={{ marginBottom: '24px' }} size="small">
-        <Row gutter={[16, 16]} align="middle">
+      {/* COMPACT FILTERS - Only 3 essential filters */}
+      <Card size="small" style={{ marginBottom: '16px' }}>
+        <Row gutter={[8, 8]} align="middle">
           <Col xs={24} sm={12} md={6}>
             <Search
-              placeholder="Search users..."
-              value={filters.searchQuery}
-              onChange={(e) => handleFilterChange('searchQuery', e.target.value)}
-              onSearch={() => filterUsers()}
-              enterButton={<SearchOutlined />}
+              placeholder="Search name, email, phone..."
+              value={filters.search}
+              onChange={(e) => handleFilterChange('search', e.target.value)}
               allowClear
+              size="small"
             />
           </Col>
           <Col xs={24} sm={12} md={5}>
             <Select
               style={{ width: '100%' }}
-              placeholder="Filter by station"
+              placeholder="Station"
               value={filters.station}
               onChange={(value) => handleFilterChange('station', value)}
               allowClear
+              size="small"
             >
               {stations.map(station => (
                 <Option key={station.id} value={station.id}>
@@ -1293,10 +790,11 @@ const StationUserManagement = () => {
           <Col xs={24} sm={12} md={5}>
             <Select
               style={{ width: '100%' }}
-              placeholder="Filter by status"
+              placeholder="Status"
               value={filters.status}
               onChange={(value) => handleFilterChange('status', value)}
               allowClear
+              size="small"
             >
               <Option value="ACTIVE">Active</Option>
               <Option value="INACTIVE">Inactive</Option>
@@ -1305,169 +803,125 @@ const StationUserManagement = () => {
             </Select>
           </Col>
           <Col xs={24} sm={12} md={4}>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Sort Order"
-              value={filters.sortOrder}
-              onChange={(value) => handleFilterChange('sortOrder', value)}
-            >
-              <Option value="desc">Newest First (DESC)</Option>
-              <Option value="asc">Oldest First (ASC)</Option>
-            </Select>
-          </Col>
-          <Col xs={24} sm={12} md={4}>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Per Page"
-              value={filters.limit}
-              onChange={(value) => handleFilterChange('limit', value)}
-            >
-              <Option value={10}>10</Option>
-              <Option value={20}>20</Option>
-              <Option value={50}>50</Option>
-              <Option value={100}>100</Option>
-            </Select>
-          </Col>
-        </Row>
-        
-        <Divider style={{ margin: '16px 0' }} />
-        
-        <Row gutter={[16, 16]}>
-          <Col xs={24} sm={12} md={8}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Text strong>Date Range</Text>
-              <RangePicker
-                value={[dayjs(filters.startDate), dayjs(filters.endDate)]}
-                onChange={handleDateRangeChange}
-                style={{ width: '100%' }}
-                format="YYYY-MM-DD"
-              />
+            <Space>
+              <Button 
+                icon={<FilterOutlined />}
+                onClick={clearFilters}
+                disabled={!filters.search && !filters.station && !filters.status}
+                size="small"
+              >
+                Clear
+              </Button>
+              <Button 
+                icon={<CompressOutlined />}
+                onClick={() => setShowFilters(!showFilters)}
+                size="small"
+              >
+                {showFilters ? 'Hide' : 'More'}
+              </Button>
             </Space>
           </Col>
+          <Col xs={24} sm={12} md={4} style={{ textAlign: 'right' }}>
+            <Dropdown
+              menu={{
+                items: [
+                  {
+                    key: 'all',
+                    label: 'Export All Users Report',
+                    icon: <TeamOutlined />,
+                    disabled: allUsers.length === 0
+                  },
+                  {
+                    key: 'current',
+                    label: 'Export Current Tab Report',
+                    icon: <FileTextOutlined />,
+                    disabled: filteredUsers.length === 0
+                  }
+                ],
+                onClick: ({ key }) => handleExportAction(key)
+              }}
+              placement="bottomRight"
+            >
+              <Button type="primary" icon={<DownloadOutlined />} size="small">
+                Export <DownOutlined />
+              </Button>
+            </Dropdown>
+          </Col>
         </Row>
+
+        {/* Optional advanced filters (collapsed by default) */}
+        {showFilters && (
+          <>
+            <Divider style={{ margin: '12px 0' }} />
+            <Row gutter={[8, 8]}>
+              <Col xs={24} sm={12} md={6}>
+                <Select
+                  style={{ width: '100%' }}
+                  placeholder="Per Page"
+                  value={filters.limit}
+                  onChange={(value) => handleFilterChange('limit', value)}
+                  size="small"
+                >
+                  <Option value={10}>10 per page</Option>
+                  <Option value={20}>20 per page</Option>
+                  <Option value={50}>50 per page</Option>
+                  <Option value={100}>100 per page</Option>
+                </Select>
+              </Col>
+            </Row>
+          </>
+        )}
       </Card>
 
       {/* Main Content */}
-      <Card>
+      <Card size="small" bodyStyle={{ padding: '12px' }}>
         <Tabs
           activeKey={activeTab}
           onChange={setActiveTab}
           items={getTabItems().items}
-          style={{ marginBottom: '16px' }}
+          size="small"
+          style={{ marginBottom: '12px' }}
         />
 
         {/* Users Table */}
-        <div style={{ marginTop: '16px' }}>
-          {isLoading ? (
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'center', 
-              alignItems: 'center', 
-              padding: '48px' 
-            }}>
-              <Spin size="large" />
-              <span style={{ marginLeft: '8px', color: '#666' }}>
-                Loading users...
-              </span>
-            </div>
-          ) : filteredUsers.length === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={
-                <Space direction="vertical">
-                  <Text>
-                    {filters.searchQuery || filters.station || filters.status
-                      ? 'No users match your search criteria'
-                      : `No ${activeTab} found`}
-                  </Text>
-                  <Button type="link" onClick={() => {
-                    handleFilterChange('searchQuery', '');
-                    handleFilterChange('station', '');
-                    handleFilterChange('status', '');
-                  }}>
-                    Clear filters
-                  </Button>
-                </Space>
-              }
-            />
-          ) : (
-            <Table
-              columns={getColumnsWithActions()}
-              dataSource={filteredUsers}
-              rowKey="id"
-              pagination={{
-                current: filters.page,
-                pageSize: filters.limit,
-                total: filteredUsers.length,
-                onChange: (page, pageSize) => {
-                  handleFilterChange('page', page);
-                  if (pageSize !== filters.limit) {
-                    handleFilterChange('limit', pageSize);
-                  }
-                },
-                showSizeChanger: true,
-                showQuickJumper: true,
-                showTotal: (total, range) => 
-                  `${range[0]}-${range[1]} of ${total} users (Sorted: ${filters.sortBy} ${filters.sortOrder === 'desc' ? 'DESC' : 'ASC'})`
-              }}
-              onChange={handleTableChange}
-              scroll={{ x: 1200 }}
-              summary={() => {
-                if (filteredUsers.length === 0) return null;
-                
-                return (
-                  <Table.Summary fixed>
-                    <Table.Summary.Row style={{ backgroundColor: '#fafafa', fontWeight: 'bold' }}>
-                      <Table.Summary.Cell index={0} colSpan={3}>
-                        <Text strong>TOTAL ({filteredUsers.length} users)</Text>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={1} colSpan={2}>
-                        <Text type="secondary">
-                          Active: {stats.active} | 
-                          Managers: {stats.managers} | 
-                          Supervisors: {stats.supervisors} | 
-                          Attendants: {stats.attendants}
-                        </Text>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={2} colSpan={5}>
-                        <Text type="secondary">
-                          Sorted by: {filters.sortBy} ({filters.sortOrder === 'desc' ? 'Descending' : 'Ascending'})
-                        </Text>
-                      </Table.Summary.Cell>
-                    </Table.Summary.Row>
-                  </Table.Summary>
-                );
-              }}
-            />
-          )}
-        </div>
+        {isLoading ? (
+          <div style={{ textAlign: 'center', padding: '40px' }}>
+            <Spin />
+            <div style={{ marginTop: 8 }}>Loading users...</div>
+          </div>
+        ) : filteredUsers.length === 0 ? (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              <Space direction="vertical">
+                <Text>No users found</Text>
+                <Button type="link" onClick={clearFilters} size="small">
+                  Clear filters
+                </Button>
+              </Space>
+            }
+          />
+        ) : (
+          <Table
+            columns={getColumnDefinitions()}
+            dataSource={filteredUsers}
+            rowKey="id"
+            size="small"
+            pagination={{
+              current: filters.page,
+              pageSize: filters.limit,
+              total: filteredUsers.length,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total) => `${total} users`,
+              pageSizeOptions: ['10', '20', '50', '100'],
+              size: 'small'
+            }}
+            onChange={handleTableChange}
+            scroll={{ x: 1200 }}
+          />
+        )}
       </Card>
-
-      {/* Info Section */}
-      {filteredUsers.length > 0 && (
-        <Alert
-          message="User Management Information"
-          description={
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Text>
-                • Total {activeTab}: <Text strong>{filteredUsers.length}</Text>
-              </Text>
-              <Text>
-                • Active users: <Text strong>{stats.active}</Text> ({((stats.active / stats.total) * 100 || 0).toFixed(1)}%)
-              </Text>
-              <Text>
-                • Average users per station: <Text strong>{stats.avgUsersPerStation}</Text>
-              </Text>
-              <Text>
-                • Recently added (7 days): <Text strong>{stats.recentlyAdded}</Text>
-              </Text>
-            </Space>
-          }
-          type="info"
-          showIcon
-          style={{ marginTop: 16 }}
-        />
-      )}
 
       {/* Visible Report Generator */}
       {showReportGenerator && activeReport && (
@@ -1482,7 +936,8 @@ const StationUserManagement = () => {
             padding: '10px',
             border: '1px solid #d9d9d9',
             borderRadius: '4px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            maxWidth: '300px'
           }}
         >
           <AdvancedReportGenerator
@@ -1503,6 +958,7 @@ const StationUserManagement = () => {
             footerText={getFooterText()}
             enableCustomization={true}
             includeLogo={false}
+            showGrandTotals={false}
             onReportGenerate={(format) => {
               handleReportComplete(format);
             }}
@@ -1517,6 +973,7 @@ const StationUserManagement = () => {
                 setShowReportGenerator(false);
                 setActiveReport(null);
               }}
+              size="small"
             >
               Close
             </Button>
@@ -1534,7 +991,7 @@ const StationUserManagement = () => {
             Close
           </Button>
         ]}
-        width={700}
+        width={600}
       >
         {selectedUser && (
           <Descriptions bordered column={2} size="small">
@@ -1560,17 +1017,12 @@ const StationUserManagement = () => {
                 {getStatusConfig(selectedUser.status).label}
               </Tag>
             </Descriptions.Item>
-            <Descriptions.Item label="Joined Date">
+            <Descriptions.Item label="Join Date">
               {formatDate(selectedUser.createdAt || selectedUser.joinDate, 'datetime')}
             </Descriptions.Item>
-            <Descriptions.Item label="Assigned Stations" span={2}>
+            <Descriptions.Item label="Station" span={2}>
               {getStationName(selectedUser)}
             </Descriptions.Item>
-            {selectedUser.shift && (
-              <Descriptions.Item label="Shift">
-                {selectedUser.shift}
-              </Descriptions.Item>
-            )}
           </Descriptions>
         )}
       </Modal>

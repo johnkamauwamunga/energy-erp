@@ -64,7 +64,8 @@ import {
   FilePdfOutlined,
   FilterOutlined,
   SearchOutlined,
-  DownOutlined
+  DownOutlined,
+  CompressOutlined
 } from '@ant-design/icons';
 import { staffAccountService } from '../../../../services/staffAccountService/staffAccountService';
 import { userService } from '../../../../services/userService/userService';
@@ -96,20 +97,22 @@ const StaffAccountManagement = () => {
   const [createForm] = Form.useForm();
   const [updateForm] = Form.useForm();
   const [activeTab, setActiveTab] = useState('all');
+  
+  // COMPACT FILTERS
   const [filters, setFilters] = useState({
     search: '',
-    status: 'all',
-    payrollMethod: '',
-    sortBy: 'createdAt',
-    sortOrder: 'desc',
+    status: '',
     station: ''
   });
+
   const [accountSummary, setAccountSummary] = useState(null);
   const [pagination, setPagination] = useState({
     current: 1,
     pageSize: 10,
     total: 0
   });
+
+  // Export state
   const [exportConfig, setExportConfig] = useState({
     visible: false,
     type: null,
@@ -155,15 +158,10 @@ const StaffAccountManagement = () => {
       const filterParams = {
         page,
         limit: pageSize,
-        ...filters
+        search: filters.search,
+        status: filters.status !== '' ? filters.status : undefined,
+        stationId: filters.station || undefined
       };
-
-      // Remove 'all' values from filters
-      Object.keys(filterParams).forEach(key => {
-        if (filterParams[key] === 'all') {
-          delete filterParams[key];
-        }
-      });
 
       if (isCompanyAdmin && currentCompanyId) {
         const result = await staffAccountService.getStaffAccountsByCompany(currentCompanyId, filterParams);
@@ -368,6 +366,7 @@ const StaffAccountManagement = () => {
     try {
       await staffAccountService.deactivateStaffAccount(accountId, reason);
       message.success('Staff account deactivated successfully');
+      setDeactivateReason('');
       await refreshData();
     } catch (error) {
       console.error('Failed to deactivate account:', error);
@@ -432,6 +431,18 @@ const StaffAccountManagement = () => {
   // Handle filter changes
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
+    // Reset to page 1 when filters change
+    fetchStaffAccounts(1, pagination.pageSize);
+  };
+
+  // Clear all filters
+  const clearFilters = () => {
+    setFilters({
+      search: '',
+      status: '',
+      station: ''
+    });
+    fetchStaffAccounts(1, pagination.pageSize);
   };
 
   // Apply filters with debounce
@@ -440,7 +451,7 @@ const StaffAccountManagement = () => {
       fetchStaffAccounts(1, pagination.pageSize);
     }, 300);
     return () => clearTimeout(debounceTimer);
-  }, [filters]);
+  }, [filters.search, filters.status, filters.station]);
 
   // Initial load
   useEffect(() => {
@@ -449,370 +460,83 @@ const StaffAccountManagement = () => {
 
   // ========== REPORT GENERATION FUNCTIONS ==========
 
-  // Prepare data for ALL staff accounts report
+  // Prepare data for ALL staff accounts report - SIMPLIFIED COLUMNS
   const prepareAllStaffAccountsExportData = () => {
     if (!staffAccounts || staffAccounts.length === 0) return [];
     
     return staffAccounts.map((account, index) => {
-      // Calculate credit utilization
-      const creditLimit = account.creditLimit || 5000;
-      const currentBalance = Math.abs(account.currentBalance || 0);
-      const utilization = creditLimit > 0 ? (currentBalance / creditLimit * 100) : 0;
-      
       return {
-        sequence: index + 1,
-        staffId: account.user?.id?.substring(0, 8) || 'N/A',
-        staffName: account.user ? `${account.user.firstName || ''} ${account.user.lastName || ''}`.trim() : 'Unknown User',
-        email: account.user?.email || 'N/A',
-        phone: account.user?.phoneNumber || 'N/A',
-        role: account.user?.role || 'N/A',
-        station: account.station?.name || 'Unknown Station',
-        stationCode: account.station?.code || 'N/A',
-        salary: account.salaryAmount || 0,
-        balance: account.currentBalance || 0,
-        creditLimit: creditLimit,
-        creditUtilization: `${utilization.toFixed(1)}%`,
-        balanceStatus: account.currentBalance < 0 ? 'Owes Station' : 
-                      account.currentBalance > 0 ? 'Station Owes' : 'Settled',
-        shortages: account.totalShortages || 0,
-        advances: account.totalAdvances || 0,
-        bonuses: account.totalBonuses || 0,
-        status: account.isActive ? 'Active' : 'Inactive',
-        onHold: account.isOnHold ? 'Yes' : 'No',
-        holdReason: account.holdReason || 'N/A',
-        paymentMethod: getPayrollMethodLabel(account.payrollMethod),
-        paymentSchedule: getPaymentScheduleLabel(account.paymentSchedule),
-        bankAccount: account.bankAccountNumber || 'N/A',
-        bankName: account.bankName || 'N/A',
-        mobileMoney: account.mobileMoneyNumber || 'N/A',
-        lastPaymentDate: account.lastPaymentDate ? 
-          dayjs(account.lastPaymentDate).format('YYYY-MM-DD') : 'Never',
-        nextPaymentDate: account.nextPaymentDate ? 
-          dayjs(account.nextPaymentDate).format('YYYY-MM-DD') : 'Not Set',
-        createdAt: account.createdAt ? 
-          dayjs(account.createdAt).format('YYYY-MM-DD HH:mm:ss') : 'N/A',
-        updatedAt: account.updatedAt ? 
-          dayjs(account.updatedAt).format('YYYY-MM-DD HH:mm:ss') : 'N/A'
+        '#': index + 1,
+        'Staff Name': account.user ? `${account.user.firstName || ''} ${account.user.lastName || ''}`.trim() : 'Unknown User',
+        'Email': account.user?.email || 'N/A',
+        'Station': account.station?.name || 'Unknown Station',
+        'Balance': account.currentBalance || 0,
+        'Balance Status': account.currentBalance < 0 ? 'Owes Station' : 
+                         account.currentBalance > 0 ? 'Station Owes' : 'Settled',
+        'Salary': account.salaryAmount || 0,
+        'Status': account.isActive ? 'Active' : 'Inactive',
+        'On Hold': account.isOnHold ? 'Yes' : 'No',
+        'Payment Method': getPayrollMethodLabel(account.payrollMethod)
       };
     });
   };
 
-  // Prepare data for current tab report
+  // Prepare data for current tab report - SIMPLIFIED COLUMNS
   const prepareTabExportData = () => {
     const accounts = getFilteredAccounts();
     if (!accounts || accounts.length === 0) return [];
     
     return accounts.map((account, index) => {
-      const creditLimit = account.creditLimit || 5000;
-      const currentBalance = Math.abs(account.currentBalance || 0);
-      const utilization = creditLimit > 0 ? (currentBalance / creditLimit * 100) : 0;
-      
       return {
-        sequence: index + 1,
-        staffName: account.user ? `${account.user.firstName || ''} ${account.user.lastName || ''}`.trim() : 'Unknown User',
-        email: account.user?.email || 'N/A',
-        station: account.station?.name || 'Unknown Station',
-        salary: account.salaryAmount || 0,
-        balance: account.currentBalance || 0,
-        balanceStatus: account.currentBalance < 0 ? 'Owes Station' : 
-                      account.currentBalance > 0 ? 'Station Owes' : 'Settled',
-        creditLimit: creditLimit,
-        creditUtilization: `${utilization.toFixed(1)}%`,
-        shortages: account.totalShortages || 0,
-        advances: account.totalAdvances || 0,
-        status: account.isActive ? 'Active' : 'Inactive',
-        onHold: account.isOnHold ? 'Yes' : 'No',
-        paymentMethod: getPayrollMethodLabel(account.payrollMethod),
-        lastPaymentDate: account.lastPaymentDate ? 
-          dayjs(account.lastPaymentDate).format('YYYY-MM-DD') : 'Never',
-        createdAt: account.createdAt ? 
-          dayjs(account.createdAt).format('YYYY-MM-DD') : 'N/A'
+        '#': index + 1,
+        'Staff Name': account.user ? `${account.user.firstName || ''} ${account.user.lastName || ''}`.trim() : 'Unknown User',
+        'Email': account.user?.email || 'N/A',
+        'Station': account.station?.name || 'Unknown Station',
+        'Balance': account.currentBalance || 0,
+        'Balance Status': account.currentBalance < 0 ? 'Owes Station' : 
+                         account.currentBalance > 0 ? 'Station Owes' : 'Settled',
+        'Salary': account.salaryAmount || 0,
+        'Status': account.isActive ? 'Active' : 'Inactive'
       };
     });
   };
 
-  // Prepare summary report data
-  const prepareSummaryExportData = () => {
-    if (!accountSummary) return [];
-    
-    return [
-      {
-        category: 'Total Accounts',
-        value: accountSummary.totalAccounts,
-        amount: null
-      },
-      {
-        category: 'Active Accounts',
-        value: accountSummary.activeAccounts,
-        amount: null
-      },
-      {
-        category: 'Accounts on Hold',
-        value: accountSummary.onHoldAccounts,
-        amount: null
-      },
-      {
-        category: 'Total Balance',
-        value: null,
-        amount: accountSummary.totalBalance
-      },
-      {
-        category: 'Station Owes Staff',
-        value: null,
-        amount: accountSummary.totalPositive
-      },
-      {
-        category: 'Staff Owes Station',
-        value: null,
-        amount: accountSummary.totalNegative
-      },
-      {
-        category: 'Total Shortages',
-        value: null,
-        amount: accountSummary.totalShortages
-      },
-      {
-        category: 'Total Advances',
-        value: null,
-        amount: accountSummary.totalAdvances
-      },
-      {
-        category: 'Total Bonuses',
-        value: null,
-        amount: accountSummary.totalBonuses
-      },
-      {
-        category: 'Average Balance',
-        value: null,
-        amount: accountSummary.averageBalance
-      }
-    ];
-  };
-
   // Calculate summary data for reports
-  const calculateAllStaffAccountsSummary = () => {
-    if (!staffAccounts || staffAccounts.length === 0) return null;
-
-    return {
-      summaryInfo: {
-        'Total Staff Accounts': staffAccounts.length,
-        'Active Accounts': staffAccounts.filter(acc => acc.isActive).length,
-        'Accounts on Hold': staffAccounts.filter(acc => acc.isOnHold).length,
-        'Total Balance': formatCurrency(accountSummary?.totalBalance || 0),
-        'Station Owes Staff': formatCurrency(accountSummary?.totalPositive || 0),
-        'Staff Owes Station': formatCurrency(accountSummary?.totalNegative || 0),
-        'Total Shortages': formatCurrency(accountSummary?.totalShortages || 0),
-        'Total Advances': formatCurrency(accountSummary?.totalAdvances || 0),
-        'Total Bonuses': formatCurrency(accountSummary?.totalBonuses || 0),
-        'Average Balance': formatCurrency(accountSummary?.averageBalance || 0),
-        'Company': state?.currentCompany?.name || 'N/A',
-        'Station': state?.currentStation?.name || 'All Stations',
-        'Report Date': new Date().toLocaleDateString('en-KE'),
-        'Generated Time': new Date().toLocaleTimeString('en-KE'),
-        'Generated By': `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`,
-        'User Role': currentUser?.role || 'N/A'
-      }
-    };
-  };
-
-  const calculateTabSummaryData = () => {
-    const accounts = getFilteredAccounts();
+  const calculateSummaryData = (accounts, type) => {
     if (!accounts || accounts.length === 0) return null;
 
-    const totalBalance = accounts.reduce((sum, acc) => sum + (acc.currentBalance || 0), 0);
     const activeAccounts = accounts.filter(acc => acc.isActive).length;
-    const onHoldAccounts = accounts.filter(acc => acc.isOnHold).length;
+    const totalBalance = accounts.reduce((sum, acc) => sum + (acc.currentBalance || 0), 0);
+    const owingAccounts = accounts.filter(acc => (acc.currentBalance || 0) < 0).length;
+    const creditAccounts = accounts.filter(acc => (acc.currentBalance || 0) > 0).length;
+
+    const tabName = getTabDisplayName();
 
     return {
-      summaryInfo: {
-        [`Total ${getTabDisplayName()} Accounts`]: accounts.length,
-        'Active Accounts': activeAccounts,
-        'Accounts on Hold': onHoldAccounts,
-        'Total Balance': formatCurrency(totalBalance),
-        'Average Balance': formatCurrency(accounts.length > 0 ? totalBalance / accounts.length : 0),
-        'Report Type': `${getTabDisplayName()} Staff Accounts`,
-        'Generated Date': new Date().toLocaleDateString('en-KE'),
-        'Generated Time': new Date().toLocaleTimeString('en-KE'),
-        'Generated By': `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`,
-        'Company': state?.currentCompany?.name || 'N/A',
-        'Current Station': state?.currentStation?.name || 'All Stations'
-      }
+      'Report Type': type === 'all' ? 'All Staff Accounts' : `${tabName} Staff Accounts`,
+      'Total Accounts': accounts.length,
+      'Active Accounts': activeAccounts,
+      'Owing Accounts': owingAccounts,
+      'Credit Accounts': creditAccounts,
+      'Total Balance': formatCurrency(totalBalance),
+      'Generated Date': new Date().toLocaleDateString('en-KE'),
+      'Generated Time': new Date().toLocaleTimeString('en-KE'),
+      'Generated By': `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`,
+      'Company': state?.currentCompany?.name || 'N/A'
     };
   };
 
-  // Get columns for ALL staff accounts report
-  const getAllStaffAccountsExportColumns = () => {
+  // Get columns for report - SIMPLIFIED as requested
+  const getReportColumns = () => {
     return [
-      {
-        title: '#',
-        dataIndex: 'sequence',
-        key: 'sequence',
-        width: 50,
-        type: 'number'
-      },
-      {
-        title: 'Staff Name',
-        dataIndex: 'staffName',
-        key: 'staffName',
-        width: 150,
-        type: 'text'
-      },
-      {
-        title: 'Email',
-        dataIndex: 'email',
-        key: 'email',
-        width: 180,
-        type: 'text'
-      },
-      {
-        title: 'Phone',
-        dataIndex: 'phone',
-        key: 'phone',
-        width: 100,
-        type: 'text'
-      },
-      {
-        title: 'Role',
-        dataIndex: 'role',
-        key: 'role',
-        width: 100,
-        type: 'text'
-      },
-      {
-        title: 'Salary',
-        dataIndex: 'salary',
-        key: 'salary',
-        width: 100,
-        type: 'currency'
-      },
-      {
-        title: 'Balance',
-        dataIndex: 'balance',
-        key: 'balance',
-        width: 120,
-        type: 'currency'
-      },
-      {
-        title: 'Shortages',
-        dataIndex: 'shortages',
-        key: 'shortages',
-        width: 100,
-        type: 'currency'
-      },
-      {
-        title: 'Status',
-        dataIndex: 'status',
-        key: 'status',
-        width: 80,
-        type: 'text'
-      },
-      {
-        title: 'Next Payment',
-        dataIndex: 'nextPaymentDate',
-        key: 'nextPaymentDate',
-        width: 100,
-        type: 'date'
-      },
-    ];
-  };
-
-  // Get columns for current tab report
-  const getTabExportColumns = () => {
-    const baseColumns = [
-      {
-        title: '#',
-        dataIndex: 'sequence',
-        key: 'sequence',
-        width: 60,
-        type: 'number'
-      },
-      {
-        title: 'Staff Name',
-        dataIndex: 'staffName',
-        key: 'staffName',
-        width: 150,
-        type: 'text'
-      },
-      {
-        title: 'Email',
-        dataIndex: 'email',
-        key: 'email',
-        width: 180,
-        type: 'text'
-      },
-      {
-        title: 'Station',
-        dataIndex: 'station',
-        key: 'station',
-        width: 120,
-        type: 'text'
-      },
-      {
-        title: 'Salary',
-        dataIndex: 'salary',
-        key: 'salary',
-        width: 100,
-        type: 'currency'
-      },
-      {
-        title: 'Balance',
-        dataIndex: 'balance',
-        key: 'balance',
-        width: 120,
-        type: 'currency'
-      },
-      {
-        title: 'Shortages',
-        dataIndex: 'shortages',
-        key: 'shortages',
-        width: 100,
-        type: 'currency'
-      },
-      {
-        title: 'Status',
-        dataIndex: 'status',
-        key: 'status',
-        width: 80,
-        type: 'text'
-      },
-      {
-        title: 'Last Payment',
-        dataIndex: 'lastPaymentDate',
-        key: 'lastPaymentDate',
-        width: 100,
-        type: 'date'
-      }
-    ];
-
-    return baseColumns;
-  };
-
-  // Get columns for summary report
-  const getSummaryExportColumns = () => {
-    return [
-      {
-        title: 'Category',
-        dataIndex: 'category',
-        key: 'category',
-        width: 180,
-        type: 'text'
-      },
-      {
-        title: 'Count/Value',
-        dataIndex: 'value',
-        key: 'value',
-        width: 100,
-        type: 'number',
-        render: (value) => value !== null ? value : '-'
-      },
-      {
-        title: 'Amount (Ksh)',
-        dataIndex: 'amount',
-        key: 'amount',
-        width: 120,
-        type: 'currency',
-        render: (amount) => amount !== null ? formatCurrency(amount) : '-'
-      }
+      { title: '#', dataIndex: '#', key: 'index', width: 50, type: 'number' },
+      { title: 'Staff Name', dataIndex: 'Staff Name', key: 'staffName', width: 150, type: 'text' },
+      { title: 'Email', dataIndex: 'Email', key: 'email', width: 180, type: 'email' },
+      { title: 'Station', dataIndex: 'Station', key: 'station', width: 120, type: 'text' },
+      { title: 'Balance', dataIndex: 'Balance', key: 'balance', width: 120, type: 'currency' },
+      { title: 'Balance Status', dataIndex: 'Balance Status', key: 'balanceStatus', width: 100, type: 'text' },
+      { title: 'Salary', dataIndex: 'Salary', key: 'salary', width: 100, type: 'currency' },
+      { title: 'Status', dataIndex: 'Status', key: 'status', width: 80, type: 'text' }
     ];
   };
 
@@ -834,63 +558,6 @@ const StaffAccountManagement = () => {
     } else if (activeTab === 'credit') {
       filtered = filtered.filter(acc => (acc.currentBalance || 0) > 0);
     }
-    
-    // Apply search filter
-    if (filters.search) {
-      const query = filters.search.toLowerCase();
-      filtered = filtered.filter(acc => 
-        (acc.user?.firstName && acc.user.firstName.toLowerCase().includes(query)) ||
-        (acc.user?.lastName && acc.user.lastName.toLowerCase().includes(query)) ||
-        (acc.user?.email && acc.user.email.toLowerCase().includes(query)) ||
-        (acc.station?.name && acc.station.name.toLowerCase().includes(query)) ||
-        (acc.user?.phoneNumber && acc.user.phoneNumber.includes(query))
-      );
-    }
-    
-    // Apply status filter
-    if (filters.status && filters.status !== 'all') {
-      if (filters.status === 'active') {
-        filtered = filtered.filter(acc => acc.isActive);
-      } else if (filters.status === 'inactive') {
-        filtered = filtered.filter(acc => !acc.isActive);
-      } else if (filters.status === 'onHold') {
-        filtered = filtered.filter(acc => acc.isOnHold);
-      }
-    }
-    
-    // Apply payroll method filter
-    if (filters.payrollMethod) {
-      filtered = filtered.filter(acc => acc.payrollMethod === filters.payrollMethod);
-    }
-    
-    // Apply station filter
-    if (filters.station) {
-      filtered = filtered.filter(acc => acc.stationId === filters.station);
-    }
-    
-    // Sort filtered accounts
-    filtered.sort((a, b) => {
-      const aValue = a[filters.sortBy] || '';
-      const bValue = b[filters.sortBy] || '';
-      
-      if (filters.sortBy === 'currentBalance' || filters.sortBy === 'salaryAmount' || filters.sortBy === 'creditLimit') {
-        return filters.sortOrder === 'desc' ? (bValue - aValue) : (aValue - bValue);
-      }
-      
-      if (filters.sortBy === 'createdAt' || filters.sortBy === 'updatedAt') {
-        const aDate = new Date(aValue).getTime();
-        const bDate = new Date(bValue).getTime();
-        return filters.sortOrder === 'desc' ? (bDate - aDate) : (aDate - bDate);
-      }
-      
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
-        return filters.sortOrder === 'desc' ? 
-          bValue.localeCompare(aValue) : 
-          aValue.localeCompare(bValue);
-      }
-      
-      return 0;
-    });
     
     return filtered;
   };
@@ -915,12 +582,9 @@ const StaffAccountManagement = () => {
     
     if (type === 'all') {
       return `Complete Staff Accounts Report - ${companyName} (${currentDate})`;
-    } else if (type === 'current') {
+    } else {
       return `${getTabDisplayName()} Staff Accounts Report - ${companyName} (${currentDate})`;
-    } else if (type === 'summary') {
-      return `Staff Accounts Summary Report - ${companyName} (${currentDate})`;
     }
-    return `Staff Accounts Report - ${companyName} (${currentDate})`;
   };
 
   // Get file name
@@ -930,12 +594,9 @@ const StaffAccountManagement = () => {
     
     if (type === 'all') {
       return `complete_staff_accounts${companyCode}_${dateStr}`;
-    } else if (type === 'current') {
+    } else {
       return `${activeTab}_staff_accounts${companyCode}_${dateStr}`;
-    } else if (type === 'summary') {
-      return `staff_accounts_summary${companyCode}_${dateStr}`;
     }
-    return `staff_accounts${companyCode}_${dateStr}`;
   };
 
   // Get footer text
@@ -961,31 +622,21 @@ const StaffAccountManagement = () => {
         return;
       }
       exportData = prepareAllStaffAccountsExportData();
-      exportColumns = getAllStaffAccountsExportColumns();
-      summaryData = calculateAllStaffAccountsSummary();
+      exportColumns = getReportColumns();
+      summaryData = calculateSummaryData(staffAccounts, 'all');
       title = getReportTitle('all');
       fileName = getFileName('all');
-    } else if (type === 'current') {
+    } else {
       const filteredAccounts = getFilteredAccounts();
       if (filteredAccounts.length === 0) {
-        message.warning(`No ${activeTab} staff accounts available to export`);
+        message.warning(`No ${getTabDisplayName()} staff accounts available to export`);
         return;
       }
       exportData = prepareTabExportData();
-      exportColumns = getTabExportColumns();
-      summaryData = calculateTabSummaryData();
-      title = getReportTitle('current');
-      fileName = getFileName('current');
-    } else if (type === 'summary') {
-      if (!accountSummary) {
-        message.warning('No summary data available to export');
-        return;
-      }
-      exportData = prepareSummaryExportData();
-      exportColumns = getSummaryExportColumns();
-      summaryData = { summaryInfo: accountSummary };
-      title = getReportTitle('summary');
-      fileName = getFileName('summary');
+      exportColumns = getReportColumns();
+      summaryData = calculateSummaryData(filteredAccounts, 'tab');
+      title = getReportTitle('tab');
+      fileName = getFileName('tab');
     }
 
     setExportConfig({
@@ -1045,12 +696,44 @@ const StaffAccountManagement = () => {
     return '#666';
   };
 
-  // Table columns
+  // Render export buttons
+  const renderExportButtons = () => {
+    const exportMenuItems = [
+      {
+        key: 'all',
+        label: 'Export All Staff Accounts',
+        icon: <FileExcelOutlined />,
+        disabled: staffAccounts.length === 0
+      },
+      {
+        key: 'current',
+        label: `Export Current Tab (${getTabDisplayName()})`,
+        icon: <FilePdfOutlined />,
+        disabled: getFilteredAccounts().length === 0
+      }
+    ];
+
+    return (
+      <Dropdown
+        menu={{
+          items: exportMenuItems,
+          onClick: ({ key }) => handleExportAction(key)
+        }}
+        trigger={['click']}
+      >
+        <Button type="primary" icon={<DownloadOutlined />} size="small">
+          Export <DownOutlined />
+        </Button>
+      </Dropdown>
+    );
+  };
+
+  // Table columns - COMPACT design
   const accountColumns = [
     {
       title: '#',
       key: 'index',
-      width: 60,
+      width: 50,
       render: (_, __, index) => {
         const page = pagination.current || 1;
         const pageSize = pagination.pageSize || 10;
@@ -1060,24 +743,24 @@ const StaffAccountManagement = () => {
     {
       title: 'Staff Member',
       key: 'staff',
+      width: 200,
       render: (account) => (
-        <Space>
+        <Space size="small">
           <Avatar 
+            size="small"
             style={{ backgroundColor: '#1890ff' }}
             icon={<UserOutlined />}
-          >
-            {(account.user?.firstName?.[0] || 'U').toUpperCase()}
-          </Avatar>
+          />
           <div>
-            <div style={{ fontWeight: 'bold' }}>
+            <div style={{ fontWeight: 500, fontSize: '12px' }}>
               {account.user ? `${account.user.firstName || ''} ${account.user.lastName || ''}`.trim() : 'Unknown User'}
             </div>
-            <div style={{ fontSize: '12px', color: '#666' }}>
+            <div style={{ fontSize: '11px', color: '#666' }}>
               {account.user?.email || 'No email'}
             </div>
-            <div style={{ fontSize: '12px', color: '#999' }}>
+            <Tag size="small" style={{ fontSize: '10px', marginTop: '2px' }}>
               {account.station?.name || 'No station'}
-            </div>
+            </Tag>
           </div>
         </Space>
       )
@@ -1085,103 +768,87 @@ const StaffAccountManagement = () => {
     {
       title: 'Balance',
       key: 'balance',
+      width: 120,
       render: (account) => {
         const balance = account.currentBalance || 0;
         const color = getBalanceColor(balance);
-        const status = balance < 0 ? 'Owes Station' : balance > 0 ? 'Station Owes' : 'Settled';
+        const status = balance < 0 ? 'Owes' : balance > 0 ? 'Owed' : 'Settled';
         
         return (
-          <Space direction="vertical" size={0}>
-            <Text strong style={{ color, fontSize: '16px' }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: '13px', color }}>
               {formatCurrency(balance)}
-            </Text>
-            <Text type="secondary" style={{ fontSize: '12px' }}>
+            </div>
+            <Tag color={color} style={{ fontSize: '10px', marginTop: '2px' }}>
               {status}
-            </Text>
-            {account.creditLimit && (
-              <Text type="secondary" style={{ fontSize: '12px' }}>
-                Limit: {formatCurrency(account.creditLimit)}
-              </Text>
-            )}
-          </Space>
+            </Tag>
+          </div>
         );
-      },
-      sorter: true
+      }
     },
     {
       title: 'Salary',
       key: 'salary',
+      width: 100,
       render: (account) => (
-        <Space direction="vertical" size={0}>
-          <div style={{ fontSize: '12px' }}>
-            <Text strong>
-              {account.salaryAmount ? formatCurrency(account.salaryAmount) : 'Not Set'}
-            </Text>
+        <div>
+          <div style={{ fontSize: '12px', fontWeight: 500 }}>
+            {account.salaryAmount ? formatCurrency(account.salaryAmount) : 'Not Set'}
           </div>
-          <div style={{ fontSize: '12px' }}>
-            <Text type="secondary">
-              {getPaymentScheduleLabel(account.paymentSchedule)}
-            </Text>
+          <div style={{ fontSize: '10px', color: '#666' }}>
+            {getPaymentScheduleLabel(account.paymentSchedule)}
           </div>
-        </Space>
+        </div>
       )
     },
     {
-      title: 'Payment Method',
+      title: 'Payment',
       key: 'paymentMethod',
+      width: 120,
       render: (account) => {
         const method = account.payrollMethod || 'STATION_WALLET';
         const methodLabel = getPayrollMethodLabel(method);
         
         return (
-          <Space direction="vertical" size={0}>
-            <div>
-              {method === 'BANK_TRANSFER' ? <BankOutlined /> :
-               method === 'MOBILE_MONEY' ? <PhoneOutlined /> :
-               method === 'CASH' ? <DollarOutlined /> :
-               <WalletOutlined />}
-              <span style={{ marginLeft: 8 }}>{methodLabel}</span>
+          <div>
+            <div style={{ fontSize: '11px' }}>
+              {method === 'BANK_TRANSFER' ? <BankOutlined style={{ fontSize: '11px' }} /> :
+               method === 'MOBILE_MONEY' ? <PhoneOutlined style={{ fontSize: '11px' }} /> :
+               method === 'CASH' ? <DollarOutlined style={{ fontSize: '11px' }} /> :
+               <WalletOutlined style={{ fontSize: '11px' }} />}
+              <span style={{ marginLeft: 4 }}>{methodLabel}</span>
             </div>
-            {method === 'BANK_TRANSFER' && account.bankAccountNumber && (
-              <Text type="secondary" style={{ fontSize: '12px' }}>
-                {account.bankAccountNumber}
-              </Text>
-            )}
-            {method === 'MOBILE_MONEY' && account.mobileMoneyNumber && (
-              <Text type="secondary" style={{ fontSize: '12px' }}>
-                {account.mobileMoneyNumber}
-              </Text>
-            )}
-          </Space>
+          </div>
         );
       }
     },
     {
       title: 'Status',
       key: 'status',
+      width: 80,
       render: (account) => {
         const statusColor = account.isActive ? 'success' : 'default';
         const statusText = account.isActive ? 'Active' : 'Inactive';
-        const holdColor = account.isOnHold ? 'warning' : 'default';
-        const holdText = account.isOnHold ? 'On Hold' : 'Normal';
         
         return (
-          <Space direction="vertical" size={2}>
-            <Tag color={statusColor}>
+          <div>
+            <Tag color={statusColor} style={{ fontSize: '10px' }}>
               {statusText}
             </Tag>
             {account.isOnHold && (
-              <Tag color={holdColor} icon={<LockOutlined />}>
-                {holdText}
+              <Tag color="warning" icon={<LockOutlined />} style={{ fontSize: '10px', marginTop: '2px' }}>
+                Hold
               </Tag>
             )}
-          </Space>
+          </div>
         );
       }
     },
     {
       title: 'Actions',
       key: 'actions',
+      width: 60,
+      fixed: 'right',
       render: (account) => {
         const actionItems = [
           {
@@ -1214,9 +881,7 @@ const StaffAccountManagement = () => {
               setModalVisible(prev => ({ ...prev, updateAccount: true }));
             }
           },
-          {
-            type: 'divider'
-          },
+          { type: 'divider' },
           account.isActive ? {
             key: 'deactivate',
             label: 'Deactivate',
@@ -1272,9 +937,7 @@ const StaffAccountManagement = () => {
               });
             }
           },
-          {
-            type: 'divider'
-          },
+          { type: 'divider' },
           {
             key: 'delete',
             label: 'Delete Account',
@@ -1309,18 +972,17 @@ const StaffAccountManagement = () => {
         ].filter(item => item);
 
         return (
-          <Space size="small">
-            <Dropdown
-              menu={{ items: actionItems }}
-              trigger={['click']}
-              placement="bottomRight"
-            >
-              <Button
-                icon={<MoreOutlined />}
-                size="small"
-              />
-            </Dropdown>
-          </Space>
+          <Dropdown
+            menu={{ items: actionItems }}
+            trigger={['click']}
+            placement="bottomRight"
+          >
+            <Button
+              icon={<MoreOutlined />}
+              size="small"
+              type="text"
+            />
+          </Dropdown>
         );
       }
     }
@@ -1335,271 +997,209 @@ const StaffAccountManagement = () => {
     const owingAccounts = staffAccounts.filter(acc => (acc.currentBalance || 0) < 0);
     const creditAccounts = staffAccounts.filter(acc => (acc.currentBalance || 0) > 0);
     
-    return [
-      {
-        key: 'all',
-        label: (
-          <Space>
-            <TeamOutlined />
-            <span>All Accounts</span>
-            <Badge 
-              count={staffAccounts.length} 
-              style={{ backgroundColor: '#1890ff' }}
-              overflowCount={999}
-            />
-          </Space>
-        )
-      },
-      {
-        key: 'active',
-        label: (
-          <Space>
-            <CheckCircleOutlined />
-            <span>Active</span>
-            <Badge 
-              count={activeAccounts.length} 
-              style={{ backgroundColor: '#52c41a' }}
-              overflowCount={999}
-            />
-          </Space>
-        )
-      },
-      {
-        key: 'inactive',
-        label: (
-          <Space>
-            <PauseCircleOutlined />
-            <span>Inactive</span>
-            <Badge 
-              count={inactiveAccounts.length} 
-              style={{ backgroundColor: '#ff4d4f' }}
-              overflowCount={999}
-            />
-          </Space>
-        )
-      },
-      {
-        key: 'onHold',
-        label: (
-          <Space>
-            <LockOutlined />
-            <span>On Hold</span>
-            <Badge 
-              count={onHoldAccounts.length} 
-              style={{ backgroundColor: '#fa8c16' }}
-              overflowCount={999}
-            />
-          </Space>
-        )
-      },
-      {
-        key: 'owing',
-        label: (
-          <Space>
-            <AccountBookOutlined />
-            <span>Owing</span>
-            <Badge 
-              count={owingAccounts.length} 
-              style={{ backgroundColor: '#ff4d4f' }}
-              overflowCount={999}
-            />
-          </Space>
-        )
-      },
-      {
-        key: 'credit',
-        label: (
-          <Space>
-            <MoneyCollectOutlined />
-            <span>Credit</span>
-            <Badge 
-              count={creditAccounts.length} 
-              style={{ backgroundColor: '#52c41a' }}
-              overflowCount={999}
-            />
-          </Space>
-        )
-      }
-    ];
-  };
-
-  // Render export buttons
-  const renderExportButtons = () => {
-    const exportMenuItems = [
-      {
-        key: 'all',
-        label: 'Export All Staff Accounts',
-        icon: <FileExcelOutlined />,
-        disabled: staffAccounts.length === 0
-      },
-      {
-        key: 'current',
-        label: `Export Current Tab (${getTabDisplayName()})`,
-        icon: <FilePdfOutlined />,
-        disabled: getFilteredAccounts().length === 0
-      },
-      {
-        key: 'summary',
-        label: 'Export Summary Report',
-        icon: <BarChartOutlined />,
-        disabled: !accountSummary
-      }
-    ];
-
-    return (
-      <Dropdown
-        menu={{
-          items: exportMenuItems,
-          onClick: ({ key }) => handleExportAction(key)
-        }}
-        trigger={['click']}
-      >
-        <Button type="primary" icon={<DownloadOutlined />}>
-          Export Reports <DownOutlined />
-        </Button>
-      </Dropdown>
-    );
+    return {
+      items: [
+        {
+          key: 'all',
+          label: (
+            <Space size="small">
+              <TeamOutlined />
+              <span>All</span>
+              <Badge count={staffAccounts.length} style={{ backgroundColor: '#1890ff', fontSize: '10px' }} />
+            </Space>
+          )
+        },
+        {
+          key: 'active',
+          label: (
+            <Space size="small">
+              <CheckCircleOutlined />
+              <span>Active</span>
+              <Badge count={activeAccounts.length} style={{ backgroundColor: '#52c41a', fontSize: '10px' }} />
+            </Space>
+          )
+        },
+        {
+          key: 'inactive',
+          label: (
+            <Space size="small">
+              <PauseCircleOutlined />
+              <span>Inactive</span>
+              <Badge count={inactiveAccounts.length} style={{ backgroundColor: '#ff4d4f', fontSize: '10px' }} />
+            </Space>
+          )
+        },
+        {
+          key: 'onHold',
+          label: (
+            <Space size="small">
+              <LockOutlined />
+              <span>Hold</span>
+              <Badge count={onHoldAccounts.length} style={{ backgroundColor: '#fa8c16', fontSize: '10px' }} />
+            </Space>
+          )
+        },
+        {
+          key: 'owing',
+          label: (
+            <Space size="small">
+              <AccountBookOutlined />
+              <span>Owing</span>
+              <Badge count={owingAccounts.length} style={{ backgroundColor: '#ff4d4f', fontSize: '10px' }} />
+            </Space>
+          )
+        },
+        {
+          key: 'credit',
+          label: (
+            <Space size="small">
+              <MoneyCollectOutlined />
+              <span>Credit</span>
+              <Badge count={creditAccounts.length} style={{ backgroundColor: '#52c41a', fontSize: '10px' }} />
+            </Space>
+          )
+        }
+      ]
+    };
   };
 
   return (
-    <div style={{ padding: '24px' }}>
-      {/* Header Section */}
-      <Space direction="vertical" style={{ width: '100%' }}>
-        <Title level={2} style={{ margin: 0 }}>
-          <ShopOutlined /> Staff Account Management
-        </Title>
-        <Text type="secondary">
-          Manage staff financial accounts, payroll settings, and financial transactions
-        </Text>
-      </Space>
+    <div style={{ padding: '16px' }}>
+      {/* Header */}
+      <Row justify="space-between" align="middle" style={{ marginBottom: '16px' }}>
+        <Col>
+          <Title level={3} style={{ margin: 0 }}>
+            <ShopOutlined /> Staff Accounts
+          </Title>
+        </Col>
+        <Col>
+          <Space size="small">
+            <Button 
+              icon={<SyncOutlined />}
+              onClick={() => refreshData(true)}
+              loading={loading}
+              size="small"
+            >
+              Refresh
+            </Button>
+            <Button 
+              type="primary" 
+              icon={<PlusOutlined />}
+              onClick={() => {
+                createForm.resetFields();
+                setModalVisible(prev => ({ ...prev, createAccount: true }));
+              }}
+              disabled={usersWithoutAccounts.length === 0}
+              size="small"
+            >
+              New Account
+            </Button>
+          </Space>
+        </Col>
+      </Row>
 
-      {/* Action Buttons */}
-      <Space style={{ margin: '24px 0' }} wrap>
-        <Button 
-          type="primary" 
-          icon={<PlusOutlined />}
-          onClick={() => {
-            createForm.resetFields();
-            setModalVisible(prev => ({ ...prev, createAccount: true }));
-          }}
-          disabled={usersWithoutAccounts.length === 0}
-        >
-          Create Account
-        </Button>
-        
-        {renderExportButtons()}
-        
-        <Button 
-          icon={<SyncOutlined />}
-          onClick={() => refreshData(true)}
-          loading={loading}
-        >
-          Refresh
-        </Button>
-      </Space>
-
-      {/* Summary Statistics */}
+      {/* COMPACT STATISTICS */}
       {accountSummary && (
-        <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-          <Col xs={24} sm={12} md={6}>
+        <Row gutter={[8, 8]} style={{ marginBottom: '16px' }}>
+          <Col xs={12} sm={6} md={4}>
             <Card size="small" hoverable>
               <Statistic
-                title="Total Accounts"
+                title="Total"
                 value={accountSummary.totalAccounts}
                 prefix={<TeamOutlined />}
-                valueStyle={{ color: '#1890ff' }}
+                valueStyle={{ fontSize: '16px' }}
               />
             </Card>
           </Col>
-          <Col xs={24} sm={12} md={6}>
+          <Col xs={12} sm={6} md={4}>
             <Card size="small" hoverable>
               <Statistic
-                title="Active Accounts"
+                title="Active"
                 value={accountSummary.activeAccounts}
-                prefix={<CheckCircleOutlined />}
-                valueStyle={{ color: '#52c41a' }}
-              />
-              <Progress 
-                percent={((accountSummary.activeAccounts / accountSummary.totalAccounts) * 100) || 0} 
-                size="small" 
-                status="active"
+                valueStyle={{ color: '#52c41a', fontSize: '16px' }}
               />
             </Card>
           </Col>
-          <Col xs={24} sm={12} md={6}>
+          <Col xs={12} sm={6} md={4}>
             <Card size="small" hoverable>
               <Statistic
-                title="Total Balance"
+                title="On Hold"
+                value={accountSummary.onHoldAccounts}
+                valueStyle={{ color: '#fa8c16', fontSize: '16px' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Card size="small" hoverable>
+              <Statistic
+                title="Balance"
                 value={formatCurrency(accountSummary.totalBalance)}
-                prefix={<DollarOutlined />}
                 valueStyle={{ 
                   color: accountSummary.totalBalance < 0 ? '#ff4d4f' : 
-                         accountSummary.totalBalance > 0 ? '#52c41a' : '#666'
+                         accountSummary.totalBalance > 0 ? '#52c41a' : '#666',
+                  fontSize: '14px'
                 }}
               />
             </Card>
           </Col>
-          <Col xs={24} sm={12} md={6}>
+          <Col xs={12} sm={6} md={4}>
             <Card size="small" hoverable>
               <Statistic
-                title="Staff Owes Station"
+                title="Owing"
                 value={formatCurrency(accountSummary.totalNegative)}
-                prefix={<AccountBookOutlined />}
-                valueStyle={{ color: '#ff4d4f' }}
+                valueStyle={{ color: '#ff4d4f', fontSize: '14px' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Card size="small" hoverable>
+              <Statistic
+                title="Credit"
+                value={formatCurrency(accountSummary.totalPositive)}
+                valueStyle={{ color: '#52c41a', fontSize: '14px' }}
               />
             </Card>
           </Col>
         </Row>
       )}
 
-      {/* Filters */}
-      <Card style={{ marginBottom: '24px' }} size="small">
-        <Row gutter={[16, 16]} align="middle">
-          <Col xs={24} sm={12} md={6}>
+      {/* COMPACT FILTERS */}
+      <Card size="small" style={{ marginBottom: '16px' }}>
+        <Row gutter={[8, 8]} align="middle">
+          <Col xs={24} sm={12} md={8}>
             <Input
-              placeholder="Search by name, email, or station..."
+              placeholder="Search by name, email..."
               value={filters.search}
               onChange={(e) => handleFilterChange('search', e.target.value)}
               prefix={<SearchOutlined />}
               allowClear
-              onPressEnter={() => fetchStaffAccounts(1, pagination.pageSize)}
+              size="small"
             />
           </Col>
-          <Col xs={24} sm={12} md={4}>
+          <Col xs={24} sm={12} md={5}>
             <Select
               style={{ width: '100%' }}
               placeholder="Status"
               value={filters.status}
               onChange={(value) => handleFilterChange('status', value)}
               allowClear
+              size="small"
             >
-              <Option value="all">All Status</Option>
               <Option value="active">Active</Option>
               <Option value="inactive">Inactive</Option>
               <Option value="onHold">On Hold</Option>
+              <Option value="owing">Owing</Option>
+              <Option value="credit">Credit</Option>
             </Select>
           </Col>
-          <Col xs={24} sm={12} md={4}>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Payment Method"
-              value={filters.payrollMethod}
-              onChange={(value) => handleFilterChange('payrollMethod', value)}
-              allowClear
-            >
-              <Option value="STATION_WALLET">Station Wallet</Option>
-              <Option value="BANK_TRANSFER">Bank Transfer</Option>
-              <Option value="MOBILE_MONEY">Mobile Money</Option>
-              <Option value="CASH">Cash</Option>
-            </Select>
-          </Col>
-          <Col xs={24} sm={12} md={4}>
+          <Col xs={24} sm={12} md={5}>
             <Select
               style={{ width: '100%' }}
               placeholder="Station"
               value={filters.station}
               onChange={(value) => handleFilterChange('station', value)}
               allowClear
+              size="small"
             >
               {stations.map(station => (
                 <Option key={station.id} value={station.id}>
@@ -1608,115 +1208,78 @@ const StaffAccountManagement = () => {
               ))}
             </Select>
           </Col>
-          <Col xs={24} sm={12} md={4}>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Sort By"
-              value={filters.sortBy}
-              onChange={(value) => handleFilterChange('sortBy', value)}
-            >
-              <Option value="createdAt">Created Date</Option>
-              <Option value="currentBalance">Balance</Option>
-              <Option value="salaryAmount">Salary</Option>
-              <Option value="updatedAt">Last Updated</Option>
-            </Select>
+          <Col xs={24} sm={12} md={6}>
+            <Space>
+              <Button 
+                icon={<FilterOutlined />}
+                onClick={clearFilters}
+                disabled={!filters.search && !filters.status && !filters.station}
+                size="small"
+              >
+                Clear
+              </Button>
+              {renderExportButtons()}
+            </Space>
           </Col>
         </Row>
       </Card>
 
       {/* Main Content with Tabs */}
-      <Card>
+      <Card size="small" bodyStyle={{ padding: '12px' }}>
         <Tabs
           activeKey={activeTab}
           onChange={setActiveTab}
-          items={getTabItems()}
-          style={{ marginBottom: '16px' }}
+          items={getTabItems().items}
+          size="small"
+          style={{ marginBottom: '12px' }}
         />
 
         {/* Accounts Table */}
-        <div style={{ marginTop: '16px' }}>
-          {loading ? (
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'center', 
-              alignItems: 'center', 
-              padding: '48px' 
-            }}>
-              <SyncOutlined spin style={{ fontSize: '24px', color: '#1890ff' }} />
-              <span style={{ marginLeft: '8px', color: '#666' }}>
-                Loading staff accounts...
-              </span>
-            </div>
-          ) : getFilteredAccounts().length === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={
-                <Space direction="vertical">
-                  <Text>
-                    {filters.search || filters.status || filters.payrollMethod
-                      ? 'No staff accounts match your search criteria'
-                      : `No ${activeTab} staff accounts found`}
-                  </Text>
-                  <Button type="link" onClick={() => {
-                    setFilters({
-                      search: '',
-                      status: 'all',
-                      payrollMethod: '',
-                      sortBy: 'createdAt',
-                      sortOrder: 'desc',
-                      station: ''
-                    });
-                  }}>
-                    Clear filters
-                  </Button>
-                </Space>
-              }
-            />
-          ) : (
-            <Table
-              columns={accountColumns}
-              dataSource={getFilteredAccounts()}
-              rowKey="id"
-              loading={loading}
-              pagination={{
-                current: pagination.current,
-                pageSize: pagination.pageSize,
-                total: getFilteredAccounts().length,
-                showSizeChanger: true,
-                showQuickJumper: true,
-                showTotal: (total, range) => 
-                  `${range[0]}-${range[1]} of ${total} accounts (${getTabDisplayName()})`
-              }}
-              onChange={(pagination, filters, sorter) => {
-                if (sorter.field) {
-                  handleFilterChange('sortBy', sorter.field);
-                  handleFilterChange('sortOrder', sorter.order === 'ascend' ? 'asc' : 'desc');
-                }
-                if (pagination.current !== pagination.current) {
-                  handleTableChange(pagination);
-                }
-              }}
-              scroll={{ x: 1200 }}
-            />
-          )}
-        </div>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '40px' }}>
+            <SyncOutlined spin style={{ fontSize: '24px', color: '#1890ff' }} />
+            <div style={{ marginTop: 8 }}>Loading staff accounts...</div>
+          </div>
+        ) : getFilteredAccounts().length === 0 ? (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              <Space direction="vertical">
+                <Text>No staff accounts found</Text>
+                <Button type="link" onClick={clearFilters} size="small">
+                  Clear filters
+                </Button>
+              </Space>
+            }
+          />
+        ) : (
+          <Table
+            columns={accountColumns}
+            dataSource={getFilteredAccounts()}
+            rowKey="id"
+            size="small"
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total: getFilteredAccounts().length,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total) => `${total} accounts`,
+              pageSizeOptions: ['10', '20', '50', '100'],
+              size: 'small'
+            }}
+            onChange={handleTableChange}
+            scroll={{ x: 1000 }}
+          />
+        )}
       </Card>
 
-      {/* Users Without Accounts Section */}
+      {/* Users Without Accounts Alert */}
       {usersWithoutAccounts.length > 0 && (
-        <Card 
-          title={
-            <Space>
-              <WarningOutlined />
-              <span>Users Without Accounts ({usersWithoutAccounts.length})</span>
-            </Space>
-          }
-          style={{ marginTop: '24px' }}
-          size="small"
-        >
+        <Card size="small" style={{ marginTop: '16px' }}>
           <Alert
-            message="Quick Account Creation"
-            description={`${usersWithoutAccounts.length} users are assigned to stations but don't have staff accounts yet. Click "Create Account" to add them.`}
+            message={`${usersWithoutAccounts.length} users need accounts`}
+            description="These users are assigned to stations but don't have staff accounts yet."
             type="info"
             showIcon
             action={
@@ -1728,7 +1291,7 @@ const StaffAccountManagement = () => {
                   setModalVisible(prev => ({ ...prev, createAccount: true }));
                 }}
               >
-                Create Accounts
+                Create
               </Button>
             }
           />
@@ -1745,6 +1308,7 @@ const StaffAccountManagement = () => {
             <Button 
               key="cancel" 
               onClick={() => setExportConfig(prev => ({ ...prev, visible: false }))}
+              size="small"
             >
               Cancel
             </Button>
@@ -1754,6 +1318,7 @@ const StaffAccountManagement = () => {
           destroyOnClose
         >
           <AdvancedReportGenerator
+            key={`report-${exportConfig.type}-${Date.now()}`}
             dataSource={exportConfig.data || []}
             columns={exportConfig.columns || []}
             summaryData={exportConfig.summaryData}
@@ -1770,6 +1335,7 @@ const StaffAccountManagement = () => {
             footerText={getFooterText()}
             enableCustomization={true}
             includeLogo={false}
+            showGrandTotals={false}
             onReportGenerate={(format) => {
               handleReportComplete(format);
             }}
@@ -1789,52 +1355,28 @@ const StaffAccountManagement = () => {
           createForm.resetFields();
         }}
         onOk={() => createForm.submit()}
-        okText="Create Account"
+        okText="Create"
         cancelText="Cancel"
         width={600}
         confirmLoading={submitting}
         destroyOnClose
       >
-        <Form 
-          form={createForm} 
-          layout="vertical" 
-          onFinish={handleCreateAccount}
-          preserve={false}
-        >
+        <Form form={createForm} layout="vertical" onFinish={handleCreateAccount} preserve={false}>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item
-                name="userId"
-                label="User"
-                rules={[{ required: true, message: 'Please select a user' }]}
-              >
-                <Select
-                  placeholder="Select user"
-                  showSearch
-                  optionFilterProp="children"
-                  filterOption={(input, option) =>
-                    (option?.children || '').toLowerCase().includes(input.toLowerCase())
-                  }
-                >
+              <Form.Item name="userId" label="User" rules={[{ required: true }]}>
+                <Select placeholder="Select user" showSearch size="small">
                   {usersWithoutAccounts.map(user => (
                     <Option key={user.id} value={user.id}>
-                      {user.displayName || `${user.firstName} ${user.lastName}`} ({user.email})
+                      {user.displayName || `${user.firstName} ${user.lastName}`}
                     </Option>
                   ))}
                 </Select>
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item
-                name="stationId"
-                label="Station"
-                rules={[{ required: true, message: 'Please select a station' }]}
-              >
-                <Select
-                  placeholder="Select station"
-                  showSearch
-                  optionFilterProp="children"
-                >
+              <Form.Item name="stationId" label="Station" rules={[{ required: true }]}>
+                <Select placeholder="Select station" showSearch size="small">
                   {stations.map(station => (
                     <Option key={station.id} value={station.id}>
                       {station.name}
@@ -1847,49 +1389,21 @@ const StaffAccountManagement = () => {
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item
-                name="salaryAmount"
-                label="Salary Amount"
-                initialValue={30000}
-              >
-                <InputNumber
-                  style={{ width: '100%' }}
-                  placeholder="Enter salary amount"
-                  min={0}
-                  max={500000}
-                  step={1000}
-                  formatter={value => `Ksh ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={value => value.replace(/Ksh\s?|,/g, '')}
-                />
+              <Form.Item name="salaryAmount" label="Salary" initialValue={30000}>
+                <InputNumber style={{ width: '100%' }} size="small" min={0} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item
-                name="creditLimit"
-                label="Credit Limit"
-                initialValue={5000}
-              >
-                <InputNumber
-                  style={{ width: '100%' }}
-                  placeholder="Enter credit limit"
-                  min={0}
-                  max={100000}
-                  step={1000}
-                  formatter={value => `Ksh ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={value => value.replace(/Ksh\s?|,/g, '')}
-                />
+              <Form.Item name="creditLimit" label="Credit Limit" initialValue={5000}>
+                <InputNumber style={{ width: '100%' }} size="small" min={0} />
               </Form.Item>
             </Col>
           </Row>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item
-                name="payrollMethod"
-                label="Payroll Method"
-                initialValue="STATION_WALLET"
-              >
-                <Select placeholder="Select payroll method">
+              <Form.Item name="payrollMethod" label="Pay Method" initialValue="STATION_WALLET">
+                <Select size="small">
                   <Option value="STATION_WALLET">Station Wallet</Option>
                   <Option value="BANK_TRANSFER">Bank Transfer</Option>
                   <Option value="MOBILE_MONEY">Mobile Money</Option>
@@ -1898,78 +1412,18 @@ const StaffAccountManagement = () => {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item
-                name="paymentSchedule"
-                label="Payment Schedule"
-                initialValue="MONTHLY"
-              >
-                <Select placeholder="Select payment schedule">
+              <Form.Item name="paymentSchedule" label="Schedule" initialValue="MONTHLY">
+                <Select size="small">
                   <Option value="DAILY">Daily</Option>
                   <Option value="WEEKLY">Weekly</Option>
-                  <Option value="BI_WEEKLY">Bi-Weekly</Option>
                   <Option value="MONTHLY">Monthly</Option>
-                  <Option value="QUARTERLY">Quarterly</Option>
                 </Select>
               </Form.Item>
             </Col>
           </Row>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="bankName"
-                label="Bank Name"
-                initialValue="Baclays Bank"
-              >
-                <Input placeholder="Enter bank name" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="bankAccountNumber"
-                label="Bank Account Number"
-                initialValue="001110001100"
-              >
-                <Input placeholder="Enter bank account number" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="mobileMoneyNumber"
-                label="Mobile Money Number"
-                initialValue="0712345678"
-              >
-                <Input placeholder="Enter mobile money number" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="nextPaymentDate"
-                label="Next Payment Date"
-              >
-                <DatePicker 
-                  style={{ width: '100%' }} 
-                  placeholder="Select next payment date"
-                  format="YYYY-MM-DD"
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item
-            name="isActive"
-            label="Account Status"
-            valuePropName="checked"
-            initialValue={true}
-          >
-            <Switch checkedChildren="Active" unCheckedChildren="Inactive" defaultChecked />
-          </Form.Item>
-
-          <Form.Item name="notes" label="Notes">
-            <TextArea placeholder="Additional notes (optional)" rows={3} />
+          <Form.Item name="isActive" label="Active" valuePropName="checked" initialValue={true}>
+            <Switch size="small" />
           </Form.Item>
         </Form>
       </Modal>
@@ -1983,52 +1437,31 @@ const StaffAccountManagement = () => {
           updateForm.resetFields();
         }}
         onOk={() => updateForm.submit()}
-        okText="Update Account"
+        okText="Update"
         cancelText="Cancel"
         width={600}
         confirmLoading={submitting}
         destroyOnClose
       >
         {selectedAccount && (
-          <Form 
-            form={updateForm} 
-            layout="vertical" 
-            onFinish={handleUpdateAccount}
-            preserve={false}
-          >
+          <Form form={updateForm} layout="vertical" onFinish={handleUpdateAccount} preserve={false}>
             <Row gutter={16}>
               <Col span={12}>
-                <Form.Item name="creditLimit" label="Credit Limit">
-                  <InputNumber
-                    style={{ width: '100%' }}
-                    placeholder="Enter credit limit"
-                    min={0}
-                    max={100000}
-                    step={1000}
-                    formatter={value => `Ksh ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                    parser={value => value.replace(/Ksh\s?|,/g, '')}
-                  />
+                <Form.Item name="salaryAmount" label="Salary">
+                  <InputNumber style={{ width: '100%' }} size="small" min={0} />
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item name="salaryAmount" label="Salary Amount">
-                  <InputNumber
-                    style={{ width: '100%' }}
-                    placeholder="Enter salary amount"
-                    min={0}
-                    max={500000}
-                    step={1000}
-                    formatter={value => `Ksh ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                    parser={value => value.replace(/Ksh\s?|,/g, '')}
-                  />
+                <Form.Item name="creditLimit" label="Credit Limit">
+                  <InputNumber style={{ width: '100%' }} size="small" min={0} />
                 </Form.Item>
               </Col>
             </Row>
 
             <Row gutter={16}>
               <Col span={12}>
-                <Form.Item name="payrollMethod" label="Payroll Method">
-                  <Select placeholder="Select payroll method">
+                <Form.Item name="payrollMethod" label="Pay Method">
+                  <Select size="small">
                     <Option value="STATION_WALLET">Station Wallet</Option>
                     <Option value="BANK_TRANSFER">Bank Transfer</Option>
                     <Option value="MOBILE_MONEY">Mobile Money</Option>
@@ -2037,54 +1470,18 @@ const StaffAccountManagement = () => {
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item name="paymentSchedule" label="Payment Schedule">
-                  <Select placeholder="Select payment schedule">
+                <Form.Item name="paymentSchedule" label="Schedule">
+                  <Select size="small">
                     <Option value="DAILY">Daily</Option>
                     <Option value="WEEKLY">Weekly</Option>
-                    <Option value="BI_WEEKLY">Bi-Weekly</Option>
                     <Option value="MONTHLY">Monthly</Option>
-                    <Option value="QUARTERLY">Quarterly</Option>
                   </Select>
                 </Form.Item>
               </Col>
             </Row>
 
-            <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item name="bankName" label="Bank Name">
-                  <Input placeholder="Enter bank name" />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item name="bankAccountNumber" label="Bank Account Number">
-                  <Input placeholder="Enter bank account number" />
-                </Form.Item>
-              </Col>
-            </Row>
-
-            <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item name="mobileMoneyNumber" label="Mobile Money Number">
-                  <Input placeholder="Enter mobile money number" />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item name="nextPaymentDate" label="Next Payment Date">
-                  <DatePicker 
-                    style={{ width: '100%' }} 
-                    placeholder="Select next payment date"
-                    format="YYYY-MM-DD"
-                  />
-                </Form.Item>
-              </Col>
-            </Row>
-
-            <Form.Item name="isActive" label="Account Status" valuePropName="checked">
-              <Switch checkedChildren="Active" unCheckedChildren="Inactive" />
-            </Form.Item>
-
-            <Form.Item name="notes" label="Notes">
-              <TextArea placeholder="Additional notes" rows={3} />
+            <Form.Item name="isActive" label="Active" valuePropName="checked">
+              <Switch size="small" />
             </Form.Item>
           </Form>
         )}
@@ -2099,149 +1496,65 @@ const StaffAccountManagement = () => {
           setSelectedAccount(null);
         }}
         footer={[
-          <Button 
-            key="close" 
-            onClick={() => setModalVisible(prev => ({ ...prev, viewDetails: false }))}
-          >
+          <Button key="close" onClick={() => setModalVisible(prev => ({ ...prev, viewDetails: false }))} size="small">
             Close
           </Button>,
           <Button
             key="edit"
             type="primary"
             onClick={() => {
-              setModalVisible(prev => ({ 
-                ...prev, 
-                viewDetails: false, 
-                updateAccount: true 
-              }));
+              setModalVisible(prev => ({ ...prev, viewDetails: false, updateAccount: true }));
             }}
+            size="small"
           >
-            Edit Account
+            Edit
           </Button>
         ]}
-        width={800}
+        width={700}
       >
         {selectedAccount && (
-          <div>
-            <Descriptions title="Account Information" bordered size="small" column={2}>
-              <Descriptions.Item label="Staff Member">
-                <Space direction="vertical" size={0}>
-                  <Text strong>
-                    {selectedAccount.user ? 
-                      `${selectedAccount.user.firstName || ''} ${selectedAccount.user.lastName || ''}`.trim() : 
-                      'Unknown User'}
-                  </Text>
-                  <Text type="secondary">{selectedAccount.user?.email}</Text>
-                  <Text type="secondary">ID: {selectedAccount.user?.id?.substring(0, 8)}...</Text>
-                </Space>
-              </Descriptions.Item>
-              <Descriptions.Item label="Station">
-                <Space direction="vertical" size={0}>
-                  <Text strong>{selectedAccount.station?.name}</Text>
-                  <Text type="secondary">{selectedAccount.station?.location || 'No location'}</Text>
-                </Space>
-              </Descriptions.Item>
-              <Descriptions.Item label="Account Status">
-                <Space>
-                  <Tag color={selectedAccount.isActive ? 'success' : 'default'}>
-                    {selectedAccount.isActive ? 'Active' : 'Inactive'}
-                  </Tag>
-                  {selectedAccount.isOnHold && (
-                    <Tag color="orange" icon={<LockOutlined />}>
-                      On Hold
-                    </Tag>
-                  )}
-                </Space>
-              </Descriptions.Item>
-              <Descriptions.Item label="Created">
-                {selectedAccount.createdAt ? 
-                  new Date(selectedAccount.createdAt).toLocaleDateString() : 'N/A'}
-              </Descriptions.Item>
-              <Descriptions.Item label="Account ID">
-                <Text copyable>{selectedAccount.id?.substring(0, 12)}...</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Last Updated">
-                {selectedAccount.updatedAt ? 
-                  new Date(selectedAccount.updatedAt).toLocaleDateString() : 'N/A'}
-              </Descriptions.Item>
-            </Descriptions>
-
-            <Divider />
-
-            <Descriptions title="Financial Information" bordered size="small" column={2}>
-              <Descriptions.Item label="Current Balance">
-                <Space direction="vertical" size={0}>
-                  <Text 
-                    strong 
-                    style={{ 
-                      color: getBalanceColor(selectedAccount.currentBalance),
-                      fontSize: '18px'
-                    }}
-                  >
-                    {formatCurrency(selectedAccount.currentBalance || 0)}
-                  </Text>
-                  <Text type="secondary">
-                    {selectedAccount.currentBalance < 0 ? 'Owes Station' : 
-                     selectedAccount.currentBalance > 0 ? 'Station Owes' : 'Settled'}
-                  </Text>
-                </Space>
-              </Descriptions.Item>
-              <Descriptions.Item label="Credit Limit">
-                <Space direction="vertical" size={0}>
-                  <Text strong>
-                    {formatCurrency(selectedAccount.creditLimit || 5000)}
-                  </Text>
-                  <Text type="secondary">
-                    Available: {formatCurrency(
-                      (selectedAccount.creditLimit || 5000) + 
-                      Math.min(selectedAccount.currentBalance || 0, 0)
-                    )}
-                  </Text>
-                </Space>
-              </Descriptions.Item>
-              <Descriptions.Item label="Salary Amount">
-                {selectedAccount.salaryAmount ? 
-                  formatCurrency(selectedAccount.salaryAmount) : 'Not Set'}
-              </Descriptions.Item>
-              <Descriptions.Item label="Next Payment Date">
-                {selectedAccount.nextPaymentDate ? 
-                  new Date(selectedAccount.nextPaymentDate).toLocaleDateString() : 'Not Set'}
-              </Descriptions.Item>
-              <Descriptions.Item label="Total Shortages">
-                {formatCurrency(selectedAccount.totalShortages || 0)}
-              </Descriptions.Item>
-              <Descriptions.Item label="Total Advances">
-                {formatCurrency(selectedAccount.totalAdvances || 0)}
-              </Descriptions.Item>
-            </Descriptions>
-
-            <Divider />
-
-            <Descriptions title="Payroll Settings" bordered size="small" column={2}>
-              <Descriptions.Item label="Payroll Method">
-                {getPayrollMethodLabel(selectedAccount.payrollMethod)}
-              </Descriptions.Item>
-              <Descriptions.Item label="Payment Schedule">
-                {getPaymentScheduleLabel(selectedAccount.paymentSchedule)}
-              </Descriptions.Item>
-              <Descriptions.Item label="Bank Account" span={2}>
-                {selectedAccount.bankAccountNumber ? (
-                  <Space direction="vertical" size={0}>
-                    <Text>{selectedAccount.bankAccountNumber}</Text>
-                    {selectedAccount.bankName && (
-                      <Text type="secondary">{selectedAccount.bankName}</Text>
-                    )}
-                  </Space>
-                ) : 'Not set'}
-              </Descriptions.Item>
-              <Descriptions.Item label="Mobile Money" span={2}>
-                {selectedAccount.mobileMoneyNumber || 'Not set'}
-              </Descriptions.Item>
-              <Descriptions.Item label="Notes" span={2}>
-                {selectedAccount.notes || 'No notes'}
-              </Descriptions.Item>
-            </Descriptions>
-          </div>
+          <Descriptions bordered column={2} size="small">
+            <Descriptions.Item label="Staff Name" span={2}>
+              <Space>
+                <Avatar size="small" icon={<UserOutlined />} />
+                <Text strong>
+                  {selectedAccount.user ? 
+                    `${selectedAccount.user.firstName || ''} ${selectedAccount.user.lastName || ''}`.trim() : 
+                    'Unknown User'}
+                </Text>
+              </Space>
+            </Descriptions.Item>
+            <Descriptions.Item label="Email">
+              {selectedAccount.user?.email || 'N/A'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Phone">
+              {selectedAccount.user?.phoneNumber || 'N/A'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Station">
+              {selectedAccount.station?.name || 'N/A'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Status">
+              <Space>
+                <Tag color={selectedAccount.isActive ? 'success' : 'default'}>
+                  {selectedAccount.isActive ? 'Active' : 'Inactive'}
+                </Tag>
+                {selectedAccount.isOnHold && (
+                  <Tag color="warning">On Hold</Tag>
+                )}
+              </Space>
+            </Descriptions.Item>
+            <Descriptions.Item label="Balance">
+              <Text style={{ color: getBalanceColor(selectedAccount.currentBalance) }}>
+                {formatCurrency(selectedAccount.currentBalance || 0)}
+              </Text>
+            </Descriptions.Item>
+            <Descriptions.Item label="Salary">
+              {formatCurrency(selectedAccount.salaryAmount || 0)}
+            </Descriptions.Item>
+            <Descriptions.Item label="Payment Method">
+              {getPayrollMethodLabel(selectedAccount.payrollMethod)}
+            </Descriptions.Item>
+          </Descriptions>
         )}
       </Modal>
     </div>

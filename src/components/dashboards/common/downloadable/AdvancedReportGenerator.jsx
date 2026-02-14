@@ -1,4 +1,4 @@
-// AdvancedReportGenerator.jsx - Complete Enhanced Version
+// AdvancedReportGenerator.jsx - Complete Fixed Version
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   Button, 
@@ -24,30 +24,19 @@ import {
   Badge,
   Tag,
   Alert,
-  Statistic,
   Progress,
-  Slider,
   Popconfirm,
-  Descriptions,
   Result,
-  Timeline,
-  Segmented,
-  QRCode,
-  DatePicker,
-  TimePicker,
-  Upload,
-  Table as AntTable,
   Steps,
-  Avatar,
-  List
+  List,
+  Popover,
+  Statistic,
+  Descriptions
 } from 'antd';
 import { 
   DownloadOutlined, 
   FilePdfOutlined, 
   FileExcelOutlined,
-  FileWordOutlined,
-  FileTextOutlined,
-  FileImageOutlined,
   SettingOutlined,
   SecurityScanOutlined,
   AuditOutlined,
@@ -57,78 +46,50 @@ import {
   UserOutlined,
   TeamOutlined,
   DollarOutlined,
-  BankOutlined,
-  PercentageOutlined,
-  CalculatorOutlined,
-  BarChartOutlined,
-  PieChartOutlined,
-  LineChartOutlined,
-  AreaChartOutlined,
-  TableOutlined,
   DatabaseOutlined,
   AppstoreOutlined,
   ShopOutlined,
   ShoppingOutlined,
-  ProfileOutlined,
   FileProtectOutlined,
   FileDoneOutlined,
-  FileSyncOutlined,
-  FileExcelFilled,
-  FilePdfFilled,
-  FileWordFilled,
   PrinterOutlined,
   ReloadOutlined,
-  ColumnHeightOutlined,
-  ColumnWidthOutlined,
   CompressOutlined,
   ExpandOutlined,
-  FontSizeOutlined,
-  BgColorsOutlined,
-  LayoutOutlined,
-  BorderOutlined,
-  TaobaoCircleOutlined,
   SaveOutlined,
   CopyOutlined,
   ShareAltOutlined,
-  QrcodeOutlined,
-  KeyOutlined,
   SafetyCertificateOutlined,
   HistoryOutlined,
   ClockCircleOutlined,
   CalendarOutlined,
   FilterOutlined,
-  SortAscendingOutlined,
-  SortDescendingOutlined,
-  SearchOutlined,
-  ClearOutlined,
-  PlusOutlined,
-  MinusOutlined,
   CheckCircleOutlined,
   WarningOutlined,
   InfoCircleOutlined,
-  StopOutlined,
   ExportOutlined,
-  ImportOutlined,
-  CloudDownloadOutlined,
-  CloudUploadOutlined,
-  SyncOutlined,
   LoadingOutlined,
-  QuestionCircleOutlined
+  QuestionCircleOutlined,
+  MenuOutlined,
+  DesktopOutlined,
+  MobileOutlined,
+  TableOutlined,
+  ColumnWidthOutlined,
+  BorderOutlined,
+  FullscreenOutlined,
+  FileTextOutlined
 } from '@ant-design/icons';
 import { useApp } from '../../../../context/AppContext';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import html2canvas from 'html2canvas';
 
 const { Title, Text, Paragraph } = Typography;
 const { Option } = Select;
 const { TabPane } = Tabs;
-const { RangePicker } = DatePicker;
 const { Step } = Steps;
-const { Countdown } = Statistic;
 
-// ========== REPORT THEMES & CONFIGURATIONS ==========
+// ========== REPORT THEMES ==========
 const REPORT_THEMES = {
   finance: {
     name: 'Financial Report',
@@ -137,17 +98,6 @@ const REPORT_THEMES = {
       primary: [30, 50, 92],      // Navy Blue
       secondary: [41, 128, 185],  // Professional Blue
       accent: [0, 150, 136],      // Teal
-      success: [46, 204, 113],    // Green
-      warning: [255, 152, 0],     // Amber
-      danger: [211, 47, 47],      // Crimson
-      info: [52, 152, 219]       // Light Blue
-    },
-    features: {
-      requireApproval: true,
-      requireAuditTrail: true,
-      confidentialLevel: 'high',
-      requiredFields: ['amount', 'date', 'transactionId'],
-      validations: ['numeric', 'positive', 'balanceCheck']
     }
   },
   users: {
@@ -157,18 +107,6 @@ const REPORT_THEMES = {
       primary: [103, 58, 183],    // Purple
       secondary: [156, 39, 176],  // Deep Purple
       accent: [255, 107, 0],      // Orange
-      success: [76, 175, 80],     // Green
-      warning: [255, 193, 7],     // Amber
-      danger: [244, 67, 54],      // Red
-      info: [33, 150, 243]       // Blue
-    },
-    features: {
-      requireApproval: false,
-      requireAuditTrail: true,
-      confidentialLevel: 'medium',
-      requiredFields: ['userId', 'name', 'email'],
-      validations: ['email', 'phone', 'dateOfBirth'],
-      maskSensitiveData: true
     }
   },
   sales: {
@@ -178,15 +116,6 @@ const REPORT_THEMES = {
       primary: [0, 150, 136],     // Teal
       secondary: [0, 188, 212],   // Cyan
       accent: [255, 87, 34],      // Deep Orange
-      success: [56, 142, 60],     // Green
-      warning: [255, 152, 0],     // Orange
-      danger: [198, 40, 40],      // Dark Red
-      info: [0, 188, 212]        // Cyan
-    },
-    features: {
-      requireApproval: false,
-      requireAuditTrail: true,
-      confidentialLevel: 'medium'
     }
   },
   inventory: {
@@ -196,10 +125,6 @@ const REPORT_THEMES = {
       primary: [255, 107, 0],     // Orange
       secondary: [255, 145, 0],   // Amber
       accent: [33, 150, 243],     // Blue
-      success: [0, 200, 83],      // Emerald
-      warning: [255, 193, 7],     // Yellow
-      danger: [255, 61, 0],       // Red
-      info: [255, 145, 0]        // Amber
     }
   },
   audit: {
@@ -209,16 +134,6 @@ const REPORT_THEMES = {
       primary: [121, 85, 72],     // Brown
       secondary: [93, 64, 55],    // Dark Brown
       accent: [141, 110, 99],     // Light Brown
-      success: [67, 160, 71],     // Green
-      warning: [251, 192, 45],    // Yellow
-      danger: [229, 57, 53],      // Red
-      info: [93, 64, 55]         // Dark Brown
-    },
-    features: {
-      requireApproval: true,
-      requireAuditTrail: true,
-      confidentialLevel: 'high',
-      immutable: true
     }
   },
   default: {
@@ -228,21 +143,18 @@ const REPORT_THEMES = {
       primary: [41, 128, 185],    // Blue
       secondary: [44, 62, 80],    // Dark Blue
       accent: [52, 152, 219],     // Light Blue
-      success: [46, 204, 113],    // Green
-      warning: [241, 196, 15],    // Yellow
-      danger: [231, 76, 60],      // Red
-      info: [52, 152, 219]       // Light Blue
     }
   }
 };
 
-// ========== COLUMN TYPES WITH FINANCIAL/USER SPECIFIC HANDLING ==========
+// ========== COLUMN TYPES ==========
 const COLUMN_TYPES = {
   text: {
     name: 'Text',
     format: (value) => String(value || ''),
     excelType: 's',
-    validation: null
+    minWidth: 30,
+    avgChars: 15
   },
   number: {
     name: 'Number',
@@ -252,7 +164,8 @@ const COLUMN_TYPES = {
     },
     excelType: 'n',
     style: { numFmt: '#,##0.00' },
-    validation: 'numeric'
+    minWidth: 25,
+    avgChars: 10
   },
   currency: {
     name: 'Currency',
@@ -261,9 +174,9 @@ const COLUMN_TYPES = {
       return isNaN(num) ? 0 : num;
     },
     excelType: 'n',
-    style: { numFmt: 'KSh #,##0.00;[Red]-KSh #,##0.00' },
-    validation: 'currency',
-    financial: true
+    style: { numFmt: 'KSh #,##0.00' },
+    minWidth: 35,
+    avgChars: 15
   },
   percentage: {
     name: 'Percentage',
@@ -273,8 +186,8 @@ const COLUMN_TYPES = {
     },
     excelType: 'n',
     style: { numFmt: '0.00%' },
-    validation: 'percentage',
-    financial: true
+    minWidth: 25,
+    avgChars: 8
   },
   date: {
     name: 'Date',
@@ -285,156 +198,87 @@ const COLUMN_TYPES = {
     },
     excelType: 'd',
     style: { numFmt: 'dd/mm/yyyy' },
-    validation: 'date'
+    minWidth: 30,
+    avgChars: 10
   },
   datetime: {
-    name: 'Date & Time',
+    name: 'Date Time',
     format: (value) => {
       if (!value) return '';
       const date = new Date(value);
       return isNaN(date.getTime()) ? '' : date.toLocaleString('en-KE');
     },
     excelType: 'd',
-    style: { numFmt: 'dd/mm/yyyy hh:mm:ss' },
-    validation: 'datetime'
+    style: { numFmt: 'dd/mm/yyyy hh:mm' },
+    minWidth: 40,
+    avgChars: 16
   },
   boolean: {
     name: 'Yes/No',
     format: (value) => value ? 'Yes' : 'No',
     excelType: 's',
-    validation: null
+    minWidth: 20,
+    avgChars: 3
   },
-  status: {
-    name: 'Status',
-    format: (value) => String(value || ''),
-    excelType: 's',
-    validation: null
-  },
-  // Financial specific
-  accountNumber: {
-    name: 'Account Number',
-    format: (value) => {
-      const str = String(value || '');
-      // Mask for display
-      return str.length > 4 ? `***${str.slice(-4)}` : str;
-    },
-    excelType: 's',
-    validation: 'accountNumber',
-    financial: true,
-    sensitive: true
-  },
-  amount: {
-    name: 'Amount',
-    format: (value) => {
-      const num = Number(value);
-      return isNaN(num) ? 0 : Math.abs(num);
-    },
-    excelType: 'n',
-    style: { numFmt: 'KSh #,##0.00;[Red]-KSh #,##0.00' },
-    validation: 'positiveAmount',
-    financial: true
-  },
-  balance: {
-    name: 'Balance',
-    format: (value) => {
-      const num = Number(value);
-      return isNaN(num) ? 0 : num;
-    },
-    excelType: 'n',
-    style: { numFmt: 'KSh #,##0.00;[Red]-KSh #,##0.00' },
-    validation: 'balance',
-    financial: true
-  },
-  // User specific
   email: {
     name: 'Email',
     format: (value) => String(value || ''),
     excelType: 's',
-    validation: 'email',
+    minWidth: 40,
+    avgChars: 20,
     sensitive: true
   },
   phone: {
     name: 'Phone',
-    format: (value) => {
-      const str = String(value || '');
-      // Mask phone number
-      return str.length > 4 ? `${str.slice(0, 3)}****${str.slice(-2)}` : str;
-    },
+    format: (value) => String(value || ''),
     excelType: 's',
-    validation: 'phone',
+    minWidth: 30,
+    avgChars: 12,
     sensitive: true
   },
-  nationalId: {
-    name: 'National ID',
+  accountNumber: {
+    name: 'Account No',
     format: (value) => {
       const str = String(value || '');
-      // Mask ID
-      return str.length > 5 ? `${str.slice(0, 2)}***${str.slice(-3)}` : str;
+      return str.length > 4 ? `***${str.slice(-4)}` : str;
     },
     excelType: 's',
-    validation: 'nationalId',
+    minWidth: 30,
+    avgChars: 10,
     sensitive: true
   }
 };
 
-// ========== DATA VALIDATION RULES ==========
-const VALIDATION_RULES = {
-  numeric: (value) => !isNaN(parseFloat(value)) && isFinite(value),
-  positive: (value) => parseFloat(value) >= 0,
-  currency: (value) => /^-?\d+(\.\d{1,2})?$/.test(value),
-  percentage: (value) => {
-    const num = parseFloat(value);
-    return !isNaN(num) && num >= 0 && num <= 100;
-  },
-  email: (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value),
-  phone: (value) => /^\+?[\d\s\-\(\)]{10,}$/.test(value),
-  nationalId: (value) => /^\d{6,12}$/.test(value),
-  accountNumber: (value) => /^[A-Z0-9]{8,20}$/.test(value),
-  date: (value) => !isNaN(new Date(value).getTime())
-};
-
 // ========== MAIN COMPONENT ==========
 const AdvancedReportGenerator = ({ 
-  // Dynamic table data
+  // Data
   dataSource = [],
   columns = [],
-  summaryData = null,
-  financialSummary = null,
   
-  // Report configuration
+  // Report info
   title = 'Report',
   fileName = 'report',
   reportType = 'default',
-  showFooter = true,
   footerText,
-  customStyles,
   
-  // Company/Station info
+  // Company/User info
   companyName: propCompanyName,
-  companyLogo = null,
   stationInfo: propStationInfo,
   
-  // Advanced features
-  includeLogo = false,
-  includeCharts = false,
-  includeFilters = false,
-  enableCustomization = true,
+  // Features
   requireApproval = false,
   enableAuditTrail = true,
-  dataSensitivity = 'medium',
+  showGrandTotals = true,
   
   // Callbacks
-  onColumnChange,
-  onSettingsSave,
   onReportGenerate,
   onReportApprove,
-  onReportExport,
-  onDataValidation
+  onSettingsChange
 }) => {
-  // Get state from context
+  // ========== CONTEXT ==========
   const { state } = useApp();
   
-  // Get company and user info from state
+  // Company and user info
   const companyName = propCompanyName || state?.currentCompany?.name || "Lynx Systems Ltd";
   const currentUser = state?.currentUser;
   const userName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : 'System User';
@@ -444,132 +288,61 @@ const AdvancedReportGenerator = ({
   const stationInfo = propStationInfo || {
     name: state?.currentStation?.name || 'Head Office',
     code: state?.currentStation?.code || 'HO001',
-    address: state?.currentStation?.location || 'Nairobi, Kenya',
-    manager: state?.currentStation?.manager || 'Station Manager'
+    location: state?.currentStation?.location || 'Nairobi, Kenya'
   };
-  
-  // ========== STATE DEFINITIONS ==========
-  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
-  const [previewModalVisible, setPreviewModalVisible] = useState(false);
-  const [securityModalVisible, setSecurityModalVisible] = useState(false);
-  const [auditModalVisible, setAuditModalVisible] = useState(false);
+
+  // ========== PDF ORIENTATION & COLUMN CALCULATION ==========
+  const PDF_WIDTHS = {
+    portrait: 210, // A4 width in mm
+    landscape: 297 // A4 landscape width in mm
+  };
+
+  // ========== STATE ==========
   const [selectedColumns, setSelectedColumns] = useState([]);
-  const [columnWidths, setColumnWidths] = useState({});
   const [filteredData, setFilteredData] = useState([]);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [isGeneratingExcel, setIsGeneratingExcel] = useState(false);
-  const [isValidatingData, setIsValidatingData] = useState(false);
-  const [validationErrors, setValidationErrors] = useState([]);
   const [exportProgress, setExportProgress] = useState(0);
   const [auditLog, setAuditLog] = useState([]);
-  const [reportApproval, setReportApproval] = useState({
-    approved: false,
-    approvedBy: '',
-    approvedAt: null,
-    approvalNotes: '',
-    requiresApproval: requireApproval || false
-  });
-
-  // Enhanced state for intelligent column management
-  const [optimizedColumnWidths, setOptimizedColumnWidths] = useState({});
-  const [columnWidthMode, setColumnWidthMode] = useState('auto');
-  const [tableSettings, setTableSettings] = useState({
-    maxColumnWidth: 100,
-    minColumnWidth: 15,
-    defaultColumnWidth: 40,
-    compressMode: true,
-    overflowStrategy: 'wrap',
-    columnPriority: 'balance',
-    maxRowsPerPage: 50,
-    autoPageBreak: true
+  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [previewModalVisible, setPreviewModalVisible] = useState(false);
+  const [orientationModalVisible, setOrientationModalVisible] = useState(false);
+  
+  // PDF specific state
+  const [pdfOrientation, setPdfOrientation] = useState('landscape');
+  const [columnWidths, setColumnWidths] = useState({});
+  const [pdfSettings, setPdfSettings] = useState({
+    fontSize: 8,
+    headerFontSize: 10,
+    cellPadding: 2,
+    showBorders: true,
+    alternateRowColors: true,
+    includeFooter: true,
+    includePageNumbers: true
   });
 
   // Security settings
   const [securitySettings, setSecuritySettings] = useState({
     passwordProtected: false,
     password: '',
-    encryptionLevel: 'standard',
     watermarkText: 'CONFIDENTIAL',
-    allowCopying: false,
-    allowPrinting: true,
-    expirationDate: null,
-    accessRestrictions: [],
     hideSensitiveData: reportType === 'users' || reportType === 'finance'
   });
 
-  // Report settings
-  const [reportSettings, setReportSettings] = useState({
-    // Layout
-    pageOrientation: 'landscape',
-    fontSize: 9,
-    rowHeight: 6,
-    cellPadding: 3,
-    
-    // Colors
-    colorScheme: reportType,
-    customColors: null,
-    
-    // Content
-    includeHeader: true,
-    includeFooter: showFooter,
-    includeSummary: !!summaryData,
-    includeFinancialSummary: !!financialSummary,
-    includePageNumbers: true,
-    includeTimestamp: true,
-    includeStationInfo: !!stationInfo,
-    includeGeneratedBy: true,
-    includeQRCode: false,
-    includeWatermark: false,
-    
-    // Table
-    showGridLines: true,
-    alternateRowColors: true,
-    autoWrapText: true,
-    headerStyle: 'bold',
-    showTotals: true,
-    showSubtotals: false,
-    
-    // Data
-    groupBy: null,
-    sortBy: null,
-    filterBy: null,
-    dateRange: null,
-    
-    // Company info
-    companyName: companyName,
-    reportSubtitle: '',
-    customHeader: '',
-    
-    // Financial specific
-    includeTaxCalculations: reportType === 'finance',
-    includeVAT: false,
-    currency: 'KES',
-    exchangeRate: 1,
-    
-    // User specific
-    maskPersonalData: reportType === 'users',
-    includeUserStatistics: false
+  // Report approval
+  const [reportApproval, setReportApproval] = useState({
+    approved: false,
+    approvedBy: '',
+    approvedAt: null,
+    requiresApproval: requireApproval
   });
 
-  const [form] = Form.useForm();
-  const [activeSettingsTab, setActiveSettingsTab] = useState('columns');
   const [exportStep, setExportStep] = useState(0);
-  const reportRef = useRef(null);
-
-  // Get current theme with enhanced features
-  const currentTheme = useMemo(() => {
-    return REPORT_THEMES[reportSettings.colorScheme] || REPORT_THEMES.default;
-  }, [reportSettings.colorScheme]);
-
-  // Get colors
-  const colors = useMemo(() => {
-    return reportSettings.customColors || currentTheme.colors;
-  }, [reportSettings.customColors, currentTheme]);
 
   // ========== INITIALIZATION ==========
   useEffect(() => {
     initializeReport();
-  }, [columns, dataSource, reportType, companyName]);
+  }, [columns, dataSource]);
 
   const initializeReport = () => {
     // Initialize selected columns
@@ -578,401 +351,142 @@ const AdvancedReportGenerator = ({
       .map(col => col.dataIndex);
     setSelectedColumns(initialColumns);
     
-    // Initialize column widths
-    const widths = {};
-    columns.forEach(col => {
-      if (col.dataIndex) {
-        widths[col.dataIndex] = col.width || 'auto';
-      }
-    });
-    setColumnWidths(widths);
-    
-    // Initialize filtered data
+    // Set filtered data
     setFilteredData(dataSource);
     
-    // Calculate optimized widths
-    calculateOptimalColumnWidths();
+    // Calculate optimal orientation based on columns
+    const optimalOrientation = calculateOptimalOrientation(initialColumns.length);
+    setPdfOrientation(optimalOrientation);
     
-    // Load saved settings
-    loadSavedSettings();
+    // Calculate column widths
+    const widths = calculateColumnWidths(initialColumns);
+    setColumnWidths(widths);
     
     // Initialize audit log
-    initializeAuditLog();
-    
-    // Run initial data validation
-    if (dataSource.length > 0) {
-      validateData();
+    if (enableAuditTrail) {
+      addAuditEntry('Report Initialized', `${dataSource.length} records loaded`);
     }
   };
 
-  const loadSavedSettings = () => {
-    const savedSettings = localStorage.getItem(`reportSettings_${reportType}`);
-    if (savedSettings) {
-      try {
-        const parsed = JSON.parse(savedSettings);
-        setReportSettings(prev => ({
-          ...prev,
-          ...parsed,
-          companyName: companyName
-        }));
-      } catch (error) {
-        console.error('Error loading report settings:', error);
-      }
-    }
-    
-    // Load security settings
-    const savedSecurity = localStorage.getItem(`reportSecurity_${reportType}`);
-    if (savedSecurity) {
-      try {
-        setSecuritySettings(JSON.parse(savedSecurity));
-      } catch (error) {
-        console.error('Error loading security settings:', error);
-      }
+  // Calculate optimal orientation based on column count
+  const calculateOptimalOrientation = (columnCount) => {
+    if (columnCount <= 5) {
+      return 'portrait';
+    } else {
+      return 'landscape';
     }
   };
 
-  const initializeAuditLog = () => {
-    const auditEntries = [
-      {
-        id: 1,
-        action: 'Report Initialized',
-        user: userName,
-        timestamp: new Date().toISOString(),
-        details: `${reportType} report initialized with ${dataSource.length} records`,
-        ipAddress: 'N/A',
-        userAgent: navigator.userAgent
-      }
-    ];
+  // Calculate recommended column widths
+  const calculateColumnWidths = useCallback((cols = selectedColumns) => {
+    const visibleColumns = getVisibleColumns(cols);
+    if (visibleColumns.length === 0) return {};
     
-    setAuditLog(auditEntries);
-  };
+    const availableWidth = PDF_WIDTHS[pdfOrientation] - 40; // 20mm margins on each side
+    
+    const widths = {};
+    const contentLengths = [];
+    
+    // Calculate content length for each column
+    visibleColumns.forEach((col, index) => {
+      let maxLength = col.title ? col.title.length : 0;
+      
+      // Sample data to find max content length
+      dataSource.slice(0, 30).forEach(row => {
+        const value = row[col.dataIndex];
+        if (value) {
+          const strValue = String(value);
+          maxLength = Math.max(maxLength, strValue.length);
+        }
+      });
+      
+      // Add buffer based on column type
+      const colType = COLUMN_TYPES[col.type] || COLUMN_TYPES.text;
+      const buffer = colType.avgChars || 5;
+      contentLengths[index] = maxLength + buffer;
+    });
+
+    // Calculate total content units
+    const totalUnits = contentLengths.reduce((sum, len) => sum + len, 0);
+    
+    // Distribute width proportionally
+    visibleColumns.forEach((col, index) => {
+      const colType = COLUMN_TYPES[col.type] || COLUMN_TYPES.text;
+      const proportion = contentLengths[index] / totalUnits;
+      let width = proportion * availableWidth;
+      
+      // Apply min/max constraints
+      const minWidth = colType.minWidth || 20;
+      const maxWidth = 70; // Max 70mm per column
+      
+      width = Math.max(minWidth, Math.min(width, maxWidth));
+      
+      // If in landscape, we can be slightly more generous
+      if (pdfOrientation === 'landscape') {
+        width = Math.min(width * 1.1, maxWidth);
+      }
+      
+      widths[col.dataIndex] = Math.round(width);
+    });
+
+    // If total width is less than available, distribute extra space to priority columns
+    const totalWidth = Object.values(widths).reduce((sum, w) => sum + w, 0);
+    if (totalWidth < availableWidth) {
+      const extraSpace = availableWidth - totalWidth;
+      const priorityColumns = visibleColumns.filter(col => 
+        ['currency', 'amount', 'balance'].includes(col.type)
+      );
+      
+      if (priorityColumns.length > 0) {
+        const extraPerPriority = extraSpace / priorityColumns.length;
+        priorityColumns.forEach(col => {
+          widths[col.dataIndex] = Math.round(widths[col.dataIndex] + extraPerPriority);
+        });
+      } else {
+        // Distribute evenly
+        const extraPerColumn = extraSpace / visibleColumns.length;
+        visibleColumns.forEach(col => {
+          widths[col.dataIndex] = Math.round(widths[col.dataIndex] + extraPerColumn);
+        });
+      }
+    }
+
+    return widths;
+  }, [selectedColumns, dataSource, pdfOrientation]);
+
+  // Recalculate when columns or orientation changes
+  useEffect(() => {
+    if (selectedColumns.length > 0) {
+      const widths = calculateColumnWidths();
+      setColumnWidths(widths);
+    }
+  }, [selectedColumns, pdfOrientation]);
 
   const addAuditEntry = (action, details = '') => {
     const newEntry = {
       id: auditLog.length + 1,
       action,
       user: userName,
+      userId: userId,
       timestamp: new Date().toISOString(),
-      details,
-      ipAddress: 'N/A',
-      userAgent: navigator.userAgent
+      details
     };
-    
     setAuditLog(prev => [newEntry, ...prev]);
     
-    // Save to localStorage for persistence
-    const auditHistory = JSON.parse(localStorage.getItem('reportAuditHistory') || '[]');
-    auditHistory.unshift(newEntry);
-    localStorage.setItem('reportAuditHistory', JSON.stringify(auditHistory.slice(0, 100))); // Keep last 100 entries
+    // Store in localStorage
+    const history = JSON.parse(localStorage.getItem('reportAuditHistory') || '[]');
+    history.unshift(newEntry);
+    localStorage.setItem('reportAuditHistory', JSON.stringify(history.slice(0, 50)));
   };
 
-  // ========== INTELLIGENT COLUMN WIDTH CALCULATION ==========
-  const calculateOptimalColumnWidths = useCallback(() => {
-    if (filteredData.length === 0) return {};
-
-    const visibleColumns = getVisibleColumns();
-    const pageWidth = reportSettings.pageOrientation === 'landscape' ? 290 : 200;
-    const maxColumns = Math.floor(pageWidth / tableSettings.minColumnWidth);
-    
-    if (visibleColumns.length > maxColumns && tableSettings.compressMode) {
-      message.warning(`Table has ${visibleColumns.length} columns. Auto-compression enabled.`);
-    }
-
-    const widths = {};
-    const columnAnalysis = {};
-    
-    // Analyze each column
-    visibleColumns.forEach(col => {
-      const dataIndex = col.dataIndex;
-      const values = filteredData.map(row => {
-        let value = row[dataIndex];
-        if (col.render) {
-          try {
-            value = col.render(value, row);
-            value = extractTextFromElement(value);
-          } catch (err) {
-            value = String(value || '');
-          }
-        }
-        return String(value || '');
-      });
-      
-      const maxLength = Math.max(
-        String(col.title || '').length,
-        ...values.map(v => v.length)
-      );
-      
-      const avgLength = values.reduce((sum, v) => sum + v.length, 0) / values.length;
-      
-      columnAnalysis[dataIndex] = {
-        maxLength,
-        avgLength,
-        type: col.type || 'text',
-        isNumeric: ['number', 'currency', 'percentage', 'amount', 'balance'].includes(col.type),
-        isSensitive: ['email', 'phone', 'nationalId', 'accountNumber'].includes(col.type),
-        hasLongText: maxLength > 50
-      };
-    });
-
-    // Calculate initial widths
-    let totalRequiredWidth = 0;
-    visibleColumns.forEach(col => {
-      const analysis = columnAnalysis[col.dataIndex];
-      
-      let width;
-      if (analysis.isNumeric) {
-        width = Math.max(
-          tableSettings.minColumnWidth,
-          Math.min(analysis.maxLength * 1.5, tableSettings.maxColumnWidth)
-        );
-      } else if (analysis.isSensitive && securitySettings.hideSensitiveData) {
-        width = Math.min(tableSettings.defaultColumnWidth * 0.8, tableSettings.maxColumnWidth * 0.4);
-      } else if (analysis.hasLongText) {
-        width = tableSettings.overflowStrategy === 'wrap' 
-          ? Math.min(analysis.avgLength * 1.2, tableSettings.maxColumnWidth * 0.7)
-          : Math.min(analysis.avgLength * 0.8, tableSettings.maxColumnWidth * 0.5);
-      } else {
-        width = Math.max(
-          tableSettings.minColumnWidth,
-          Math.min(analysis.avgLength * 1.5, tableSettings.maxColumnWidth)
-        );
-      }
-      
-      // Apply user overrides
-      if (columnWidths[col.dataIndex] && columnWidths[col.dataIndex] !== 'auto') {
-        width = Math.min(parseInt(columnWidths[col.dataIndex]), tableSettings.maxColumnWidth);
-      }
-      
-      widths[col.dataIndex] = Math.round(width);
-      totalRequiredWidth += width;
-    });
-
-    // Adjust to fit page
-    if (totalRequiredWidth > pageWidth) {
-      const scaleFactor = pageWidth / totalRequiredWidth;
-      const priorityMap = {
-        numeric: 1,
-        sensitive: 2,
-        default: 3
-      };
-      
-      visibleColumns.forEach(col => {
-        const analysis = columnAnalysis[col.dataIndex];
-        const priority = analysis.isNumeric ? 1 : analysis.isSensitive ? 2 : 3;
-        const adjustment = scaleFactor * (1 - (priority * 0.1));
-        widths[col.dataIndex] = Math.max(
-          tableSettings.minColumnWidth,
-          Math.round(widths[col.dataIndex] * adjustment)
-        );
-      });
-    }
-    
-    setOptimizedColumnWidths(widths);
-    return widths;
-  }, [filteredData, tableSettings, columnWidths, reportSettings.pageOrientation, securitySettings.hideSensitiveData]);
-
-  // ========== DATA VALIDATION ==========
-  const validateData = async () => {
-    setIsValidatingData(true);
-    const errors = [];
-    
-    try {
-      const visibleColumns = getVisibleColumns();
-      
-      // Validate each column based on type
-      visibleColumns.forEach(col => {
-        if (!col.type || !VALIDATION_RULES[col.type]) return;
-        
-        filteredData.forEach((row, rowIndex) => {
-          const value = row[col.dataIndex];
-          const validationRule = VALIDATION_RULES[col.type];
-          
-          if (value !== undefined && value !== null && value !== '' && !validationRule(value)) {
-            errors.push({
-              row: rowIndex + 1,
-              column: col.title || col.dataIndex,
-              value,
-              type: col.type,
-              message: `Invalid ${col.type} value: ${value}`
-            });
-          }
-        });
-      });
-      
-      // Financial report specific validations
-      if (reportType === 'finance') {
-        validateFinancialData(errors);
-      }
-      
-      // User report specific validations
-      if (reportType === 'users') {
-        validateUserData(errors);
-      }
-      
-      setValidationErrors(errors);
-      
-      if (onDataValidation) {
-        onDataValidation(errors);
-      }
-      
-      if (errors.length > 0) {
-        message.warning(`Found ${errors.length} validation errors`);
-      } else {
-        message.success('Data validation passed');
-      }
-      
-    } catch (error) {
-      console.error('Validation error:', error);
-      message.error('Data validation failed');
-    } finally {
-      setIsValidatingData(false);
-    }
-  };
-
-  const validateFinancialData = (errors) => {
-    // Check for negative balances
-    const balanceColumn = columns.find(col => col.type === 'balance');
-    if (balanceColumn) {
-      filteredData.forEach((row, index) => {
-        const balance = parseFloat(row[balanceColumn.dataIndex]);
-        if (balance < 0) {
-          errors.push({
-            row: index + 1,
-            column: balanceColumn.title,
-            value: balance,
-            type: 'balance',
-            message: `Negative balance detected: ${balance}`
-          });
-        }
-      });
-    }
-    
-    // Verify total calculations
-    if (summaryData && summaryData.total) {
-      const amountColumn = columns.find(col => col.type === 'amount');
-      if (amountColumn) {
-        const calculatedTotal = filteredData.reduce((sum, row) => {
-          return sum + (parseFloat(row[amountColumn.dataIndex]) || 0);
-        }, 0);
-        
-        if (Math.abs(calculatedTotal - summaryData.total) > 0.01) {
-          errors.push({
-            row: 'Summary',
-            column: 'Total Amount',
-            value: summaryData.total,
-            calculated: calculatedTotal,
-            type: 'totalMismatch',
-            message: `Total mismatch: Expected ${summaryData.total}, Calculated ${calculatedTotal}`
-          });
-        }
-      }
-    }
-  };
-
-  const validateUserData = (errors) => {
-    // Check for duplicate emails
-    const emailColumn = columns.find(col => col.type === 'email');
-    if (emailColumn) {
-      const emailMap = {};
-      filteredData.forEach((row, index) => {
-        const email = row[emailColumn.dataIndex];
-        if (email) {
-          if (emailMap[email]) {
-            errors.push({
-              row: index + 1,
-              column: emailColumn.title,
-              value: email,
-              type: 'duplicateEmail',
-              message: `Duplicate email found: ${email}`
-            });
-          } else {
-            emailMap[email] = true;
-          }
-        }
-      });
-    }
-  };
-
-  // ========== DATA PROCESSING & FORMATTING ==========
-  const getVisibleColumns = () => {
+  // ========== DATA PROCESSING ==========
+  const getVisibleColumns = (cols = selectedColumns) => {
     return columns.filter(col => 
-      selectedColumns.includes(col.dataIndex) && 
-      col.dataIndex && 
-      col.title
+      cols.includes(col.dataIndex)
     ).map(col => ({
       ...col,
-      width: optimizedColumnWidths[col.dataIndex] || columnWidths[col.dataIndex] || col.width || 'auto',
-      type: col.type || 'text',
-      format: col.format || COLUMN_TYPES[col.type || 'text'].format,
-      isSensitive: COLUMN_TYPES[col.type]?.sensitive || false
+      type: col.type || 'text'
     }));
-  };
-
-  const extractTextFromElement = (element) => {
-    if (typeof element === 'string') return element;
-    if (typeof element === 'number') return String(element);
-    if (element === null || element === undefined) return '';
-    
-    if (React.isValidElement(element)) {
-      if (element.props && element.props.children) {
-        if (typeof element.props.children === 'string') {
-          return element.props.children;
-        }
-        if (typeof element.props.children === 'number') {
-          return String(element.props.children);
-        }
-        if (Array.isArray(element.props.children)) {
-          return element.props.children
-            .map(child => extractTextFromElement(child))
-            .join(' ');
-        }
-        return extractTextFromElement(element.props.children);
-      }
-    }
-    
-    return String(element);
-  };
-
-  const formatCurrency = (amount, currency = reportSettings.currency) => {
-    if (!amount && amount !== 0) return 'N/A';
-    return new Intl.NumberFormat('en-KE', {
-      style: 'currency',
-      currency: currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(amount);
-  };
-
-  const maskSensitiveData = (value, dataType) => {
-    if (!securitySettings.hideSensitiveData) return value;
-    
-    const str = String(value || '');
-    
-    switch (dataType) {
-      case 'email':
-        const [local, domain] = str.split('@');
-        return local && domain 
-          ? `${local.charAt(0)}***@${domain}`
-          : str;
-      
-      case 'phone':
-        return str.length > 4 
-          ? `${str.slice(0, 3)}****${str.slice(-2)}`
-          : str;
-      
-      case 'nationalId':
-        return str.length > 5 
-          ? `${str.slice(0, 2)}***${str.slice(-3)}`
-          : str;
-      
-      case 'accountNumber':
-        return str.length > 4 
-          ? `***${str.slice(-4)}`
-          : str;
-      
-      default:
-        return str;
-    }
   };
 
   const getExportData = () => {
@@ -980,37 +494,23 @@ const AdvancedReportGenerator = ({
     
     const headers = visibleColumns.map(col => ({
       key: col.dataIndex,
-      title: typeof col.title === 'string' ? col.title : col.key || col.dataIndex,
+      title: typeof col.title === 'string' ? col.title : col.dataIndex,
       dataIndex: col.dataIndex,
       type: col.type,
-      format: col.format,
-      width: col.width,
-      render: col.render,
-      isSensitive: col.isSensitive,
-      excelType: COLUMN_TYPES[col.type]?.excelType || 's'
+      format: COLUMN_TYPES[col.type]?.format || COLUMN_TYPES.text.format
     }));
 
     const data = filteredData.map(record => 
       headers.reduce((acc, header) => {
         let value = record[header.dataIndex];
         
-        // Apply mask for sensitive data
-        if (header.isSensitive && securitySettings.hideSensitiveData) {
+        // Apply masking for sensitive data
+        if (securitySettings.hideSensitiveData && 
+            COLUMN_TYPES[header.type]?.sensitive) {
           value = maskSensitiveData(value, header.type);
         }
         
-        // Apply column render function
-        if (header.render && typeof header.render === 'function') {
-          try {
-            const rendered = header.render(value, record);
-            value = extractTextFromElement(rendered);
-          } catch (err) {
-            console.warn('Error rendering column:', err);
-            value = record[header.dataIndex];
-          }
-        }
-        
-        // Format value based on column type
+        // Format value
         value = header.format ? header.format(value) : value;
         
         acc[header.title] = value != null ? String(value) : '';
@@ -1021,15 +521,34 @@ const AdvancedReportGenerator = ({
     return { headers, data };
   };
 
-  const calculateColumnTotals = () => {
+  const maskSensitiveData = (value, type) => {
+    const str = String(value || '');
+    switch (type) {
+      case 'email':
+        const parts = str.split('@');
+        if (parts.length === 2) {
+          return `${parts[0].charAt(0)}***@${parts[1]}`;
+        }
+        return str;
+      case 'phone':
+        return str.length > 4 ? `${str.slice(0, 3)}****${str.slice(-2)}` : str;
+      case 'accountNumber':
+        return str.length > 4 ? `***${str.slice(-4)}` : str;
+      default:
+        return str;
+    }
+  };
+
+  const calculateTotals = () => {
+    if (!showGrandTotals) return {};
+    
     const visibleColumns = getVisibleColumns();
     const totals = {};
     
     visibleColumns.forEach(col => {
-      if (['currency', 'number', 'amount', 'balance', 'percentage'].includes(col.type)) {
+      if (['number', 'currency', 'amount', 'balance'].includes(col.type)) {
         const total = filteredData.reduce((sum, record) => {
-          const value = record[col.dataIndex];
-          return sum + (parseFloat(value) || 0);
+          return sum + (parseFloat(record[col.dataIndex]) || 0);
         }, 0);
         totals[col.dataIndex] = total;
       }
@@ -1038,41 +557,10 @@ const AdvancedReportGenerator = ({
     return totals;
   };
 
-  const calculateFinancialSummary = () => {
-    if (!financialSummary) return null;
-    
-    const visibleColumns = getVisibleColumns();
-    const summary = {
-      totals: calculateColumnTotals(),
-      counts: {},
-      averages: {},
-      minMax: {}
-    };
-    
-    visibleColumns.forEach(col => {
-      if (['currency', 'number', 'amount'].includes(col.type)) {
-        const values = filteredData
-          .map(row => parseFloat(row[col.dataIndex]) || 0)
-          .filter(v => !isNaN(v));
-        
-        if (values.length > 0) {
-          summary.counts[col.dataIndex] = values.length;
-          summary.averages[col.dataIndex] = values.reduce((a, b) => a + b, 0) / values.length;
-          summary.minMax[col.dataIndex] = {
-            min: Math.min(...values),
-            max: Math.max(...values)
-          };
-        }
-      }
-    });
-    
-    return summary;
-  };
-
-  // ========== ENHANCED PDF GENERATION ==========
-  const generatePDF = async () => {
+  // ========== PDF GENERATION ==========
+  const generatePDF = async (orientation = pdfOrientation) => {
     if (filteredData.length === 0) {
-      message.warning('No data available to generate PDF');
+      message.warning('No data to export');
       return;
     }
 
@@ -1083,411 +571,227 @@ const AdvancedReportGenerator = ({
 
     setIsGeneratingPDF(true);
     setExportStep(1);
-    addAuditEntry('PDF Export Started', `Generating ${title} PDF`);
+    addAuditEntry('PDF Export Started', `Generating ${title} with ${orientation} orientation`);
 
     try {
       if (onReportGenerate) {
         onReportGenerate('pdf');
       }
 
+      // Create PDF document with selected orientation
       const doc = new jsPDF({
-        orientation: reportSettings.pageOrientation,
+        orientation: orientation,
         unit: 'mm',
         format: 'a4'
       });
-      
+
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 15;
+      const contentWidth = pageWidth - (margin * 2);
 
       const { headers, data } = getExportData();
-      const columnTotals = calculateColumnTotals();
-      const hasTotals = Object.keys(columnTotals).length > 0;
-      const financialSummary = calculateFinancialSummary();
+      const visibleColumns = getVisibleColumns();
+      const totals = calculateTotals();
 
       setExportStep(2);
 
-      let yPosition = 0;
+      // =========== PREPARE COLUMN WIDTHS ===========
+      const colWidths = [];
+      visibleColumns.forEach((col, index) => {
+        colWidths[index] = columnWidths[col.dataIndex] || 30;
+      });
 
-      // =========== SECURITY WATERMARK ===========
-      if (securitySettings.watermarkText) {
-        doc.setFontSize(40);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(230, 230, 230);
-        doc.text(securitySettings.watermarkText, pageWidth / 2, pageHeight / 2, { 
-          align: 'center',
-          angle: 45 
+      // Adjust if total width exceeds content width
+      const totalColWidth = colWidths.reduce((sum, w) => sum + w, 0);
+      if (totalColWidth > contentWidth) {
+        const scaleFactor = contentWidth / totalColWidth;
+        colWidths.forEach((w, i) => {
+          colWidths[i] = Math.max(20, Math.round(w * scaleFactor));
         });
-      }
-
-      // =========== HEADER SECTION ===========
-      if (reportSettings.includeHeader) {
-        // Header background
-        doc.setFillColor(...colors.primary);
-        doc.rect(0, 0, pageWidth, 50, 'F');
-        
-        // Company Logo/Name
-        doc.setFontSize(16);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(255, 255, 255);
-        doc.text(companyName.toUpperCase(), pageWidth / 2, 12, { align: 'center' });
-        
-        // Report Title
-        doc.setFontSize(14);
-        doc.setFont('helvetica', 'normal');
-        doc.text(title, pageWidth / 2, 20, { align: 'center' });
-        
-        // Report Subtitle
-        if (reportSettings.reportSubtitle) {
-          doc.setFontSize(10);
-          doc.text(reportSettings.reportSubtitle, pageWidth / 2, 26, { align: 'center' });
-        }
-        
-        // Metadata
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(240, 240, 240);
-        
-        // Left metadata
-        const leftMeta = [
-          `Report ID: ${generateReportId()}`,
-          `Type: ${currentTheme.name}`,
-          `Generated: ${new Date().toLocaleString('en-KE')}`,
-          `By: ${userName} (${userRole})`
-        ];
-        
-        leftMeta.forEach((text, index) => {
-          doc.text(text, 15, 38 + (index * 4));
-        });
-        
-        // Right metadata - Station Info
-        if (reportSettings.includeStationInfo && stationInfo) {
-          const rightMeta = [
-            `Station: ${stationInfo.name}`,
-            `Code: ${stationInfo.code}`,
-            `Manager: ${stationInfo.manager}`,
-            `Date Range: ${reportSettings.dateRange ? formatDateRange(reportSettings.dateRange) : 'All Time'}`
-          ];
-          
-          rightMeta.forEach((text, index) => {
-            doc.text(text, pageWidth - 15, 38 + (index * 4), { align: 'right' });
-          });
-        }
-        
-        yPosition = 55;
-      } else {
-        yPosition = 20;
-      }
-
-      // =========== FINANCIAL SUMMARY ===========
-      if (reportSettings.includeFinancialSummary && financialSummary && financialSummary.totals) {
-        const summaryHeight = 35;
-        
-        // Summary box
-        doc.setDrawColor(...colors.accent);
-        doc.setLineWidth(0.5);
-        doc.setFillColor(250, 250, 250);
-        doc.roundedRect(10, yPosition, pageWidth - 20, summaryHeight, 3, 3, 'FD');
-        
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(...colors.accent);
-        doc.text('FINANCIAL SUMMARY', 15, yPosition + 8);
-        
-        doc.setLineWidth(0.2);
-        doc.setDrawColor(200, 200, 200);
-        doc.line(15, yPosition + 11, pageWidth - 25, yPosition + 11);
-        
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        
-        // Summary items in grid
-        const summaryItems = Object.entries(financialSummary.totals).slice(0, 6);
-        const colWidth = (pageWidth - 30) / Math.min(summaryItems.length, 3);
-        const rowHeight = 8;
-        
-        summaryItems.forEach(([colKey, total], index) => {
-          const col = headers.find(h => h.dataIndex === colKey);
-          if (!col) return;
-          
-          const row = Math.floor(index / 3);
-          const colPos = index % 3;
-          const xPos = 15 + (colPos * colWidth);
-          const yPos = yPosition + 16 + (row * rowHeight);
-          
-          doc.setTextColor(100, 100, 100);
-          doc.text(col.title, xPos, yPos);
-          
-          doc.setFont('helvetica', 'bold');
-          doc.setTextColor(...colors.primary);
-          doc.text(formatCurrency(total), xPos, yPos + 4);
-        });
-        
-        yPosition += summaryHeight + 10;
-      }
-
-      // =========== VALIDATION STATUS ===========
-      if (validationErrors.length > 0) {
-        const validationHeight = 15;
-        
-        doc.setFillColor(255, 243, 205);
-        doc.setDrawColor(255, 193, 7);
-        doc.setLineWidth(0.5);
-        doc.roundedRect(10, yPosition, pageWidth - 20, validationHeight, 2, 2, 'FD');
-        
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(102, 77, 3);
-        doc.text('⚠ DATA VALIDATION NOTES', 15, yPosition + 7);
-        
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(102, 77, 3);
-        doc.text(`${validationErrors.length} validation issues found. See detailed report for more information.`, 
-          30, yPosition + 12);
-        
-        yPosition += validationHeight + 10;
       }
 
       setExportStep(3);
 
-      // =========== MAIN TABLE WITH OPTIMIZED WIDTHS ===========
-      const tableHeaders = headers.map(header => header.title);
-      
-      // Prepare table data with formatting
-      const tableData = data.map((record, rowIndex) => 
-        headers.map((header, colIndex) => {
-          let value = record[header.title];
-          
-          // Apply overflow strategy
-          if (value && value.length > 100) {
-            switch (tableSettings.overflowStrategy) {
-              case 'truncate':
-                value = value.substring(0, 97) + '...';
-                break;
-              case 'ellipsis':
-                value = value.substring(0, 50) + '...';
-                break;
-            }
+      // =========== PREPARE TABLE DATA ===========
+      const tableHeaders = headers.map(h => h.title);
+      const tableData = data.map(row => 
+        headers.map(h => {
+          let value = row[h.title] || '';
+          if (value.length > 100) {
+            value = value.substring(0, 97) + '...';
           }
-          
-          return value || '';
+          return value;
         })
       );
 
-      // Add totals row
-      if (hasTotals && reportSettings.showTotals) {
+      // Add totals row if needed
+      if (showGrandTotals && Object.keys(totals).length > 0) {
         const totalsRow = headers.map(header => {
-          const total = columnTotals[header.dataIndex];
-          if (total !== undefined && ['currency', 'number', 'amount'].includes(header.type)) {
-            return formatCurrency(total);
+          const total = totals[header.dataIndex];
+          if (total !== undefined) {
+            return new Intl.NumberFormat('en-KE', {
+              style: 'currency',
+              currency: 'KES',
+              minimumFractionDigits: 2
+            }).format(total);
           }
           return header.dataIndex === headers[0].dataIndex ? 'TOTAL' : '';
         });
         tableData.push(totalsRow);
       }
 
-      // Calculate column widths
-      const columnWidthsArray = headers.map(header => 
-        optimizedColumnWidths[header.dataIndex] || tableSettings.defaultColumnWidth
-      );
+      // =========== HEADER SECTION ===========
+      const currentTheme = REPORT_THEMES[reportType] || REPORT_THEMES.default;
       
-      const totalWidth = columnWidthsArray.reduce((sum, w) => sum + w, 0);
-      const availableWidth = pageWidth - 20;
+      // Header background
+      doc.setFillColor(...currentTheme.colors.primary);
+      doc.rect(0, 0, pageWidth, 40, 'F');
       
-      let adjustedColumnWidths = columnWidthsArray;
-      if (totalWidth > availableWidth) {
-        const scaleFactor = availableWidth / totalWidth;
-        adjustedColumnWidths = columnWidthsArray.map(w => 
-          Math.max(tableSettings.minColumnWidth, Math.round(w * scaleFactor))
-        );
-      }
+      // Title
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255);
+      doc.text(companyName.toUpperCase(), pageWidth / 2, 12, { align: 'center' });
+      
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'normal');
+      doc.text(title, pageWidth / 2, 22, { align: 'center' });
+      
+      // Metadata
+      doc.setFontSize(8);
+      doc.setTextColor(240, 240, 240);
+      
+      // Left metadata
+      doc.text(`Generated: ${new Date().toLocaleString('en-KE')}`, margin, 32);
+      doc.text(`By: ${userName} (${userRole})`, margin, 36);
+      
+      // Right metadata
+      const rightText = `Station: ${stationInfo.name} | Columns: ${headers.length}`;
+      doc.text(rightText, pageWidth - margin, 32, { align: 'right' });
+      doc.text(`Report ID: ${generateReportId()}`, pageWidth - margin, 36, { align: 'right' });
+      
+      let startY = 48;
+
+      // =========== ORIENTATION INFO ===========
+      doc.setFontSize(7);
+      doc.setTextColor(100, 100, 100);
+      doc.setFont('helvetica', 'italic');
+      doc.text(`Generated in ${orientation} mode for ${headers.length} columns`, 
+        margin, startY - 4);
 
       setExportStep(4);
 
-      // Configure autoTable
-      const autoTableConfig = {
+      // =========== GENERATE TABLE ===========
+      autoTable(doc, {
         head: [tableHeaders],
         body: tableData,
-        startY: yPosition,
-        margin: { top: 10, left: 10, right: 10 },
+        startY: startY,
+        margin: { left: margin, right: margin },
         tableWidth: 'auto',
-        styles: { 
-          fontSize: reportSettings.fontSize,
-          cellPadding: reportSettings.cellPadding,
-          lineWidth: reportSettings.showGridLines ? 0.1 : 0,
-          lineColor: reportSettings.showGridLines ? [200, 200, 200] : [255, 255, 255],
+        columnStyles: colWidths.reduce((styles, width, index) => {
+          styles[index] = { cellWidth: width };
+          return styles;
+        }, {}),
+        styles: {
+          fontSize: pdfSettings.fontSize,
+          cellPadding: pdfSettings.cellPadding,
+          lineWidth: pdfSettings.showBorders ? 0.1 : 0,
+          lineColor: [200, 200, 200],
           overflow: 'linebreak',
           halign: 'left',
           valign: 'middle'
         },
-        headStyles: { 
-          fillColor: colors.secondary,
+        headStyles: {
+          fillColor: currentTheme.colors.secondary,
           textColor: [255, 255, 255],
-          fontStyle: reportSettings.headerStyle,
-          halign: 'center',
-          valign: 'middle',
-          lineWidth: 0.2,
-          lineColor: colors.primary
+          fontStyle: 'bold',
+          fontSize: pdfSettings.headerFontSize,
+          halign: 'center'
         },
         bodyStyles: {
-          lineWidth: reportSettings.showGridLines ? 0.1 : 0,
-          lineColor: reportSettings.showGridLines ? [200, 200, 200] : [255, 255, 255]
+          lineWidth: pdfSettings.showBorders ? 0.1 : 0
         },
-        alternateRowStyles: reportSettings.alternateRowColors ? {
-          fillColor: [248, 248, 248]
+        alternateRowStyles: pdfSettings.alternateRowColors ? {
+          fillColor: [245, 245, 245]
         } : undefined,
-        columnStyles: {},
-        didParseCell: function(data) {
-          // Right align numeric columns
-          if (data.column.index > 0 && headers[data.column.index].type === 'number') {
-            data.cell.styles.halign = 'right';
+        columnStyles: headers.reduce((styles, header, index) => {
+          if (['number', 'currency', 'percentage'].includes(header.type)) {
+            styles[index] = { halign: 'right' };
           }
-          // Center boolean columns
-          if (headers[data.column.index].type === 'boolean') {
-            data.cell.styles.halign = 'center';
-          }
-        },
-        willDrawCell: function(data) {
-          // Highlight totals row
-          if (hasTotals && data.row.index === tableData.length - 1) {
-            data.cell.styles.fillColor = colors.accent;
-            data.cell.styles.textColor = [255, 255, 255];
+          return styles;
+        }, {}),
+        didParseCell: (data) => {
+          // Style totals row
+          if (showGrandTotals && data.row.index === tableData.length - 1) {
             data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = [240, 240, 240];
           }
         },
-        didDrawPage: function(data) {
+        didDrawPage: (data) => {
           // Page number
-          if (reportSettings.includePageNumbers) {
+          if (pdfSettings.includePageNumbers) {
             doc.setFontSize(7);
-            doc.setTextColor(100, 100, 100);
+            doc.setTextColor(150, 150, 150);
             doc.text(
-              `Page ${data.pageNumber} of ${data.pageCount}`,
+              `Page ${data.pageNumber}`,
               pageWidth / 2,
               pageHeight - 10,
               { align: 'center' }
             );
           }
         }
-      };
-
-      // Apply column widths
-      adjustedColumnWidths.forEach((width, index) => {
-        autoTableConfig.columnStyles[index] = { cellWidth: width };
       });
 
-      autoTable(doc, autoTableConfig);
+      const finalY = doc.lastAutoTable.finalY || startY;
 
       setExportStep(5);
 
-      // =========== FOOTER WITH AUDIT INFO ===========
-      if (reportSettings.includeFooter) {
-        const footerY = pageHeight - 20;
+      // =========== FOOTER ===========
+      if (pdfSettings.includeFooter) {
+        const footerY = pageHeight - 15;
         
-        // Footer separator
-        doc.setDrawColor(...colors.primary);
+        doc.setDrawColor(...currentTheme.colors.primary);
         doc.setLineWidth(0.5);
-        doc.line(10, footerY, pageWidth - 10, footerY);
+        doc.line(margin, footerY - 5, pageWidth - margin, footerY - 5);
         
-        // Footer content
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
         doc.setTextColor(100, 100, 100);
         
-        const leftFooter = footerText || `${companyName} • ${currentTheme.name}`;
-        doc.text(leftFooter, 10, footerY + 4);
+        const leftFooter = footerText || `${companyName} • ${new Date().toLocaleDateString()}`;
+        doc.text(leftFooter, margin, footerY);
         
-        const rightFooter = [
-          reportSettings.includeGeneratedBy ? `Generated by: ${userName}` : '',
-          reportSettings.includeTimestamp ? `Time: ${new Date().toLocaleTimeString('en-KE')}` : '',
-          `Records: ${data.length}`,
-          reportApproval.approved ? `Approved by: ${reportApproval.approvedBy}` : ''
-        ].filter(Boolean).join(' | ');
-        
-        doc.text(rightFooter, pageWidth - 10, footerY + 4, { align: 'right' });
-        
-        // QR Code for report verification
-        if (reportSettings.includeQRCode) {
-          const qrSize = 15;
-          const qrText = JSON.stringify({
-            reportId: generateReportId(),
-            title: title,
-            generatedAt: new Date().toISOString(),
-            generatedBy: userId,
-            checksum: generateChecksum(data)
-          });
-          
-          // Generate QR code (would need qrcode library)
-          // doc.addQRCode(qrText, pageWidth - 25, footerY - 20, qrSize, qrSize);
-        }
+        const recordCount = `Records: ${data.length}${showGrandTotals ? ' • With Totals' : ''}`;
+        doc.text(recordCount, pageWidth - margin, footerY, { align: 'right' });
       }
 
-      // =========== SECURITY & APPROVAL PAGE ===========
-      if (reportType === 'finance' || reportType === 'audit') {
-        doc.addPage();
-        
-        doc.setFontSize(16);
+      // =========== WATERMARK ===========
+      if (securitySettings.watermarkText) {
+        doc.setFontSize(40);
+        doc.setTextColor(230, 230, 230);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(...colors.primary);
-        doc.text('REPORT CERTIFICATION & SECURITY', pageWidth / 2, 30, { align: 'center' });
-        
-        doc.setFontSize(11);
-        doc.setTextColor(60, 60, 60);
-        
-        const certificationText = [
-          'This report has been generated by the Lynx Advanced Reporting System.',
-          'All data has been validated and processed according to company policies.',
-          '',
-          `Report ID: ${generateReportId()}`,
-          `Generation Date: ${new Date().toLocaleString('en-KE')}`,
-          `Generated By: ${userName} (${userRole})`,
-          `User ID: ${userId}`,
-          `Station: ${stationInfo.name} (${stationInfo.code})`,
-          '',
-          'SECURITY CLASSIFICATION: ' + (securitySettings.hideSensitiveData ? 'RESTRICTED' : 'PUBLIC'),
-          'DATA SENSITIVITY: ' + dataSensitivity.toUpperCase(),
-          '',
-          reportApproval.approved 
-            ? `APPROVED BY: ${reportApproval.approvedBy} on ${new Date(reportApproval.approvedAt).toLocaleDateString('en-KE')}`
-            : 'PENDING APPROVAL',
-          reportApproval.approvalNotes ? `Approval Notes: ${reportApproval.approvalNotes}` : ''
-        ];
-        
-        certificationText.forEach((text, index) => {
-          doc.text(text, 20, 50 + (index * 7));
+        doc.text(securitySettings.watermarkText, pageWidth / 2, pageHeight / 2, { 
+          align: 'center',
+          angle: 45 
         });
-        
-        // Signature line
-        doc.setLineWidth(0.5);
-        doc.line(pageWidth - 80, 180, pageWidth - 20, 180);
-        doc.text('Authorized Signature', pageWidth - 70, 185);
-        
-        // Timestamp
-        doc.setFontSize(8);
-        doc.setTextColor(100, 100, 100);
-        doc.text(`Document Hash: ${generateDocumentHash(doc)}`, 20, pageHeight - 20);
       }
 
       // =========== SAVE PDF ===========
-      const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
-      const safeFileName = fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      const finalFileName = `${safeFileName}_${reportType}_${dateStr}_${generateReportId()}.pdf`;
-      
-      // Add password protection if enabled
-      if (securitySettings.passwordProtected && securitySettings.password) {
-        // jsPDF password protection (depends on version)
-        // doc.setPassword(securitySettings.password);
-      }
+      const dateStr = new Date().toISOString().split('T')[0];
+      const columnCount = headers.length;
+      const finalFileName = `${fileName}_${columnCount}cols_${orientation}_${dateStr}.pdf`;
       
       doc.save(finalFileName);
       
-      addAuditEntry('PDF Export Completed', `Generated ${finalFileName} with ${data.length} records`);
-      message.success(`${currentTheme.name} generated successfully!`);
+      addAuditEntry('PDF Export Completed', `${data.length} records, ${orientation} orientation`);
+      message.success(`PDF generated successfully in ${orientation} mode!`);
       
       setExportStep(0);
 
     } catch (error) {
       console.error('PDF generation error:', error);
       addAuditEntry('PDF Export Failed', error.message);
-      message.error(`Failed to generate PDF: ${error.message}`);
+      message.error('Failed to generate PDF: ' + error.message);
       setExportStep(0);
     } finally {
       setIsGeneratingPDF(false);
@@ -1497,7 +801,7 @@ const AdvancedReportGenerator = ({
   // ========== EXCEL GENERATION ==========
   const generateExcel = async () => {
     if (filteredData.length === 0) {
-      message.warning('No data available to generate Excel');
+      message.warning('No data to export');
       return;
     }
 
@@ -1511,281 +815,104 @@ const AdvancedReportGenerator = ({
 
     try {
       const { headers, data } = getExportData();
-      const columnTotals = calculateColumnTotals();
-      const financialSummary = calculateFinancialSummary();
-
-      if (onReportGenerate) {
-        onReportGenerate('excel');
-      }
+      const totals = calculateTotals();
 
       setExportStep(2);
 
       const wb = XLSX.utils.book_new();
       
-      // =========== MAIN DATA SHEET ===========
-      const excelHeaders = headers.map(header => header.title);
+      // Main data sheet
+      const excelHeaders = headers.map(h => h.title);
       const excelData = [excelHeaders];
       
-      data.forEach((record, rowIndex) => {
-        const row = headers.map(header => {
-          let value = record[header.title];
-          const colType = COLUMN_TYPES[header.type] || COLUMN_TYPES.text;
-          
-          if (colType.excelType === 'n') {
-            const num = Number(value);
-            return isNaN(num) ? 0 : num;
-          } else if (colType.excelType === 'd') {
-            const date = new Date(value);
-            return isNaN(date.getTime()) ? value : date;
-          }
-          return value;
-        });
-        excelData.push(row);
-        
-        // Update progress
-        if (rowIndex % 50 === 0) {
-          setExportProgress(Math.round((rowIndex / data.length) * 100));
-        }
+      data.forEach(row => {
+        excelData.push(headers.map(h => row[h.title] || ''));
       });
 
       // Add totals row
-      if (Object.keys(columnTotals).length > 0) {
+      if (showGrandTotals && Object.keys(totals).length > 0) {
         const totalsRow = headers.map(header => {
-          const total = columnTotals[header.dataIndex];
-          if (total !== undefined && ['currency', 'number', 'amount'].includes(header.type)) {
+          const total = totals[header.dataIndex];
+          if (total !== undefined) {
             return total;
           }
-          return '';
+          return header.dataIndex === headers[0].dataIndex ? 'GRAND TOTAL' : '';
         });
-        totalsRow[0] = 'GRAND TOTAL';
         excelData.push(totalsRow);
       }
 
       const ws = XLSX.utils.aoa_to_sheet(excelData);
       
-      // Apply column widths
+      // Auto-size columns
       const colWidths = headers.map((header, index) => {
-        const width = optimizedColumnWidths[header.dataIndex] || tableSettings.defaultColumnWidth;
-        return { wch: Math.min(width / 5, 50) };
+        let maxLen = header.title.length;
+        data.slice(0, 100).forEach(row => {
+          const value = row[header.title] || '';
+          maxLen = Math.max(maxLen, String(value).length);
+        });
+        return { wch: Math.min(maxLen + 2, 50) };
       });
       ws['!cols'] = colWidths;
 
-      // Style header row
-      const headerRange = XLSX.utils.decode_range(ws['!ref']);
-      for (let C = headerRange.s.c; C <= headerRange.e.c; ++C) {
-        const address = XLSX.utils.encode_cell({ r: 0, c: C });
-        if (!ws[address]) continue;
-        ws[address].s = {
-          font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11 },
-          fill: { 
-            fgColor: { 
-              rgb: colors.primary.slice(0, 3)
-                .map(c => c.toString(16).padStart(2, '0'))
-                .join('').toUpperCase() 
-            } 
-          },
-          alignment: { horizontal: "center", vertical: "center", wrapText: true },
-          border: {
-            top: { style: "thin", color: { rgb: "FFFFFF" } },
-            bottom: { style: "thin", color: { rgb: "FFFFFF" } },
-            left: { style: "thin", color: { rgb: "FFFFFF" } },
-            right: { style: "thin", color: { rgb: "FFFFFF" } }
-          }
-        };
-      }
-
-      // Style numeric columns
-      headers.forEach((header, colIndex) => {
-        if (['currency', 'number', 'amount', 'balance', 'percentage'].includes(header.type)) {
-          for (let R = 1; R < excelData.length; R++) {
-            const address = XLSX.utils.encode_cell({ r: R, c: colIndex });
-            if (ws[address] && ws[address].v !== '') {
-              ws[address].s = {
-                ...ws[address].s,
-                numFmt: COLUMN_TYPES[header.type]?.style?.numFmt || '#,##0.00',
-                alignment: { horizontal: "right" }
-              };
-            }
-          }
-        }
-      });
-
-      // Style totals row
-      if (Object.keys(columnTotals).length > 0) {
-        const lastRow = excelData.length - 1;
-        for (let C = headerRange.s.c; C <= headerRange.e.c; ++C) {
-          const address = XLSX.utils.encode_cell({ r: lastRow, c: C });
-          if (!ws[address]) continue;
-          ws[address].s = {
-            font: { bold: true, color: { rgb: "FFFFFF" } },
-            fill: { 
-              fgColor: { 
-                rgb: colors.accent.slice(0, 3)
-                  .map(c => c.toString(16).padStart(2, '0'))
-                  .join('').toUpperCase() 
-              } 
-            },
-            numFmt: COLUMN_TYPES.currency.style.numFmt
-          };
-        }
-      }
-
-      XLSX.utils.book_append_sheet(wb, ws, `${currentTheme.name} Data`);
+      XLSX.utils.book_append_sheet(wb, ws, 'Data');
 
       setExportStep(3);
 
-      // =========== METADATA SHEET ===========
+      // Metadata sheet
       const metadata = [
         ['REPORT METADATA', ''],
-        ['Report Title', title],
-        ['Report Type', currentTheme.name],
-        ['Report ID', generateReportId()],
+        ['Title', title],
+        ['Generated By', userName],
+        ['User Role', userRole],
+        ['Date', new Date().toLocaleString('en-KE')],
         ['Company', companyName],
         ['Station', stationInfo.name],
         ['Station Code', stationInfo.code],
-        ['Station Manager', stationInfo.manager],
-        ['Generated By', userName],
-        ['User Role', userRole],
-        ['User ID', userId],
-        ['Generation Date', new Date().toLocaleString('en-KE')],
-        ['Data Source', 'Lynx Advanced Reporting System'],
-        ['Total Records', data.length],
-        ['Validation Errors', validationErrors.length],
-        ['Approval Status', reportApproval.approved ? `Approved by ${reportApproval.approvedBy}` : 'Pending'],
-        ['Security Level', dataSensitivity.toUpperCase()],
-        ['', ''],
-        ['DATA SUMMARY', ''],
         ['Total Columns', headers.length],
-        ['Total Rows', data.length],
-        ['Generated File', `${fileName}_${new Date().toISOString().split('T')[0]}.xlsx`],
-        ['Checksum', generateChecksum(data)],
-        ['', '']
+        ['Total Records', data.length],
+        ['Report Type', reportType],
+        ['Grand Totals', showGrandTotals ? 'Yes' : 'No'],
+        ['Security', securitySettings.hideSensitiveData ? 'Masked' : 'Full Data'],
+        ['Report ID', generateReportId()]
       ];
-
-      // Add financial summary if available
-      if (financialSummary && financialSummary.totals) {
-        metadata.push(['FINANCIAL TOTALS', '']);
-        Object.entries(financialSummary.totals).forEach(([colKey, total]) => {
-          const col = headers.find(h => h.dataIndex === colKey);
-          if (col) {
-            metadata.push([col.title, total]);
-          }
-        });
-        metadata.push(['', '']);
-      }
-
-      // Add validation errors summary
-      if (validationErrors.length > 0) {
-        metadata.push(['VALIDATION ISSUES', '']);
-        metadata.push(['Total Issues', validationErrors.length]);
-        const errorTypes = {};
-        validationErrors.forEach(error => {
-          errorTypes[error.type] = (errorTypes[error.type] || 0) + 1;
-        });
-        Object.entries(errorTypes).forEach(([type, count]) => {
-          metadata.push([`${type} errors`, count]);
-        });
-        metadata.push(['', '']);
-      }
-
+      
       const metadataWs = XLSX.utils.aoa_to_sheet(metadata);
-      
-      // Style metadata
-      const metaHeaderRange = XLSX.utils.decode_range(metadataWs['!ref']);
-      for (let R = 0; R <= 1; R++) {
-        for (let C = 0; C <= 1; C++) {
-          const address = XLSX.utils.encode_cell({ r: R, c: C });
-          if (metadataWs[address]) {
-            metadataWs[address].s = {
-              font: { bold: true, color: { rgb: "FFFFFF" }, sz: 12 },
-              fill: { fgColor: { rgb: "2E7D32" } }
-            };
-          }
-        }
-      }
-      
-      XLSX.utils.book_append_sheet(wb, metadataWs, 'Report Info');
+      XLSX.utils.book_append_sheet(wb, metadataWs, 'Info');
 
       setExportStep(4);
 
-      // =========== VALIDATION SHEET ===========
-      if (validationErrors.length > 0) {
-        const validationHeaders = ['Row', 'Column', 'Value', 'Issue Type', 'Message'];
-        const validationData = [validationHeaders];
+      // Audit sheet if enabled
+      if (enableAuditTrail && auditLog.length > 0) {
+        const auditHeaders = ['Timestamp', 'Action', 'User', 'Details'];
+        const auditData = [auditHeaders];
         
-        validationErrors.forEach(error => {
-          validationData.push([
-            error.row,
-            error.column,
-            error.value,
-            error.type,
-            error.message
+        auditLog.slice(0, 50).forEach(entry => {
+          auditData.push([
+            new Date(entry.timestamp).toLocaleString('en-KE'),
+            entry.action,
+            entry.user,
+            entry.details
           ]);
         });
         
-        const validationWs = XLSX.utils.aoa_to_sheet(validationData);
-        
-        // Style validation sheet
-        for (let C = 0; C < validationHeaders.length; C++) {
-          const address = XLSX.utils.encode_cell({ r: 0, c: C });
-          if (validationWs[address]) {
-            validationWs[address].s = {
-              font: { bold: true, color: { rgb: "FFFFFF" } },
-              fill: { fgColor: { rgb: "D32F2F" } }
-            };
-          }
-        }
-        
-        XLSX.utils.book_append_sheet(wb, validationWs, 'Validation Issues');
+        const auditWs = XLSX.utils.aoa_to_sheet(auditData);
+        XLSX.utils.book_append_sheet(wb, auditWs, 'Audit Trail');
       }
 
-      // =========== AUDIT TRAIL SHEET ===========
-      const auditHeaders = ['Timestamp', 'Action', 'User', 'Details', 'IP Address'];
-      const auditData = [auditHeaders];
-      
-      auditLog.slice(0, 100).forEach(entry => {
-        auditData.push([
-          new Date(entry.timestamp).toLocaleString('en-KE'),
-          entry.action,
-          entry.user,
-          entry.details,
-          entry.ipAddress
-        ]);
-      });
-      
-      const auditWs = XLSX.utils.aoa_to_sheet(auditData);
-      
-      // Style audit sheet
-      for (let C = 0; C < auditHeaders.length; C++) {
-        const address = XLSX.utils.encode_cell({ r: 0, c: C });
-        if (auditWs[address]) {
-          auditWs[address].s = {
-            font: { bold: true, color: { rgb: "FFFFFF" } },
-            fill: { fgColor: { rgb: "607D8B" } }
-          };
-        }
-      }
-      
-      XLSX.utils.book_append_sheet(wb, auditWs, 'Audit Trail');
-
-      setExportStep(5);
-
-      // =========== SAVE EXCEL ===========
-      const excelFileName = `${fileName}_${reportType}_${new Date().toISOString().split('T')[0]}_${generateReportId()}.xlsx`;
+      // Save file
+      const dateStr = new Date().toISOString().split('T')[0];
+      const excelFileName = `${fileName}_${dateStr}.xlsx`;
       XLSX.writeFile(wb, excelFileName);
       
-      addAuditEntry('Excel Export Completed', `Generated ${excelFileName}`);
-      message.success(`${currentTheme.name} Excel report generated successfully!`);
+      addAuditEntry('Excel Export Completed', `${data.length} records`);
+      message.success('Excel report generated successfully!');
       
       setExportStep(0);
-      setExportProgress(0);
 
     } catch (error) {
       console.error('Excel generation error:', error);
-      addAuditEntry('Excel Export Failed', error.message);
-      message.error('Failed to generate Excel report');
+      message.error('Failed to generate Excel');
       setExportStep(0);
-      setExportProgress(0);
     } finally {
       setIsGeneratingExcel(false);
     }
@@ -1794,1343 +921,784 @@ const AdvancedReportGenerator = ({
   // ========== UTILITY FUNCTIONS ==========
   const generateReportId = () => {
     const timestamp = Date.now().toString(36);
-    const random = Math.random().toString(36).substr(2, 5);
-    return `${reportType.substr(0, 3).toUpperCase()}_${timestamp}_${random}`.toUpperCase();
-  };
-
-  const generateChecksum = (data) => {
-    const str = JSON.stringify(data);
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return Math.abs(hash).toString(16);
-  };
-
-  const generateDocumentHash = (doc) => {
-    // Generate a simple hash from document content
-    const content = doc.internal.getCurrentPageInfo().text || '';
-    return generateChecksum(content);
-  };
-
-  const formatDateRange = (range) => {
-    if (!range || !range[0] || !range[1]) return 'All Time';
-    return `${range[0].format('DD/MM/YYYY')} - ${range[1].format('DD/MM/YYYY')}`;
-  };
-
-  const saveSettings = () => {
-    try {
-      localStorage.setItem(`reportSettings_${reportType}`, JSON.stringify(reportSettings));
-      localStorage.setItem(`reportSecurity_${reportType}`, JSON.stringify(securitySettings));
-      
-      if (onSettingsSave) {
-        onSettingsSave({ reportSettings, securitySettings });
-      }
-      
-      addAuditEntry('Settings Saved', 'Report configuration updated');
-      message.success('Report settings saved successfully!');
-    } catch (error) {
-      console.error('Error saving settings:', error);
-      message.error('Failed to save settings');
-    }
-  };
-
-  const resetSettings = () => {
-    setReportSettings({
-      pageOrientation: 'landscape',
-      fontSize: 9,
-      rowHeight: 6,
-      cellPadding: 3,
-      colorScheme: reportType,
-      customColors: null,
-      includeHeader: true,
-      includeFooter: showFooter,
-      includeSummary: !!summaryData,
-      includeFinancialSummary: !!financialSummary,
-      includePageNumbers: true,
-      includeTimestamp: true,
-      includeStationInfo: !!stationInfo,
-      includeGeneratedBy: true,
-      includeQRCode: false,
-      includeWatermark: false,
-      showGridLines: true,
-      alternateRowColors: true,
-      autoWrapText: true,
-      headerStyle: 'bold',
-      showTotals: true,
-      showSubtotals: false,
-      groupBy: null,
-      sortBy: null,
-      filterBy: null,
-      dateRange: null,
-      companyName: companyName,
-      reportSubtitle: '',
-      customHeader: '',
-      includeTaxCalculations: reportType === 'finance',
-      includeVAT: false,
-      currency: 'KES',
-      exchangeRate: 1,
-      maskPersonalData: reportType === 'users',
-      includeUserStatistics: false
-    });
-    
-    message.success('Settings reset to defaults');
-    addAuditEntry('Settings Reset', 'All settings restored to defaults');
+    const random = Math.random().toString(36).substring(2, 7);
+    return `${reportType.substring(0, 3).toUpperCase()}_${timestamp}_${random}`.toUpperCase();
   };
 
   const approveReport = () => {
-    if (validationErrors.length > 0) {
-      message.warning('Cannot approve report with validation errors');
-      return;
-    }
-
-    const approvalData = {
+    setReportApproval({
       approved: true,
       approvedBy: userName,
       approvedAt: new Date().toISOString(),
-      approvalNotes: 'Approved via Advanced Report Generator',
-      approvedByRole: userRole
-    };
-
-    setReportApproval(prev => ({
-      ...prev,
-      ...approvalData
-    }));
-
+      requiresApproval: true
+    });
     addAuditEntry('Report Approved', `Approved by ${userName}`);
-    
     if (onReportApprove) {
-      onReportApprove(approvalData);
+      onReportApprove({ approved: true, approvedBy: userName });
     }
-
-    message.success('Report approved successfully!');
+    message.success('Report approved');
   };
 
-  // ========== RENDER MODALS ==========
+  // ========== ORIENTATION MODAL ==========
+  const renderOrientationModal = () => {
+    const columnCount = selectedColumns.length;
+
+    return (
+      <Modal
+        title={
+          <Space>
+            <FullscreenOutlined />
+            <span>Choose PDF Orientation</span>
+          </Space>
+        }
+        open={orientationModalVisible}
+        onCancel={() => setOrientationModalVisible(false)}
+        width={600}
+        footer={[
+          <Button key="cancel" onClick={() => setOrientationModalVisible(false)}>
+            Cancel
+          </Button>,
+          <Button 
+            key="portrait" 
+            icon={<DesktopOutlined />}
+            onClick={() => {
+              setPdfOrientation('portrait');
+              setOrientationModalVisible(false);
+              generatePDF('portrait');
+            }}
+            disabled={columnCount > 8}
+          >
+            Portrait
+          </Button>,
+          <Button 
+            key="landscape" 
+            type="primary"
+            icon={<MobileOutlined />}
+            onClick={() => {
+              setPdfOrientation('landscape');
+              setOrientationModalVisible(false);
+              generatePDF('landscape');
+            }}
+          >
+            Landscape
+          </Button>
+        ]}
+      >
+        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+          <Alert
+            message={`Your report has ${columnCount} columns`}
+            type="info"
+            showIcon
+          />
+
+          <Row gutter={[16, 16]}>
+            <Col span={12}>
+              <Card 
+                size="small" 
+                title={
+                  <Space>
+                    <DesktopOutlined />
+                    Portrait
+                  </Space>
+                }
+                style={{
+                  border: pdfOrientation === 'portrait' ? '2px solid #1890ff' : undefined
+                }}
+              >
+                <Statistic 
+                  title="Recommended for" 
+                  value="≤ 5 columns" 
+                  valueStyle={{ fontSize: '16px' }}
+                />
+                {columnCount <= 5 ? (
+                  <Tag color="green" style={{ marginTop: 8 }}>Recommended</Tag>
+                ) : columnCount <= 8 ? (
+                  <Tag color="orange" style={{ marginTop: 8 }}>Tight fit</Tag>
+                ) : (
+                  <Tag color="red" style={{ marginTop: 8 }}>Not recommended</Tag>
+                )}
+              </Card>
+            </Col>
+            <Col span={12}>
+              <Card 
+                size="small" 
+                title={
+                  <Space>
+                    <MobileOutlined />
+                    Landscape
+                  </Space>
+                }
+                style={{
+                  border: pdfOrientation === 'landscape' ? '2px solid #1890ff' : undefined
+                }}
+              >
+                <Statistic 
+                  title="Recommended for" 
+                  value="6-12 columns" 
+                  valueStyle={{ fontSize: '16px' }}
+                />
+                {columnCount > 5 && columnCount <= 12 ? (
+                  <Tag color="green" style={{ marginTop: 8 }}>Recommended</Tag>
+                ) : columnCount <= 5 ? (
+                  <Tag color="blue" style={{ marginTop: 8 }}>Optional</Tag>
+                ) : (
+                  <Tag color="orange" style={{ marginTop: 8 }}>Compact</Tag>
+                )}
+              </Card>
+            </Col>
+          </Row>
+
+          {columnCount > 12 && (
+            <Alert
+              message="Many columns detected"
+              description="Your report has many columns. Consider reducing the number of columns for better readability."
+              type="warning"
+              showIcon
+            />
+          )}
+
+          <Card size="small" title="Preview">
+            <div style={{ 
+              display: 'flex', 
+              gap: '20px',
+              justifyContent: 'center',
+              padding: '10px',
+              backgroundColor: '#f5f5f5',
+              borderRadius: '4px'
+            }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ 
+                  width: '60px', 
+                  height: '85px', 
+                  border: '2px solid #d9d9d9',
+                  borderRadius: '4px',
+                  marginBottom: '5px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '10px',
+                  fontWeight: 'bold',
+                  backgroundColor: columnCount <= 5 ? '#e6f7ff' : 'white'
+                }}>
+                  {columnCount}c
+                </div>
+                <Text type="secondary">Portrait</Text>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ 
+                  width: '85px', 
+                  height: '60px', 
+                  border: '2px solid #d9d9d9',
+                  borderRadius: '4px',
+                  marginBottom: '5px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '10px',
+                  fontWeight: 'bold',
+                  backgroundColor: columnCount > 5 ? '#e6f7ff' : 'white'
+                }}>
+                  {columnCount}c
+                </div>
+                <Text type="secondary">Landscape</Text>
+              </div>
+            </div>
+          </Card>
+
+          <Divider />
+
+          <div>
+            <Text strong>PDF Settings:</Text>
+            <div style={{ marginTop: 8 }}>
+              <Space wrap>
+                <Select 
+                  value={pdfSettings.fontSize}
+                  onChange={(value) => setPdfSettings({...pdfSettings, fontSize: value})}
+                  size="small"
+                  style={{ width: 100 }}
+                >
+                  <Option value={7}>Small (7pt)</Option>
+                  <Option value={8}>Normal (8pt)</Option>
+                  <Option value={9}>Large (9pt)</Option>
+                </Select>
+                
+                <Checkbox
+                  checked={pdfSettings.showBorders}
+                  onChange={(e) => setPdfSettings({...pdfSettings, showBorders: e.target.checked})}
+                >
+                  Borders
+                </Checkbox>
+                
+                <Checkbox
+                  checked={pdfSettings.alternateRowColors}
+                  onChange={(e) => setPdfSettings({...pdfSettings, alternateRowColors: e.target.checked})}
+                >
+                  Striped
+                </Checkbox>
+              </Space>
+            </div>
+          </div>
+        </Space>
+      </Modal>
+    );
+  };
+
+  // ========== PREVIEW MODAL ==========
+  const renderPreviewModal = () => {
+    const visibleColumns = getVisibleColumns();
+    const columnCount = visibleColumns.length;
+
+    return (
+      <Modal
+        title={
+          <Space>
+            <EyeOutlined />
+            <span>Report Preview</span>
+            <Tag color={columnCount > 5 ? 'orange' : 'green'}>
+              {columnCount} Columns
+            </Tag>
+            <Tag color="blue">
+              {filteredData.length} Records
+            </Tag>
+          </Space>
+        }
+        open={previewModalVisible}
+        onCancel={() => setPreviewModalVisible(false)}
+        width="90%"
+        style={{ top: 20 }}
+        footer={[
+          <Button key="close" onClick={() => setPreviewModalVisible(false)}>
+            Close
+          </Button>,
+          <Button 
+            key="excel" 
+            icon={<FileExcelOutlined />}
+            onClick={() => {
+              setPreviewModalVisible(false);
+              generateExcel();
+            }}
+          >
+            Export Excel
+          </Button>,
+          <Button 
+            key="pdf" 
+            type="primary"
+            icon={<FilePdfOutlined />}
+            onClick={() => {
+              setPreviewModalVisible(false);
+              setOrientationModalVisible(true);
+            }}
+          >
+            Export PDF
+          </Button>
+        ]}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          {/* Column count warning */}
+          {columnCount > 10 && (
+            <Alert
+              message={`Wide table: ${columnCount} columns`}
+              description="This report has many columns. It will be exported in landscape mode for better readability."
+              type="info"
+              showIcon
+            />
+          )}
+
+          {/* Table preview with horizontal scroll */}
+          <div style={{ 
+            overflowX: 'auto', 
+            border: '1px solid #f0f0f0',
+            borderRadius: '4px',
+            maxHeight: '400px',
+            overflowY: 'auto'
+          }}>
+            <table style={{ 
+              width: '100%', 
+              borderCollapse: 'collapse',
+              fontSize: '12px'
+            }}>
+              <thead>
+                <tr style={{ backgroundColor: '#f5f5f5' }}>
+                  {visibleColumns.map((col, index) => (
+                    <th key={index} style={{ 
+                      padding: '8px', 
+                      border: '1px solid #ddd',
+                      position: 'sticky',
+                      top: 0,
+                      backgroundColor: '#f5f5f5',
+                      zIndex: 1,
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {col.title}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredData.slice(0, 15).map((row, rowIndex) => (
+                  <tr key={rowIndex}>
+                    {visibleColumns.map((col, colIndex) => {
+                      const value = row[col.dataIndex];
+                      const displayValue = value !== null && value !== undefined ? String(value) : '-';
+                      
+                      return (
+                        <td key={colIndex} style={{ 
+                          padding: '6px', 
+                          border: '1px solid #eee',
+                          textAlign: ['number', 'currency', 'percentage'].includes(col.type) ? 'right' : 'left',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {displayValue.length > 50 ? displayValue.substring(0, 47) + '...' : displayValue}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {filteredData.length > 15 && (
+            <Text type="secondary">
+              Showing first 15 of {filteredData.length} records
+            </Text>
+          )}
+        </Space>
+      </Modal>
+    );
+  };
+
+  // ========== SETTINGS MODAL ==========
   const renderSettingsModal = () => (
     <Modal
       title={
         <Space>
           <SettingOutlined />
-          <span>Advanced Report Configuration</span>
-          <Tag color="blue" icon={currentTheme.icon}>
-            {currentTheme.name}
-          </Tag>
+          <span>Report Settings</span>
         </Space>
       }
       open={settingsModalVisible}
       onCancel={() => setSettingsModalVisible(false)}
-      width={1000}
-      style={{ top: 20 }}
+      width={700}
       footer={[
-        <Button key="reset" onClick={resetSettings} danger>
-          Reset All
-        </Button>,
-        <Button key="optimize" onClick={calculateOptimalColumnWidths}>
-          Optimize Layout
-        </Button>,
-        <Button key="validate" onClick={validateData} loading={isValidatingData}>
-          Validate Data
-        </Button>,
         <Button key="cancel" onClick={() => setSettingsModalVisible(false)}>
           Cancel
         </Button>,
-        <Button key="save" type="primary" onClick={saveSettings}>
+        <Button key="save" type="primary" onClick={() => {
+          setSettingsModalVisible(false);
+          if (onSettingsChange) {
+            onSettingsChange({ selectedColumns, pdfSettings, securitySettings });
+          }
+          message.success('Settings saved');
+        }}>
           Save Settings
         </Button>
       ]}
     >
-      <Tabs activeKey={activeSettingsTab} onChange={setActiveSettingsTab} type="card">
-        <TabPane tab={<span><ColumnHeightOutlined /> Columns</span>} key="columns">
-          <Card title="Column Management" size="small">
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Alert
-                message="Select columns to include in the report"
-                description="Drag to reorder, or use checkboxes to select/deselect"
-                type="info"
-                showIcon
-              />
-              
-              <Row gutter={[16, 16]}>
-                {columns.map((column, index) => (
-                  <Col xs={24} sm={12} md={8} key={column.dataIndex || index}>
-                    <Card 
-                      size="small" 
-                      hoverable
-                      style={{
-                        border: selectedColumns.includes(column.dataIndex) 
-                          ? `2px solid rgb(${colors.primary.join(', ')})`
-                          : '1px solid #f0f0f0'
-                      }}
-                    >
-                      <Space direction="vertical" style={{ width: '100%' }}>
-                        <Checkbox
-                          checked={selectedColumns.includes(column.dataIndex)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedColumns(prev => [...prev, column.dataIndex]);
-                            } else {
-                              setSelectedColumns(prev => prev.filter(col => col !== column.dataIndex));
-                            }
-                            if (onColumnChange) {
-                              onColumnChange(column.dataIndex, e.target.checked);
-                            }
-                          }}
-                        >
+      <Tabs defaultActiveKey="columns">
+        <TabPane tab="Columns" key="columns">
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Alert
+              message={`Select columns to include (${selectedColumns.length} selected)`}
+              description="Choose which columns appear in your report"
+              type="info"
+              showIcon
+            />
+            
+            <div style={{ maxHeight: 400, overflow: 'auto', padding: '4px' }}>
+              <Row gutter={[8, 8]}>
+                {columns.map(column => (
+                  <Col span={12} key={column.dataIndex}>
+                    <Card size="small" style={{ marginBottom: 4 }}>
+                      <Checkbox
+                        checked={selectedColumns.includes(column.dataIndex)}
+                        onChange={(e) => {
+                          let newSelected;
+                          if (e.target.checked) {
+                            newSelected = [...selectedColumns, column.dataIndex];
+                          } else {
+                            newSelected = selectedColumns.filter(c => c !== column.dataIndex);
+                          }
+                          setSelectedColumns(newSelected);
+                          
+                          // Recalculate widths
+                          const widths = calculateColumnWidths(newSelected);
+                          setColumnWidths(widths);
+                        }}
+                      >
+                        <Space>
                           <Text strong>{column.title}</Text>
-                        </Checkbox>
-                        
-                        <Space size="small">
-                          <Tag size="small" color={COLUMN_TYPES[column.type] ? 'blue' : 'default'}>
-                            {column.type || 'text'}
-                          </Tag>
-                          <Text type="secondary" style={{ fontSize: '12px' }}>
-                            Width: 
-                            <InputNumber
-                              size="small"
-                              value={columnWidths[column.dataIndex] || 'auto'}
-                              onChange={(value) => setColumnWidths(prev => ({
-                                ...prev,
-                                [column.dataIndex]: value
-                              }))}
-                              style={{ width: 70, marginLeft: 4 }}
-                              placeholder="auto"
-                              min={10}
-                              max={200}
-                            />
-                          </Text>
+                          {column.type && (
+                            <Tag color="blue" size="small">
+                              {column.type}
+                            </Tag>
+                          )}
+                          {COLUMN_TYPES[column.type]?.sensitive && (
+                            <LockOutlined style={{ color: '#faad14', fontSize: '12px' }} />
+                          )}
                         </Space>
-                      </Space>
+                      </Checkbox>
                     </Card>
                   </Col>
                 ))}
               </Row>
-            </Space>
-          </Card>
-        </TabPane>
-
-        <TabPane tab={<span><ColumnWidthOutlined /> Layout</span>} key="layout">
-          <Row gutter={[16, 16]}>
-            <Col span={12}>
-              <Card size="small" title="Table Optimization">
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <div>
-                    <Text strong>Column Width Mode:</Text>
-                    <Select
-                      value={columnWidthMode}
-                      onChange={setColumnWidthMode}
-                      style={{ width: '100%', marginTop: 8 }}
-                    >
-                      <Option value="auto">
-                        <Space>
-                          <CompressOutlined />
-                          Auto (Smart Sizing)
-                        </Space>
-                      </Option>
-                      <Option value="fixed">
-                        <Space>
-                          <ColumnWidthOutlined />
-                          Fixed Widths
-                        </Space>
-                      </Option>
-                      <Option value="custom">
-                        <Space>
-                          <SettingOutlined />
-                          Custom Widths
-                        </Space>
-                      </Option>
-                    </Select>
-                  </div>
-                  
-                  <div>
-                    <Text>Max Column Width: {tableSettings.maxColumnWidth}mm</Text>
-                    <Slider
-                      min={20}
-                      max={150}
-                      value={tableSettings.maxColumnWidth}
-                      onChange={(value) => setTableSettings(prev => ({
-                        ...prev,
-                        maxColumnWidth: value
-                      }))}
-                    />
-                  </div>
-                  
-                  <div>
-                    <Text>Min Column Width: {tableSettings.minColumnWidth}mm</Text>
-                    <Slider
-                      min={5}
-                      max={50}
-                      value={tableSettings.minColumnWidth}
-                      onChange={(value) => setTableSettings(prev => ({
-                        ...prev,
-                        minColumnWidth: value
-                      }))}
-                    />
-                  </div>
-                  
-                  <Switch
-                    checked={tableSettings.compressMode}
-                    onChange={(checked) => setTableSettings(prev => ({
-                      ...prev,
-                      compressMode: checked
-                    }))}
-                    checkedChildren="Auto Compress"
-                    unCheckedChildren="No Compression"
-                  />
-                  
-                  <div>
-                    <Text>Overflow Strategy:</Text>
-                    <Select
-                      value={tableSettings.overflowStrategy}
-                      onChange={(value) => setTableSettings(prev => ({
-                        ...prev,
-                        overflowStrategy: value
-                      }))}
-                      style={{ width: '100%' }}
-                    >
-                      <Option value="wrap">Wrap Text</Option>
-                      <Option value="truncate">Truncate Long Text</Option>
-                      <Option value="ellipsis">Show Ellipsis</Option>
-                    </Select>
-                  </div>
-                </Space>
-              </Card>
-            </Col>
-            
-            <Col span={12}>
-              <Card size="small" title="Page Settings">
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <div>
-                    <Text>Page Orientation:</Text>
-                    <Radio.Group
-                      value={reportSettings.pageOrientation}
-                      onChange={(e) => setReportSettings(prev => ({
-                        ...prev,
-                        pageOrientation: e.target.value
-                      }))}
-                    >
-                      <Radio.Button value="portrait">Portrait</Radio.Button>
-                      <Radio.Button value="landscape">Landscape</Radio.Button>
-                    </Radio.Group>
-                  </div>
-                  
-                  <div>
-                    <Text>Font Size:</Text>
-                    <InputNumber
-                      value={reportSettings.fontSize}
-                      onChange={(value) => setReportSettings(prev => ({
-                        ...prev,
-                        fontSize: value
-                      }))}
-                      min={6}
-                      max={14}
-                    />
-                  </div>
-                  
-                  <div>
-                    <Text>Row Height:</Text>
-                    <InputNumber
-                      value={reportSettings.rowHeight}
-                      onChange={(value) => setReportSettings(prev => ({
-                        ...prev,
-                        rowHeight: value
-                      }))}
-                      min={4}
-                      max={12}
-                    />
-                  </div>
-                  
-                  <Switch
-                    checked={reportSettings.showGridLines}
-                    onChange={(checked) => setReportSettings(prev => ({
-                      ...prev,
-                      showGridLines: checked
-                    }))}
-                    checkedChildren="Grid On"
-                    unCheckedChildren="Grid Off"
-                  />
-                  
-                  <Switch
-                    checked={reportSettings.alternateRowColors}
-                    onChange={(checked) => setReportSettings(prev => ({
-                      ...prev,
-                      alternateRowColors: checked
-                    }))}
-                    checkedChildren="Striped Rows"
-                    unCheckedChildren="Plain Rows"
-                  />
-                </Space>
-              </Card>
-            </Col>
-          </Row>
-          
-          {/* Column Width Visualization */}
-          <Card size="small" title="Column Width Preview" style={{ marginTop: 16 }}>
-            <div style={{ padding: '16px', backgroundColor: '#f9f9f9', borderRadius: 4 }}>
-              <Text type="secondary" style={{ marginBottom: 8, display: 'block' }}>
-                Total Table Width: {Object.values(optimizedColumnWidths).reduce((a, b) => a + b, 0)}mm
-                (Page: {reportSettings.pageOrientation === 'landscape' ? '290mm' : '200mm'})
-              </Text>
-              
-              {getVisibleColumns().map((col, index) => {
-                const width = optimizedColumnWidths[col.dataIndex] || tableSettings.defaultColumnWidth;
-                const percentage = (width / (reportSettings.pageOrientation === 'landscape' ? 290 : 200)) * 100;
-                
-                return (
-                  <div key={col.dataIndex} style={{ marginBottom: 8 }}>
-                    <Space>
-                      <Text style={{ width: 150 }} ellipsis>
-                        {index + 1}. {col.title}
-                      </Text>
-                      <Progress
-                        percent={Math.min(percentage, 100)}
-                        size="small"
-                        strokeColor={
-                          percentage > 90 ? '#ff4d4f' :
-                          percentage > 70 ? '#faad14' : '#52c41a'
-                        }
-                        style={{ width: 200 }}
-                        showInfo={false}
-                      />
-                      <Text type="secondary" style={{ width: 60 }}>
-                        {width}mm
-                      </Text>
-                      <Tag color={col.type === 'number' ? 'blue' : col.type === 'currency' ? 'green' : 'default'}>
-                        {col.type || 'text'}
-                      </Tag>
-                    </Space>
-                  </div>
-                );
-              })}
             </div>
-          </Card>
+          </Space>
         </TabPane>
 
-        <TabPane tab={<span><TaobaoCircleOutlined /> Design</span>} key="design">
-          <Row gutter={[16, 16]}>
-            <Col span={12}>
-              <Card size="small" title="Theme & Colors">
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Select
-                    value={reportSettings.colorScheme}
-                    onChange={(value) => setReportSettings(prev => ({
-                      ...prev,
-                      colorScheme: value,
-                      customColors: null
-                    }))}
-                    style={{ width: '100%' }}
+        <TabPane tab="PDF Settings" key="pdf">
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <Card size="small" title="Typography">
+              <Row gutter={[16, 16]}>
+                <Col span={12}>
+                  <Text>Font Size:</Text>
+                  <Select 
+                    value={pdfSettings.fontSize}
+                    onChange={(value) => setPdfSettings({...pdfSettings, fontSize: value})}
+                    style={{ width: '100%', marginTop: 4 }}
                   >
-                    {Object.entries(REPORT_THEMES).map(([key, theme]) => (
-                      <Option key={key} value={key}>
-                        <Space>
-                          {theme.icon}
-                          {theme.name}
-                        </Space>
-                      </Option>
-                    ))}
+                    <Option value={7}>Small (7pt)</Option>
+                    <Option value={8}>Normal (8pt)</Option>
+                    <Option value={9}>Large (9pt)</Option>
+                    <Option value={10}>Extra Large (10pt)</Option>
                   </Select>
-                  
-                  <div>
-                    <Text strong>Primary Color:</Text>
-                    <ColorPicker
-                      value={`rgb(${colors.primary.join(', ')})`}
-                      onChange={(color) => {
-                        const rgb = color.toRgb();
-                        setReportSettings(prev => ({
-                          ...prev,
-                          customColors: {
-                            ...colors,
-                            primary: [rgb.r, rgb.g, rgb.b]
-                          }
-                        }));
-                      }}
-                    />
-                  </div>
-                  
-                  <div>
-                    <Text strong>Secondary Color:</Text>
-                    <ColorPicker
-                      value={`rgb(${colors.secondary.join(', ')})`}
-                      onChange={(color) => {
-                        const rgb = color.toRgb();
-                        setReportSettings(prev => ({
-                          ...prev,
-                          customColors: {
-                            ...colors,
-                            secondary: [rgb.r, rgb.g, rgb.b]
-                          }
-                        }));
-                      }}
-                    />
-                  </div>
-                </Space>
-              </Card>
-            </Col>
-            
-            <Col span={12}>
-              <Card size="small" title="Header & Footer">
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Input
-                    placeholder="Report Subtitle (optional)"
-                    value={reportSettings.reportSubtitle}
-                    onChange={(e) => setReportSettings(prev => ({
-                      ...prev,
-                      reportSubtitle: e.target.value
-                    }))}
-                  />
-                  
-                  <div>
-                    <Text>Include in Report:</Text>
-                    <Row gutter={[8, 8]}>
-                      <Col span={12}>
-                        <Checkbox
-                          checked={reportSettings.includeHeader}
-                          onChange={(e) => setReportSettings(prev => ({
-                            ...prev,
-                            includeHeader: e.target.checked
-                          }))}
-                        >
-                          Header
-                        </Checkbox>
-                      </Col>
-                      <Col span={12}>
-                        <Checkbox
-                          checked={reportSettings.includeFooter}
-                          onChange={(e) => setReportSettings(prev => ({
-                            ...prev,
-                            includeFooter: e.target.checked
-                          }))}
-                        >
-                          Footer
-                        </Checkbox>
-                      </Col>
-                      <Col span={12}>
-                        <Checkbox
-                          checked={reportSettings.includePageNumbers}
-                          onChange={(e) => setReportSettings(prev => ({
-                            ...prev,
-                            includePageNumbers: e.target.checked
-                          }))}
-                        >
-                          Page Numbers
-                        </Checkbox>
-                      </Col>
-                      <Col span={12}>
-                        <Checkbox
-                          checked={reportSettings.includeTimestamp}
-                          onChange={(e) => setReportSettings(prev => ({
-                            ...prev,
-                            includeTimestamp: e.target.checked
-                          }))}
-                        >
-                          Timestamp
-                        </Checkbox>
-                      </Col>
-                      <Col span={12}>
-                        <Checkbox
-                          checked={reportSettings.includeGeneratedBy}
-                          onChange={(e) => setReportSettings(prev => ({
-                            ...prev,
-                            includeGeneratedBy: e.target.checked
-                          }))}
-                        >
-                          Generated By
-                        </Checkbox>
-                      </Col>
-                      <Col span={12}>
-                        <Checkbox
-                          checked={reportSettings.includeQRCode}
-                          onChange={(e) => setReportSettings(prev => ({
-                            ...prev,
-                            includeQRCode: e.target.checked
-                          }))}
-                        >
-                          QR Code
-                        </Checkbox>
-                      </Col>
-                    </Row>
-                  </div>
-                </Space>
-              </Card>
-            </Col>
-          </Row>
-        </TabPane>
+                </Col>
+                <Col span={12}>
+                  <Text>Header Size:</Text>
+                  <Select 
+                    value={pdfSettings.headerFontSize}
+                    onChange={(value) => setPdfSettings({...pdfSettings, headerFontSize: value})}
+                    style={{ width: '100%', marginTop: 4 }}
+                  >
+                    <Option value={9}>Small (9pt)</Option>
+                    <Option value={10}>Normal (10pt)</Option>
+                    <Option value={11}>Large (11pt)</Option>
+                    <Option value={12}>Extra Large (12pt)</Option>
+                  </Select>
+                </Col>
+              </Row>
+            </Card>
 
-        <TabPane tab={<span><SecurityScanOutlined /> Security</span>} key="security">
-          <Card size="small" title="Security & Privacy">
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Alert
-                message="Security Settings"
-                description="Configure data protection and access controls"
-                type="info"
-                showIcon
-              />
-              
-              <Switch
-                checked={securitySettings.hideSensitiveData}
-                onChange={(checked) => setSecuritySettings(prev => ({
-                  ...prev,
-                  hideSensitiveData: checked
-                }))}
-                checkedChildren="Hide Sensitive Data"
-                unCheckedChildren="Show All Data"
-              />
-              
-              <Switch
-                checked={securitySettings.passwordProtected}
-                onChange={(checked) => setSecuritySettings(prev => ({
-                  ...prev,
-                  passwordProtected: checked
-                }))}
-                checkedChildren="Password Protected"
-                unCheckedChildren="No Password"
-              />
-              
-              {securitySettings.passwordProtected && (
-                <Input.Password
-                  placeholder="Set document password"
-                  value={securitySettings.password}
-                  onChange={(e) => setSecuritySettings(prev => ({
-                    ...prev,
-                    password: e.target.value
-                  }))}
-                />
-              )}
-              
-              <Input
-                placeholder="Watermark Text"
-                value={securitySettings.watermarkText}
-                onChange={(e) => setSecuritySettings(prev => ({
-                  ...prev,
-                  watermarkText: e.target.value
-                }))}
-                prefix={<FileProtectOutlined />}
-              />
-              
-              <div>
-                <Text>Encryption Level:</Text>
-                <Select
-                  value={securitySettings.encryptionLevel}
-                  onChange={(value) => setSecuritySettings(prev => ({
-                    ...prev,
-                    encryptionLevel: value
-                  }))}
-                  style={{ width: '100%' }}
+            <Card size="small" title="Table Style">
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Checkbox
+                  checked={pdfSettings.showBorders}
+                  onChange={(e) => setPdfSettings({...pdfSettings, showBorders: e.target.checked})}
                 >
-                  <Option value="standard">Standard (AES-128)</Option>
-                  <Option value="high">High (AES-256)</Option>
-                  <Option value="maximum">Maximum (Military Grade)</Option>
-                </Select>
-              </div>
-              
-              <DatePicker
-                placeholder="Set expiration date (optional)"
-                value={securitySettings.expirationDate}
-                onChange={(date) => setSecuritySettings(prev => ({
-                  ...prev,
-                  expirationDate: date
-                }))}
-                style={{ width: '100%' }}
+                  Show table borders
+                </Checkbox>
+
+                <Checkbox
+                  checked={pdfSettings.alternateRowColors}
+                  onChange={(e) => setPdfSettings({...pdfSettings, alternateRowColors: e.target.checked})}
+                >
+                  Alternate row colors (striped)
+                </Checkbox>
+
+                <Checkbox
+                  checked={pdfSettings.includeFooter}
+                  onChange={(e) => setPdfSettings({...pdfSettings, includeFooter: e.target.checked})}
+                >
+                  Include footer
+                </Checkbox>
+
+                <Checkbox
+                  checked={pdfSettings.includePageNumbers}
+                  onChange={(e) => setPdfSettings({...pdfSettings, includePageNumbers: e.target.checked})}
+                >
+                  Include page numbers
+                </Checkbox>
+              </Space>
+            </Card>
+
+            <Card size="small" title="Grand Totals">
+              <Switch
+                checked={showGrandTotals}
+                onChange={(checked) => {
+                  // This would need to be handled by parent component
+                  message.info('Grand totals setting can be configured when initializing the component');
+                }}
+                checkedChildren="Show Totals"
+                unCheckedChildren="Hide Totals"
+                disabled
               />
-            </Space>
-          </Card>
+              <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
+                Set showGrandTotals prop when using the component
+              </Text>
+            </Card>
+          </Space>
         </TabPane>
 
-        <TabPane tab={<span><AuditOutlined /> Validation</span>} key="validation">
-          <Card size="small" title="Data Validation">
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Alert
-                message="Data Quality Check"
-                description={`${validationErrors.length} validation issues found`}
-                type={validationErrors.length > 0 ? "warning" : "success"}
-                showIcon
-                action={
+        <TabPane tab="Security" key="security">
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <Card size="small" title="Data Protection">
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <div>
+                  <Switch
+                    checked={securitySettings.hideSensitiveData}
+                    onChange={(checked) => setSecuritySettings({...securitySettings, hideSensitiveData: checked})}
+                    checkedChildren="Masked"
+                    unCheckedChildren="Visible"
+                  />
+                  <Text style={{ marginLeft: 8 }}>Mask sensitive data (emails, phones, account numbers)</Text>
+                </div>
+
+                <Divider />
+
+                <div>
+                  <Text>Watermark Text:</Text>
+                  <Input
+                    placeholder="Enter watermark text"
+                    value={securitySettings.watermarkText}
+                    onChange={(e) => setSecuritySettings({...securitySettings, watermarkText: e.target.value})}
+                    prefix={<FileProtectOutlined />}
+                    style={{ marginTop: 4 }}
+                  />
+                </div>
+
+                <Alert
+                  message="Watermarks appear diagonally across the PDF"
+                  type="info"
+                  showIcon
+                />
+              </Space>
+            </Card>
+
+            <Card size="small" title="Audit Trail">
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Statistic 
+                  title="Total Audit Entries" 
+                  value={auditLog.length} 
+                  suffix="actions"
+                />
+                {auditLog.length > 0 && (
                   <Button 
                     size="small" 
-                    onClick={validateData}
-                    loading={isValidatingData}
+                    icon={<HistoryOutlined />}
+                    onClick={() => {
+                      Modal.info({
+                        title: 'Audit Trail',
+                        width: 600,
+                        content: (
+                          <div style={{ maxHeight: 400, overflow: 'auto' }}>
+                            <Timeline mode="left">
+                              {auditLog.slice(0, 20).map(entry => (
+                                <Timeline.Item key={entry.id}>
+                                  <Text strong>{entry.action}</Text>
+                                  <br />
+                                  <Text type="secondary">{new Date(entry.timestamp).toLocaleString()}</Text>
+                                  <br />
+                                  <Text>{entry.details}</Text>
+                                  <br />
+                                  <Text type="secondary">By: {entry.user}</Text>
+                                </Timeline.Item>
+                              ))}
+                            </Timeline>
+                          </div>
+                        )
+                      });
+                    }}
                   >
-                    Re-validate
+                    View Audit Trail
                   </Button>
-                }
-              />
-              
-              {validationErrors.length > 0 && (
-                <div style={{ maxHeight: 300, overflow: 'auto' }}>
-                  <List
-                    size="small"
-                    dataSource={validationErrors.slice(0, 20)}
-                    renderItem={(error, index) => (
-                      <List.Item>
-                        <Space>
-                          <Tag color="red">{error.type}</Tag>
-                          <Text>Row {error.row}: {error.column}</Text>
-                          <Text type="secondary">{error.message}</Text>
-                        </Space>
-                      </List.Item>
-                    )}
-                  />
-                  {validationErrors.length > 20 && (
-                    <Text type="secondary">
-                      ... and {validationErrors.length - 20} more issues
-                    </Text>
-                  )}
-                </div>
-              )}
-              
-              <Divider />
-              
-              <div>
-                <Text strong>Financial Report Validations:</Text>
-                <Row gutter={[8, 8]} style={{ marginTop: 8 }}>
-                  <Col span={12}>
-                    <Checkbox
-                      checked={reportSettings.includeTaxCalculations}
-                      onChange={(e) => setReportSettings(prev => ({
-                        ...prev,
-                        includeTaxCalculations: e.target.checked
-                      }))}
-                    >
-                      Include Tax Calculations
-                    </Checkbox>
-                  </Col>
-                  <Col span={12}>
-                    <Checkbox
-                      checked={reportSettings.includeVAT}
-                      onChange={(e) => setReportSettings(prev => ({
-                        ...prev,
-                        includeVAT: e.target.checked
-                      }))}
-                    >
-                      Include VAT (16%)
-                    </Checkbox>
-                  </Col>
-                </Row>
-              </div>
-            </Space>
-          </Card>
+                )}
+              </Space>
+            </Card>
+          </Space>
         </TabPane>
       </Tabs>
     </Modal>
   );
 
-  const renderPreviewModal = () => (
-    <Modal
-      title={
-        <Space>
-          <EyeOutlined />
-          <span>Report Preview</span>
-          <Tag color="green">Live Preview</Tag>
-          {validationErrors.length > 0 && (
-            <Tag color="red">{validationErrors.length} Issues</Tag>
-          )}
-        </Space>
-      }
-      open={previewModalVisible}
-      onCancel={() => setPreviewModalVisible(false)}
-      width="95%"
-      style={{ top: 10 }}
-      footer={[
-        <Button key="close" onClick={() => setPreviewModalVisible(false)}>
-          Close
-        </Button>,
-        <Button 
-          key="optimize" 
-          onClick={calculateOptimalColumnWidths}
-          icon={<CompressOutlined />}
-        >
-          Optimize Layout
-        </Button>,
-        <Button 
-          key="generate" 
-          type="primary" 
-          onClick={generatePDF}
-          loading={isGeneratingPDF}
-          disabled={reportApproval.requiresApproval && !reportApproval.approved}
-        >
-          <DownloadOutlined /> Generate PDF
-        </Button>
-      ]}
-    >
-      <div ref={reportRef}>
-        {/* Header Preview */}
-        {reportSettings.includeHeader && (
-          <div style={{
-            backgroundColor: `rgb(${colors.primary.join(', ')})`,
-            color: 'white',
-            padding: '20px',
-            marginBottom: 20,
-            borderRadius: 4,
-            textAlign: 'center',
-            position: 'relative'
-          }}>
-            <h2 style={{ margin: 0, fontSize: '20px' }}>
-              {companyName.toUpperCase()}
-            </h2>
-            <h3 style={{ margin: '5px 0 0 0', fontSize: '16px' }}>
-              {title}
-            </h3>
-            {reportSettings.reportSubtitle && (
-              <p style={{ margin: '5px 0 0 0', fontSize: '12px', opacity: 0.9 }}>
-                {reportSettings.reportSubtitle}
-              </p>
-            )}
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              marginTop: 15,
-              fontSize: '10px',
-              opacity: 0.8
-            }}>
-              <div style={{ textAlign: 'left' }}>
-                <div>Report ID: {generateReportId()}</div>
-                <div>Type: {currentTheme.name}</div>
-                <div>Generated By: {userName} ({userRole})</div>
-                <div>Date: {new Date().toLocaleDateString('en-KE')}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div>Station: {stationInfo.name}</div>
-                <div>Code: {stationInfo.code}</div>
-                <div>Manager: {stationInfo.manager}</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Validation Alert */}
-        {validationErrors.length > 0 && (
-          <Alert
-            message={`${validationErrors.length} Data Validation Issues Found`}
-            description="Please review the validation tab for details"
-            type="warning"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-        )}
-
-        {/* Approval Status */}
-        {reportApproval.requiresApproval && (
-          <Alert
-            message={reportApproval.approved ? "Report Approved" : "Approval Required"}
-            description={
-              reportApproval.approved 
-                ? `Approved by ${reportApproval.approvedBy} on ${new Date(reportApproval.approvedAt).toLocaleDateString()}`
-                : "This report requires approval before export"
-            }
-            type={reportApproval.approved ? "success" : "warning"}
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-        )}
-
-        {/* Table Preview */}
-        <div style={{ overflowX: 'auto', border: '1px solid #f0f0f0', borderRadius: 4 }}>
-          <table style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            fontSize: `${reportSettings.fontSize}pt`,
-            fontFamily: 'Arial, sans-serif'
-          }}>
-            <thead>
-              <tr style={{
-                backgroundColor: `rgb(${colors.secondary.join(', ')})`,
-                color: 'white',
-                position: 'sticky',
-                top: 0,
-                zIndex: 1
-              }}>
-                {getVisibleColumns().map((col, index) => (
-                  <th key={index} style={{
-                    padding: '8px',
-                    border: reportSettings.showGridLines ? '1px solid #ddd' : 'none',
-                    fontWeight: 'bold',
-                    textAlign: 'center',
-                    whiteSpace: 'nowrap',
-                    minWidth: `${optimizedColumnWidths[col.dataIndex] || 40}px`
-                  }}>
-                    {col.title}
-                    {col.isSensitive && securitySettings.hideSensitiveData && (
-                      <LockOutlined style={{ marginLeft: 4, fontSize: '10px' }} />
-                    )}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredData.slice(0, 20).map((row, rowIndex) => (
-                <tr key={rowIndex} style={{
-                  backgroundColor: reportSettings.alternateRowColors && rowIndex % 2 === 0 
-                    ? '#f9f9f9' 
-                    : 'white'
-                }}>
-                  {getVisibleColumns().map((col, colIndex) => (
-                    <td key={colIndex} style={{
-                      padding: '6px',
-                      border: reportSettings.showGridLines ? '1px solid #eee' : 'none',
-                      whiteSpace: 'nowrap',
-                      textAlign: col.type === 'number' ? 'right' : 'left'
-                    }}>
-                      {col.render 
-                        ? col.render(row[col.dataIndex], row)
-                        : col.isSensitive && securitySettings.hideSensitiveData
-                          ? maskSensitiveData(row[col.dataIndex], col.type)
-                          : row[col.dataIndex]
-                      }
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Footer Preview */}
-        {reportSettings.includeFooter && (
-          <div style={{
-            marginTop: 20,
-            paddingTop: 10,
-            borderTop: `2px solid rgb(${colors.primary.join(', ')})`,
-            fontSize: '10px',
-            color: '#666',
-            display: 'flex',
-            justifyContent: 'space-between'
-          }}>
-            <div>
-              {footerText || `${companyName} • ${currentTheme.name} Report`}
-            </div>
-            <div>
-              {reportSettings.includeGeneratedBy && `Generated by: ${userName} | `}
-              {reportSettings.includeTimestamp && `Time: ${new Date().toLocaleTimeString('en-KE')} | `}
-              Records: {filteredData.length}
-            </div>
-          </div>
-        )}
-
-        {filteredData.length > 20 && (
-          <Alert
-            message={`Preview shows first 20 of ${filteredData.length} records`}
-            type="info"
-            showIcon
-            style={{ marginTop: 16 }}
-          />
-        )}
-      </div>
-    </Modal>
-  );
-
-  const renderSecurityModal = () => (
-    <Modal
-      title={
-        <Space>
-          <SecurityScanOutlined />
-          <span>Security & Access Control</span>
-        </Space>
-      }
-      open={securityModalVisible}
-      onCancel={() => setSecurityModalVisible(false)}
-      footer={[
-        <Button key="cancel" onClick={() => setSecurityModalVisible(false)}>
-          Cancel
-        </Button>,
-        <Button key="save" type="primary" onClick={() => {
-          setSecurityModalVisible(false);
-          saveSettings();
-        }}>
-          Save Security Settings
-        </Button>
-      ]}
-    >
-      <Space direction="vertical" style={{ width: '100%' }}>
-        <Alert
-          message="Data Protection"
-          description="Configure how sensitive data is handled in reports"
-          type="info"
-          showIcon
-        />
-        
-        <Card size="small" title="Sensitive Data Handling">
-          <Switch
-            checked={securitySettings.hideSensitiveData}
-            onChange={(checked) => setSecuritySettings(prev => ({
-              ...prev,
-              hideSensitiveData: checked
-            }))}
-            checkedChildren="Mask Sensitive Data"
-            unCheckedChildren="Show All Data"
-          />
-          
-          <div style={{ marginTop: 16 }}>
-            <Text type="secondary">
-              When enabled, sensitive data like emails, phone numbers, and account numbers will be masked in exports.
-            </Text>
-          </div>
-        </Card>
-        
-        <Card size="small" title="Export Protection">
-          <Switch
-            checked={securitySettings.passwordProtected}
-            onChange={(checked) => setSecuritySettings(prev => ({
-              ...prev,
-              passwordProtected: checked
-            }))}
-            checkedChildren="Password Protect PDFs"
-            unCheckedChildren="No Password"
-          />
-          
-          {securitySettings.passwordProtected && (
-            <Input.Password
-              placeholder="Enter password for PDF protection"
-              value={securitySettings.password}
-              onChange={(e) => setSecuritySettings(prev => ({
-                ...prev,
-                password: e.target.value
-              }))}
-              style={{ marginTop: 8 }}
-            />
-          )}
-        </Card>
-        
-        <Card size="small" title="Watermark">
-          <Input
-            placeholder="Watermark text (e.g., CONFIDENTIAL)"
-            value={securitySettings.watermarkText}
-            onChange={(e) => setSecuritySettings(prev => ({
-              ...prev,
-              watermarkText: e.target.value
-            }))}
-            prefix={<FileProtectOutlined />}
-          />
-        </Card>
-      </Space>
-    </Modal>
-  );
-
-  const renderAuditModal = () => (
-    <Modal
-      title={
-        <Space>
-          <AuditOutlined />
-          <span>Audit Trail</span>
-          <Badge count={auditLog.length} />
-        </Space>
-      }
-      open={auditModalVisible}
-      onCancel={() => setAuditModalVisible(false)}
-      width={800}
-      footer={[
-        <Button key="close" onClick={() => setAuditModalVisible(false)}>
-          Close
-        </Button>
-      ]}
-    >
-      <Timeline mode="left">
-        {auditLog.slice(0, 20).map(entry => (
-          <Timeline.Item 
-            key={entry.id}
-            color={
-              entry.action.includes('Failed') ? 'red' :
-              entry.action.includes('Completed') ? 'green' :
-              entry.action.includes('Approved') ? 'blue' : 'gray'
-            }
-          >
-            <Space direction="vertical" size={0}>
-              <Text strong>{entry.action}</Text>
-              <Text type="secondary">{new Date(entry.timestamp).toLocaleString('en-KE')}</Text>
-              <Text>{entry.details}</Text>
-              <Text type="secondary">By: {entry.user}</Text>
-            </Space>
-          </Timeline.Item>
-        ))}
-      </Timeline>
-      {auditLog.length > 20 && (
-        <Alert
-          message={`Showing last 20 of ${auditLog.length} audit entries`}
-          type="info"
-          showIcon
-          style={{ marginTop: 16 }}
-        />
-      )}
-    </Modal>
-  );
-
   // ========== MAIN RENDER ==========
-  const menuItems = [
-    {
-      key: 'excel',
-      label: (
-        <Space>
-          <FileExcelOutlined />
-          <span>Export as Excel</span>
-        </Space>
-      ),
-      onClick: generateExcel,
-      disabled: isGeneratingExcel || (reportApproval.requiresApproval && !reportApproval.approved)
-    },
+  const columnCount = selectedColumns.length;
+
+  // Dropdown menu items - fixed to avoid button nesting
+  const dropdownItems = [
     {
       key: 'pdf',
-      label: (
-        <Space>
-          <FilePdfOutlined />
-          <span>Export as PDF</span>
-          {isGeneratingPDF && <LoadingOutlined spin style={{ marginLeft: 8 }} />}
-        </Space>
-      ),
-      onClick: generatePDF,
-      disabled: isGeneratingPDF || (reportApproval.requiresApproval && !reportApproval.approved)
+      label: 'Export as PDF',
+      icon: <FilePdfOutlined />,
+      onClick: () => setOrientationModalVisible(true)
+    },
+    {
+      key: 'excel',
+      label: 'Export as Excel',
+      icon: <FileExcelOutlined />,
+      onClick: generateExcel
     },
     {
       key: 'preview',
-      label: (
-        <Space>
-          <EyeOutlined />
-          <span>Preview Report</span>
-        </Space>
-      ),
+      label: 'Preview Report',
+      icon: <EyeOutlined />,
       onClick: () => setPreviewModalVisible(true)
     },
-    {
-      type: 'divider'
-    },
+    { type: 'divider' },
     {
       key: 'settings',
-      label: (
-        <Space>
-          <SettingOutlined />
-          <span>Report Settings</span>
-        </Space>
-      ),
-      onClick: () => setSettingsModalVisible(true),
-      disabled: !enableCustomization
-    },
-    {
-      key: 'security',
-      label: (
-        <Space>
-          <SecurityScanOutlined />
-          <span>Security Settings</span>
-        </Space>
-      ),
-      onClick: () => setSecurityModalVisible(true)
+      label: 'Report Settings',
+      icon: <SettingOutlined />,
+      onClick: () => setSettingsModalVisible(true)
     },
     {
       key: 'audit',
-      label: (
-        <Space>
-          <AuditOutlined />
-          <span>View Audit Trail</span>
-          {auditLog.length > 0 && (
-            <Badge count={auditLog.length} size="small" />
-          )}
-        </Space>
-      ),
-      onClick: () => setAuditModalVisible(true)
-    },
-    {
-      type: 'divider'
-    },
-    {
-      key: 'validate',
-      label: (
-        <Space>
-          <CheckCircleOutlined />
-          <span>Validate Data</span>
-          {validationErrors.length > 0 && (
-            <Badge count={validationErrors.length} size="small" status="error" />
-          )}
-        </Space>
-      ),
-      onClick: validateData,
-      disabled: isValidatingData || filteredData.length === 0
-    },
-    reportApproval.requiresApproval && !reportApproval.approved ? {
-      key: 'approve',
-      label: (
-        <Space>
-          <SafetyCertificateOutlined />
-          <span>Approve Report</span>
-        </Space>
-      ),
-      onClick: approveReport,
-      disabled: validationErrors.length > 0
-    } : null
-  ].filter(Boolean);
+      label: 'Audit Trail',
+      icon: <HistoryOutlined />,
+      onClick: () => {
+        Modal.info({
+          title: 'Audit Trail',
+          width: 600,
+          content: (
+            <div style={{ maxHeight: 400, overflow: 'auto' }}>
+              {auditLog.length > 0 ? (
+                auditLog.slice(0, 20).map(entry => (
+                  <div key={entry.id} style={{ marginBottom: 12, padding: 8, borderBottom: '1px solid #f0f0f0' }}>
+                    <Text strong>{entry.action}</Text>
+                    <br />
+                    <Text type="secondary">{new Date(entry.timestamp).toLocaleString()}</Text>
+                    <br />
+                    <Text>{entry.details}</Text>
+                    <br />
+                    <Text type="secondary">By: {entry.user}</Text>
+                  </div>
+                ))
+              ) : (
+                <Text type="secondary">No audit entries yet</Text>
+              )}
+            </div>
+          )
+        });
+      }
+    }
+  ];
+
+  // Add approval item if needed
+  if (reportApproval.requiresApproval && !reportApproval.approved) {
+    dropdownItems.push(
+      { type: 'divider' },
+      {
+        key: 'approve',
+        label: 'Approve Report',
+        icon: <SafetyCertificateOutlined />,
+        onClick: approveReport
+      }
+    );
+  }
 
   return (
     <>
       <Space direction="vertical" style={{ width: '100%' }}>
-        <Space wrap>
-          <Dropdown
-            menu={{ items: menuItems }}
-            placement="bottomLeft"
-            trigger={['click']}
-            disabled={filteredData.length === 0}
-          >
-            <Button 
-              type="primary" 
-              icon={<DownloadOutlined />}
-              loading={isGeneratingPDF || isGeneratingExcel}
+        {/* Main action buttons */}
+        <Row gutter={[16, 16]} align="middle">
+          <Col>
+            <Dropdown 
+              menu={{ items: dropdownItems }} 
+              placement="bottomLeft"
               disabled={filteredData.length === 0}
-              size="large"
-            >
-              <Space>
-                <Badge 
-                  count={currentTheme.name.charAt(0)} 
-                  style={{ 
-                    backgroundColor: `rgb(${colors.primary.join(', ')})`,
-                    fontSize: '10px'
-                  }}
-                  size="small"
-                />
-                <Text strong>Generate Report</Text>
-                {filteredData.length > 0 && (
-                  <Text type="secondary" style={{ fontSize: '12px' }}>
-                    ({filteredData.length} records)
-                  </Text>
-                )}
-              </Space>
-            </Button>
-          </Dropdown>
-          
-          {/* Quick Actions */}
-          <Tooltip title="Optimize table layout">
-            <Button 
-              icon={<CompressOutlined />}
-              onClick={calculateOptimalColumnWidths}
-              disabled={filteredData.length === 0}
-            >
-              Optimize
-            </Button>
-          </Tooltip>
-          
-          <Tooltip title="Data validation">
-            <Button 
-              icon={<CheckCircleOutlined />}
-              onClick={validateData}
-              loading={isValidatingData}
-              disabled={filteredData.length === 0}
-            >
-              Validate
-            </Button>
-          </Tooltip>
-          
-          {reportApproval.requiresApproval && !reportApproval.approved && (
-            <Popconfirm
-              title="Approve Report"
-              description="Are you sure you want to approve this report?"
-              onConfirm={approveReport}
-              okText="Yes, Approve"
-              cancelText="Cancel"
-              disabled={validationErrors.length > 0}
             >
               <Button 
-                type="dashed"
-                icon={<SafetyCertificateOutlined />}
-                disabled={validationErrors.length > 0}
+                type="primary" 
+                icon={<DownloadOutlined />}
+                loading={isGeneratingPDF || isGeneratingExcel}
+                size="large"
               >
-                Approve
+                <Space>
+                  <span>Generate Report</span>
+                  {filteredData.length > 0 && (
+                    <Badge count={columnCount} style={{ backgroundColor: '#52c41a' }} />
+                  )}
+                </Space>
               </Button>
-            </Popconfirm>
-          )}
-        </Space>
-        
-        {/* Status Indicators */}
-        <Row gutter={[8, 8]}>
-          <Col span={24}>
-            <Space wrap>
-              {filteredData.length > 0 && (
-                <>
-                  <Tag color="blue" icon={<DatabaseOutlined />}>
-                    {filteredData.length} records
-                  </Tag>
-                  <Tag color="green" icon={<ColumnHeightOutlined />}>
-                    {getVisibleColumns().length} columns
-                  </Tag>
-                  <Tag color={validationErrors.length > 0 ? "red" : "green"} icon={<CheckCircleOutlined />}>
-                    {validationErrors.length} issues
-                  </Tag>
-                  <Tag color={reportApproval.approved ? "green" : "orange"} icon={<SafetyCertificateOutlined />}>
-                    {reportApproval.approved ? "Approved" : "Pending Approval"}
-                  </Tag>
-                  <Tag color="purple" icon={<SecurityScanOutlined />}>
-                    {securitySettings.hideSensitiveData ? "Data Masked" : "Full Data"}
-                  </Tag>
-                </>
-              )}
-            </Space>
+            </Dropdown>
           </Col>
+
+          {/* Quick orientation toggle - separate button, not in dropdown */}
+          {filteredData.length > 0 && (
+            <Col>
+              <Tooltip title="Choose PDF orientation">
+                <Button 
+                  icon={<FullscreenOutlined />}
+                  onClick={() => setOrientationModalVisible(true)}
+                >
+                  {pdfOrientation === 'landscape' ? 'Landscape' : 'Portrait'}
+                </Button>
+              </Tooltip>
+            </Col>
+          )}
+
+          {/* Approval status */}
+          {reportApproval.requiresApproval && (
+            <Col>
+              <Tag color={reportApproval.approved ? 'green' : 'orange'}>
+                {reportApproval.approved ? `Approved by ${reportApproval.approvedBy}` : 'Pending Approval'}
+              </Tag>
+            </Col>
+          )}
         </Row>
-        
-        {/* Export Progress */}
-        {(isGeneratingPDF || isGeneratingExcel) && exportStep > 0 && (
+
+        {/* Column info */}
+        {filteredData.length > 0 && (
+          <Row gutter={[8, 8]}>
+            <Col>
+              <Space wrap>
+                <Tag icon={<TableOutlined />} color="blue">
+                  {columnCount} Columns
+                </Tag>
+                <Tag icon={<DatabaseOutlined />} color="green">
+                  {filteredData.length} Records
+                </Tag>
+                {columnCount > 5 && (
+                  <Tag icon={<WarningOutlined />} color="orange">
+                    Landscape Recommended
+                  </Tag>
+                )}
+                {securitySettings.hideSensitiveData && (
+                  <Tag icon={<LockOutlined />} color="purple">
+                    Data Masked
+                  </Tag>
+                )}
+                {showGrandTotals && (
+                  <Tag icon={<DollarOutlined />} color="gold">
+                    With Totals
+                  </Tag>
+                )}
+              </Space>
+            </Col>
+          </Row>
+        )}
+
+        {/* Export progress */}
+        {(isGeneratingPDF || isGeneratingExcel) && (
           <Card size="small" style={{ marginTop: 8 }}>
             <Space direction="vertical" style={{ width: '100%' }}>
               <Text strong>
-                {isGeneratingPDF ? 'Generating PDF...' : 'Generating Excel...'} 
-                <Badge count={exportStep} style={{ marginLeft: 8 }} />
+                {isGeneratingPDF ? 'Generating PDF...' : 'Generating Excel...'}
               </Text>
-              <Progress 
-                percent={exportProgress || (exportStep * 20)}
-                status="active"
-                strokeColor={colors.primary}
-              />
+              <Progress percent={exportStep * 25} status="active" />
               <Steps size="small" current={exportStep - 1}>
-                <Step title="Preparing" />
-                <Step title="Processing Data" />
-                <Step title="Formatting" />
-                <Step title="Applying Styles" />
-                <Step title="Finalizing" />
+                <Step title="Prepare" />
+                <Step title="Process" />
+                <Step title="Format" />
+                <Step title="Save" />
               </Steps>
             </Space>
           </Card>
         )}
-        
-        {/* Data Validation Alert */}
-        {validationErrors.length > 0 && (
-          <Alert
-            message={`${validationErrors.length} Data Validation Issues Found`}
-            description={
-              <Space direction="vertical" size={0}>
-                <Text>Please review and fix data issues before exporting.</Text>
-                <Button 
-                  type="link" 
-                  size="small" 
-                  onClick={() => setActiveSettingsTab('validation') && setSettingsModalVisible(true)}
-                >
-                  View Details
-                </Button>
-              </Space>
-            }
-            type="warning"
-            showIcon
-            action={
-              <Button size="small" onClick={validateData}>
-                Re-check
-              </Button>
-            }
-          />
-        )}
-        
-        {/* Empty State */}
+
+        {/* No data state */}
         {filteredData.length === 0 && (
           <Result
-            icon={<FileExcelOutlined />}
+            icon={<FileTextOutlined />}
             title="No Data Available"
-            subTitle="There is no data to generate a report from."
-            extra={
-              <Button type="primary" onClick={() => window.location.reload()}>
-                Refresh Data
-              </Button>
-            }
+            subTitle="There is no data to generate a report"
           />
         )}
       </Space>
-      
-      {renderSettingsModal()}
+
+      {/* Modals */}
+      {renderOrientationModal()}
       {renderPreviewModal()}
-      {renderSecurityModal()}
-      {renderAuditModal()}
+      {renderSettingsModal()}
     </>
   );
 };
