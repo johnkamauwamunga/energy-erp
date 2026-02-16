@@ -1,4 +1,4 @@
-// EnhancedSummaryModal.jsx (UPDATED WITH EXPENSE DISPLAY)
+// EnhancedSummaryModal.jsx (FIXED - Enhanced PDF with multi-page support)
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -70,7 +70,7 @@ import { useApp } from '../../../../../context/AppContext';
 const { Title, Text, Paragraph } = Typography;
 const { Panel } = Collapse;
 
-// Enhanced Summary Modal Component with Expense Display
+// Enhanced Summary Modal Component with updated shortage-only logic
 const EnhancedSummaryModal = ({
   visible,
   onClose,
@@ -88,10 +88,11 @@ const EnhancedSummaryModal = ({
   const [showDebtorDetails, setShowDebtorDetails] = useState({});
   const [showExpenseDetails, setShowExpenseDetails] = useState({});
   const [saveResult, setSaveResult] = useState(null);
+  const [validationErrors, setValidationErrors] = useState([]);
 
   const printRef = useRef();
 
-  // Safe data extraction
+  // Safe data extraction with fallbacks
   const islands = islandSalesData?.islands || [];
   const overallStats = islandSalesData?.overallStats || {};
   const apiPayload = islandSalesData?.apiPayload || {};
@@ -101,7 +102,7 @@ const EnhancedSummaryModal = ({
   const stationName = islandSalesData?.stationName || state?.currentStation?.name || 'N/A';
   const stationCode = islandSalesData?.stationCode || state?.currentStation?.code || 'N/A';
   const currentUser = state.currentUser;
-  const autoExpenses = islandSalesData?.autoExpenses || {}; // Get auto expenses details
+  const autoExpenses = islandSalesData?.autoExpenses || {};
 
   // Format date for filename
   const getFormattedDate = () => {
@@ -111,7 +112,14 @@ const EnhancedSummaryModal = ({
       time: now.toLocaleTimeString('en-GB', { hour12: false }).replace(/:/g, '-'),
       year: now.getFullYear(),
       month: String(now.getMonth() + 1).padStart(2, '0'),
-      day: String(now.getDate()).padStart(2, '0')
+      day: String(now.getDate()).padStart(2, '0'),
+      fullDate: now.toLocaleDateString('en-GB', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      }),
+      fullTime: now.toLocaleTimeString('en-GB')
     };
   };
 
@@ -166,13 +174,15 @@ const EnhancedSummaryModal = ({
       
       if (totalExpenses > 0) {
         breakdown.push({
+          key: island.islandId || island.islandName,
           islandName: island.islandName,
           islandId: island.islandId,
           autoExpenses: island.autoExpenses || 0,
           manualExpenses: manualExpenses,
           totalExpenses: totalExpenses,
           autoExpenseDetails: autoExpenseDetails,
-          hasAutoExpenses: autoExpenseDetails.length > 0
+          hasAutoExpenses: autoExpenseDetails.length > 0,
+          hasManualExpenses: manualExpenses > 0
         });
       }
     });
@@ -180,7 +190,7 @@ const EnhancedSummaryModal = ({
     return breakdown.sort((a, b) => b.totalExpenses - a.totalExpenses);
   }, [islands]);
 
-  // Enhanced reconciliation data
+  // ========== MODIFIED RECONCILIATION DATA - Only shortages ==========
   const reconciliationData = useMemo(() => {
     return islands.map((island, index) => {
       const cashDrops = island.cashCollection || 0;
@@ -197,9 +207,14 @@ const EnhancedSummaryModal = ({
       const totalExpenses = autoExpenses + manualExpenses;
       
       const totalCollected = cashDrops + totalDebts + receipts - totalExpenses;
-      const variance = totalSales - totalCollected;
       
-      const shortageStatus = variance > 10 ? 'SHORT' : variance < -10 ? 'OVER' : 'BALANCED';
+      // ========== MODIFIED: Only track shortage (when expected > collected) ==========
+      // If collected >= expected, shortage is 0
+      const expectedTotal = totalSales + receipts - totalExpenses;
+      const shortageAmount = expectedTotal > totalCollected ? expectedTotal - totalCollected : 0;
+      
+      const status = shortageAmount > 10 ? 'SHORT' : 'OK';
+      const statusDisplay = shortageAmount === 0 ? 'Complete ✓' : shortageAmount > 10 ? 'Shortage' : 'Minor (<10)';
       
       return {
         key: index,
@@ -216,8 +231,10 @@ const EnhancedSummaryModal = ({
         totalDebts: totalDebts,
         debtCollections: debtCollections,
         totalCollected: totalCollected,
-        variance: variance,
-        shortageStatus: shortageStatus,
+        expectedTotal: expectedTotal,
+        shortageAmount: shortageAmount, // Only > 0 when collected < expected
+        status: status,
+        statusDisplay: statusDisplay,
         shortagePosted: island.shortagePosted || false,
         isComplete: island.isComplete || false,
         collections: island.collections || [],
@@ -226,7 +243,7 @@ const EnhancedSummaryModal = ({
     });
   }, [islands]);
 
-  // Calculate overall totals
+  // ========== MODIFIED OVERALL TOTALS - Only shortages ==========
   const overallTotals = useMemo(() => {
     const totalCashDrops = reconciliationData.reduce((sum, row) => sum + row.cashDrops, 0);
     const totalSales = reconciliationData.reduce((sum, row) => sum + row.totalSales, 0);
@@ -234,22 +251,22 @@ const EnhancedSummaryModal = ({
     const totalAutoExpenses = reconciliationData.reduce((sum, row) => sum + row.autoExpenses, 0);
     const totalManualExpenses = reconciliationData.reduce((sum, row) => sum + row.manualExpenses, 0);
     const totalExpenses = totalAutoExpenses + totalManualExpenses;
-    const totalVariance = reconciliationData.reduce((sum, row) => sum + row.variance, 0);
     const totalDebts = reconciliationData.reduce((sum, row) => sum + row.totalDebts, 0);
     const totalCashCollections = reconciliationData.reduce((sum, row) => sum + row.cashCollections, 0);
+    const totalCollected = totalCashDrops + totalDebts + totalReceipts - totalExpenses;
+    const totalExpected = totalSales + totalReceipts - totalExpenses;
     
-    const islandsWithShortage = reconciliationData.filter(row => row.shortageStatus === 'SHORT').length;
-    const islandsWithOverage = reconciliationData.filter(row => row.shortageStatus === 'OVER').length;
-    const islandsBalanced = reconciliationData.filter(row => row.shortageStatus === 'BALANCED').length;
-    
-    // Calculate total shortage/overage amounts
+    // ========== Only count shortages (when collected < expected) ==========
     const totalShortageAmount = reconciliationData
-      .filter(row => row.variance > 10)
-      .reduce((sum, row) => sum + row.variance, 0);
+      .filter(row => row.shortageAmount > 10) // Only count shortages above threshold
+      .reduce((sum, row) => sum + row.shortageAmount, 0);
     
-    const totalOverageAmount = Math.abs(reconciliationData
-      .filter(row => row.variance < -10)
-      .reduce((sum, row) => sum + row.variance, 0));
+    const islandsWithShortage = reconciliationData.filter(row => row.shortageAmount > 10).length;
+    const islandsWithMinorShortage = reconciliationData.filter(row => row.shortageAmount > 0 && row.shortageAmount <= 10).length;
+    const islandsComplete = reconciliationData.filter(row => row.shortageAmount === 0).length;
+    
+    // Calculate net position (should be positive when collected > expected, but we don't track overage)
+    const netPosition = totalCollected - totalExpected;
     
     return {
       totalCashDrops,
@@ -258,18 +275,51 @@ const EnhancedSummaryModal = ({
       totalAutoExpenses,
       totalManualExpenses,
       totalExpenses,
-      totalVariance,
       totalDebts,
       totalCashCollections,
-      totalCollected: totalCashDrops + totalDebts + totalReceipts - totalExpenses,
+      totalCollected,
+      totalExpected,
+      totalShortageAmount, // Only shortages above threshold
       islandsWithShortage,
-      islandsWithOverage,
-      islandsBalanced,
-      totalShortageAmount,
-      totalOverageAmount,
-      totalIslands: reconciliationData.length
+      islandsWithMinorShortage,
+      islandsComplete,
+      totalIslands: reconciliationData.length,
+      hasExpenses: totalExpenses > 0,
+      hasAutoExpenses: totalAutoExpenses > 0,
+      hasManualExpenses: totalManualExpenses > 0,
+      netPosition, // Positive = over-collected, but we don't track as shortage
+      hasShortages: totalShortageAmount > 0
     };
   }, [reconciliationData]);
+
+  // Validate data before submission
+  const validateSubmission = () => {
+    const errors = [];
+    
+    if (!reconciliationNotes.trim()) {
+      errors.push('Reconciliation notes are required');
+    }
+    
+    if (reconciliationData.length === 0) {
+      errors.push('No island data available');
+    }
+    
+    const incompleteIslands = reconciliationData.filter(island => !island.isComplete);
+    if (incompleteIslands.length > 0) {
+      errors.push(`${incompleteIslands.length} island(s) are incomplete`);
+    }
+    
+    // ========== Check for unresolved shortages (above threshold and not posted) ==========
+    const unresolvedShortages = reconciliationData.filter(
+      island => island.shortageAmount > 10 && !island.shortagePosted
+    );
+    if (unresolvedShortages.length > 0) {
+      errors.push(`${unresolvedShortages.length} island(s) have unresolved shortages above KES 10`);
+    }
+    
+    setValidationErrors(errors);
+    return errors.length === 0;
+  };
 
   // Fetch wallet balance
   useEffect(() => {
@@ -284,10 +334,19 @@ const EnhancedSummaryModal = ({
       }
     };
     
-    if (stateStationId) {
+    if (stateStationId && visible) {
       fetchWallet();
     }
-  }, [stateStationId]);
+  }, [stateStationId, visible]);
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!visible) {
+      setReconciliationNotes('');
+      setSaveResult(null);
+      setValidationErrors([]);
+    }
+  }, [visible]);
 
   // Format currency
   const formatCurrency = (amount) => {
@@ -314,12 +373,21 @@ const EnhancedSummaryModal = ({
       autoExpenses: autoExpenses,
       reconciliationNotes: reconciliationNotes.trim(),
       timestamp: new Date().toISOString(),
-      generatedBy: `${currentUser?.firstName} ${currentUser?.lastName}`,
-      generatedById: currentUser?.id
+      generatedBy: `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim() || 'Unknown',
+      generatedById: currentUser?.id,
+      metadata: {
+        version: '1.0',
+        totalIslands: reconciliationData.length,
+        totalDebtors: debtorBreakdown.length,
+        totalTransactions: debtorBreakdown.reduce((sum, d) => sum + d.transactions.length, 0),
+        totalExpenseItems: expenseBreakdown.reduce((sum, e) => sum + (e.autoExpenseDetails?.length || 0), 0),
+        hasShortages: overallTotals.hasShortages,
+        totalShortageAmount: overallTotals.totalShortageAmount
+      }
     };
   };
 
-  // Main Reconciliation Table Columns
+  // ========== MODIFIED TABLE COLUMNS - Only show shortage ==========
   const financialColumns = [
     {
       title: 'ISLAND',
@@ -336,42 +404,35 @@ const EnhancedSummaryModal = ({
             </Text>
           )}
           {record.autoExpenses > 0 && (
-            <Tag size="small" color="orange" style={{ marginTop: 2 }}>
-              Auto Exp: {formatCurrency(record.autoExpenses)}
-            </Tag>
+            <Tooltip title={`Auto-loaded expenses: ${formatCurrency(record.autoExpenses)}`}>
+              <Tag size="small" color="orange" style={{ marginTop: 2 }}>
+                Auto: {formatCurrency(record.autoExpenses)}
+              </Tag>
+            </Tooltip>
           )}
         </Space>
       ),
     },
     {
-      title: 'CASH DROPS',
-      dataIndex: 'cashDrops',
-      key: 'cashDrops',
+      title: 'EXPECTED',
+      key: 'expectedTotal',
       width: 120,
       align: 'right',
-      render: (amount) => (
-        <Text strong style={{ fontSize: '13px', color: '#52c41a' }}>
-          {formatCurrency(amount)}
+      render: (_, record) => (
+        <Text strong style={{ fontSize: '13px', color: '#1890ff' }}>
+          {formatCurrency(record.expectedTotal)}
         </Text>
       ),
     },
     {
-      title: 'DEBT COLLECTIONS',
-      dataIndex: 'totalDebts',
-      key: 'totalDebts',
-      width: 130,
+      title: 'COLLECTED',
+      key: 'totalCollected',
+      width: 120,
       align: 'right',
-      render: (amount, record) => (
-        <Space direction="vertical" size={0} align="end">
-          <Text style={{ fontSize: '13px', color: '#722ed1' }}>
-            {formatCurrency(amount)}
-          </Text>
-          {record.debtCollections.length > 0 && (
-            <Text type="secondary" style={{ fontSize: '10px' }}>
-              {record.debtCollections.length} transaction(s)
-            </Text>
-          )}
-        </Space>
+      render: (_, record) => (
+        <Text strong style={{ fontSize: '13px', color: '#52c41a' }}>
+          {formatCurrency(record.totalCollected)}
+        </Text>
       ),
     },
     {
@@ -390,66 +451,60 @@ const EnhancedSummaryModal = ({
             {formatCurrency(amount)}
           </Text>
           {record.autoExpenses > 0 && (
-            <Text type="secondary" style={{ fontSize: '10px' }}>
-              Auto: {formatCurrency(record.autoExpenses)}
-            </Text>
+            <Tooltip title={`Auto: ${formatCurrency(record.autoExpenses)} • Manual: ${formatCurrency(record.manualExpenses)}`}>
+              <Text type="secondary" style={{ fontSize: '10px', cursor: 'help' }}>
+                Auto: {formatCurrency(record.autoExpenses)}
+              </Text>
+            </Tooltip>
           )}
         </Space>
       ),
     },
     {
-      title: 'SHORT/OVER',
-      dataIndex: 'shortageStatus',
-      key: 'shortageStatus',
-      width: 110,
+      title: 'SHORTAGE',
+      key: 'shortageAmount',
+      width: 120,
       align: 'center',
-      render: (status, record) => {
-        const color = status === 'SHORT' ? '#fa541c' : status === 'OVER' ? '#faad14' : '#52c41a';
-        const text = status === 'SHORT' ? 'SHORT' : status === 'OVER' ? 'OVER' : 'BALANCED';
-        const amount = Math.abs(record.variance);
-        
-        return (
-          <Space direction="vertical" size={2} align="center">
-            <Tag 
-              color={color}
-              style={{ 
-                margin: 0, 
-                fontWeight: 'bold',
-                fontSize: '11px',
-                minWidth: '70px',
-                textAlign: 'center'
-              }}
-            >
-              {text}
-            </Tag>
-            {amount > 0 && (
-              <Text type="secondary" style={{ fontSize: '10px' }}>
-                {formatCurrency(amount)}
-              </Text>
-            )}
-          </Space>
-        );
+      render: (_, record) => {
+        if (record.shortageAmount === 0) {
+          return <Tag color="green">None</Tag>;
+        } else if (record.shortageAmount <= 10) {
+          return (
+            <Tooltip title="Below minimum threshold (KES 10)">
+              <Tag color="blue">KES {record.shortageAmount.toFixed(2)}</Tag>
+            </Tooltip>
+          );
+        } else {
+          return (
+            <Space direction="vertical" size={2} align="center">
+              <Tag color="red" style={{ fontWeight: 'bold' }}>
+                KES {record.shortageAmount.toFixed(2)}
+              </Tag>
+              {record.shortagePosted && (
+                <Tag color="green" size="small" style={{ fontSize: '9px' }}>
+                  Posted ✓
+                </Tag>
+              )}
+            </Space>
+          );
+        }
       },
     },
     {
-      title: 'VARIANCE',
-      dataIndex: 'variance',
-      key: 'variance',
-      width: 120,
-      align: 'right',
-      render: (variance) => {
-        const color = variance > 0 ? '#fa541c' : variance < 0 ? '#faad14' : '#52c41a';
-        const icon = variance > 0 ? '-' : variance < 0 ? '+' : '';
-        
-        return (
-          <Text strong style={{ 
-            fontSize: '13px', 
-            color: color,
-            fontWeight: 'bold' 
-          }}>
-            {icon}{formatCurrency(Math.abs(variance))}
-          </Text>
-        );
+      title: 'STATUS',
+      key: 'status',
+      width: 100,
+      align: 'center',
+      render: (_, record) => {
+        if (record.shortageAmount === 0) {
+          return <Tag color="green">Complete ✓</Tag>;
+        } else if (record.shortageAmount <= 10) {
+          return <Tag color="blue">Minor</Tag>;
+        } else if (record.shortagePosted) {
+          return <Tag color="orange">Shortage Posted</Tag>;
+        } else {
+          return <Tag color="red">Unresolved</Tag>;
+        }
       },
     },
   ];
@@ -466,6 +521,9 @@ const EnhancedSummaryModal = ({
           <Text strong style={{ fontSize: '13px' }}>{name}</Text>
           {record.code && (
             <Text type="secondary" style={{ fontSize: '10px' }}>Code: {record.code}</Text>
+          )}
+          {record.phone && (
+            <Text type="secondary" style={{ fontSize: '10px' }}>Phone: {record.phone}</Text>
           )}
         </Space>
       ),
@@ -513,6 +571,11 @@ const EnhancedSummaryModal = ({
           {record.hasAutoExpenses && (
             <Tag size="small" color="orange" style={{ marginTop: 2 }}>
               {record.autoExpenseDetails.length} auto expense(s)
+            </Tag>
+          )}
+          {record.hasManualExpenses && (
+            <Tag size="small" color="red" style={{ marginTop: 2 }}>
+              Manual expenses
             </Tag>
           )}
         </Space>
@@ -565,17 +628,14 @@ const EnhancedSummaryModal = ({
     try {
       setGeneratingReport(true);
       
-      // Prepare the report data
       const reportData = prepareReportData();
       
-      // Save using fileSystemService
       const result = await fileSystemService.saveShiftCashSummary(reportData);
       
       if (result.success) {
         setSaveResult(result);
         setSavePath(result.file?.path || 'Report saved successfully');
         
-        // Show success message
         message.success({
           content: 'Report saved successfully!',
           duration: 4,
@@ -596,161 +656,218 @@ const EnhancedSummaryModal = ({
     }
   };
 
-  // Enhanced PDF Generation with Expenses
+  // ========== ENHANCED PDF GENERATION - Multi-page landscape with all data ==========
   const generatePDF = async () => {
     return new Promise((resolve, reject) => {
       try {
-        const doc = new jsPDF('l', 'mm', 'a4');
-        const formattedDate = getFormattedDate();
-        const reportDate = new Date().toLocaleDateString('en-GB', {
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric'
+        // Create new PDF in landscape orientation
+        const doc = new jsPDF({
+          orientation: 'landscape',
+          unit: 'mm',
+          format: 'a4'
         });
-        const reportTime = new Date().toLocaleTimeString('en-GB');
+        
+        const formattedDate = getFormattedDate();
         
         // Colors
-        const primaryColor = [41, 128, 185];
-        const secondaryColor = [52, 152, 219];
-        const successColor = [39, 174, 96];
-        const warningColor = [241, 196, 15];
-        const dangerColor = [231, 76, 60];
-        const expenseColor = [230, 126, 34];
+        const primaryColor = [41, 128, 185];      // Blue
+        const secondaryColor = [52, 152, 219];    // Light Blue
+        const successColor = [39, 174, 96];       // Green
+        const warningColor = [241, 196, 15];      // Yellow
+        const dangerColor = [231, 76, 60];        // Red
+        const expenseColor = [230, 126, 34];      // Orange
+        const debtorColor = [155, 89, 182];       // Purple
+        const headerBg = [240, 240, 240];          // Light Gray
         
-        let yPosition = 25;
+        let yPosition = 20;
         const margin = 15;
         const pageWidth = doc.internal.pageSize.width;
+        const pageHeight = doc.internal.pageSize.height;
         
-        // ================= HEADER =================
+        // Helper function to check if we need a new page
+        const checkPageBreak = (neededSpace) => {
+          if (yPosition + neededSpace > pageHeight - 20) {
+            doc.addPage();
+            yPosition = 20;
+            return true;
+          }
+          return false;
+        };
+        
+        // ================= PAGE 1: HEADER =================
+        // Header background
         doc.setFillColor(...primaryColor);
-        doc.rect(0, 0, pageWidth, 45, 'F');
+        doc.rect(0, 0, pageWidth, 35, 'F');
         
-        doc.setFontSize(22);
+        doc.setFontSize(24);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(255, 255, 255);
-        doc.text('SHIFT CASH SUMMARY REPORT', pageWidth / 2, 18, { align: 'center' });
+        doc.text('COLLECTION SUMMARY REPORT', pageWidth / 2, 15, { align: 'center' });
         
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`${stationName} - Shift #${shiftNumber}`, pageWidth / 2, 26, { align: 'center' });
-        doc.text(`Report Date: ${reportDate} • ${reportTime}`, pageWidth / 2, 32, { align: 'center' });
-        doc.text(`Generated by: ${currentUser?.firstName} ${currentUser?.lastName}`, pageWidth / 2, 38, { align: 'center' });
-        
-        yPosition = 55;
-        
-        // ================= SUMMARY STATS =================
         doc.setFontSize(12);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${stationName} (${stationCode}) - Shift #${shiftNumber}`, pageWidth / 2, 22, { align: 'center' });
+        doc.text(`Generated: ${formattedDate.fullDate} at ${formattedDate.fullTime}`, pageWidth / 2, 29, { align: 'center' });
+        
+        yPosition = 45;
+        
+        // ================= PAGE 1: EXECUTIVE SUMMARY =================
+        doc.setFontSize(16);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 0, 0);
-        doc.text('SHIFT SUMMARY', margin, yPosition);
+        doc.text('EXECUTIVE SUMMARY', margin, yPosition);
         yPosition += 8;
         
-        const summaryData = [
-          ['Total Sales', formatCurrency(overallTotals.totalSales)],
-          ['Cash Drops', formatCurrency(overallTotals.totalCashDrops)],
-          ['Debt Collections', formatCurrency(overallTotals.totalDebts)],
-          ['Auto Expenses', formatCurrency(overallTotals.totalAutoExpenses)],
-          ['Manual Expenses', formatCurrency(overallTotals.totalManualExpenses)],
-          ['Total Expenses', formatCurrency(overallTotals.totalExpenses)],
-          ['Total Variance', formatCurrency(Math.abs(overallTotals.totalVariance))],
-          ['Status', overallTotals.totalVariance === 0 ? 'BALANCED' : overallTotals.totalVariance > 0 ? 'SHORT' : 'OVER']
-        ];
+        // Create executive summary boxes
+        const boxWidth = (pageWidth - 2 * margin - 30) / 3;
         
-        autoTable(doc, {
-          startY: yPosition,
-          head: [['Metric', 'Amount']],
-          body: summaryData,
-          margin: { left: margin, right: margin },
-          headStyles: { 
-            fillColor: [...primaryColor],
-            textColor: [255, 255, 255],
-            fontSize: 10
-          },
-          bodyStyles: { fontSize: 10 },
-          alternateRowStyles: { fillColor: [245, 245, 245] },
-          columnStyles: {
-            0: { fontStyle: 'bold', cellWidth: 80 },
-            1: { cellWidth: 60, halign: 'right' }
-          }
-        });
+        // Box 1: Sales Summary
+        doc.setFillColor(240, 248, 255);
+        doc.setDrawColor(...primaryColor);
+        doc.setLineWidth(0.5);
+        doc.roundedRect(margin, yPosition, boxWidth, 35, 3, 3, 'FD');
         
-        yPosition = doc.lastAutoTable.finalY + 10;
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(100, 100, 100);
+        doc.text('Total Sales', margin + 5, yPosition + 7);
         
-        // ================= ISLAND RECONCILIATION TABLE =================
-        doc.setFontSize(12);
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...primaryColor);
+        doc.text(formatCurrency(overallTotals.totalSales), margin + 5, yPosition + 22);
+        
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(150, 150, 150);
+        doc.text(`${overallTotals.totalIslands} Islands`, margin + 5, yPosition + 30);
+        
+        // Box 2: Collections Summary
+        doc.setFillColor(240, 255, 240);
+        doc.setDrawColor(...successColor);
+        doc.roundedRect(margin + boxWidth + 15, yPosition, boxWidth, 35, 3, 3, 'FD');
+        
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(100, 100, 100);
+        doc.text('Total Collected', margin + boxWidth + 20, yPosition + 7);
+        
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...successColor);
+        doc.text(formatCurrency(overallTotals.totalCollected), margin + boxWidth + 20, yPosition + 22);
+        
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(150, 150, 150);
+        doc.text(`Cash: ${formatCurrency(overallTotals.totalCashDrops)}`, margin + boxWidth + 20, yPosition + 30);
+        
+        // Box 3: Shortage Summary
+        doc.setFillColor(255, 240, 240);
+        doc.setDrawColor(...dangerColor);
+        doc.roundedRect(margin + 2 * (boxWidth + 15), yPosition, boxWidth, 35, 3, 3, 'FD');
+        
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(100, 100, 100);
+        doc.text('Total Shortage', margin + 2 * (boxWidth + 15) + 5, yPosition + 7);
+        
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(overallTotals.hasShortages ? dangerColor : successColor);
+        doc.text(overallTotals.hasShortages ? formatCurrency(overallTotals.totalShortageAmount) : 'None', 
+                 margin + 2 * (boxWidth + 15) + 5, yPosition + 22);
+        
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(150, 150, 150);
+        doc.text(`${overallTotals.islandsWithShortage} Islands with shortages`, margin + 2 * (boxWidth + 15) + 5, yPosition + 30);
+        
+        yPosition += 45;
+        
+        // ================= PAGE 1: ISLAND RECONCILIATION TABLE =================
+        checkPageBreak(60);
+        
+        doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
         doc.text('ISLAND RECONCILIATION', margin, yPosition);
         yPosition += 8;
         
         const islandTableData = reconciliationData.map(row => [
           row.islandName,
-          formatCurrency(row.cashDrops),
-          formatCurrency(row.totalDebts),
+          formatCurrency(row.expectedTotal),
+          formatCurrency(row.totalCollected),
           formatCurrency(row.totalExpenses),
-          row.shortageStatus,
-          formatCurrency(Math.abs(row.variance)),
-          row.shortagePosted ? 'Posted' : 'Complete'
+          row.shortageAmount === 0 ? 'None' : `KES ${row.shortageAmount.toFixed(2)}`,
+          row.shortagePosted ? 'Posted' : (row.shortageAmount > 10 ? 'Unresolved' : 'Complete')
         ]);
         
         autoTable(doc, {
           startY: yPosition,
-          head: [['Island', 'Cash Drops', 'Debt Collections', 'Expenses', 'Short/Over', 'Variance', 'Status']],
+          head: [['Island', 'Expected', 'Collected', 'Expenses', 'Shortage', 'Status']],
           body: islandTableData,
           margin: { left: margin, right: margin },
           headStyles: { 
             fillColor: [...secondaryColor],
             textColor: [255, 255, 255],
-            fontSize: 9
+            fontSize: 10,
+            halign: 'center'
           },
           bodyStyles: { fontSize: 9 },
           columnStyles: {
             0: { cellWidth: 45 },
-            1: { cellWidth: 35, halign: 'right' },
-            2: { cellWidth: 40, halign: 'right' },
-            3: { cellWidth: 35, halign: 'right' },
-            4: { cellWidth: 30, halign: 'center' },
-            5: { cellWidth: 35, halign: 'right' },
-            6: { cellWidth: 30, halign: 'center' }
-          }
-        });
-        
-        // Add summary row
-        doc.autoTable({
-          startY: doc.lastAutoTable.finalY,
-          body: [[
-            'TOTAL',
-            formatCurrency(overallTotals.totalCashDrops),
-            formatCurrency(overallTotals.totalDebts),
-            formatCurrency(overallTotals.totalExpenses),
-            overallTotals.totalVariance === 0 ? 'BALANCED' : overallTotals.totalVariance > 0 ? 'SHORT' : 'OVER',
-            formatCurrency(Math.abs(overallTotals.totalVariance)),
-            `${overallTotals.islandsBalanced}/${overallTotals.totalIslands} Balanced`
-          ]],
-          styles: { 
-            fontSize: 10,
-            fontStyle: 'bold',
-            fillColor: [240, 240, 240]
+            1: { cellWidth: 45, halign: 'right' },
+            2: { cellWidth: 45, halign: 'right' },
+            3: { cellWidth: 40, halign: 'right' },
+            4: { cellWidth: 40, halign: 'center' },
+            5: { cellWidth: 35, halign: 'center' }
           },
-          columnStyles: {
-            0: { cellWidth: 45 },
-            1: { cellWidth: 35, halign: 'right' },
-            2: { cellWidth: 40, halign: 'right' },
-            3: { cellWidth: 35, halign: 'right' },
-            4: { cellWidth: 30, halign: 'center' },
-            5: { cellWidth: 35, halign: 'right' },
-            6: { cellWidth: 30, halign: 'center' }
+          didDrawPage: (data) => {
+            // Add page number
+            doc.setFontSize(8);
+            doc.setTextColor(150, 150, 150);
+            doc.text(`Page ${doc.internal.getNumberOfPages()}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
           }
         });
         
+        // Get the final Y position after the table
         yPosition = doc.lastAutoTable.finalY + 10;
         
-        // ================= EXPENSE BREAKDOWN TABLE =================
+        // ================= PAGE 1: SUMMARY ROW =================
+        checkPageBreak(15);
+        
+        doc.setFillColor(...headerBg);
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(0.5);
+        doc.rect(margin, yPosition, pageWidth - 2 * margin, 12, 'F');
+        
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 0, 0);
+        
+        doc.text('TOTAL', margin + 5, yPosition + 8);
+        doc.text(formatCurrency(overallTotals.totalExpected), margin + 60, yPosition + 8, { align: 'right' });
+        doc.text(formatCurrency(overallTotals.totalCollected), margin + 110, yPosition + 8, { align: 'right' });
+        doc.text(formatCurrency(overallTotals.totalExpenses), margin + 155, yPosition + 8, { align: 'right' });
+        doc.text(formatCurrency(overallTotals.totalShortageAmount), margin + 200, yPosition + 8, { align: 'center' });
+        doc.text(`${overallTotals.islandsComplete}/${overallTotals.totalIslands} Complete`, margin + 245, yPosition + 8, { align: 'center' });
+        
+        yPosition += 20;
+        
+        // ================= PAGE 1: EXPENSE BREAKDOWN (if any) =================
         if (expenseBreakdown.length > 0) {
-          doc.setFontSize(12);
-          doc.setFont('helvetica', 'bold');
-          doc.text('EXPENSE BREAKDOWN', margin, yPosition);
-          yPosition += 8;
+          if (checkPageBreak(50)) {
+            // If new page, add section header
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text('EXPENSE BREAKDOWN', margin, yPosition);
+            yPosition += 8;
+          } else {
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text('EXPENSE BREAKDOWN', margin, yPosition);
+            yPosition += 8;
+          }
           
           const expenseTableData = expenseBreakdown.map(row => [
             row.islandName,
@@ -767,112 +884,222 @@ const EnhancedSummaryModal = ({
             headStyles: { 
               fillColor: [...expenseColor],
               textColor: [255, 255, 255],
-              fontSize: 9
+              fontSize: 10,
+              halign: 'center'
             },
             bodyStyles: { fontSize: 9 },
             columnStyles: {
               0: { cellWidth: 60 },
-              1: { cellWidth: 45, halign: 'right' },
-              2: { cellWidth: 45, halign: 'right' },
-              3: { cellWidth: 45, halign: 'right' }
-            }
-          });
-          
-          // Add expense summary
-          doc.autoTable({
-            startY: doc.lastAutoTable.finalY,
-            body: [[
-              'TOTAL EXPENSES',
-              formatCurrency(overallTotals.totalAutoExpenses),
-              formatCurrency(overallTotals.totalManualExpenses),
-              formatCurrency(overallTotals.totalExpenses)
-            ]],
-            styles: { 
-              fontSize: 10,
-              fontStyle: 'bold',
-              fillColor: [255, 243, 205]
+              1: { cellWidth: 60, halign: 'right' },
+              2: { cellWidth: 60, halign: 'right' },
+              3: { cellWidth: 60, halign: 'right' }
             },
-            columnStyles: {
-              0: { cellWidth: 60 },
-              1: { cellWidth: 45, halign: 'right' },
-              2: { cellWidth: 45, halign: 'right' },
-              3: { cellWidth: 45, halign: 'right' }
+            didDrawPage: (data) => {
+              doc.setFontSize(8);
+              doc.setTextColor(150, 150, 150);
+              doc.text(`Page ${doc.internal.getNumberOfPages()}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
             }
           });
           
-          yPosition = doc.lastAutoTable.finalY + 10;
+          // Add expense summary row
+          yPosition = doc.lastAutoTable.finalY + 5;
+          
+          doc.setFillColor(...headerBg);
+          doc.rect(margin, yPosition, pageWidth - 2 * margin, 10, 'F');
+          
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'bold');
+          doc.text('TOTAL EXPENSES', margin + 5, yPosition + 7);
+          doc.text(formatCurrency(overallTotals.totalAutoExpenses), margin + 70, yPosition + 7, { align: 'right' });
+          doc.text(formatCurrency(overallTotals.totalManualExpenses), margin + 135, yPosition + 7, { align: 'right' });
+          doc.text(formatCurrency(overallTotals.totalExpenses), margin + 200, yPosition + 7, { align: 'right' });
+          
+          yPosition += 15;
         }
         
-        // ================= DEBTOR COLLECTIONS TABLE =================
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.text('DEBTOR COLLECTIONS', margin, yPosition);
-        yPosition += 8;
-        
+        // ================= PAGE 2: DEBTOR COLLECTIONS (if any) =================
         if (debtorBreakdown.length > 0) {
+          // Force new page for debtor collections
+          doc.addPage();
+          yPosition = 20;
+          
+          doc.setFontSize(16);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(...debtorColor);
+          doc.text('DEBTOR COLLECTIONS', margin, yPosition);
+          yPosition += 10;
+          
+          // Summary stats for debtors
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(0, 0, 0);
+          doc.text(`Total Debtors: ${debtorBreakdown.length}`, margin, yPosition);
+          doc.text(`Total Debt Collected: ${formatCurrency(overallTotals.totalDebts)}`, margin + 80, yPosition);
+          doc.text(`Total Transactions: ${debtorBreakdown.reduce((sum, d) => sum + d.transactions.length, 0)}`, margin + 160, yPosition);
+          yPosition += 10;
+          
           const debtorTableData = debtorBreakdown.map(debtor => [
             debtor.name,
             debtor.code || 'N/A',
+            debtor.phone || 'N/A',
             formatCurrency(debtor.total),
-            debtor.transactions.length
+            debtor.transactions.length.toString()
           ]);
           
           autoTable(doc, {
             startY: yPosition,
-            head: [['Debtor Name', 'Code', 'Total Collected', 'Transactions']],
+            head: [['Debtor Name', 'Code', 'Phone', 'Total Collected', 'Transactions']],
             body: debtorTableData,
             margin: { left: margin, right: margin },
             headStyles: { 
-              fillColor: [...successColor],
+              fillColor: [...debtorColor],
               textColor: [255, 255, 255],
-              fontSize: 9
+              fontSize: 10,
+              halign: 'center'
             },
             bodyStyles: { fontSize: 9 },
             columnStyles: {
-              0: { cellWidth: 80 },
-              1: { cellWidth: 40 },
-              2: { cellWidth: 50, halign: 'right' },
-              3: { cellWidth: 30, halign: 'center' }
-            }
-          });
-          
-          // Add debtor summary
-          doc.autoTable({
-            startY: doc.lastAutoTable.finalY,
-            body: [[
-              'TOTAL DEBTORS',
-              debtorBreakdown.length,
-              formatCurrency(overallTotals.totalDebts),
-              debtorBreakdown.reduce((sum, d) => sum + d.transactions.length, 0)
-            ]],
-            styles: { 
-              fontSize: 10,
-              fontStyle: 'bold',
-              fillColor: [240, 240, 240]
+              0: { cellWidth: 55 },
+              1: { cellWidth: 30, halign: 'center' },
+              2: { cellWidth: 45 },
+              3: { cellWidth: 50, halign: 'right' },
+              4: { cellWidth: 30, halign: 'center' }
             },
-            columnStyles: {
-              0: { cellWidth: 80 },
-              1: { cellWidth: 40, halign: 'center' },
-              2: { cellWidth: 50, halign: 'right' },
-              3: { cellWidth: 30, halign: 'center' }
+            didDrawPage: (data) => {
+              doc.setFontSize(8);
+              doc.setTextColor(150, 150, 150);
+              doc.text(`Page ${doc.internal.getNumberOfPages()}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
             }
           });
           
           yPosition = doc.lastAutoTable.finalY + 10;
-        } else {
-          doc.setFontSize(10);
-          doc.setFont('helvetica', 'italic');
-          doc.text('No debt collections recorded for this shift.', margin, yPosition);
-          yPosition += 10;
+          
+          // Detailed transaction view for each debtor
+          debtorBreakdown.forEach((debtor, index) => {
+            if (debtor.transactions.length > 0) {
+              if (yPosition + 40 > pageHeight - 20) {
+                doc.addPage();
+                yPosition = 20;
+              }
+              
+              doc.setFontSize(11);
+              doc.setFont('helvetica', 'bold');
+              doc.setTextColor(...debtorColor);
+              doc.text(`${debtor.name} - Transactions`, margin, yPosition);
+              yPosition += 6;
+              
+              const transactionData = debtor.transactions.map(t => [
+                t.island,
+                t.date,
+                t.time,
+                formatCurrency(t.amount)
+              ]);
+              
+              autoTable(doc, {
+                startY: yPosition,
+                head: [['Island', 'Date', 'Time', 'Amount']],
+                body: transactionData,
+                margin: { left: margin + 5, right: margin },
+                headStyles: { 
+                  fillColor: [...debtorColor],
+                  textColor: [255, 255, 255],
+                  fontSize: 9
+                },
+                bodyStyles: { fontSize: 8 },
+                columnStyles: {
+                  0: { cellWidth: 50 },
+                  1: { cellWidth: 35 },
+                  2: { cellWidth: 30 },
+                  3: { cellWidth: 45, halign: 'right' }
+                },
+                didDrawPage: (data) => {
+                  doc.setFontSize(8);
+                  doc.setTextColor(150, 150, 150);
+                  doc.text(`Page ${doc.internal.getNumberOfPages()}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
+                }
+              });
+              
+              yPosition = doc.lastAutoTable.finalY + 10;
+            }
+          });
         }
         
-        // ================= RECONCILIATION NOTES =================
-        yPosition = Math.max(doc.lastAutoTable?.finalY || yPosition, yPosition) + 10;
+        // ================= PAGE 3: SHORTAGE DETAILS (if any) =================
+        if (overallTotals.hasShortages) {
+          doc.addPage();
+          yPosition = 20;
+          
+          doc.setFontSize(16);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(...dangerColor);
+          doc.text('SHORTAGE ANALYSIS', margin, yPosition);
+          yPosition += 10;
+          
+          const shortageIslands = reconciliationData.filter(r => r.shortageAmount > 10);
+          
+          // Summary stats
+          doc.setFontSize(11);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(0, 0, 0);
+          doc.text(`Total Islands with Shortages: ${shortageIslands.length}`, margin, yPosition);
+          doc.text(`Total Shortage Amount: ${formatCurrency(overallTotals.totalShortageAmount)}`, margin + 100, yPosition);
+          yPosition += 10;
+          
+          const shortageTableData = shortageIslands.map(row => [
+            row.islandName,
+            row.attendants.map(a => `${a.firstName || ''} ${a.lastName || ''}`).join(', ') || 'No attendant',
+            formatCurrency(row.expectedTotal),
+            formatCurrency(row.totalCollected),
+            formatCurrency(row.shortageAmount),
+            row.shortagePosted ? 'Posted' : 'Pending'
+          ]);
+          
+          autoTable(doc, {
+            startY: yPosition,
+            head: [['Island', 'Attendant', 'Expected', 'Collected', 'Shortage', 'Status']],
+            body: shortageTableData,
+            margin: { left: margin, right: margin },
+            headStyles: { 
+              fillColor: [...dangerColor],
+              textColor: [255, 255, 255],
+              fontSize: 10,
+              halign: 'center'
+            },
+            bodyStyles: { fontSize: 9 },
+            columnStyles: {
+              0: { cellWidth: 45 },
+              1: { cellWidth: 60 },
+              2: { cellWidth: 45, halign: 'right' },
+              3: { cellWidth: 45, halign: 'right' },
+              4: { cellWidth: 40, halign: 'right' },
+              5: { cellWidth: 35, halign: 'center' }
+            },
+            didDrawPage: (data) => {
+              doc.setFontSize(8);
+              doc.setTextColor(150, 150, 150);
+              doc.text(`Page ${doc.internal.getNumberOfPages()}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
+            }
+          });
+          
+          yPosition = doc.lastAutoTable.finalY + 15;
+        }
         
+        // ================= FINAL PAGE: RECONCILIATION NOTES & WALLET IMPACT =================
+        doc.addPage();
+        yPosition = 20;
+        
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...primaryColor);
+        doc.text('RECONCILIATION NOTES & WALLET IMPACT', margin, yPosition);
+        yPosition += 10;
+        
+        // Notes section
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
-        doc.text('RECONCILIATION NOTES', margin, yPosition);
-        yPosition += 8;
+        doc.setTextColor(0, 0, 0);
+        doc.text('Reconciliation Notes:', margin, yPosition);
+        yPosition += 7;
         
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
@@ -880,22 +1107,62 @@ const EnhancedSummaryModal = ({
         const splitNotes = doc.splitTextToSize(notes, pageWidth - 2 * margin);
         doc.text(splitNotes, margin, yPosition);
         
-        // ================= FOOTER =================
-        const footerY = doc.internal.pageSize.height - 20;
+        yPosition += splitNotes.length * 5 + 15;
         
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(100, 100, 100);
-        doc.text(`Generated on: ${reportDate} at ${reportTime}`, margin, footerY);
-        doc.text(`Station: ${stationName} (${stationCode})`, pageWidth - margin, footerY, { align: 'right' });
+        // Wallet Impact Section
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...successColor);
+        doc.text('STATION WALLET IMPACT', margin, yPosition);
+        yPosition += 8;
         
-        doc.text(`Page 1 of 1`, pageWidth / 2, footerY, { align: 'center' });
+        const walletTableData = [
+          ['Previous Balance', formatCurrency(walletBalance)],
+          ['+ Sales Revenue', formatCurrency(overallTotals.totalSales)],
+          ['- Total Expenses', formatCurrency(overallTotals.totalExpenses)],
+          ['Net Change', formatCurrency(overallTotals.totalSales - overallTotals.totalExpenses)],
+          ['New Balance', formatCurrency(walletBalance + overallTotals.totalSales - overallTotals.totalExpenses)]
+        ];
+        
+        autoTable(doc, {
+          startY: yPosition,
+          body: walletTableData,
+          margin: { left: margin, right: margin },
+          styles: { fontSize: 11 },
+          columnStyles: {
+            0: { fontStyle: 'bold', cellWidth: 80 },
+            1: { cellWidth: 70, halign: 'right' }
+          },
+          theme: 'plain',
+          didDrawPage: (data) => {
+            doc.setFontSize(8);
+            doc.setTextColor(150, 150, 150);
+            doc.text(`Page ${doc.internal.getNumberOfPages()}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
+          }
+        });
+        
+        yPosition = doc.lastAutoTable.finalY + 15;
+        
+        // Footer with generation info on all pages
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= totalPages; i++) {
+          doc.setPage(i);
+          
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(150, 150, 150);
+          
+          doc.text(`Generated by: ${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim() || 'Unknown', margin, pageHeight - 10);
+          doc.text(`Station: ${stationName} (${stationCode})`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+          doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
+        }
         
         // Generate blob
         const pdfBlob = doc.output('blob');
         resolve(pdfBlob);
         
       } catch (error) {
+        console.error('PDF Generation Error:', error);
         reject(error);
       }
     });
@@ -906,11 +1173,9 @@ const EnhancedSummaryModal = ({
     try {
       setGeneratingReport(true);
       
-      // Save report first
       const result = await saveReportToFileSystem();
       
       if (result.success) {
-        // Export as JSON
         const reportData = prepareReportData();
         const exportResult = await fileSystemService.exportAsJson(reportData);
         
@@ -918,12 +1183,11 @@ const EnhancedSummaryModal = ({
           message.success('Report saved and downloaded successfully!');
         }
         
-        // Also generate and download PDF
         const pdfBlob = await generatePDF();
         const url = window.URL.createObjectURL(pdfBlob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `cash_summary_${stationCode}_shift${shiftNumber}_${getFormattedDate().year}-${getFormattedDate().month}-${getFormattedDate().day}.pdf`;
+        link.download = `collection_summary_${stationCode}_shift${shiftNumber}_${getFormattedDate().year}-${getFormattedDate().month}-${getFormattedDate().day}.pdf`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -968,25 +1232,25 @@ const EnhancedSummaryModal = ({
 
   // Handle final submission
   const handleFinalSubmit = async () => {
-    if (!reconciliationNotes.trim()) {
-      message.warning('Please add reconciliation notes before submitting');
+    if (!validateSubmission()) {
+      message.error('Please fix validation errors before submitting');
       return;
     }
 
     setSubmitting(true);
     
     try {
-      // Save report to file system
       const saveResult = await saveReportToFileSystem();
       
       if (saveResult.success) {
-        // Call parent function with report path
         await onSubmitShift(saveResult.file?.path);
         
         message.success('Shift submitted successfully with report!');
         
-        // Close modal after successful submission
-        setTimeout(() => onClose(), 1500);
+        setTimeout(() => {
+          onClose();
+          navigate('/station-manager/dashboard');
+        }, 1500);
       } else {
         throw new Error(saveResult.message || 'Failed to save report');
       }
@@ -995,7 +1259,6 @@ const EnhancedSummaryModal = ({
       console.error('Error in final submission:', error);
       message.error(`Failed to submit shift: ${error.message}`);
       
-      // Show validation errors if available
       if (error.response?.data?.errors) {
         error.response.data.errors.forEach(err => {
           message.error(`${err.field}: ${err.message}`);
@@ -1014,13 +1277,16 @@ const EnhancedSummaryModal = ({
   return (
     <Modal
       title={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <FileCheck size={24} color="#1890ff" />
           <div>
             <Title level={4} style={{ margin: 0, color: '#1890ff' }}>Shift Cash Summary</Title>
-            <Space size={4}>
+            <Space size={4} wrap>
               <Tag color="blue">{stationName}</Tag>
               <Tag color="geekblue">Shift #{shiftNumber}</Tag>
+              <Tag color={overallTotals.hasShortages ? 'red' : 'green'}>
+                {overallTotals.hasShortages ? 'Has Shortages' : 'All Complete'}
+              </Tag>
               <Text type="secondary" style={{ fontSize: '12px' }}>
                 {getFormattedDate().date}
               </Text>
@@ -1037,13 +1303,31 @@ const EnhancedSummaryModal = ({
       className="summary-modal-enhanced"
     >
       <div ref={printRef}>
-        {/* Summary Stats Header */}
+        {/* Validation Errors Alert */}
+        {validationErrors.length > 0 && (
+          <Alert
+            message="Validation Errors"
+            description={
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                {validationErrors.map((error, index) => (
+                  <li key={index}>{error}</li>
+                ))}
+              </ul>
+            }
+            type="error"
+            showIcon
+            style={{ marginBottom: 16 }}
+            icon={<AlertCircle size={16} />}
+          />
+        )}
+
+        {/* Summary Stats Header - Updated to show shortage only */}
         <Row gutter={[8, 8]} style={{ marginBottom: 16 }}>
           <Col xs={12} sm={6}>
             <Card size="small" style={{ background: '#e6f7ff', border: '2px solid #1890ff' }}>
               <Statistic
-                title="Total Sales"
-                value={overallTotals.totalSales}
+                title="Total Expected"
+                value={overallTotals.totalExpected}
                 precision={0}
                 prefix="KES"
                 valueStyle={{ color: '#1890ff', fontSize: '16px', fontWeight: 'bold' }}
@@ -1063,8 +1347,8 @@ const EnhancedSummaryModal = ({
           <Col xs={12} sm={6}>
             <Card size="small" style={{ background: '#f6ffed', border: '2px solid #52c41a' }}>
               <Statistic
-                title="Cash Drops"
-                value={overallTotals.totalCashDrops}
+                title="Total Collected"
+                value={overallTotals.totalCollected}
                 precision={0}
                 prefix="KES"
                 valueStyle={{ color: '#52c41a', fontSize: '16px', fontWeight: 'bold' }}
@@ -1074,25 +1358,25 @@ const EnhancedSummaryModal = ({
           <Col xs={12} sm={6}>
             <Card size="small" style={{ 
               background: '#fff7e6',
-              border: '2px solid #fa8c16'
+              border: `2px solid ${overallTotals.hasShortages ? '#fa541c' : '#52c41a'}`
             }}>
               <Statistic
-                title="Total Expenses"
-                value={overallTotals.totalExpenses}
+                title="Total Shortage"
+                value={overallTotals.totalShortageAmount}
                 precision={0}
                 prefix="KES"
                 valueStyle={{ 
-                  color: '#fa8c16',
+                  color: overallTotals.hasShortages ? '#fa541c' : '#52c41a',
                   fontSize: '16px',
                   fontWeight: 'bold'
                 }}
                 suffix={
-                  overallTotals.totalAutoExpenses > 0 && (
-                    <Tooltip title={`KES ${overallTotals.totalAutoExpenses} auto expenses`}>
+                  overallTotals.islandsWithShortage > 0 && (
+                    <Tooltip title={`${overallTotals.islandsWithShortage} islands with shortages`}>
                       <Badge 
-                        count="Auto" 
+                        count={overallTotals.islandsWithShortage} 
                         style={{ 
-                          backgroundColor: '#fa8c16',
+                          backgroundColor: '#fa541c',
                           marginLeft: 4
                         }}
                       />
@@ -1104,20 +1388,27 @@ const EnhancedSummaryModal = ({
           </Col>
           <Col xs={12} sm={6}>
             <Card size="small" style={{ 
-              background: overallTotals.totalVariance >= 0 ? '#fff2e8' : '#fff7e6',
-              border: `2px solid ${overallTotals.totalVariance >= 0 ? '#fa541c' : '#faad14'}`
+              background: '#f9f9f9',
+              border: `2px solid ${overallTotals.hasShortages ? '#fa541c' : '#52c41a'}`
             }}>
               <Statistic
-                title={overallTotals.totalVariance >= 0 ? "Total Shortage" : "Total Overage"}
-                value={Math.abs(overallTotals.totalVariance)}
-                precision={0}
-                prefix="KES"
+                title="Islands Status"
+                value={overallTotals.islandsComplete}
+                suffix={`/ ${overallTotals.totalIslands}`}
                 valueStyle={{ 
-                  color: overallTotals.totalVariance >= 0 ? '#fa541c' : '#faad14',
+                  color: overallTotals.hasShortages ? '#fa541c' : '#52c41a',
                   fontSize: '16px',
                   fontWeight: 'bold'
                 }}
               />
+              <div style={{ fontSize: '11px', marginTop: 4 }}>
+                {overallTotals.islandsWithShortage > 0 && (
+                  <Tag color="red">{overallTotals.islandsWithShortage} Shortages</Tag>
+                )}
+                {overallTotals.islandsWithMinorShortage > 0 && (
+                  <Tag color="blue">{overallTotals.islandsWithMinorShortage} Minor</Tag>
+                )}
+              </div>
             </Card>
           </Col>
         </Row>
@@ -1126,13 +1417,19 @@ const EnhancedSummaryModal = ({
         {expenseBreakdown.length > 0 && (
           <Card
             title={
-              <Space>
+              <Space wrap>
                 <ReceiptIcon size={18} color="#fa8c16" />
                 <Text strong>Expense Breakdown</Text>
                 <Tag color="orange">{expenseBreakdown.length} Islands with Expenses</Tag>
                 <Text type="secondary" style={{ fontSize: '12px' }}>
                   Total: {formatCurrency(overallTotals.totalExpenses)}
                 </Text>
+                {overallTotals.hasAutoExpenses && (
+                  <Tag color="orange">Auto: {formatCurrency(overallTotals.totalAutoExpenses)}</Tag>
+                )}
+                {overallTotals.hasManualExpenses && (
+                  <Tag color="red">Manual: {formatCurrency(overallTotals.totalManualExpenses)}</Tag>
+                )}
               </Space>
             }
             style={{ marginBottom: 24 }}
@@ -1145,6 +1442,7 @@ const EnhancedSummaryModal = ({
                 size="middle"
                 scroll={{ x: 600 }}
                 style={{ minWidth: 600 }}
+                rowKey="key"
                 expandable={{
                   expandedRowRender: (record) => (
                     <div style={{ padding: '12px', backgroundColor: '#fafafa', borderRadius: '4px' }}>
@@ -1157,11 +1455,16 @@ const EnhancedSummaryModal = ({
                             size="small"
                             dataSource={record.autoExpenseDetails}
                             renderItem={(expense, idx) => (
-                              <List.Item>
+                              <List.Item key={idx}>
                                 <Space direction="vertical" size={2} style={{ width: '100%' }}>
                                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                     <Text style={{ fontSize: '12px' }}>
                                       {expense.title || expense.description || 'Expense'}
+                                      {expense.expenseNumber && (
+                                        <Text type="secondary" style={{ marginLeft: 4, fontSize: '10px' }}>
+                                          #{expense.expenseNumber}
+                                        </Text>
+                                      )}
                                     </Text>
                                     <Text strong style={{ fontSize: '12px', color: '#fa8c16' }}>
                                       {formatCurrency(expense.amount)}
@@ -1177,19 +1480,20 @@ const EnhancedSummaryModal = ({
                                       {expense.category}
                                     </Tag>
                                   )}
+                                  {expense.approvedAt && (
+                                    <Text type="secondary" style={{ fontSize: '9px' }}>
+                                      Approved: {new Date(expense.approvedAt).toLocaleDateString()}
+                                    </Text>
+                                  )}
                                 </Space>
                               </List.Item>
                             )}
                           />
                         </>
-                      ) : (
-                        <Text type="secondary" style={{ fontSize: '12px' }}>
-                          No auto-loaded expenses. All expenses were entered manually during shift closing.
-                        </Text>
-                      )}
+                      ) : null}
                       
-                      {record.manualExpenses > 0 && (
-                        <div style={{ marginTop: 16 }}>
+                      {record.hasManualExpenses && (
+                        <div style={{ marginTop: record.hasAutoExpenses ? 16 : 0 }}>
                           <Text strong style={{ display: 'block', marginBottom: 8 }}>
                             Manual Expenses (Entered During Shift Closing):
                           </Text>
@@ -1203,7 +1507,7 @@ const EnhancedSummaryModal = ({
                       )}
                     </div>
                   ),
-                  rowExpandable: (record) => record.hasAutoExpenses || record.manualExpenses > 0,
+                  rowExpandable: (record) => record.hasAutoExpenses || record.hasManualExpenses,
                   expandedRowKeys: Object.keys(showExpenseDetails).filter(key => showExpenseDetails[key]),
                   onExpand: (expanded, record) => {
                     setShowExpenseDetails(prev => ({
@@ -1213,7 +1517,7 @@ const EnhancedSummaryModal = ({
                   }
                 }}
                 summary={() => (
-                  <Table.Summary>
+                  <Table.Summary fixed>
                     <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
                       <Table.Summary.Cell index={0} colSpan={2}>
                         <Text strong>TOTAL EXPENSES</Text>
@@ -1241,13 +1545,19 @@ const EnhancedSummaryModal = ({
           </Card>
         )}
 
-        {/* Island Reconciliation Table */}
+        {/* Island Reconciliation Table - Updated with shortage-only view */}
         <Card
           title={
-            <Space>
+            <Space wrap>
               <Building size={18} />
               <Text strong>Island Reconciliation</Text>
               <Tag color="blue">{reconciliationData.length} Islands</Tag>
+              <Tag color={overallTotals.islandsWithShortage > 0 ? 'red' : 'green'}>
+                {overallTotals.islandsWithShortage} Shortages
+              </Tag>
+              <Tag color="blue">
+                {overallTotals.islandsWithMinorShortage} Minor (&lt;10)
+              </Tag>
             </Space>
           }
           style={{ marginBottom: 24 }}
@@ -1261,6 +1571,7 @@ const EnhancedSummaryModal = ({
               size="middle"
               scroll={{ x: 800 }}
               style={{ minWidth: 800 }}
+              rowKey="key"
               summary={() => (
                 <Table.Summary fixed>
                   <Table.Summary.Row style={{ 
@@ -1268,17 +1579,17 @@ const EnhancedSummaryModal = ({
                     fontWeight: 'bold',
                     borderTop: '2px solid #d9d9d9'
                   }}>
-                    <Table.Summary.Cell index={0} colSpan={2}>
+                    <Table.Summary.Cell index={0}>
                       <Text strong>TOTALS ({reconciliationData.length} Islands)</Text>
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={1} align="right">
-                      <Text strong style={{ color: '#52c41a', fontSize: '14px' }}>
-                        {formatCurrency(overallTotals.totalCashDrops)}
+                      <Text strong style={{ color: '#1890ff', fontSize: '14px' }}>
+                        {formatCurrency(overallTotals.totalExpected)}
                       </Text>
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={2} align="right">
-                      <Text strong style={{ color: '#722ed1', fontSize: '14px' }}>
-                        {formatCurrency(overallTotals.totalDebts)}
+                      <Text strong style={{ color: '#52c41a', fontSize: '14px' }}>
+                        {formatCurrency(overallTotals.totalCollected)}
                       </Text>
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={3} align="right">
@@ -1292,22 +1603,14 @@ const EnhancedSummaryModal = ({
                       )}
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={4} align="center">
-                      <Tag color={
-                        overallTotals.totalVariance === 0 ? 'green' : 
-                        overallTotals.totalVariance > 0 ? 'red' : 'gold'
-                      } style={{ fontWeight: 'bold' }}>
-                        {overallTotals.totalVariance === 0 ? 'BALANCED' : 
-                         overallTotals.totalVariance > 0 ? 'SHORT' : 'OVER'}
+                      <Tag color={overallTotals.hasShortages ? 'red' : 'green'} style={{ fontWeight: 'bold' }}>
+                        {overallTotals.hasShortages ? `KES ${overallTotals.totalShortageAmount.toFixed(2)}` : 'None'}
                       </Tag>
                     </Table.Summary.Cell>
-                    <Table.Summary.Cell index={5} align="right">
-                      <Text strong style={{ 
-                        color: overallTotals.totalVariance === 0 ? '#52c41a' : 
-                               overallTotals.totalVariance > 0 ? '#fa541c' : '#faad14',
-                        fontSize: '14px'
-                      }}>
-                        {overallTotals.totalVariance >= 0 ? '-' : '+'}{formatCurrency(Math.abs(overallTotals.totalVariance))}
-                      </Text>
+                    <Table.Summary.Cell index={5} align="center">
+                      <Tag color={overallTotals.hasShortages ? 'red' : 'green'}>
+                        {overallTotals.islandsComplete}/{overallTotals.totalIslands} Complete
+                      </Tag>
                     </Table.Summary.Cell>
                   </Table.Summary.Row>
                 </Table.Summary>
@@ -1320,13 +1623,16 @@ const EnhancedSummaryModal = ({
         {debtorBreakdown.length > 0 && (
           <Card
             title={
-              <Space>
+              <Space wrap>
                 <Users size={18} color="#722ed1" />
                 <Text strong>Debtor Collections</Text>
                 <Tag color="purple">{debtorBreakdown.length} Debtors</Tag>
                 <Text type="secondary" style={{ fontSize: '12px' }}>
                   Total: {formatCurrency(overallTotals.totalDebts)}
                 </Text>
+                <Tag color="purple">
+                  {debtorBreakdown.reduce((sum, d) => sum + d.transactions.length, 0)} Transactions
+                </Tag>
               </Space>
             }
             style={{ marginBottom: 24 }}
@@ -1339,6 +1645,7 @@ const EnhancedSummaryModal = ({
                 size="middle"
                 scroll={{ x: 600 }}
                 style={{ minWidth: 600 }}
+                rowKey={(record) => record.id || record.name}
                 expandable={{
                   expandedRowRender: (record) => (
                     <div style={{ padding: '12px', backgroundColor: '#fafafa', borderRadius: '4px' }}>
@@ -1347,7 +1654,7 @@ const EnhancedSummaryModal = ({
                         size="small"
                         dataSource={record.transactions}
                         renderItem={(transaction, idx) => (
-                          <List.Item>
+                          <List.Item key={idx}>
                             <Space direction="vertical" size={2} style={{ width: '100%' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                 <Text style={{ fontSize: '12px' }}>{transaction.island}</Text>
@@ -1402,12 +1709,12 @@ const EnhancedSummaryModal = ({
           </Card>
         )}
 
-        {/* Cash Summary Section */}
+        {/* Cash Summary Section - Updated to show shortage focus */}
         <Card
           title={
-            <Space>
+            <Space wrap>
               <Wallet size={18} color="#52c41a" />
-              <Text strong>Cash Summary Report</Text>
+              <Text strong>Cash Summary & Wallet Impact</Text>
             </Space>
           }
           style={{ marginBottom: 24 }}
@@ -1418,13 +1725,20 @@ const EnhancedSummaryModal = ({
                 size="small" 
                 style={{ 
                   background: 'linear-gradient(135deg, #f0f8ff, #e6f7ff)',
-                  border: '1px solid #1890ff'
+                  border: '1px solid #1890ff',
+                  height: '100%'
                 }}
               >
                 <Title level={5} style={{ color: '#1890ff', marginBottom: 16 }}>
                   <DollarSign size={16} /> Collection Summary
                 </Title>
                 <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Text>Expected Total:</Text>
+                    <Text strong style={{ color: '#1890ff' }}>
+                      {formatCurrency(overallTotals.totalExpected)}
+                    </Text>
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Text>Cash Drops:</Text>
                     <Text strong style={{ color: '#52c41a' }}>
@@ -1443,6 +1757,7 @@ const EnhancedSummaryModal = ({
                       {formatCurrency(overallTotals.totalReceipts)}
                     </Text>
                   </div>
+                  <Divider style={{ margin: '8px 0' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Text>Auto Expenses:</Text>
                     <Text strong style={{ color: '#fa8c16' }}>
@@ -1458,10 +1773,19 @@ const EnhancedSummaryModal = ({
                   <Divider style={{ margin: '8px 0' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Text strong>Net Collected:</Text>
-                    <Text strong style={{ fontSize: '16px', color: '#1890ff' }}>
+                    <Text strong style={{ fontSize: '18px', color: '#1890ff' }}>
                       {formatCurrency(overallTotals.totalCollected)}
                     </Text>
                   </div>
+                  {overallTotals.hasShortages && (
+                    <Alert
+                      message={`Total Shortage: ${formatCurrency(overallTotals.totalShortageAmount)}`}
+                      description={`${overallTotals.islandsWithShortage} island(s) have shortages above KES 10`}
+                      type="warning"
+                      showIcon
+                      style={{ marginTop: 8 }}
+                    />
+                  )}
                 </Space>
               </Card>
             </Col>
@@ -1471,7 +1795,8 @@ const EnhancedSummaryModal = ({
                 size="small" 
                 style={{ 
                   background: 'linear-gradient(135deg, #fff7e6, #ffe7ba)',
-                  border: '1px solid #faad14'
+                  border: '1px solid #faad14',
+                  height: '100%'
                 }}
               >
                 <Title level={5} style={{ color: '#fa8c16', marginBottom: 16 }}>
@@ -1504,11 +1829,12 @@ const EnhancedSummaryModal = ({
                       '100%': '#fa8c16',
                     }}
                     style={{ margin: '8px 0' }}
+                    format={(percent) => `${percent.toFixed(1)}% Change`}
                   />
                   <Divider style={{ margin: '8px 0' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Text strong>New Balance:</Text>
-                    <Text strong style={{ fontSize: '18px', color: '#1890ff' }}>
+                    <Text strong style={{ fontSize: '20px', color: '#1890ff' }}>
                       {formatCurrency(walletBalance + overallTotals.totalSales - overallTotals.totalExpenses)}
                     </Text>
                   </div>
@@ -1521,7 +1847,7 @@ const EnhancedSummaryModal = ({
         {/* Reconciliation Notes */}
         <Card
           title={
-            <Space>
+            <Space wrap>
               <FileText size={18} color="#1890ff" />
               <Text strong>Reconciliation Notes</Text>
               <Tag color={reconciliationNotes.trim() ? 'green' : 'red'}>
@@ -1533,10 +1859,11 @@ const EnhancedSummaryModal = ({
         >
           <Input.TextArea
             rows={4}
-            placeholder="Enter detailed reconciliation notes, explanation of variances, expense details, special circumstances, or additional comments..."
+            placeholder="Enter detailed reconciliation notes, explanation of shortages, expense details, special circumstances, or additional comments..."
             value={reconciliationNotes}
             onChange={(e) => setReconciliationNotes(e.target.value)}
             maxLength={500}
+            status={!reconciliationNotes.trim() ? 'error' : ''}
             style={{
               border: reconciliationNotes.trim() ? '2px solid #52c41a' : '2px solid #ff4d4f',
               borderRadius: '6px',
@@ -1558,7 +1885,7 @@ const EnhancedSummaryModal = ({
         <Card style={{ marginTop: 24 }}>
           <Space direction="vertical" style={{ width: '100%' }} size={16}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' }}>
-              <Space>
+              <Space wrap>
                 <Button
                   icon={<FileDown size={16} />}
                   onClick={handleDownloadOnly}
@@ -1571,7 +1898,7 @@ const EnhancedSummaryModal = ({
                     fontWeight: 'bold'
                   }}
                 >
-                  {generatingReport ? 'Generating...' : 'Save & Download'}
+                  {generatingReport ? 'Generating...' : 'Save & Download PDF'}
                 </Button>
                 <Button
                   icon={<Printer size={16} />}
@@ -1596,7 +1923,7 @@ const EnhancedSummaryModal = ({
                 </Button>
               </Space>
               
-              <Space>
+              <Space wrap>
                 <Button
                   onClick={onClose}
                   icon={<X size={16} />}
@@ -1610,7 +1937,7 @@ const EnhancedSummaryModal = ({
                   icon={<Send size={16} />}
                   onClick={handleFinalSubmit}
                   loading={submitting}
-                  disabled={!reconciliationNotes.trim() || !shiftId || submitting}
+                  disabled={!reconciliationNotes.trim() || !shiftId || submitting || validationErrors.length > 0}
                   style={{
                     fontWeight: 'bold',
                     background: 'linear-gradient(135deg, #52c41a, #389e0d)',
@@ -1634,18 +1961,28 @@ const EnhancedSummaryModal = ({
               <Alert
                 message="Report Saved Successfully"
                 description={
-                  <Space direction="vertical" size={2}>
-                    <Text strong>File: {saveResult.file?.name}</Text>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>
+                  <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text strong>File: {saveResult.file?.name}</Text>
+                      <Tag color="green">Saved</Tag>
+                    </div>
+                    <Text type="secondary" style={{ fontSize: '12px', wordBreak: 'break-all' }}>
                       Path: {saveResult.file?.path}
                     </Text>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>
-                      Size: {saveResult.file?.size} bytes
-                    </Text>
+                    <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
+                      <Text type="secondary" style={{ fontSize: '11px' }}>
+                        Size: {((saveResult.file?.size || 0) / 1024).toFixed(2)} KB
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: '11px' }}>
+                        Format: {saveResult.file?.format || 'JSON'}
+                      </Text>
+                    </div>
                     {saveResult.metadata && (
-                      <div style={{ marginTop: 8 }}>
+                      <div style={{ marginTop: 8, padding: '8px', background: '#f5f5f5', borderRadius: '4px' }}>
                         <Text type="secondary" style={{ fontSize: '11px' }}>
-                          {saveResult.metadata.dataPoints?.islands} islands • {saveResult.metadata.dataPoints?.debtors} debtors • {saveResult.metadata.dataPoints?.totalTransactions} transactions • {overallTotals.totalAutoExpenses > 0 ? `${expenseBreakdown.length} islands with auto expenses` : 'No auto expenses'}
+                          📊 {saveResult.metadata.dataPoints?.islands || overallTotals.totalIslands} islands • 
+                          👥 {saveResult.metadata.dataPoints?.debtors || debtorBreakdown.length} debtors • 
+                          💰 {overallTotals.totalAutoExpenses > 0 ? `${expenseBreakdown.length} islands with auto expenses` : 'No auto expenses'}
                         </Text>
                       </div>
                     )}
@@ -1661,11 +1998,14 @@ const EnhancedSummaryModal = ({
                       type="link"
                       href={saveResult.file.downloadUrl}
                       download={saveResult.file.name}
+                      icon={<Download size={14} />}
                     >
                       Download
                     </Button>
                   )
                 }
+                closable
+                onClose={() => setSaveResult(null)}
               />
             )}
 
@@ -1676,6 +2016,17 @@ const EnhancedSummaryModal = ({
                 description="Please add detailed reconciliation notes before submitting the shift report."
                 type="warning"
                 showIcon
+                icon={<AlertCircle size={16} />}
+              />
+            )}
+            
+            {validationErrors.length > 0 && (
+              <Alert
+                message="Validation Errors"
+                description={`${validationErrors.length} error(s) must be resolved before submission.`}
+                type="error"
+                showIcon
+                icon={<AlertCircle size={16} />}
               />
             )}
           </Space>

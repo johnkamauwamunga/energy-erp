@@ -1,4 +1,4 @@
-// IntegratedShiftClose.jsx (UPDATED WITH AUTO-EXPENSE LOADING)
+// IntegratedShiftClose.jsx (FIXED - Overage removed, only shortages tracked)
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card,
@@ -72,7 +72,7 @@ import { debtorService } from '../../../../../services/debtorService/debtorServi
 import { shortageService } from '../../../../../services/shortageService/shortageService';
 import { staffAccountService } from '../../../../../services/staffAccountService/staffAccountService';
 import { bankingService } from '../../../../../services/bankingService/bankingService';
-import { expenseService } from '../../../../../services/expenseService/expenseService'; // ADDED
+import { expenseService } from '../../../../../services/expenseService/expenseService';
 import EnhancedSummaryModal from './EnhancedSummaryModal';
 import dayjs from 'dayjs';
 
@@ -117,8 +117,8 @@ const IntegratedShiftClose = ({
   const [islandsData, setIslandsData] = useState([]);
   const [salesEntries, setSalesEntries] = useState({});
   const [receipts, setReceipts] = useState({});
-  const [expenses, setExpenses] = useState({}); // Manual expenses entered by user
-  const [autoExpenses, setAutoExpenses] = useState({}); // Auto-loaded expenses
+  const [expenses, setExpenses] = useState({});
+  const [autoExpenses, setAutoExpenses] = useState({});
   
   // ========== COLLECTIONS STEP STATE ==========
   const [collections, setCollections] = useState({});
@@ -150,7 +150,7 @@ const IntegratedShiftClose = ({
       salesEntries,
       receipts,
       expenses,
-      autoExpenses, // ADDED
+      autoExpenses,
       collections,
       postedShortages,
       timestamp: Date.now(),
@@ -175,7 +175,6 @@ const IntegratedShiftClose = ({
         const data = JSON.parse(cached);
         const TWO_HOURS = 2 * 60 * 60 * 1000;
         
-        // Check if cache is for current shift and not expired
         if (data.shiftId === shift?.id && Date.now() - data.timestamp < TWO_HOURS) {
           console.log('📂 Loading from cache');
           
@@ -186,11 +185,10 @@ const IntegratedShiftClose = ({
           setSalesEntries(data.salesEntries || {});
           setReceipts(data.receipts || {});
           setExpenses(data.expenses || {});
-          setAutoExpenses(data.autoExpenses || {}); // ADDED
+          setAutoExpenses(data.autoExpenses || {});
           setCollections(data.collections || {});
           setPostedShortages(data.postedShortages || {});
           
-          // Re-prepare islands data if we have pumps
           if (data.pumps && data.pumps.length > 0) {
             setTimeout(() => {
               prepareIslandsData(data.pumps, {});
@@ -214,7 +212,6 @@ const IntegratedShiftClose = ({
     const cacheKey = getCacheKey();
     localStorage.removeItem(cacheKey);
     
-    // Also clear any related cache
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.includes(`shift_close_${currentStationId}`)) {
@@ -236,7 +233,7 @@ const IntegratedShiftClose = ({
         setLoading(false);
       }
       loadDebtors();
-      loadExistingExpenses(); // ADDED: Load expenses on mount
+      loadExistingExpenses();
     }
   }, [currentStationId, shift?.id]);
 
@@ -258,7 +255,7 @@ const IntegratedShiftClose = ({
         stationId: currentStationId,
         shiftId: shift.id,
         status: 'APPROVED',
-        paymentSource: 'ISLAND_COLLECTION' // ONLY island expenses
+        paymentSource: 'ISLAND_COLLECTION'
       };
       
       const response = await expenseService.getExpenses(filters);
@@ -266,7 +263,6 @@ const IntegratedShiftClose = ({
       
       console.log('📝 Existing expenses for shift:', expensesData);
       
-      // Group expenses by islandId
       const expensesByIsland = {};
       expensesData.forEach(expense => {
         if (expense.islandId && expense.amount > 0) {
@@ -285,7 +281,6 @@ const IntegratedShiftClose = ({
         }
       });
       
-      // Calculate totals per island
       const autoExpenseTotals = {};
       Object.keys(expensesByIsland).forEach(islandId => {
         const total = expensesByIsland[islandId].reduce((sum, exp) => sum + exp.amount, 0);
@@ -297,7 +292,6 @@ const IntegratedShiftClose = ({
       
       setAutoExpenses(autoExpenseTotals);
       
-      // Update UI if we're already on sales step
       if (currentStep >= 1) {
         prepareIslandsData(pumps, {});
       }
@@ -346,7 +340,6 @@ const IntegratedShiftClose = ({
 
       setShiftData(openShiftData);
 
-      // Get island assignments
       const islandAssignments = {};
       (openShiftData.shiftIslandAttendant || []).forEach((assignment) => {
         if (assignment.islandId && assignment.attendant) {
@@ -354,7 +347,6 @@ const IntegratedShiftClose = ({
         }
       });
 
-      // Create pump product map
       const pumpProductMap = new Map();
       const topologyIslands = topologyData.data?.islands || topologyData.islands || [];
       
@@ -372,11 +364,9 @@ const IntegratedShiftClose = ({
         }
       });
 
-      // Transform pump readings
       const transformedPumps = (openShiftData.meterReadings || []).map(meterReading => {
         const productInfo = pumpProductMap.get(meterReading.pumpId);
 
-        // Find which island this pump belongs to
         let pumpIslandId = null;
         let pumpIslandName = 'Unassigned';
         let attendant = null;
@@ -418,7 +408,6 @@ const IntegratedShiftClose = ({
         };
       });
 
-      // Transform tank readings
       const transformedTanks = (openShiftData.dipReadings || []).map(dipReading => ({
         id: dipReading.tankId,
         tankId: dipReading.tankId,
@@ -437,10 +426,8 @@ const IntegratedShiftClose = ({
       setPumps(transformedPumps);
       setTanks(transformedTanks);
       
-      // Prepare islands data
       prepareIslandsData(transformedPumps, islandAssignments);
       
-      // Load existing expenses after pumps are loaded
       loadExistingExpenses();
       
     } catch (error) {
@@ -451,9 +438,7 @@ const IntegratedShiftClose = ({
     }
   };
 
-  // Prepare islands data for sales step
   const prepareIslandsData = (pumpsData, islandAssignments) => {
-    // Group pumps by island
     const pumpsByIsland = {};
     pumpsData.forEach(pump => {
       const islandKey = pump.islandId || 'unassigned';
@@ -468,11 +453,9 @@ const IntegratedShiftClose = ({
       pumpsByIsland[islandKey].pumps.push(pump);
     });
 
-    // Create islands data structure with proper keys
     const islands = Object.values(pumpsByIsland).map((islandData, index) => {
       const attendants = islandData.attendant ? [islandData.attendant] : [];
 
-      // Get auto expenses for this island
       const islandAutoExpenses = islandData.islandId ? autoExpenses[islandData.islandId] : null;
       const autoExpenseTotal = islandAutoExpenses?.total || 0;
       const autoExpenseDetails = islandAutoExpenses?.details || [];
@@ -491,7 +474,6 @@ const IntegratedShiftClose = ({
 
     setIslandsData(islands);
     
-    // Initialize sales entries with auto expenses
     const initialEntries = {};
     islands.forEach((island) => {
       if (!salesEntries[island.key]) {
@@ -501,7 +483,6 @@ const IntegratedShiftClose = ({
         };
       }
       
-      // Auto-populate expenses with existing expenses
       if (island.autoExpenses > 0 && !expenses[island.key]) {
         setExpenses(prev => ({
           ...prev,
@@ -533,7 +514,6 @@ const IntegratedShiftClose = ({
     }, 0);
   };
 
-  // Calculate pump values based on global meter type
   const calculatePumpValues = useCallback(() => {
     return pumps.map(pump => {
       const opening = parseFloat(pump[`opening${globalMeterType.charAt(0).toUpperCase() + globalMeterType.slice(1)}Meter`]) || 0;
@@ -562,7 +542,6 @@ const IntegratedShiftClose = ({
     });
   }, [pumps, globalMeterType]);
 
-  // Handle pump reading change
   const handlePumpReadingChange = (pumpId, field, value) => {
     setPumps(prevPumps => {
       return prevPumps.map(pump => {
@@ -608,7 +587,6 @@ const IntegratedShiftClose = ({
     });
   };
 
-  // Handle tank reading change
   const handleTankReadingChange = (tankId, field, value) => {
     setTanks(prev => prev.map(tank => {
       if (tank.id !== tankId) return tank;
@@ -624,7 +602,6 @@ const IntegratedShiftClose = ({
     }));
   };
 
-  // ========== CALCULATION FUNCTIONS ==========
   const calculatePumpStats = () => {
     const total = pumps.length;
     const completed = pumps.filter(p => {
@@ -669,7 +646,14 @@ const IntegratedShiftClose = ({
 
       const totalCollection = cashCollection + debtCollection;
       const totalExpected = totalPumpSales + islandReceipts - totalExpenses;
-      const variance = totalExpected - totalCollection;
+      
+      // ========== MODIFIED LOGIC HERE ==========
+      // Only calculate shortage when collections are LESS THAN expected
+      // If collections are EQUAL TO or GREATER THAN expected, variance is 0 (no shortage)
+      let shortageAmount = 0;
+      if (totalExpected > totalCollection) {
+        shortageAmount = totalExpected - totalCollection;
+      }
       
       const collectionsModalCompleted = islandCollections.length > 0;
       const hasSales = totalActualSales >= 0;
@@ -687,19 +671,21 @@ const IntegratedShiftClose = ({
         totalExpenses,
         receipts: islandReceipts,
         totalExpected,
-        variance,
+        shortageAmount, // Only populated when below expected
+        variance: shortageAmount, // Keep for backward compatibility but now only represents shortage
         hasSales,
         collectionsModalCompleted,
         shortagePosted,
-        shortageRecord: postedShortages[islandKey]
+        shortageRecord: postedShortages[islandKey],
+        // Add a status flag for UI
+        collectionStatus: totalCollection >= totalExpected ? 'full' : 'short'
       };
     });
   };
 
-  // ========== SHORTAGE POSTING FUNCTION ==========
-  const postShortage = async (islandData, variance, totalExpected, totalCollected) => {
-    if (variance <= 10) {
-      message.info(`Shortage of KES ${variance.toFixed(2)} is below minimum threshold (KES 10)`);
+  const postShortage = async (islandData, shortageAmount, totalExpected, totalCollected) => {
+    if (shortageAmount <= 10) {
+      message.info(`Shortage of KES ${shortageAmount.toFixed(2)} is below minimum threshold (KES 10)`);
       return null;
     }
 
@@ -711,7 +697,6 @@ const IntegratedShiftClose = ({
     const primaryAttendant = islandData.attendants[0];
     
     try {
-      // Get staff account for attendant
       const staffAccount = await staffAccountService.getStaffAccountByUserId(primaryAttendant.id);
       
       if (!staffAccount) {
@@ -719,18 +704,16 @@ const IntegratedShiftClose = ({
         return null;
       }
 
-      // Calculate due date (end of current month)
       const today = dayjs();
       const endOfMonth = today.endOf('month');
 
-      // Create shortage data
       const shortageData = {
         staffAccountId: staffAccount.id,
-        amount: variance,
+        amount: shortageAmount,
         description: `Shortage during shift closing - Shift ${shift?.shiftNumber || 'N/A'} at ${islandData.islandName}`,
         shortageType: 'CASH',
         responsibleParty: 'ATTENDANT',
-        severity: variance > 5000 ? 'HIGH' : variance > 1000 ? 'MODERATE' : 'LOW',
+        severity: shortageAmount > 5000 ? 'HIGH' : shortageAmount > 1000 ? 'MODERATE' : 'LOW',
         comments: `Auto-posted during shift closing. Expected: KES ${totalExpected.toFixed(2)}, Collected: KES ${totalCollected.toFixed(2)}`,
         shiftId: shift?.id,
         islandId: islandData.islandId,
@@ -742,10 +725,9 @@ const IntegratedShiftClose = ({
 
       console.log('Posting shortage:', shortageData);
       
-      // Post shortage
       const shortage = await shortageService.createShortage(shortageData);
       
-      message.success(`Shortage of KES ${variance.toFixed(2)} posted to ${primaryAttendant.firstName} ${primaryAttendant.lastName}`);
+      message.success(`Shortage of KES ${shortageAmount.toFixed(2)} posted to ${primaryAttendant.firstName} ${primaryAttendant.lastName}`);
       
       return shortage;
     } catch (error) {
@@ -755,7 +737,7 @@ const IntegratedShiftClose = ({
     }
   };
 
-  // ========== COLLECTIONS MODAL ==========
+  // ========== COLLECTIONS MODAL - MODIFIED VERSION ==========
   const CollectionsModal = ({ 
     visible, 
     onCancel, 
@@ -772,12 +754,16 @@ const IntegratedShiftClose = ({
     const [hasPendingShortage, setHasPendingShortage] = useState(false);
     const [justPostedShortage, setJustPostedShortage] = useState(false);
     
-    // ========== NEW STATE FOR SHORTAGE MODAL ==========
     const [shortageModalVisible, setShortageModalVisible] = useState(false);
     const [shortageDetails, setShortageDetails] = useState(null);
     const [creatingShortage, setCreatingShortage] = useState(false);
     
-    // Find the island data
+    const [hasUnaddedCash, setHasUnaddedCash] = useState(false);
+    
+    useEffect(() => {
+      setHasUnaddedCash(cashAmount && parseFloat(cashAmount) > 0);
+    }, [cashAmount]);
+    
     useEffect(() => {
       if (visible && islandIndex !== undefined) {
         const island = islandsData.find(island => island.key === islandIndex);
@@ -785,10 +771,13 @@ const IntegratedShiftClose = ({
         setLocalCollections(currentCollections || []);
         setHasPendingShortage(false);
         setJustPostedShortage(false);
+        setCashAmount('');
+        setDebtAmount('');
+        setSelectedDebtor(null);
+        setSearchDebtor('');
       }
     }, [visible, islandIndex, currentCollections]);
 
-    // Filter debtors based on search
     const filteredDebtors = useMemo(() => {
       if (!searchDebtor) return debtors;
       return debtors.filter(debtor =>
@@ -798,7 +787,6 @@ const IntegratedShiftClose = ({
       );
     }, [debtors, searchDebtor]);
 
-    // Calculate totals WITH EXPENSES
     const totalPumpSales = selectedIsland?.totalPumpSales || 0;
     const islandReceipts = receipts[islandIndex] || 0;
     const manualExpenseAmount = expenses[islandIndex] || 0;
@@ -817,32 +805,36 @@ const IntegratedShiftClose = ({
       .reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
     
     const currentTotal = currentCashCollection + totalDebtCollection;
-    const cashNum = parseFloat(cashAmount) || 0;
-    const totalCollectedSoFar = currentTotal + cashNum;
-    const variance = totalExpected - totalCollectedSoFar;
-
-    const hasShortage = variance > 10;
+    
+    // Display total including pending cash input
+    const displayTotal = currentTotal + (parseFloat(cashAmount) || 0);
+    
+    // ========== MODIFIED LOGIC HERE ==========
+    // Only show shortage if totalExpected > displayTotal
+    // If displayTotal >= totalExpected, no shortage
+    const hasShortage = totalExpected > displayTotal;
+    const shortageAmount = hasShortage ? totalExpected - displayTotal : 0;
+    
     const shortagePosted = selectedIsland ? postedShortages[selectedIsland.key] : false;
     
-    // ========== CHECK IF SHORTAGE WAS POSTED ==========
     useEffect(() => {
       if (selectedIsland && postedShortages[selectedIsland.key]) {
         console.log('✅ Shortage already posted for this island:', postedShortages[selectedIsland.key]);
         setJustPostedShortage(true);
         setHasPendingShortage(false);
-      } else if (selectedIsland && variance > 10) {
+      } else if (selectedIsland && hasShortage) {
         setHasPendingShortage(true);
         setJustPostedShortage(false);
       } else {
         setHasPendingShortage(false);
         setJustPostedShortage(false);
       }
-    }, [selectedIsland, postedShortages, variance]);
+    }, [selectedIsland, postedShortages, hasShortage]);
     
-    // ========== CRITICAL: Block save if shortage exists ==========
-    const canSaveCollections = localCollections.length > 0 && (!hasShortage || shortagePosted || justPostedShortage);
+    const canSaveCollections = localCollections.length > 0 && 
+      !hasUnaddedCash &&
+      (!hasShortage || shortagePosted || justPostedShortage);
 
-    // Helper to determine severity based on amount
     const getSeverityLevel = (amount) => {
       if (amount <= 1000) return 'MINOR';
       if (amount <= 5000) return 'MODERATE';
@@ -850,7 +842,6 @@ const IntegratedShiftClose = ({
       return 'CRITICAL';
     };
     
-    // ========== PREPARE COMPLETE SHORTAGE DETAILS ==========
     const prepareShortageDetails = async () => {
       if (!selectedIsland || !selectedIsland.attendants || selectedIsland.attendants.length === 0) {
         console.error('❌ No attendant assigned to this island');
@@ -860,22 +851,18 @@ const IntegratedShiftClose = ({
 
       const primaryAttendant = selectedIsland.attendants[0];
       
-      // ========== CRITICAL: FIND STAFF ACCOUNT FOR THIS ATTENDANT ==========
       let staffAccount = null;
       let staffAccountId = null;
       
       try {
-        // Fetch staff accounts for the current station
         const result = await staffAccountService.getStaffAccountsByStation(currentStationId);
         const accounts = result?.accounts || result?.data || result || [];
         
-        // Find the staff account where user.id matches attendant's id
         staffAccount = accounts.find(account => {
           const userId = account.user?.id || account.userId;
           return userId === primaryAttendant.id;
         });
         
-        // If no exact ID match, try name matching
         if (!staffAccount) {
           const attendantFullName = `${primaryAttendant.firstName} ${primaryAttendant.lastName}`.toLowerCase().trim();
           
@@ -899,12 +886,11 @@ const IntegratedShiftClose = ({
         return null;
       }
       
-      // ========== PREPARE SHORTAGE DATA ==========
       const today = dayjs();
       const dueDate = today.add(30, 'day');
       const shortageType = 'CASH';
       const responsibleParty = 'ATTENDANT';
-      const severity = getSeverityLevel(variance);
+      const severity = getSeverityLevel(shortageAmount);
       
       const description = `Island Collection Shortage - ${selectedIsland.islandName}, Shift #${shift?.shiftNumber || 'N/A'}`;
       
@@ -918,8 +904,8 @@ const IntegratedShiftClose = ({
       • Auto Expenses: KES ${autoExpenseAmount.toFixed(2)}
       • Manual Expenses: KES ${manualExpenseAmount.toFixed(2)}
       • Expected Total: KES ${totalExpected.toFixed(2)}
-      • Collected: KES ${totalCollectedSoFar.toFixed(2)}
-      • Shortage: KES ${variance.toFixed(2)}
+      • Collected (with pending): KES ${displayTotal.toFixed(2)}
+      • Shortage: KES ${shortageAmount.toFixed(2)}
       • Generated on: ${today.format('DD/MM/YYYY HH:mm:ss')}`;
       
       const shortageDetails = {
@@ -934,7 +920,7 @@ const IntegratedShiftClose = ({
         islandName: selectedIsland.islandName,
         shiftId: shift?.id,
         shiftNumber: shift?.shiftNumber,
-        shortageAmount: variance,
+        shortageAmount: shortageAmount,
         shortageType: shortageType,
         responsibleParty: responsibleParty,
         severity: severity,
@@ -945,8 +931,8 @@ const IntegratedShiftClose = ({
         submitDate: today.toISOString(),
         collectionDetails: {
           totalExpected,
-          totalCollected: totalCollectedSoFar,
-          variance,
+          totalCollected: displayTotal,
+          shortageAmount,
           cashCollections: localCollections.filter(c => c.type === 'cash'),
           debtCollections: localCollections.filter(c => c.type === 'debt'),
           receipts: islandReceipts,
@@ -961,7 +947,6 @@ const IntegratedShiftClose = ({
       return shortageDetails;
     };
 
-    // ========== CREATE COMPLETE SHORTAGE RECORD ==========
     const handleCreateShortageRecord = async () => {
       if (!shortageDetails) return;
       
@@ -972,7 +957,6 @@ const IntegratedShiftClose = ({
           return;
         }
 
-        // Prepare complete shortage data for API
         const shortageData = {
           staffAccountId: shortageDetails.staffAccountId,
           amount: shortageDetails.shortageAmount,
@@ -1001,13 +985,11 @@ const IntegratedShiftClose = ({
 
         console.log('Creating complete shortage record:', shortageData);
         
-        // Create shortage via API
         const response = await shortageService.createShortage(shortageData);
         const shortage = response.data;
         
         message.success(`Shortage of KES ${shortageDetails.shortageAmount.toFixed(2)} created for ${shortageDetails.attendantName}`);
         
-        // ✅ CRITICAL: Update parent state via postedShortages setter
         setPostedShortages(prev => ({
           ...prev,
           [selectedIsland.key]: {
@@ -1019,14 +1001,11 @@ const IntegratedShiftClose = ({
           }
         }));
         
-        // ✅ Update local state to reflect shortage was posted
         setJustPostedShortage(true);
         setHasPendingShortage(false);
         
-        // Close shortage modal but KEEP collections modal open
         setShortageModalVisible(false);
         
-        // Show inline success message
         message.success({
           content: (
             <div>
@@ -1046,7 +1025,6 @@ const IntegratedShiftClose = ({
       }
     };
 
-    // ========== OPEN SHORTAGE CREATION MODAL ==========
     const handleOpenShortageCreation = async () => {
       console.log('Opening shortage creation modal...');
       
@@ -1062,7 +1040,6 @@ const IntegratedShiftClose = ({
       }
     };
 
-    // ========== SHORTAGE CREATION MODAL COMPONENT ==========
     const ShortageCreationModal = () => {
       if (!shortageDetails) return null;
 
@@ -1107,7 +1084,6 @@ const IntegratedShiftClose = ({
           closable={!creatingShortage}
         >
           <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 8 }}>
-            {/* ATTENDANT & BASIC INFO CARD */}
             <Card 
               size="small" 
               style={{ marginBottom: 16, borderLeft: '4px solid #1890ff' }}
@@ -1147,7 +1123,6 @@ const IntegratedShiftClose = ({
               </Descriptions>
             </Card>
 
-            {/* SHORTAGE DETAILS CARD */}
             <Card 
               size="small" 
               style={{ marginBottom: 16, borderLeft: '4px solid #ff4d4f' }}
@@ -1220,7 +1195,6 @@ const IntegratedShiftClose = ({
               </Row>
             </Card>
 
-            {/* COLLECTION BREAKDOWN CARD - UPDATED WITH EXPENSES */}
             <Card 
               size="small" 
               style={{ marginBottom: 16, borderLeft: '4px solid #52c41a' }}
@@ -1253,7 +1227,7 @@ const IntegratedShiftClose = ({
                 <Col span={8}>
                   <Statistic
                     title="Shortage"
-                    value={shortageDetails.collectionDetails.variance}
+                    value={shortageDetails.collectionDetails.shortageAmount}
                     precision={2}
                     prefix="KES"
                     valueStyle={{ 
@@ -1318,7 +1292,6 @@ const IntegratedShiftClose = ({
                 </Col>
               </Row>
               
-              {/* EXPENSE DETAILS */}
               <Divider style={{ margin: '8px 0' }} />
               <Row gutter={[16, 16]}>
                 <Col span={12}>
@@ -1417,15 +1390,19 @@ const IntegratedShiftClose = ({
       setLocalCollections(updatedCollections);
     };
 
-    // ========== MODIFIED SAVE HANDLER ==========
     const handleSaveCollections = () => {
-      // ✅ CRITICAL: CANNOT SAVE IF UNRESOLVED SHORTAGE EXISTS
+      if (hasUnaddedCash) {
+        message.warning('Please click "Add Cash Collection" first to include the entered amount');
+        return;
+      }
+
+      // Check for unresolved shortage
       if (hasShortage && !shortagePosted && !justPostedShortage) {
         Modal.error({
           title: 'Cannot Save - Unresolved Shortage',
           content: (
             <div>
-              <p>You have an unresolved shortage of <strong>KES {variance.toFixed(2)}</strong>.</p>
+              <p>You have an unresolved shortage of <strong>KES {shortageAmount.toFixed(2)}</strong>.</p>
               <p><strong>You must create a shortage record before you can save collections.</strong></p>
               <p>Click "Create Shortage Record" to proceed.</p>
             </div>
@@ -1436,11 +1413,24 @@ const IntegratedShiftClose = ({
             handleOpenShortageCreation();
           }
         });
-        return; // Block the save
+        return;
       }
       
-      // Only allow save if no shortage or shortage is already posted
-      onSave(localCollections, variance);
+      // Calculate final amounts
+      const finalCashTotal = localCollections
+        .filter(c => c.type === 'cash')
+        .reduce((sum, c) => sum + (c.amount || 0), 0);
+      
+      const finalDebtTotal = localCollections
+        .filter(c => c.type === 'debt')
+        .reduce((sum, c) => sum + (c.amount || 0), 0);
+      
+      const finalCollected = finalCashTotal + finalDebtTotal;
+      
+      // Calculate final shortage if any (only when expected > collected)
+      const finalShortageAmount = totalExpected > finalCollected ? totalExpected - finalCollected : 0;
+      
+      onSave(localCollections, finalShortageAmount);
     };
 
     if (!selectedIsland) {
@@ -1454,9 +1444,19 @@ const IntegratedShiftClose = ({
             <Space>
               <Wallet size={16} />
               <Text strong>Collections - {selectedIsland?.islandName || 'Unknown Island'}</Text>
+              {!hasShortage && displayTotal >= totalExpected && (
+                <Tag color="green" icon={<CheckCircle size={12} />}>
+                  Fully Collected ✓
+                </Tag>
+              )}
               {justPostedShortage && (
                 <Tag color="green" icon={<CheckCircle size={12} />}>
                   Shortage Posted
+                </Tag>
+              )}
+              {hasUnaddedCash && (
+                <Tag color="orange" icon={<AlertCircle size={12} />}>
+                  Unadded Cash
                 </Tag>
               )}
             </Space>
@@ -1468,21 +1468,24 @@ const IntegratedShiftClose = ({
             <Button key="cancel" onClick={onCancel}>
               Cancel
             </Button>,
-            <Button
-              key="post"
-              type={hasPendingShortage && !justPostedShortage ? "dashed" : "default"}
-              danger={hasPendingShortage && !justPostedShortage}
-              onClick={handleOpenShortageCreation}
-              disabled={!hasPendingShortage || justPostedShortage || creatingShortage}
-              icon={<AlertTriangle size={14} />}
-              loading={creatingShortage}
-            >
-              {justPostedShortage 
-                ? 'Shortage Created ✓' 
-                : hasPendingShortage 
-                  ? `Create Shortage (KES ${variance.toFixed(2)})`
-                  : 'No Shortage'}
-            </Button>,
+            // Only show shortage button if there's a shortage
+            hasShortage && (
+              <Button
+                key="post"
+                type={hasPendingShortage && !justPostedShortage ? "dashed" : "default"}
+                danger={hasPendingShortage && !justPostedShortage}
+                onClick={handleOpenShortageCreation}
+                disabled={!hasPendingShortage || justPostedShortage || creatingShortage}
+                icon={<AlertTriangle size={14} />}
+                loading={creatingShortage}
+              >
+                {justPostedShortage 
+                  ? 'Shortage Created ✓' 
+                  : hasPendingShortage 
+                    ? `Create Shortage (KES ${shortageAmount.toFixed(2)})`
+                    : 'No Shortage'}
+              </Button>
+            ),
             <Button
               key="save"
               type="primary"
@@ -1493,18 +1496,17 @@ const IntegratedShiftClose = ({
                 cursor: canSaveCollections ? 'pointer' : 'not-allowed'
               }}
             >
-              {justPostedShortage 
-                ? 'Save Collections (Shortage Resolved)' 
-                : hasPendingShortage 
-                  ? 'Save Collections (Blocked - Resolve Shortage First)'
-                  : 'Save Collections'}
+              {hasUnaddedCash ? 'Click "Add" first to include cash' :
+               justPostedShortage ? 'Save Collections (Shortage Resolved)' : 
+               hasPendingShortage ? 'Save Collections (Blocked - Resolve Shortage First)' :
+               'Save Collections'}
             </Button>
           ]}
         >
           <div style={{ marginBottom: 16 }}>
             <Card size="small">
               <Row gutter={16}>
-                <Col span={6}>
+                <Col span={8}>
                   <Statistic
                     title="Expected Total"
                     value={totalExpected}
@@ -1513,45 +1515,31 @@ const IntegratedShiftClose = ({
                     valueStyle={{ color: '#1890ff' }}
                   />
                 </Col>
-                <Col span={6}>
+                <Col span={8}>
                   <Statistic
                     title="Collected"
-                    value={totalCollectedSoFar}
+                    value={displayTotal}
                     precision={2}
                     prefix="KES"
-                    valueStyle={{ color: totalCollectedSoFar >= totalExpected ? '#52c41a' : '#faad14' }}
+                    valueStyle={{ color: displayTotal >= totalExpected ? '#52c41a' : '#faad14' }}
                   />
                 </Col>
-                <Col span={6}>
-                  <Statistic
-                    title="Variance"
-                    value={Math.abs(variance)}
-                    precision={2}
-                    prefix={variance >= 0 ? 'KES' : 'KES'}
-                    valueStyle={{ 
-                      color: variance === 0 ? '#52c41a' : variance > 0 ? '#ff4d4f' : '#faad14' 
-                    }}
-                  />
-                </Col>
-                <Col span={6}>
+                <Col span={8}>
                   <Statistic
                     title="Status"
                     value={
                       justPostedShortage ? 'Shortage Posted ✓' :
-                      variance === 0 ? 'Balanced' : 
-                      variance > 0 ? 'Shortage' : 'Overage'
+                      displayTotal >= totalExpected ? 'Fully Collected ✓' : 
+                      'Shortage'
                     }
                     valueStyle={{ 
-                      color: justPostedShortage ? '#52c41a' :
-                      variance === 0 ? '#52c41a' : 
-                      variance > 0 ? '#ff4d4f' : '#faad14',
+                      color: justPostedShortage || displayTotal >= totalExpected ? '#52c41a' : '#ff4d4f',
                       fontSize: '14px'
                     }}
                   />
                 </Col>
               </Row>
               
-              {/* EXPENSE BREAKDOWN */}
               {(autoExpenseAmount > 0 || manualExpenseAmount > 0) && (
                 <Alert
                   message="Expense Details"
@@ -1585,10 +1573,10 @@ const IntegratedShiftClose = ({
               
               {justPostedShortage && (
                 <Alert
-                  message="✅ Cannnot Save Untill Shortages are recorded"
+                  message="✅ Shortage Recorded"
                   description={
                     <div>
-                      <p><strong>KES {variance.toFixed(2)} shortage has been recorded for the attendant.</strong></p>
+                      <p><strong>KES {shortageAmount.toFixed(2)} shortage has been recorded for the attendant.</strong></p>
                       <p>You can now save collections. All your entered data is preserved.</p>
                     </div>
                   }
@@ -1598,8 +1586,32 @@ const IntegratedShiftClose = ({
                 />
               )}
               
-              {/* ========== SAVE STATUS INDICATOR ========== */}
-              {!canSaveCollections && hasPendingShortage && (
+              {displayTotal >= totalExpected && (
+                <Alert
+                  message="✅ Fully Collected"
+                  description="Collections meet or exceed expected amount. No shortage to record."
+                  type="success"
+                  showIcon
+                  style={{ marginTop: 12 }}
+                />
+              )}
+              
+              {hasUnaddedCash && (
+                <div style={{ 
+                  marginTop: 12, 
+                  padding: '8px 12px', 
+                  backgroundColor: '#fff7e6',
+                  border: '1px solid #ffbb96',
+                  borderRadius: '4px'
+                }}>
+                  <Text type="warning" strong>
+                    ⚠️ You have KES {parseFloat(cashAmount).toFixed(2)} in the cash field that hasn't been added. 
+                    Click "Add Cash Collection" to include it.
+                  </Text>
+                </div>
+              )}
+              
+              {!canSaveCollections && hasPendingShortage && !hasUnaddedCash && (
                 <div style={{ 
                   marginTop: 12, 
                   padding: '8px 12px', 
@@ -1638,6 +1650,7 @@ const IntegratedShiftClose = ({
                       onClick={handleAddCashCollection}
                       icon={<Plus size={14} />}
                       block
+                      disabled={!cashAmount || parseFloat(cashAmount) <= 0}
                     >
                       Add Cash Collection
                     </Button>
@@ -1765,13 +1778,11 @@ const IntegratedShiftClose = ({
           )}
         </Modal>
         
-        {/* Shortage Creation Modal */}
         <ShortageCreationModal />
       </>
     );
   };
 
-  // ========== STEP NAVIGATION ==========
   const handleNextStep = () => {
     if (currentStep === 0) {
       const pumpStats = calculatePumpStats();
@@ -1782,7 +1793,6 @@ const IntegratedShiftClose = ({
         return;
       }
       
-      // Re-prepare islands data with updated pump values
       prepareIslandsData(pumps, {});
       setCurrentStep(1);
       
@@ -1800,7 +1810,6 @@ const IntegratedShiftClose = ({
     } else if (currentStep === 2) {
       const islandStats = calculateIslandStats();
       
-      // Check if all islands have collections
       const allCollectionsComplete = islandStats.every(island => island.collectionsModalCompleted);
       
       if (!allCollectionsComplete) {
@@ -1808,9 +1817,9 @@ const IntegratedShiftClose = ({
         return;
       }
       
-      // Check if all shortages are resolved (either below threshold or posted)
+      // Check if all shortages are resolved (only for islands with shortageAmount > 0)
       const allShortagesResolved = islandStats.every(island => 
-        island.variance <= 10 || island.shortagePosted
+        island.shortageAmount <= 10 || island.shortagePosted
       );
       
       if (!allShortagesResolved) {
@@ -1828,8 +1837,7 @@ const IntegratedShiftClose = ({
     }
   };
 
-  // Handle collections save
-  const handleIslandCollectionsSave = (islandKey, collectionsData, variance) => {
+  const handleIslandCollectionsSave = (islandKey, collectionsData, shortageAmount) => {
     setCollections(prev => ({
       ...prev,
       [islandKey]: collectionsData
@@ -1839,11 +1847,9 @@ const IntegratedShiftClose = ({
     message.success('Collections saved for island');
   };
 
-  // ========== PREPARE SUMMARY DATA ==========
   const prepareSummaryData = () => {
     const islandStats = calculateIslandStats();
     
-    // Enhanced islands data with all needed information
     const enhancedIslands = islandStats.map(island => {
       const islandKey = island.key;
       const islandCollections = Array.isArray(collections[islandKey]) ? collections[islandKey] : [];
@@ -1863,7 +1869,7 @@ const IntegratedShiftClose = ({
           .filter(c => c && c.type === 'cash')
           .reduce((sum, c) => sum + (c.amount || 0), 0),
         collections: islandCollections,
-        variance: island.variance,
+        shortageAmount: island.shortageAmount, // Now only populated for shortages
         shortagePosted: island.shortagePosted,
         shortageRecord: island.shortageRecord,
         isComplete: true,
@@ -1871,7 +1877,6 @@ const IntegratedShiftClose = ({
       };
     });
 
-    // Calculate overall stats
     const totalPumpSales = enhancedIslands.reduce((sum, island) => sum + (island.totalPumpSales || 0), 0);
     const totalActualSales = enhancedIslands.reduce((sum, island) => sum + (island.totalActualSales || 0), 0);
     const totalCashCollection = enhancedIslands.reduce((sum, island) => sum + (island.cashCollection || 0), 0);
@@ -1880,17 +1885,16 @@ const IntegratedShiftClose = ({
     const totalManualExpenses = enhancedIslands.reduce((sum, island) => sum + (island.manualExpenses || 0), 0);
     const totalAutoExpenses = enhancedIslands.reduce((sum, island) => sum + (island.autoExpenses || 0), 0);
     const totalExpenses = totalManualExpenses + totalAutoExpenses;
-    const totalVariance = enhancedIslands.reduce((sum, island) => sum + (island.variance || 0), 0);
+    
+    // Total shortage amount - only count when collections < expected
+    const totalShortageAmount = enhancedIslands.reduce((sum, island) => sum + (island.shortageAmount || 0), 0);
 
-    // ==================== CORRECT API PAYLOAD FOR BACKEND ====================
     const apiPayload = {
-      // Basic shift info
       shiftId: shift?.id,
       endTime: new Date().toISOString(),
       recordedById: currentUser?.id,
       reconciliationNotes: 'Shift closed via station manager UI',
       
-      // 1. PUMP READINGS
       pumpReadings: pumps.map(pump => {
         const calculatedPump = calculatePumpValues().find(p => p.id === pump.id);
         
@@ -1906,7 +1910,6 @@ const IntegratedShiftClose = ({
         };
       }),
       
-      // 2. TANK READINGS
       tankReadings: tanks.map(tank => ({
         tankId: tank.tankId,
         dipValue: parseFloat(tank.closingDipValue) || parseFloat(tank.dipValue) || 1.5,
@@ -1918,7 +1921,6 @@ const IntegratedShiftClose = ({
         ...(tank.product?.id && { productId: tank.product.id })
       })),
       
-      // 3. ISLAND COLLECTIONS
       islandCollections: enhancedIslands.map(island => {
         const islandKey = island.key;
         const islandCollections = island.collections || [];
@@ -1928,12 +1930,10 @@ const IntegratedShiftClose = ({
         const islandReceipts = island.receipts || 0;
         const islandSales = island.totalActualSales || 0;
         
-        // Calculate cash amount from cash collections
         const cashAmount = islandCollections
           .filter(c => c && c.type === 'cash')
           .reduce((sum, c) => sum + (c.amount || 0), 0);
         
-        // Group debtor collections
         const debtorCollections = islandCollections
           .filter(c => c && c.type === 'debt')
           .map(debt => ({
@@ -1941,23 +1941,28 @@ const IntegratedShiftClose = ({
             amount: debt.amount || 0
           }));
         
-        // Get primary attendant
         const primaryAttendant = island.attendants?.[0];
+        
+        // Calculate expected amount
+        const expectedAmount = islandSales + islandReceipts - totalIslandExpenses;
+        const collectedAmount = cashAmount;
+        
+        // Only set shortageAmount if expected > collected, otherwise 0
+        const shortageAmount = expectedAmount > collectedAmount ? expectedAmount - collectedAmount : 0;
         
         return {
           islandId: island.islandId,
           attendantId: primaryAttendant?.id || currentUser?.id,
           cashAmount: cashAmount,
           receiptsAmount: islandReceipts,
-          expectedCashAmount: islandSales + islandReceipts - totalIslandExpenses,
+          expectedCashAmount: expectedAmount,
           debtorCollections: debtorCollections,
           expensesAmount: totalIslandExpenses,
-          shortageAmount: island.shortagePosted ? Math.abs(island.variance) : 0,
-          overageAmount: island.variance < 0 ? Math.abs(island.variance) : 0
+          shortageAmount: shortageAmount, // Now only > 0 when there's a shortage
+          overageAmount: 0 // Always 0 now
         };
       }).filter(item => item.islandId),
       
-      // 4. Optional fields
       nonFuelStocks: []
     };
 
@@ -1972,11 +1977,11 @@ const IntegratedShiftClose = ({
         totalManualExpenses,
         totalAutoExpenses,
         totalExpenses,
-        totalVariance,
+        totalShortageAmount, // Now only reflects actual shortages
         totalIslands: enhancedIslands.length,
-        islandsWithShortage: enhancedIslands.filter(island => island.variance > 10).length,
+        islandsWithShortage: enhancedIslands.filter(island => island.shortageAmount > 10).length,
         islandsWithPostedShortages: enhancedIslands.filter(island => island.shortagePosted).length,
-        totalShortageAmount: Object.values(postedShortages).reduce((sum, shortage) => sum + (shortage.amount || 0), 0)
+        totalPostedShortageAmount: Object.values(postedShortages).reduce((sum, shortage) => sum + (shortage.amount || 0), 0)
       },
       apiPayload: apiPayload,
       shiftId: shift?.id,
@@ -1986,14 +1991,13 @@ const IntegratedShiftClose = ({
       stationCode: state?.currentStation?.code,
       timestamp: new Date().toISOString(),
       reconciliationNotes: 'Shift closed via station manager',
-      autoExpenses: autoExpenses // Pass auto expenses for detailed display
+      autoExpenses: autoExpenses
     };
 
     console.log('✅ prepareSummaryData completed with expenses');
     return summaryData;
   };
 
-  // ========== HANDLE SUMMARY SUBMISSION ==========
   const handleSummarySubmit = async (reportPath) => {
     setIsSubmitting(true);
     
@@ -2001,10 +2005,8 @@ const IntegratedShiftClose = ({
       const summaryData = prepareSummaryData();
       const apiPayload = summaryData.apiPayload;
       
-      // ==================== VALIDATE PAYLOAD ====================
       const validationErrors = [];
       
-      // Check pump readings
       if (!apiPayload.pumpReadings || apiPayload.pumpReadings.length === 0) {
         validationErrors.push('No pump readings provided');
       } else {
@@ -2018,12 +2020,10 @@ const IntegratedShiftClose = ({
         });
       }
       
-      // Check tank readings
       if (!apiPayload.tankReadings || apiPayload.tankReadings.length === 0) {
         validationErrors.push('No tank readings provided');
       }
       
-      // Check island collections
       if (!apiPayload.islandCollections || apiPayload.islandCollections.length === 0) {
         validationErrors.push('No island collections provided');
       } else {
@@ -2043,7 +2043,6 @@ const IntegratedShiftClose = ({
         throw new Error('Payload validation failed');
       }
       
-      // ==================== FINAL PAYLOAD ====================
       const finalPayload = {
         ...apiPayload,
         ...(reportPath && { reportPath: reportPath })
@@ -2059,7 +2058,6 @@ const IntegratedShiftClose = ({
         islandCollectionsCount: finalPayload.islandCollections.length
       });
       
-      // Call API
       const response = await shiftService.closeShift(shift?.id, finalPayload);
       
       console.log('✅ Shift closed successfully:', response);
@@ -2071,7 +2069,6 @@ const IntegratedShiftClose = ({
         duration: 4,
       });
       
-      // Call success callback with results
       if (onSuccess) {
         onSuccess({
           ...response,
@@ -2080,10 +2077,8 @@ const IntegratedShiftClose = ({
         });
       }
       
-      // Close summary modal
       setSummaryModalVisible(false);
       
-      // Show success message
       Modal.success({
         title: 'Shift Closed Successfully',
         content: (
@@ -2101,7 +2096,6 @@ const IntegratedShiftClose = ({
     } catch (error) {
       console.error('❌ Shift closure error:', error);
       if (error.response?.data?.errors) {
-        // Show backend validation errors
         error.response.data.errors.forEach(err => {
           message.error(`${err.field}: ${err.message}`);
         });
@@ -2113,9 +2107,6 @@ const IntegratedShiftClose = ({
     }
   };
 
-  // ========== RENDER COMPONENTS ==========
-  
-  // 1. READINGS STEP COMPONENT
   const renderReadingsStep = () => {
     const pumpStats = calculatePumpStats();
     const tankStats = calculateTankStats();
@@ -2522,12 +2513,10 @@ const IntegratedShiftClose = ({
     );
   };
 
-  // 2. ISLAND SALES STEP COMPONENT (UPDATED WITH AUTO EXPENSES)
   const renderIslandSalesStep = () => {
     const islandStats = calculateIslandStats();
     const allHasSales = islandStats.every(island => island.hasSales);
     
-    // Calculate total auto expenses loaded
     const totalAutoExpenses = islandStats.reduce((sum, island) => sum + (island.autoExpenses || 0), 0);
     
     const columns = [
@@ -2738,7 +2727,6 @@ const IntegratedShiftClose = ({
           </Col>
         </Row>
 
-        {/* Auto Expenses Alert */}
         {totalAutoExpenses > 0 && (
           <Alert
             message="Auto-Loaded Expenses Detected"
@@ -2801,16 +2789,14 @@ const IntegratedShiftClose = ({
     );
   };
 
-  // 3. COLLECTIONS STEP COMPONENT
   const renderCollectionsStep = () => {
     const islandStats = calculateIslandStats();
     
-    // Check if all islands have collections
     const allCollectionsComplete = islandStats.every(island => island.collectionsModalCompleted);
     
-    // Check if all shortages are resolved
+    // Check if all shortages are resolved (only for islands with shortageAmount > 0)
     const allShortagesResolved = islandStats.every(island => 
-      island.variance <= 10 || island.shortagePosted
+      island.shortageAmount <= 10 || island.shortagePosted
     );
     
     const columns = [
@@ -2873,21 +2859,20 @@ const IntegratedShiftClose = ({
         ),
       },
       {
-        title: 'VARIANCE',
+        title: 'SHORTAGE',
         width: 120,
         render: (_, island) => {
-          if (island.variance === 0) {
-            return <Tag color="green">KES 0.00</Tag>;
-          } else if (island.variance > 0) {
+          if (island.shortageAmount === 0) {
+            return <Tag color="green">No Shortage</Tag>;
+          } else if (island.shortageAmount > 0) {
             return (
               <Tag color={island.shortagePosted ? 'orange' : 'red'}>
-                -KES {island.variance?.toFixed(2)}
+                KES {island.shortageAmount?.toFixed(2)}
                 {island.shortagePosted && ' ✓'}
               </Tag>
             );
-          } else {
-            return <Tag color="gold">+KES {Math.abs(island.variance)?.toFixed(2)}</Tag>;
           }
+          return null;
         },
       },
       {
@@ -2898,19 +2883,19 @@ const IntegratedShiftClose = ({
             return <Tag color="red">Pending</Tag>;
           }
           
-          if (island.variance === 0) {
-            return <Tag color="green">Balanced</Tag>;
+          if (island.shortageAmount === 0) {
+            return <Tag color="green">Complete ✓</Tag>;
           }
           
-          if (island.variance > 0 && island.shortagePosted) {
+          if (island.shortageAmount > 0 && island.shortagePosted) {
             return <Tag color="orange">Shortage Posted</Tag>;
           }
           
-          if (island.variance > 0) {
+          if (island.shortageAmount > 0) {
             return <Tag color="red">Shortage Unresolved</Tag>;
           }
           
-          return <Tag color="gold">Overage</Tag>;
+          return <Tag color="gold">Complete</Tag>;
         },
       },
       {
@@ -2931,14 +2916,13 @@ const IntegratedShiftClose = ({
       }
     ];
 
-    // Calculate summary statistics
     const totalIslands = islandStats.length;
     const islandsWithCollections = islandStats.filter(island => island.collectionsModalCompleted).length;
-    const islandsWithShortages = islandStats.filter(island => island.variance > 10).length;
+    const islandsWithShortages = islandStats.filter(island => island.shortageAmount > 10).length;
     const islandsWithPostedShortages = islandStats.filter(island => island.shortagePosted).length;
     const totalShortageAmount = islandStats
       .filter(island => island.shortagePosted)
-      .reduce((sum, island) => sum + island.variance, 0);
+      .reduce((sum, island) => sum + island.shortageAmount, 0);
 
     return (
       <div style={{ padding: '16px' }}>
@@ -2952,7 +2936,6 @@ const IntegratedShiftClose = ({
           </Space>
         </Title>
         
-        {/* Summary Statistics */}
         <Row gutter={[8, 8]} style={{ marginBottom: 20 }}>
           <Col span={4}>
             <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
@@ -3016,7 +2999,6 @@ const IntegratedShiftClose = ({
           </Col>
         </Row>
         
-        {/* Summary Alert */}
         {!allShortagesResolved && (
           <Alert
             message="Action Required"
@@ -3057,7 +3039,7 @@ const IntegratedShiftClose = ({
         <CollectionsModal
           visible={collectionsModalVisible}
           onCancel={() => setCollectionsModalVisible(false)}
-          onSave={(collectionsData, variance) => handleIslandCollectionsSave(currentIslandIndex, collectionsData, variance)}
+          onSave={(collectionsData, shortageAmount) => handleIslandCollectionsSave(currentIslandIndex, collectionsData, shortageAmount)}
           islandIndex={currentIslandIndex}
           currentCollections={collections[currentIslandIndex] || []}
         />
@@ -3065,23 +3047,22 @@ const IntegratedShiftClose = ({
     );
   };
 
-  // 4. SUMMARY STEP COMPONENT
   const renderSummaryStep = () => {
     const islandStats = calculateIslandStats();
     
-    // Calculate totals
     const totalExpectedSales = islandStats.reduce((sum, island) => sum + (island.totalPumpSales || 0), 0);
     const totalActualSales = islandStats.reduce((sum, island) => sum + (island.totalActualSales || 0), 0);
     const totalCollections = islandStats.reduce((sum, island) => sum + (island.totalCollection || 0), 0);
     const totalManualExpenses = islandStats.reduce((sum, island) => sum + (island.manualExpenses || 0), 0);
     const totalAutoExpenses = islandStats.reduce((sum, island) => sum + (island.autoExpenses || 0), 0);
     const totalExpenses = totalManualExpenses + totalAutoExpenses;
-    const totalVariance = islandStats.reduce((sum, island) => sum + (island.variance || 0), 0);
     
-    // Shortage statistics
-    const islandsWithShortages = islandStats.filter(island => island.variance > 10);
+    // Only count shortages (when expected > collected)
+    const totalShortageAmount = islandStats.reduce((sum, island) => sum + (island.shortageAmount || 0), 0);
+    
+    const islandsWithShortages = islandStats.filter(island => island.shortageAmount > 10);
     const islandsWithPostedShortages = islandStats.filter(island => island.shortagePosted);
-    const totalShortageAmount = islandsWithPostedShortages.reduce((sum, island) => sum + island.variance, 0);
+    const totalPostedShortageAmount = islandsWithPostedShortages.reduce((sum, island) => sum + island.shortageAmount, 0);
 
     const handleOpenSummaryModal = () => {
       const data = prepareSummaryData();
@@ -3093,7 +3074,6 @@ const IntegratedShiftClose = ({
       <div style={{ padding: '16px' }}>
         <Title level={4}>📋 Review & Submit</Title>
         
-        {/* EXPENSE SUMMARY CARD */}
         {(totalAutoExpenses > 0 || totalManualExpenses > 0) && (
           <Card 
             title={
@@ -3146,7 +3126,6 @@ const IntegratedShiftClose = ({
           </Card>
         )}
         
-        {/* SHORTAGE SUMMARY CARD */}
         {islandsWithPostedShortages.length > 0 && (
           <Card 
             title={
@@ -3161,7 +3140,7 @@ const IntegratedShiftClose = ({
               <Col span={8}>
                 <Statistic
                   title="Total Shortage Posted"
-                  value={totalShortageAmount}
+                  value={totalPostedShortageAmount}
                   precision={2}
                   prefix="KES"
                   valueStyle={{ color: '#fa8c16', fontSize: '18px' }}
@@ -3188,7 +3167,6 @@ const IntegratedShiftClose = ({
               </Col>
             </Row>
             
-            {/* List of posted shortages */}
             {islandsWithPostedShortages.length > 0 && (
               <div style={{ marginTop: 16 }}>
                 <Text strong style={{ display: 'block', marginBottom: 8 }}>
@@ -3202,7 +3180,7 @@ const IntegratedShiftClose = ({
                         <Text strong>{island.islandName}</Text>
                         <Space>
                           <Text>
-                            Shortage: <Tag color="red">KES {island.variance.toFixed(2)}</Tag>
+                            Shortage: <Tag color="red">KES {island.shortageAmount.toFixed(2)}</Tag>
                           </Text>
                           {island.attendants && island.attendants.length > 0 && (
                             <Text>
@@ -3225,7 +3203,6 @@ const IntegratedShiftClose = ({
           </Card>
         )}
         
-        {/* SHIFT SUMMARY */}
         <Card style={{ marginBottom: 16 }}>
           <Descriptions title="Shift Summary" column={2}>
             <Descriptions.Item label="Total Expected Sales">
@@ -3247,13 +3224,13 @@ const IntegratedShiftClose = ({
                 {totalAutoExpenses > 0 && ` (KES ${totalAutoExpenses.toFixed(2)} auto)`}
               </Text>
             </Descriptions.Item>
-            <Descriptions.Item label="Net Variance">
+            <Descriptions.Item label="Total Shortage">
               <Tag 
-                color={totalVariance === 0 ? 'green' : totalVariance > 0 ? 'red' : 'gold'} 
+                color={totalShortageAmount === 0 ? 'green' : 'red'} 
                 style={{ fontSize: '14px', padding: '4px 8px' }}
               >
-                {totalVariance > 0 ? '-' : totalVariance < 0 ? '+' : ''}KES {Math.abs(totalVariance).toFixed(2)}
-                {totalVariance > 0 && islandsWithPostedShortages.length > 0 && ' (Posted)'}
+                KES {totalShortageAmount.toFixed(2)}
+                {totalShortageAmount > 0 && islandsWithPostedShortages.length > 0 && ' (Posted)'}
               </Tag>
             </Descriptions.Item>
             <Descriptions.Item label="Total Pumps">
@@ -3271,7 +3248,6 @@ const IntegratedShiftClose = ({
           </Descriptions>
         </Card>
         
-        {/* ISLAND DETAILS */}
         <Card title="Island Details" style={{ marginBottom: 16 }}>
           <Table
             dataSource={islandStats}
@@ -3324,13 +3300,13 @@ const IntegratedShiftClose = ({
                 align: 'right'
               },
               { 
-                title: 'Variance', 
+                title: 'Shortage', 
                 render: (_, r) => (
                   <Tag 
-                    color={r.variance === 0 ? 'green' : r.variance > 0 ? r.shortagePosted ? 'orange' : 'red' : 'gold'}
+                    color={r.shortageAmount === 0 ? 'green' : r.shortagePosted ? 'orange' : 'red'}
                     style={{ textAlign: 'center', width: '100%' }}
                   >
-                    {r.variance > 0 ? '-' : r.variance < 0 ? '+' : ''}KES {Math.abs(r.variance)?.toFixed(2)}
+                    {r.shortageAmount === 0 ? 'None' : `KES ${r.shortageAmount?.toFixed(2)}`}
                     {r.shortagePosted && ' ✓'}
                   </Tag>
                 ),
@@ -3384,7 +3360,6 @@ const IntegratedShiftClose = ({
     );
   };
 
-  // ========== MAIN RENDER ==========
   return (
     <>
       <Card
@@ -3455,7 +3430,6 @@ const IntegratedShiftClose = ({
         </div>
       </Card>
 
-      {/* Enhanced Summary Modal */}
       {summaryModalVisible && summaryData && (
         <EnhancedSummaryModal
           visible={summaryModalVisible}
