@@ -16,7 +16,9 @@ import {
   Badge,
   Statistic,
   Popover,
-  Alert
+  Alert,
+  Empty,
+  Divider
 } from 'antd';
 import {
   FilterOutlined,
@@ -29,7 +31,8 @@ import {
   LineChartOutlined,
   InfoCircleOutlined,
   SortDescendingOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  InboxOutlined
 } from '@ant-design/icons';
 import { formatCurrency, formatDate } from '../../../../utils/formatters';
 
@@ -103,6 +106,8 @@ const TransactionList = ({
 
   // Get unique shift numbers from transactions
   const getUniqueShiftNumbers = () => {
+    if (!transactions.length) return [];
+    
     const shifts = transactions
       .map(t => t.shift?.shiftNumber)
       .filter(Boolean)
@@ -114,6 +119,11 @@ const TransactionList = ({
     }));
   };
 
+  // Check if any filters are active
+  const hasActiveFilters = useMemo(() => {
+    return Object.keys(filters).length > 0;
+  }, [filters]);
+
   // Calculate summary statistics
   const summaryStats = useMemo(() => {
     if (!transactions.length) {
@@ -124,7 +134,9 @@ const TransactionList = ({
         averageAmount: 0,
         settledCount: 0,
         outstandingCount: 0,
-        debtorCount: new Set().size
+        debtorCount: 0,
+        maxAmount: 0,
+        minAmount: 0
       };
     }
 
@@ -160,7 +172,6 @@ const TransactionList = ({
   const enhancedTransactions = useMemo(() => 
     transactions.map((transaction, index) => ({
       ...transaction,
-      // Add sequential number instead of ID
       sequentialNumber: index + 1,
       formattedDate: formatDate(transaction.transactionDate, true),
       formattedAmount: formatCurrency(Math.abs(transaction.amount)),
@@ -495,7 +506,7 @@ const TransactionList = ({
   ];
 
   // Summary data for report header
-  const summaryData = {
+  const summaryData = useMemo(() => ({
     'Total Transactions': enhancedTransactions.length,
     'Total Amount': formatCurrency(summaryStats.totalAmount),
     'Credit Total': formatCurrency(summaryStats.creditTotal),
@@ -506,7 +517,7 @@ const TransactionList = ({
     'Average Transaction': formatCurrency(summaryStats.averageAmount),
     'Largest Transaction': formatCurrency(summaryStats.maxAmount),
     'Smallest Transaction': formatCurrency(summaryStats.minAmount)
-  };
+  }), [enhancedTransactions, summaryStats]);
 
   const handleViewDetails = (transaction) => {
     console.log('View transaction details:', transaction);
@@ -526,139 +537,206 @@ const TransactionList = ({
     console.log(`Exporting ${enhancedTransactions.length} transactions as ${format}`);
   };
 
-  return (
-    <div className="space-y-4">
-      {/* Summary Cards */}
-      {showSummaryCards && transactions.length > 0 && (
-        <Row gutter={[12, 12]}>
-          <Col xs={24} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Total Amount"
-                value={summaryStats.totalAmount}
-                precision={2}
-                prefix="KES"
-                valueStyle={{ color: '#3f8600' }}
-                suffix={
-                  <Tooltip title="Sum of all transaction amounts">
-                    <InfoCircleOutlined style={{ color: '#999', marginLeft: 4 }} />
-                  </Tooltip>
-                }
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Credit Total"
-                value={summaryStats.creditTotal}
-                precision={2}
-                prefix="KES"
-                valueStyle={{ color: '#52c41a' }}
-                suffix={<ArrowDownOutlined style={{ color: '#52c41a', marginRight: 4 }} />}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Debit Total"
-                value={summaryStats.debitTotal}
-                precision={2}
-                prefix="KES"
-                valueStyle={{ color: '#cf1322' }}
-                suffix={<ArrowUpOutlined style={{ color: '#cf1322', marginRight: 4 }} />}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Transactions"
-                value={transactions.length}
-                suffix={`/ ${summaryStats.debtorCount} debtors`}
-                valueStyle={{ color: '#1890ff' }}
-              />
-            </Card>
-          </Col>
-        </Row>
-      )}
+  // Render empty state - SIMPLIFIED like ShiftManagementTest
+  const renderEmptyState = () => (
+    <div style={{ 
+      padding: '48px 0', 
+      textAlign: 'center',
+      minHeight: '400px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }}>
+      <Empty
+        image={<InboxOutlined style={{ fontSize: 64, color: '#bfbfbf' }} />}
+        imageStyle={{ height: 80 }}
+        description={
+          <Space direction="vertical" size="small">
+            <Text strong style={{ fontSize: 16 }}>No Transactions Found</Text>
+            <Text type="secondary" style={{ fontSize: 14, maxWidth: 400 }}>
+              {hasActiveFilters 
+                ? 'No transactions match your current filters. Try adjusting your search criteria.'
+                : 'There are no transactions to display at this time.'}
+            </Text>
+          </Space>
+        }
+      >
+        {hasActiveFilters && (
+          <Button 
+            type="primary" 
+            onClick={clearFilters}
+            icon={<FilterOutlined />}
+          >
+            Clear Filters
+          </Button>
+        )}
+      </Empty>
+    </div>
+  );
 
-      {/* Filters */}
-      {showFilters && (
-        <Card size="small" title="Filters & Export">
-          <Row gutter={[12, 12]} align="middle">
+  return (
+    <div style={{ padding: 24 }}>
+      {/* Header */}
+      <div style={{ textAlign: 'center', marginBottom: 24 }}>
+        <Title level={4}>Transaction History</Title>
+        <Text type="secondary">
+          View and manage all debt transactions for {currentStation?.name || 'company'}
+        </Text>
+      </div>
+
+      {/* Main Content */}
+      <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+        {/* Summary Cards - Only show if there are transactions */}
+        {showSummaryCards && transactions.length > 0 && (
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col xs={24} sm={6}>
-              <Search
-                placeholder="Search debtor, description..."
-                onSearch={handleSearch}
-                onChange={(e) => !e.target.value && handleSearch('')}
-                allowClear
-                size="small"
-              />
-            </Col>
-            <Col xs={24} sm={4}>
-              <Select
-                placeholder="Type"
-                value={filters.type}
-                onChange={handleTypeChange}
-                style={{ width: '100%' }}
-                allowClear
-                size="small"
-              >
-                <Option value="CREDIT">Credit</Option>
-                <Option value="DEBIT">Debit</Option>
-              </Select>
-            </Col>
-            <Col xs={24} sm={4}>
-              <Select
-                placeholder="Status"
-                value={filters.status}
-                onChange={handleStatusChange}
-                style={{ width: '100%' }}
-                allowClear
-                size="small"
-              >
-                <Option value="OUTSTANDING">Outstanding</Option>
-                <Option value="SETTLED">Settled</Option>
-                <Option value="OVERDUE">Overdue</Option>
-                <Option value="PARTIALLY_PAID">Partially Paid</Option>
-              </Select>
-            </Col>
-            <Col xs={24} sm={4}>
-              <Select
-                placeholder="Shift"
-                value={filters.shiftNumber}
-                onChange={handleShiftChange}
-                style={{ width: '100%' }}
-                allowClear
-                showSearch
-                size="small"
-              >
-                {getUniqueShiftNumbers().map(shift => (
-                  <Option key={shift.value} value={shift.value}>
-                    Shift {shift.text}
-                  </Option>
-                ))}
-              </Select>
-            </Col>
-            <Col xs={24} sm={6}>
-              <Space>
-                <Button
-                  icon={<ReloadOutlined />}
-                  onClick={onRefresh}
-                  loading={loading}
-                  size="small"
+              <Card size="small">
+                <Statistic
+                  title="Total Amount"
+                  value={summaryStats.totalAmount}
+                  precision={2}
+                  prefix="KES"
+                  valueStyle={{ color: '#3f8600' }}
+                  suffix={
+                    <Tooltip title="Sum of all transaction amounts">
+                      <InfoCircleOutlined style={{ color: '#999', marginLeft: 4 }} />
+                    </Tooltip>
+                  }
                 />
-                <Button
-                  icon={<FilterOutlined />}
-                  onClick={clearFilters}
+              </Card>
+            </Col>
+            <Col xs={24} sm={6}>
+              <Card size="small">
+                <Statistic
+                  title="Credit Total"
+                  value={summaryStats.creditTotal}
+                  precision={2}
+                  prefix="KES"
+                  valueStyle={{ color: '#52c41a' }}
+                  suffix={<ArrowDownOutlined style={{ color: '#52c41a', marginRight: 4 }} />}
+                />
+              </Card>
+            </Col>
+            <Col xs={24} sm={6}>
+              <Card size="small">
+                <Statistic
+                  title="Debit Total"
+                  value={summaryStats.debitTotal}
+                  precision={2}
+                  prefix="KES"
+                  valueStyle={{ color: '#cf1322' }}
+                  suffix={<ArrowUpOutlined style={{ color: '#cf1322', marginRight: 4 }} />}
+                />
+              </Card>
+            </Col>
+            <Col xs={24} sm={6}>
+              <Card size="small">
+                <Statistic
+                  title="Transactions"
+                  value={transactions.length}
+                  suffix={`/ ${summaryStats.debtorCount} debtors`}
+                  valueStyle={{ color: '#1890ff' }}
+                />
+              </Card>
+            </Col>
+          </Row>
+        )}
+
+        {/* Filters Card */}
+        {showFilters && (
+          <Card 
+            size="small" 
+            style={{ marginBottom: 16 }}
+            title={
+              <Space>
+                <FilterOutlined />
+                <Text>Filters & Export</Text>
+              </Space>
+            }
+            extra={
+              <Space>
+                <Tooltip title="Refresh data">
+                  <Button
+                    icon={<ReloadOutlined />}
+                    onClick={onRefresh}
+                    loading={loading}
+                    size="small"
+                  />
+                </Tooltip>
+                <Tooltip title="Clear all filters">
+                  <Button
+                    icon={<FilterOutlined />}
+                    onClick={clearFilters}
+                    size="small"
+                    disabled={!hasActiveFilters}
+                  >
+                    Clear
+                  </Button>
+                </Tooltip>
+              </Space>
+            }
+          >
+            <Row gutter={[12, 12]} align="middle">
+              <Col xs={24} sm={6}>
+                <Search
+                  placeholder="Search debtor, description..."
+                  onSearch={handleSearch}
+                  onChange={(e) => !e.target.value && handleSearch('')}
+                  allowClear
                   size="small"
+                  disabled={loading}
+                />
+              </Col>
+              <Col xs={24} sm={4}>
+                <Select
+                  placeholder="Type"
+                  value={filters.type}
+                  onChange={handleTypeChange}
+                  style={{ width: '100%' }}
+                  allowClear
+                  size="small"
+                  disabled={loading}
                 >
-                  Clear
-                </Button>
-                
-                {/* Main Export Button */}
+                  <Option value="CREDIT">Credit</Option>
+                  <Option value="DEBIT">Debit</Option>
+                </Select>
+              </Col>
+              <Col xs={24} sm={4}>
+                <Select
+                  placeholder="Status"
+                  value={filters.status}
+                  onChange={handleStatusChange}
+                  style={{ width: '100%' }}
+                  allowClear
+                  size="small"
+                  disabled={loading}
+                >
+                  <Option value="OUTSTANDING">Outstanding</Option>
+                  <Option value="SETTLED">Settled</Option>
+                  <Option value="OVERDUE">Overdue</Option>
+                  <Option value="PARTIALLY_PAID">Partially Paid</Option>
+                </Select>
+              </Col>
+              <Col xs={24} sm={4}>
+                <Select
+                  placeholder="Shift"
+                  value={filters.shiftNumber}
+                  onChange={handleShiftChange}
+                  style={{ width: '100%' }}
+                  allowClear
+                  showSearch
+                  size="small"
+                  disabled={loading || transactions.length === 0}
+                >
+                  {getUniqueShiftNumbers().map(shift => (
+                    <Option key={shift.value} value={shift.value}>
+                      Shift {shift.text}
+                    </Option>
+                  ))}
+                </Select>
+              </Col>
+              <Col xs={24} sm={6}>
+                {/* Export Button */}
                 <AdvancedReportGenerator
                   dataSource={enhancedTransactions}
                   columns={exportColumns}
@@ -671,90 +749,144 @@ const TransactionList = ({
                   showFooter={true}
                   enableCustomization={true}
                   onReportGenerate={handleExport}
+                  disabled={transactions.length === 0}
+                  showGrandTotals={false}
+                  horizontalScroll={true}
+                  maxVisibleColumns={10}
+                  compactMode={true}
+                  hideAdvancedButtons={false}
                 />
-              </Space>
-            </Col>
-          </Row>
-        </Card>
-      )}
+              </Col>
+            </Row>
 
-      {/* Data Info Alert */}
-      {transactions.length === 0 && !loading && (
-        <Alert
-          message="No Transactions Found"
-          description="There are no transactions matching your current filters."
-          type="info"
-          showIcon
-          action={
-            <Button size="small" onClick={clearFilters}>
-              Clear Filters
-            </Button>
-          }
-        />
-      )}
+            {/* Active Filters Display */}
+            {hasActiveFilters && (
+              <div style={{ marginTop: 12 }}>
+                <Space size={[0, 8]} wrap>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Active filters:</Text>
+                  {Object.entries(filters).map(([key, value]) => {
+                    if (!value) return null;
+                    let displayValue = value;
+                    if (key === 'type') displayValue = value === 'CREDIT' ? 'Credit' : 'Debit';
+                    if (key === 'status') displayValue = value.replace(/_/g, ' ');
+                    
+                    return (
+                      <Badge
+                        key={key}
+                        count={`${key}: ${displayValue}`}
+                        style={{ 
+                          backgroundColor: '#e6f7ff',
+                          color: '#1890ff',
+                          border: '1px solid #91d5ff',
+                          fontSize: 11,
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => onFiltersChange({ ...filters, [key]: undefined })}
+                      />
+                    );
+                  })}
+                </Space>
+              </div>
+            )}
+          </Card>
+        )}
 
-      {/* Transactions Table */}
-      <Card size="small">
-        <Table
-          columns={columns}
-          dataSource={sortedTransactions}
-          rowKey="sequentialNumber"
-          loading={loading}
-          onChange={handleTableChange}
-          pagination={{
-            ...pagination,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) => 
-              `${range[0]}-${range[1]} of ${total} transactions`,
-            defaultPageSize: 10,
-            pageSizeOptions: ['10', '20', '50', '100']
-          }}
-          size="small"
-          scroll={{ x: 1200 }}
-          summary={() => (
-            <Table.Summary fixed>
-              <Table.Summary.Row>
-                <Table.Summary.Cell index={0} colSpan={5}>
-                  <Space>
-                    <SortDescendingOutlined style={{ color: '#1890ff' }} />
-                    <Text strong>Sorted by: {sortOrder.field}</Text>
-                    <Text type="secondary">({sortOrder.order === 'descend' ? 'Descending' : 'Ascending'})</Text>
-                  </Space>
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={1}>
-                  <Text strong>
-                    Total: {formatCurrency(summaryStats.totalAmount)}
-                  </Text>
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={2} colSpan={4}>
-                  <Text type="secondary">
-                    Showing {sortedTransactions.length} transactions ({summaryStats.creditTotal > 0 ? `${formatCurrency(summaryStats.creditTotal)} in credits` : ''} {summaryStats.debitTotal > 0 ? `${formatCurrency(summaryStats.debitTotal)} in debits` : ''})
-                  </Text>
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={3}>
-                  {/* Secondary Export Button */}
-                  <AdvancedReportGenerator
-                    dataSource={enhancedTransactions}
-                    columns={exportColumns}
-                    title={`Detailed Debt Transactions - ${currentStation?.name || 'Company'}`}
-                    fileName={`detailed_transactions_${new Date().toISOString().split('T')[0]}`}
-                    summaryData={summaryData}
-                    reportType="finance"
-                    showFooter={true}
-                    customStyles={{
-                      fontSize: 8,
-                      rowHeight: 5,
-                      alternateRowColors: true
-                    }}
-                    enableCustomization={false}
-                  />
-                </Table.Summary.Cell>
-              </Table.Summary.Row>
-            </Table.Summary>
+        {/* Main Content - Table or Empty State */}
+        <Card size="small">
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '48px 0', minHeight: '400px' }}>
+              <div style={{ marginBottom: 16 }}>
+                <ReloadOutlined spin style={{ fontSize: 32, color: '#1890ff' }} />
+              </div>
+              <Text type="secondary">Loading transactions...</Text>
+            </div>
+          ) : transactions.length === 0 ? (
+            renderEmptyState()
+          ) : (
+            <Table
+              columns={columns}
+              dataSource={sortedTransactions}
+              rowKey="sequentialNumber"
+              loading={loading}
+              onChange={handleTableChange}
+              pagination={{
+                ...pagination,
+                showSizeChanger: true,
+                showQuickJumper: true,
+                showTotal: (total, range) => 
+                  `${range[0]}-${range[1]} of ${total} transactions`,
+                defaultPageSize: 10,
+                pageSizeOptions: ['10', '20', '50', '100']
+              }}
+              size="small"
+              scroll={{ x: 1200 }}
+              summary={() => (
+                <Table.Summary fixed>
+                  <Table.Summary.Row>
+                    <Table.Summary.Cell index={0} colSpan={5}>
+                      <Space>
+                        <SortDescendingOutlined style={{ color: '#1890ff' }} />
+                        <Text strong>Sorted by: {sortOrder.field}</Text>
+                        <Text type="secondary">({sortOrder.order === 'descend' ? 'Descending' : 'Ascending'})</Text>
+                      </Space>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={1}>
+                      <Text strong>
+                        Total: {formatCurrency(summaryStats.totalAmount)}
+                      </Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={2} colSpan={3}>
+                      <Text type="secondary">
+                        Showing {sortedTransactions.length} transactions 
+                        {summaryStats.creditTotal > 0 && ` (${formatCurrency(summaryStats.creditTotal)} in credits)`}
+                        {summaryStats.debitTotal > 0 && ` (${formatCurrency(summaryStats.debitTotal)} in debits)`}
+                      </Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={3}>
+                      {/* Secondary Export Button */}
+                      <AdvancedReportGenerator
+                        dataSource={enhancedTransactions}
+                        columns={exportColumns}
+                        title={`Detailed Debt Transactions - ${currentStation?.name || 'Company'}`}
+                        fileName={`detailed_transactions_${new Date().toISOString().split('T')[0]}`}
+                        summaryData={summaryData}
+                        reportType="finance"
+                        showFooter={true}
+                        customStyles={{
+                          fontSize: 8,
+                          rowHeight: 5,
+                          alternateRowColors: true
+                        }}
+                        enableCustomization={false}
+                      />
+                    </Table.Summary.Cell>
+                  </Table.Summary.Row>
+                </Table.Summary>
+              )}
+            />
           )}
-        />
-      </Card>
+        </Card>
+
+        {/* Footer message when no data */}
+        {transactions.length === 0 && !loading && hasActiveFilters && (
+          <div style={{ textAlign: 'center', marginTop: 16 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              <InfoCircleOutlined style={{ marginRight: 4 }} />
+              Try adjusting your filters or clearing them to see more transactions.
+            </Text>
+          </div>
+        )}
+      </div>
+
+      {/* Add CSS for better empty state */}
+      <style>{`
+        .ant-empty {
+          margin: 0;
+        }
+        .ant-card-body {
+          padding: ${transactions.length === 0 ? '0' : '24px'};
+        }
+      `}</style>
     </div>
   );
 };

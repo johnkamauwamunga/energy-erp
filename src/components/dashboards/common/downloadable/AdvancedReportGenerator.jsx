@@ -1686,13 +1686,13 @@ const AdvancedReportGenerator = ({
         )}
 
         {/* No data state */}
-        {filteredData.length === 0 && (
+        {/* {filteredData.length === 0 && (
           <Result
             icon={<FileTextOutlined />}
             title="No Data Available"
             subTitle="There is no data to generate a report"
           />
-        )}
+        )} */}
       </Space>
 
       {/* Modals */}

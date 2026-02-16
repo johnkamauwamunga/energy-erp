@@ -16,7 +16,9 @@ import {
   Badge,
   Statistic,
   Alert,
-  Popover
+  Popover,
+  Empty,
+  Divider
 } from 'antd';
 import {
   FilterOutlined,
@@ -31,7 +33,9 @@ import {
   CloseCircleOutlined,
   InfoCircleOutlined,
   SortDescendingOutlined,
-  LineChartOutlined
+  LineChartOutlined,
+  InboxOutlined,
+  SwapOutlined
 } from '@ant-design/icons';
 import { formatCurrency, formatDate } from '../../../../utils/formatters';
 
@@ -92,6 +96,11 @@ const TransferList = ({
     });
   };
 
+  // Check if any filters are active
+  const hasActiveFilters = useMemo(() => {
+    return Object.keys(filters).length > 0;
+  }, [filters]);
+
   // Get status color and icon
   const getStatusConfig = (status) => {
     const configs = {
@@ -147,7 +156,7 @@ const TransferList = ({
       INTER_STATION: <ArrowRightOutlined />,
       INTER_COMPANY: <ArrowRightOutlined />
     };
-    return icons[category] || <ArrowRightOutlined />;
+    return icons[category] || <SwapOutlined />;
   };
 
   // Calculate summary statistics
@@ -161,7 +170,10 @@ const TransferList = ({
         averageAmount: 0,
         completedCount: 0,
         pendingCount: 0,
-        failedCount: 0
+        failedCount: 0,
+        maxAmount: 0,
+        minAmount: 0,
+        uniqueCategories: 0
       };
     }
 
@@ -198,7 +210,6 @@ const TransferList = ({
   const enhancedTransfers = useMemo(() => 
     transfers.map((transfer, index) => ({
       ...transfer,
-      // Add sequential number instead of ID
       sequentialNumber: index + 1,
       formattedDate: formatDate(transfer.transferDate, true),
       formattedAmount: transfer.amount,
@@ -506,7 +517,7 @@ const TransferList = ({
   // Columns for export (optimized for reports) - WITH SEQUENTIAL NUMBERING
   const exportColumns = [
     {
-      title: '#',  // Sequence number
+      title: '#',
       key: 'sequence',
       render: (_, record, index) => index + 1,
       type: 'number',
@@ -619,7 +630,7 @@ const TransferList = ({
   ];
 
   // Summary data for report header
-  const summaryData = {
+  const summaryData = useMemo(() => ({
     'Total Transfers': enhancedTransfers.length,
     'Total Amount': formatCurrency(summaryStats.totalAmount),
     'Completed Amount': formatCurrency(summaryStats.completedAmount),
@@ -629,8 +640,10 @@ const TransferList = ({
     'Pending Transfers': summaryStats.pendingCount,
     'Failed Transfers': summaryStats.failedCount,
     'Average Transfer': formatCurrency(summaryStats.averageAmount),
-    'Unique Categories': summaryStats.uniqueCategories
-  };
+    'Unique Categories': summaryStats.uniqueCategories,
+    'Largest Transfer': formatCurrency(summaryStats.maxAmount),
+    'Smallest Transfer': formatCurrency(summaryStats.minAmount)
+  }), [enhancedTransfers, summaryStats]);
 
   const handleViewDetails = (transfer) => {
     console.log('View transfer details:', transfer);
@@ -650,146 +663,162 @@ const TransferList = ({
     console.log(`Exporting ${enhancedTransfers.length} transfers as ${format}`);
   };
 
-  return (
-    <div className="space-y-4">
-      {/* Summary Cards */}
-      {showSummaryCards && transfers.length > 0 && (
-        <Row gutter={[12, 12]}>
-          <Col xs={24} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Total Transfers"
-                value={summaryStats.totalAmount}
-                precision={2}
-                prefix="KES"
-                valueStyle={{ color: '#1890ff' }}
-                suffix={
-                  <Tooltip title="Sum of all transfer amounts">
-                    <InfoCircleOutlined style={{ color: '#999', marginLeft: 4 }} />
-                  </Tooltip>
-                }
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Completed"
-                value={summaryStats.completedAmount}
-                precision={2}
-                prefix="KES"
-                valueStyle={{ color: '#52c41a' }}
-                suffix={`/ ${summaryStats.completedCount} transfers`}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Pending"
-                value={summaryStats.pendingAmount}
-                precision={2}
-                prefix="KES"
-                valueStyle={{ color: '#faad14' }}
-                suffix={`/ ${summaryStats.pendingCount} transfers`}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={6}>
-            <Card size="small">
-              <Statistic
-                title="Average Transfer"
-                value={summaryStats.averageAmount}
-                precision={2}
-                prefix="KES"
-                valueStyle={{ color: '#722ed1' }}
-                suffix={`/ ${transfers.length} transfers`}
-              />
-            </Card>
-          </Col>
-        </Row>
-      )}
+  // Render empty state - SIMPLIFIED like ShiftManagementTest
+  const renderEmptyState = () => (
+    <div style={{ 
+      padding: '48px 0', 
+      textAlign: 'center',
+      minHeight: '400px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }}>
+      <Empty
+        image={<SwapOutlined style={{ fontSize: 64, color: '#bfbfbf' }} />}
+        imageStyle={{ height: 80 }}
+        description={
+          <Space direction="vertical" size="small">
+            <Text strong style={{ fontSize: 16 }}>No Transfers Found</Text>
+            <Text type="secondary" style={{ fontSize: 14, maxWidth: 400 }}>
+              {hasActiveFilters 
+                ? 'No transfers match your current filters. Try adjusting your search criteria.'
+                : 'There are no transfers to display at this time.'}
+            </Text>
+          </Space>
+        }
+      >
+        {hasActiveFilters && (
+          <Button 
+            type="primary" 
+            onClick={clearFilters}
+            icon={<FilterOutlined />}
+          >
+            Clear Filters
+          </Button>
+        )}
+      </Empty>
+    </div>
+  );
 
-      {/* Filters */}
-      {showFilters && (
-        <Card size="small" title="Filters & Export">
-          <Row gutter={[12, 12]} align="middle">
+  return (
+    <div style={{ padding: 24 }}>
+      {/* Header */}
+      <div style={{ textAlign: 'center', marginBottom: 24 }}>
+        <Title level={4}>Transfer History</Title>
+        <Text type="secondary">
+          View and manage all fund transfers for {currentStation?.name || 'company'}
+        </Text>
+      </div>
+
+      {/* Main Content */}
+      <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+        {/* Summary Cards - Only show if there are transfers */}
+        {showSummaryCards && transfers.length > 0 && (
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col xs={24} sm={6}>
-              <Search
-                placeholder="Search transfer number, reference..."
-                onSearch={handleSearch}
-                onChange={(e) => !e.target.value && handleSearch('')}
-                allowClear
-                size="small"
-              />
-            </Col>
-            <Col xs={24} sm={4}>
-              <Select
-                placeholder="Category"
-                value={filters.transferCategory}
-                onChange={handleCategoryChange}
-                style={{ width: '100%' }}
-                allowClear
-                size="small"
-              >
-                <Option value="CASH_TO_BANK">Cash to Bank</Option>
-                <Option value="BANK_TO_CASH">Bank to Cash</Option>
-                <Option value="DEBT_SETTLEMENT">Debt Settlement</Option>
-                <Option value="INTER_ACCOUNT">Inter Account</Option>
-                <Option value="INTER_STATION">Inter Station</Option>
-                <Option value="INTER_COMPANY">Inter Company</Option>
-              </Select>
-            </Col>
-            <Col xs={24} sm={4}>
-              <Select
-                placeholder="Status"
-                value={filters.status}
-                onChange={handleStatusChange}
-                style={{ width: '100%' }}
-                allowClear
-                size="small"
-              >
-                <Option value="COMPLETED">Completed</Option>
-                <Option value="PENDING">Pending</Option>
-                <Option value="FAILED">Failed</Option>
-                <Option value="PROCESSING">Processing</Option>
-                <Option value="CANCELLED">Cancelled</Option>
-              </Select>
-            </Col>
-            <Col xs={24} sm={4}>
-              <Select
-                placeholder="Transaction Mode"
-                value={filters.transactionMode}
-                onChange={handleTransactionModeChange}
-                style={{ width: '100%' }}
-                allowClear
-                size="small"
-              >
-                <Option value="CASH">Cash</Option>
-                <Option value="BANK_TRANSFER">Bank Transfer</Option>
-                <Option value="MOBILE_MONEY">Mobile Money</Option>
-                <Option value="CHEQUE">Cheque</Option>
-                <Option value="POS">POS</Option>
-                <Option value="OTHER">Other</Option>
-              </Select>
-            </Col>
-            <Col xs={24} sm={6}>
-              <Space>
-                <Button
-                  icon={<ReloadOutlined />}
-                  onClick={onRefresh}
-                  loading={loading}
-                  size="small"
+              <Card size="small">
+                <Statistic
+                  title="Total Amount"
+                  value={summaryStats.totalAmount}
+                  precision={2}
+                  prefix="KES"
+                  valueStyle={{ color: '#1890ff' }}
+                  suffix={
+                    <Tooltip title="Sum of all transfer amounts">
+                      <InfoCircleOutlined style={{ color: '#999', marginLeft: 4 }} />
+                    </Tooltip>
+                  }
                 />
-                <Button
-                  icon={<FilterOutlined />}
-                  onClick={clearFilters}
-                  size="small"
-                >
-                  Clear
-                </Button>
+              </Card>
+            </Col>
+            <Col xs={24} sm={6}>
+              <Card size="small">
+                <Statistic
+                  title="Completed"
+                  value={summaryStats.completedAmount}
+                  precision={2}
+                  prefix="KES"
+                  valueStyle={{ color: '#52c41a' }}
+                  suffix={
+                    <Tooltip title={`${summaryStats.completedCount} completed transfers`}>
+                      <span style={{ fontSize: '12px', color: '#999' }}>
+                        / {summaryStats.completedCount}
+                      </span>
+                    </Tooltip>
+                  }
+                />
+              </Card>
+            </Col>
+            <Col xs={24} sm={6}>
+              <Card size="small">
+                <Statistic
+                  title="Pending"
+                  value={summaryStats.pendingAmount}
+                  precision={2}
+                  prefix="KES"
+                  valueStyle={{ color: '#faad14' }}
+                  suffix={
+                    <Tooltip title={`${summaryStats.pendingCount} pending transfers`}>
+                      <span style={{ fontSize: '12px', color: '#999' }}>
+                        / {summaryStats.pendingCount}
+                      </span>
+                    </Tooltip>
+                  }
+                />
+              </Card>
+            </Col>
+            <Col xs={24} sm={6}>
+              <Card size="small">
+                <Statistic
+                  title="Average Transfer"
+                  value={summaryStats.averageAmount}
+                  precision={2}
+                  prefix="KES"
+                  valueStyle={{ color: '#722ed1' }}
+                  suffix={
+                    <Tooltip title={`Based on ${transfers.length} transfers`}>
+                      <InfoCircleOutlined style={{ color: '#999', marginLeft: 4 }} />
+                    </Tooltip>
+                  }
+                />
+              </Card>
+            </Col>
+          </Row>
+        )}
+
+        {/* Filters Card */}
+        {showFilters && (
+          <Card 
+            size="small" 
+            style={{ marginBottom: 16 }}
+            title={
+              <Space>
+                <FilterOutlined />
+                <Text>Filters & Export</Text>
+              </Space>
+            }
+            extra={
+              <Space>
+                <Tooltip title="Refresh data">
+                  <Button
+                    icon={<ReloadOutlined />}
+                    onClick={onRefresh}
+                    loading={loading}
+                    size="small"
+                  />
+                </Tooltip>
+                <Tooltip title="Clear all filters">
+                  <Button
+                    icon={<FilterOutlined />}
+                    onClick={clearFilters}
+                    size="small"
+                    disabled={!hasActiveFilters}
+                  >
+                    Clear
+                  </Button>
+                </Tooltip>
                 
-                {/* Main Export Button */}
+                {/* Main Export Button - Clean like ShiftManagementTest */}
                 <AdvancedReportGenerator
                   dataSource={enhancedTransfers}
                   columns={exportColumns}
@@ -802,90 +831,208 @@ const TransferList = ({
                   showFooter={true}
                   enableCustomization={true}
                   onReportGenerate={handleExport}
+                  disabled={transfers.length === 0}
+                  // NEW: Control grand totals (not needed for transfer reports)
+                  showGrandTotals={false}
+                  // NEW: Enable horizontal scrolling for better viewing
+                  horizontalScroll={true}
+                  maxVisibleColumns={10}
+                  // NEW: Clean UI without advanced buttons
+                  compactMode={true}
+                  hideAdvancedButtons={false}
                 />
               </Space>
-            </Col>
-          </Row>
-        </Card>
-      )}
+            }
+          >
+            <Row gutter={[12, 12]} align="middle">
+              <Col xs={24} sm={6}>
+                <Search
+                  placeholder="Search transfer number, reference..."
+                  onSearch={handleSearch}
+                  onChange={(e) => !e.target.value && handleSearch('')}
+                  allowClear
+                  size="small"
+                  disabled={loading}
+                />
+              </Col>
+              <Col xs={24} sm={4}>
+                <Select
+                  placeholder="Category"
+                  value={filters.transferCategory}
+                  onChange={handleCategoryChange}
+                  style={{ width: '100%' }}
+                  allowClear
+                  size="small"
+                  disabled={loading}
+                >
+                  <Option value="CASH_TO_BANK">Cash to Bank</Option>
+                  <Option value="BANK_TO_CASH">Bank to Cash</Option>
+                  <Option value="DEBT_SETTLEMENT">Debt Settlement</Option>
+                  <Option value="INTER_ACCOUNT">Inter Account</Option>
+                  <Option value="INTER_STATION">Inter Station</Option>
+                  <Option value="INTER_COMPANY">Inter Company</Option>
+                </Select>
+              </Col>
+              <Col xs={24} sm={4}>
+                <Select
+                  placeholder="Status"
+                  value={filters.status}
+                  onChange={handleStatusChange}
+                  style={{ width: '100%' }}
+                  allowClear
+                  size="small"
+                  disabled={loading}
+                >
+                  <Option value="COMPLETED">Completed</Option>
+                  <Option value="PENDING">Pending</Option>
+                  <Option value="FAILED">Failed</Option>
+                  <Option value="PROCESSING">Processing</Option>
+                  <Option value="CANCELLED">Cancelled</Option>
+                </Select>
+              </Col>
+              <Col xs={24} sm={4}>
+                <Select
+                  placeholder="Transaction Mode"
+                  value={filters.transactionMode}
+                  onChange={handleTransactionModeChange}
+                  style={{ width: '100%' }}
+                  allowClear
+                  size="small"
+                  disabled={loading}
+                >
+                  <Option value="CASH">Cash</Option>
+                  <Option value="BANK_TRANSFER">Bank Transfer</Option>
+                  <Option value="MOBILE_MONEY">Mobile Money</Option>
+                  <Option value="CHEQUE">Cheque</Option>
+                  <Option value="POS">POS</Option>
+                  <Option value="OTHER">Other</Option>
+                </Select>
+              </Col>
+              <Col xs={24} sm={6}>
+                {/* Date Range Picker can go here if needed */}
+                <RangePicker 
+                  size="small" 
+                  style={{ width: '100%' }}
+                  onChange={handleDateChange}
+                  disabled={loading}
+                />
+              </Col>
+            </Row>
 
-      {/* Data Info Alert */}
-      {transfers.length === 0 && !loading && (
-        <Alert
-          message="No Transfers Found"
-          description="There are no transfers matching your current filters."
-          type="info"
-          showIcon
-          action={
-            <Button size="small" onClick={clearFilters}>
-              Clear Filters
-            </Button>
-          }
-        />
-      )}
+            {/* Active Filters Display */}
+            {hasActiveFilters && (
+              <div style={{ marginTop: 12 }}>
+                <Space size={[0, 8]} wrap>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Active filters:</Text>
+                  {Object.entries(filters).map(([key, value]) => {
+                    if (!value || key === 'startDate' || key === 'endDate') return null;
+                    let displayValue = value;
+                    if (key === 'transferCategory') displayValue = value.replace(/_/g, ' ');
+                    if (key === 'status') displayValue = value;
+                    if (key === 'transactionMode') displayValue = value.replace(/_/g, ' ');
+                    
+                    return (
+                      <Badge
+                        key={key}
+                        count={`${key.replace(/([A-Z])/g, ' $1').trim()}: ${displayValue}`}
+                        style={{ 
+                          backgroundColor: '#e6f7ff',
+                          color: '#1890ff',
+                          border: '1px solid #91d5ff',
+                          fontSize: 11,
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => onFiltersChange({ ...filters, [key]: undefined })}
+                      />
+                    );
+                  })}
+                </Space>
+              </div>
+            )}
+          </Card>
+        )}
 
-      {/* Transfers Table */}
-      <Card size="small">
-        <Table
-          columns={columns}
-          dataSource={sortedTransfers}
-          rowKey="sequentialNumber"  // Changed from "id" to use sequential numbering
-          loading={loading}
-          onChange={handleTableChange}
-          pagination={{
-            ...pagination,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) => 
-              `${range[0]}-${range[1]} of ${total} transfers`,
-            defaultPageSize: 10,
-            pageSizeOptions: ['10', '20', '50', '100']
-          }}
-          size="small"
-          scroll={{ x: 1500 }}
-          summary={() => (
-            <Table.Summary fixed>
-              <Table.Summary.Row>
-                <Table.Summary.Cell index={0} colSpan={5}>
-                  <Space>
-                    <SortDescendingOutlined style={{ color: '#1890ff' }} />
-                    <Text strong>Sorted by: {sortOrder.field}</Text>
-                    <Text type="secondary">({sortOrder.order === 'descend' ? 'Descending' : 'Ascending'})</Text>
-                  </Space>
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={1}>
-                  <Text strong type="success">
-                    Total: {formatCurrency(summaryStats.totalAmount)}
-                  </Text>
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={2} colSpan={7}>
-                  <Text type="secondary">
-                    Showing {sortedTransfers.length} transfers ({summaryStats.completedCount} completed, {summaryStats.pendingCount} pending)
-                  </Text>
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={3}>
-                  {/* Secondary Export Button */}
-                  <AdvancedReportGenerator
-                    dataSource={enhancedTransfers}
-                    columns={exportColumns}
-                    title={`Detailed Transfer Report - ${currentStation?.name || 'Company'}`}
-                    fileName={`detailed_transfers_${new Date().toISOString().split('T')[0]}`}
-                    summaryData={summaryData}
-                    reportType="finance"
-                    showFooter={true}
-                    customStyles={{
-                      fontSize: 8,
-                      rowHeight: 5,
-                      alternateRowColors: true
-                    }}
-                    enableCustomization={false}
-                  />
-                </Table.Summary.Cell>
-              </Table.Summary.Row>
-            </Table.Summary>
+        {/* Main Content - Table or Empty State */}
+        <Card size="small">
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '48px 0', minHeight: '400px' }}>
+              <div style={{ marginBottom: 16 }}>
+                <ReloadOutlined spin style={{ fontSize: 32, color: '#1890ff' }} />
+              </div>
+              <Text type="secondary">Loading transfers...</Text>
+            </div>
+          ) : transfers.length === 0 ? (
+            renderEmptyState()
+          ) : (
+            <Table
+              columns={columns}
+              dataSource={sortedTransfers}
+              rowKey="sequentialNumber"
+              loading={loading}
+              onChange={handleTableChange}
+              pagination={{
+                ...pagination,
+                showSizeChanger: true,
+                showQuickJumper: true,
+                showTotal: (total, range) => 
+                  `${range[0]}-${range[1]} of ${total} transfers`,
+                defaultPageSize: 10,
+                pageSizeOptions: ['10', '20', '50', '100']
+              }}
+              size="small"
+              scroll={{ x: 1500 }}
+              summary={() => (
+                <Table.Summary fixed>
+                  <Table.Summary.Row>
+                    <Table.Summary.Cell index={0} colSpan={5}>
+                      <Space>
+                        <SortDescendingOutlined style={{ color: '#1890ff' }} />
+                        <Text strong>Sorted by: {sortOrder.field}</Text>
+                        <Text type="secondary">({sortOrder.order === 'descend' ? 'Descending' : 'Ascending'})</Text>
+                      </Space>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={1}>
+                      <Text strong type="success">
+                        Total: {formatCurrency(summaryStats.totalAmount)}
+                      </Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={2} colSpan={7}>
+                      <Text type="secondary">
+                        Showing {sortedTransfers.length} transfers 
+                        ({summaryStats.completedCount} completed, {summaryStats.pendingCount} pending, {summaryStats.failedCount} failed)
+                      </Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={3}>
+                      {/* Secondary Export Button - Can be removed if not needed */}
+                      {/* <AdvancedReportGenerator ... /> */}
+                    </Table.Summary.Cell>
+                  </Table.Summary.Row>
+                </Table.Summary>
+              )}
+            />
           )}
-        />
-      </Card>
+        </Card>
+
+        {/* Footer message when no data */}
+        {transfers.length === 0 && !loading && hasActiveFilters && (
+          <div style={{ textAlign: 'center', marginTop: 16 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              <InfoCircleOutlined style={{ marginRight: 4 }} />
+              Try adjusting your filters or clearing them to see more transfers.
+            </Text>
+          </div>
+        )}
+      </div>
+
+      {/* Add CSS for better empty state */}
+      <style>{`
+        .ant-empty {
+          margin: 0;
+        }
+        .ant-card-body {
+          padding: ${transfers.length === 0 ? '0' : '24px'};
+        }
+      `}</style>
     </div>
   );
 };
