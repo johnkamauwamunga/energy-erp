@@ -32,8 +32,10 @@ import {
   ClockCircleOutlined,
   ToolOutlined
 } from '@ant-design/icons';
-import { Fuel } from 'lucide-react';
+import { Fuel, Wallet2 } from 'lucide-react';
 import { stationService } from '../../../services/stationService/stationService';
+import {stationAccountService} from '../../../services/stationAccountService/stationAccountService'
+import { bankingService } from '../../../services/bankingService/bankingService';
 import { userService } from '../../../services/userService/userService';
 import { debtorService } from '../../../services/debtorService/debtorService';
 import { purchaseService } from '../../../services/purchaseService/purchaseService';
@@ -58,7 +60,8 @@ const StationDashboardOverview = () => {
     debtors: [],
     offloads: [],
     users: [],
-    purchases: []
+    purchases: [],
+    walletData:[]
   });
 
   const companyId = state?.currentCompany?.id;
@@ -68,11 +71,13 @@ const StationDashboardOverview = () => {
     const [checkingShift, setCheckingShift]=useState(false);
     const [hasOpenShift, setHasOpenShift]=useState(false);
     const [currentShift, setCurrentShift]=useState(null);
+    const [stationWalletBalance, setStationWalletBalance] =useState(null)
     
 
     
         useEffect(() => {
          fetchOpenShift();
+         fetchWallet();
         },[])
       
            const fetchOpenShift = async () => {
@@ -107,8 +112,17 @@ const StationDashboardOverview = () => {
             };
 
 
-  const shiftId = "hey hey hey"
-  const shiftNumber = "John"
+     const fetchWallet = async()=>{
+      const response = await bankingService.getCurrentStationWallet()
+      
+      if(response){
+      const  walletBalance=response?.currentBalance
+      setStationWalletBalance(walletBalance)
+      }
+      else{
+        console.log("error fetching the balance");
+      }
+     }
 
   // Helper function to safely get string value
   const getSafeString = (value, defaultValue = 'N/A') => {
@@ -136,7 +150,8 @@ const StationDashboardOverview = () => {
         debtorsData,
         offloadsData,
         usersData,
-        purchasesData
+        purchasesData,
+     
       ] = await Promise.all([
         debtorService.getDebtors({ stationId }).catch(err => {
           console.error('Failed to load station debtors:', err);
@@ -154,7 +169,13 @@ const StationDashboardOverview = () => {
           console.error('Failed to load station purchases:', err);
           return { purchases: [] };
         })
+        // stationAccountService.getStationWallet({stationId}).catch(err=>{
+        //   console.log("failed to load wallet data")
+        //   return { walletData:[]};
+        // })
+
       ]);
+
 
       // For assets, handle the 403 error
       let assetsData = { assets: [] };
@@ -284,6 +305,36 @@ const StationDashboardOverview = () => {
 
     return (
       <Row gutter={[16, 16]}>
+
+          <Col xs={24} sm={12} lg={8} xl={6}>
+          <Card size="small">
+            <Statistic
+              title="Wallet Balance"
+              value={stationWalletBalance}
+              prefix={<Wallet2 />}
+              formatter={value => formatCurrency(value)}
+            />
+            <Text type="secondary" style={{ fontSize: '12px' }}>
+              Current
+            </Text>
+          </Card>
+        </Col>
+
+       <Col xs={24} sm={12} lg={8} xl={6}>
+          <Card size="small">
+            <Statistic
+              title="Total Debt"
+              value={metrics.totalDebt}
+              prefix={<DollarOutlined />}
+              formatter={value => formatCurrency(value)}
+            />
+            <Text type="secondary" style={{ fontSize: '12px' }}>
+              Outstanding
+            </Text>
+          </Card>
+        </Col>
+
+
         <Col xs={24} sm={12} lg={8} xl={6}>
           <Card size="small">
             <Statistic
@@ -349,19 +400,7 @@ const StationDashboardOverview = () => {
           </Card>
         </Col>
         
-        <Col xs={24} sm={12} lg={8} xl={6}>
-          <Card size="small">
-            <Statistic
-              title="Total Debt"
-              value={metrics.totalDebt}
-              prefix={<DollarOutlined />}
-              formatter={value => formatCurrency(value)}
-            />
-            <Text type="secondary" style={{ fontSize: '12px' }}>
-              Outstanding
-            </Text>
-          </Card>
-        </Col>
+ 
       </Row>
     );
   };

@@ -180,7 +180,7 @@ const ReadingsStep = ({
               pumpProductMap.set(pump.id, {
                 productId: pump.product.id,
                 product: pump.product,
-                unitPrice: pump.product.baseCostPrice || pump.product.minSellingPrice || 0
+                unitPrice: pump.product.minSellingPrice || pump.product.maxSellingPrice || 0
               });
             }
           });

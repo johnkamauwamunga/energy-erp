@@ -1,4 +1,4 @@
-// IntegratedShiftClose.jsx (FIXED - Overage removed, only shortages tracked)
+// IntegratedShiftClose.jsx (FIXED - Two-step collection + shortage posting)
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card,
@@ -103,6 +103,7 @@ const IntegratedShiftClose = ({
     { key: 'readings', title: 'Readings', icon: <Gauge size={16} /> },
     { key: 'sales', title: 'Sales', icon: <DollarSign size={16} /> },
     { key: 'collections', title: 'Collections', icon: <Wallet size={16} /> },
+    { key: 'shortages', title: 'Shortages', icon: <AlertTriangle size={16} /> },
     { key: 'summary', title: 'Review & Submit', icon: <CheckSquare size={16} /> }
   ];
 
@@ -129,8 +130,11 @@ const IntegratedShiftClose = ({
   const [debtors, setDebtors] = useState([]);
   const [loadingDebtors, setLoadingDebtors] = useState(false);
   
-  // ========== POSTED SHORTAGES TRACKING ==========
+  // ========== SHORTAGES STEP STATE ==========
   const [postedShortages, setPostedShortages] = useState({});
+  const [shortageModalVisible, setShortageModalVisible] = useState(false);
+  const [currentShortageIsland, setCurrentShortageIsland] = useState(null);
+  const [creatingShortage, setCreatingShortage] = useState(false);
   
   // ========== SUBMISSION STATE ==========
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -244,7 +248,7 @@ const IntegratedShiftClose = ({
     }, 2000);
     
     return () => clearTimeout(timeoutId);
-  }, [pumps, tanks, salesEntries, receipts, expenses, autoExpenses, collections, postedShortages]);
+  }, [pumps, tanks, salesEntries, receipts, expenses, autoExpenses, collections, postedShortages, currentStep]);
 
   // ========== LOAD EXISTING EXPENSES ==========
   const loadExistingExpenses = async () => {
@@ -357,7 +361,7 @@ const IntegratedShiftClose = ({
               pumpProductMap.set(pump.id, {
                 productId: pump.product.id,
                 product: pump.product,
-                unitPrice: pump.product.baseCostPrice || pump.product.minSellingPrice || 0
+                unitPrice: pump.product.minSellingPrice || pump.product.axSellingPrice || 0
               });
             }
           });
@@ -647,9 +651,7 @@ const IntegratedShiftClose = ({
       const totalCollection = cashCollection + debtCollection;
       const totalExpected = totalPumpSales + islandReceipts - totalExpenses;
       
-      // ========== MODIFIED LOGIC HERE ==========
-      // Only calculate shortage when collections are LESS THAN expected
-      // If collections are EQUAL TO or GREATER THAN expected, variance is 0 (no shortage)
+      // Calculate shortage (only when collections < expected)
       let shortageAmount = 0;
       if (totalExpected > totalCollection) {
         shortageAmount = totalExpected - totalCollection;
@@ -671,73 +673,18 @@ const IntegratedShiftClose = ({
         totalExpenses,
         receipts: islandReceipts,
         totalExpected,
-        shortageAmount, // Only populated when below expected
-        variance: shortageAmount, // Keep for backward compatibility but now only represents shortage
+        shortageAmount,
+        variance: shortageAmount,
         hasSales,
         collectionsModalCompleted,
         shortagePosted,
         shortageRecord: postedShortages[islandKey],
-        // Add a status flag for UI
         collectionStatus: totalCollection >= totalExpected ? 'full' : 'short'
       };
     });
   };
 
-  const postShortage = async (islandData, shortageAmount, totalExpected, totalCollected) => {
-    if (shortageAmount <= 10) {
-      message.info(`Shortage of KES ${shortageAmount.toFixed(2)} is below minimum threshold (KES 10)`);
-      return null;
-    }
-
-    if (!islandData.attendants || islandData.attendants.length === 0) {
-      message.error('No attendant assigned to this island. Cannot post shortage.');
-      return null;
-    }
-
-    const primaryAttendant = islandData.attendants[0];
-    
-    try {
-      const staffAccount = await staffAccountService.getStaffAccountByUserId(primaryAttendant.id);
-      
-      if (!staffAccount) {
-        message.error(`No staff account found for ${primaryAttendant.firstName} ${primaryAttendant.lastName}`);
-        return null;
-      }
-
-      const today = dayjs();
-      const endOfMonth = today.endOf('month');
-
-      const shortageData = {
-        staffAccountId: staffAccount.id,
-        amount: shortageAmount,
-        description: `Shortage during shift closing - Shift ${shift?.shiftNumber || 'N/A'} at ${islandData.islandName}`,
-        shortageType: 'CASH',
-        responsibleParty: 'ATTENDANT',
-        severity: shortageAmount > 5000 ? 'HIGH' : shortageAmount > 1000 ? 'MODERATE' : 'LOW',
-        comments: `Auto-posted during shift closing. Expected: KES ${totalExpected.toFixed(2)}, Collected: KES ${totalCollected.toFixed(2)}`,
-        shiftId: shift?.id,
-        islandId: islandData.islandId,
-        dueDate: endOfMonth.toISOString(),
-        recordedById: currentUser?.id,
-        stationId: currentStationId,
-        autoGenerated: true
-      };
-
-      console.log('Posting shortage:', shortageData);
-      
-      const shortage = await shortageService.createShortage(shortageData);
-      
-      message.success(`Shortage of KES ${shortageAmount.toFixed(2)} posted to ${primaryAttendant.firstName} ${primaryAttendant.lastName}`);
-      
-      return shortage;
-    } catch (error) {
-      console.error('Error posting shortage:', error);
-      message.error(`Failed to post shortage: ${error.message}`);
-      return null;
-    }
-  };
-
-  // ========== COLLECTIONS MODAL - MODIFIED VERSION ==========
+  // ========== COLLECTIONS MODAL (Simplified - No shortage logic) ==========
   const CollectionsModal = ({ 
     visible, 
     onCancel, 
@@ -745,48 +692,16 @@ const IntegratedShiftClose = ({
     islandIndex,
     currentCollections
   }) => {
-    const [localCollections, setLocalCollections] = useState(currentCollections || []);
+    const [localCollections, setLocalCollections] = useState([]);
     const [cashAmount, setCashAmount] = useState('');
     const [selectedDebtor, setSelectedDebtor] = useState(null);
     const [debtAmount, setDebtAmount] = useState('');
     const [searchDebtor, setSearchDebtor] = useState('');
     const [selectedIsland, setSelectedIsland] = useState(null);
-    const [hasPendingShortage, setHasPendingShortage] = useState(false);
-    const [justPostedShortage, setJustPostedShortage] = useState(false);
-    
-    const [shortageModalVisible, setShortageModalVisible] = useState(false);
-    const [shortageDetails, setShortageDetails] = useState(null);
-    const [creatingShortage, setCreatingShortage] = useState(false);
     
     const [hasUnaddedCash, setHasUnaddedCash] = useState(false);
     
-    useEffect(() => {
-      setHasUnaddedCash(cashAmount && parseFloat(cashAmount) > 0);
-    }, [cashAmount]);
-    
-    useEffect(() => {
-      if (visible && islandIndex !== undefined) {
-        const island = islandsData.find(island => island.key === islandIndex);
-        setSelectedIsland(island);
-        setLocalCollections(currentCollections || []);
-        setHasPendingShortage(false);
-        setJustPostedShortage(false);
-        setCashAmount('');
-        setDebtAmount('');
-        setSelectedDebtor(null);
-        setSearchDebtor('');
-      }
-    }, [visible, islandIndex, currentCollections]);
-
-    const filteredDebtors = useMemo(() => {
-      if (!searchDebtor) return debtors;
-      return debtors.filter(debtor =>
-        debtor.name?.toLowerCase().includes(searchDebtor.toLowerCase()) ||
-        debtor.phone?.toLowerCase().includes(searchDebtor.toLowerCase()) ||
-        debtor.code?.toLowerCase().includes(searchDebtor.toLowerCase())
-      );
-    }, [debtors, searchDebtor]);
-
+    // Calculate real-time totals
     const totalPumpSales = selectedIsland?.totalPumpSales || 0;
     const islandReceipts = receipts[islandIndex] || 0;
     const manualExpenseAmount = expenses[islandIndex] || 0;
@@ -805,538 +720,38 @@ const IntegratedShiftClose = ({
       .reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
     
     const currentTotal = currentCashCollection + totalDebtCollection;
+    const pendingCash = parseFloat(cashAmount) || 0;
+    const displayTotal = currentTotal + pendingCash;
     
-    // Display total including pending cash input
-    const displayTotal = currentTotal + (parseFloat(cashAmount) || 0);
-    
-    // ========== MODIFIED LOGIC HERE ==========
-    // Only show shortage if totalExpected > displayTotal
-    // If displayTotal >= totalExpected, no shortage
+    // Real-time shortage calculation (for display only)
     const hasShortage = totalExpected > displayTotal;
     const shortageAmount = hasShortage ? totalExpected - displayTotal : 0;
     
-    const shortagePosted = selectedIsland ? postedShortages[selectedIsland.key] : false;
-    
     useEffect(() => {
-      if (selectedIsland && postedShortages[selectedIsland.key]) {
-        console.log('✅ Shortage already posted for this island:', postedShortages[selectedIsland.key]);
-        setJustPostedShortage(true);
-        setHasPendingShortage(false);
-      } else if (selectedIsland && hasShortage) {
-        setHasPendingShortage(true);
-        setJustPostedShortage(false);
-      } else {
-        setHasPendingShortage(false);
-        setJustPostedShortage(false);
-      }
-    }, [selectedIsland, postedShortages, hasShortage]);
+      setHasUnaddedCash(cashAmount && parseFloat(cashAmount) > 0);
+    }, [cashAmount]);
     
-    const canSaveCollections = localCollections.length > 0 && 
-      !hasUnaddedCash &&
-      (!hasShortage || shortagePosted || justPostedShortage);
-
-    const getSeverityLevel = (amount) => {
-      if (amount <= 1000) return 'MINOR';
-      if (amount <= 5000) return 'MODERATE';
-      if (amount <= 20000) return 'MAJOR';
-      return 'CRITICAL';
-    };
-    
-    const prepareShortageDetails = async () => {
-      if (!selectedIsland || !selectedIsland.attendants || selectedIsland.attendants.length === 0) {
-        console.error('❌ No attendant assigned to this island');
-        message.error('No attendant assigned to this island');
-        return null;
+    // Load collections when modal opens
+    useEffect(() => {
+      if (visible && islandIndex !== undefined) {
+        const island = islandsData.find(island => island.key === islandIndex);
+        setSelectedIsland(island);
+        setLocalCollections(currentCollections || []);
+        setCashAmount('');
+        setDebtAmount('');
+        setSelectedDebtor(null);
+        setSearchDebtor('');
       }
+    }, [visible, islandIndex, currentCollections]);
 
-      const primaryAttendant = selectedIsland.attendants[0];
-      
-      let staffAccount = null;
-      let staffAccountId = null;
-      
-      try {
-        const result = await staffAccountService.getStaffAccountsByStation(currentStationId);
-        const accounts = result?.accounts || result?.data || result || [];
-        
-        staffAccount = accounts.find(account => {
-          const userId = account.user?.id || account.userId;
-          return userId === primaryAttendant.id;
-        });
-        
-        if (!staffAccount) {
-          const attendantFullName = `${primaryAttendant.firstName} ${primaryAttendant.lastName}`.toLowerCase().trim();
-          
-          staffAccount = accounts.find(account => {
-            const accountFullName = `${account.user?.firstName || ''} ${account.user?.lastName || ''}`.toLowerCase().trim();
-            return accountFullName === attendantFullName;
-          });
-        }
-        
-        if (staffAccount) {
-          staffAccountId = staffAccount.id;
-        } else {
-          console.error('❌ NO STAFF ACCOUNT FOUND for attendant');
-          message.error(`No staff account found for ${primaryAttendant.firstName} ${primaryAttendant.lastName}. Please ensure the attendant has a staff account.`);
-          return null;
-        }
-        
-      } catch (error) {
-        console.error('❌ ERROR fetching staff accounts:', error);
-        message.error('Failed to fetch staff accounts');
-        return null;
-      }
-      
-      const today = dayjs();
-      const dueDate = today.add(30, 'day');
-      const shortageType = 'CASH';
-      const responsibleParty = 'ATTENDANT';
-      const severity = getSeverityLevel(shortageAmount);
-      
-      const description = `Island Collection Shortage - ${selectedIsland.islandName}, Shift #${shift?.shiftNumber || 'N/A'}`;
-      
-      const comments = `Generated from shift closing collections:
-      • Station: ${state?.currentStation?.name || 'Unknown'}
-      • Island: ${selectedIsland.islandName}
-      • Shift: #${shift?.shiftNumber || 'N/A'}
-      • Attendant: ${primaryAttendant.firstName} ${primaryAttendant.lastName}
-      • Pump Sales: KES ${totalPumpSales.toFixed(2)}
-      • Receipts: KES ${islandReceipts.toFixed(2)}
-      • Auto Expenses: KES ${autoExpenseAmount.toFixed(2)}
-      • Manual Expenses: KES ${manualExpenseAmount.toFixed(2)}
-      • Expected Total: KES ${totalExpected.toFixed(2)}
-      • Collected (with pending): KES ${displayTotal.toFixed(2)}
-      • Shortage: KES ${shortageAmount.toFixed(2)}
-      • Generated on: ${today.format('DD/MM/YYYY HH:mm:ss')}`;
-      
-      const shortageDetails = {
-        attendant: primaryAttendant,
-        attendantId: primaryAttendant.id,
-        attendantName: `${primaryAttendant.firstName} ${primaryAttendant.lastName}`,
-        staffAccountId: staffAccountId,
-        staffAccount: staffAccount,
-        stationId: currentStationId,
-        stationName: state?.currentStation?.name,
-        islandId: selectedIsland.islandId,
-        islandName: selectedIsland.islandName,
-        shiftId: shift?.id,
-        shiftNumber: shift?.shiftNumber,
-        shortageAmount: shortageAmount,
-        shortageType: shortageType,
-        responsibleParty: responsibleParty,
-        severity: severity,
-        description: description,
-        comments: comments,
-        dueDate: dueDate.toISOString(),
-        incidentDate: new Date().toISOString(),
-        submitDate: today.toISOString(),
-        collectionDetails: {
-          totalExpected,
-          totalCollected: displayTotal,
-          shortageAmount,
-          cashCollections: localCollections.filter(c => c.type === 'cash'),
-          debtCollections: localCollections.filter(c => c.type === 'debt'),
-          receipts: islandReceipts,
-          autoExpenses: autoExpenseAmount,
-          manualExpenses: manualExpenseAmount,
-          totalExpenses: totalExpenses,
-          pumpSales: totalPumpSales,
-          timestamp: new Date().toISOString()
-        }
-      };
-      
-      return shortageDetails;
-    };
-
-    const handleCreateShortageRecord = async () => {
-      if (!shortageDetails) return;
-      
-      setCreatingShortage(true);
-      try {
-        if (!shortageDetails.staffAccountId) {
-          message.error(`No staff account found for ${shortageDetails.attendantName}`);
-          return;
-        }
-
-        const shortageData = {
-          staffAccountId: shortageDetails.staffAccountId,
-          amount: shortageDetails.shortageAmount,
-          description: shortageDetails.description,
-          shortageType: shortageDetails.shortageType,
-          responsibleParty: shortageDetails.responsibleParty,
-          severity: shortageDetails.severity,
-          comments: shortageDetails.comments,
-          shiftId: shortageDetails.shiftId,
-          islandId: shortageDetails.islandId,
-          dueDate: shortageDetails.dueDate,
-          incidentDate: shortageDetails.incidentDate,
-          recordedById: currentUser?.id,
-          stationId: shortageDetails.stationId,
-          submitDate: shortageDetails.submitDate,
-          autoGenerated: true,
-          source: 'SHIFT_CLOSING_COLLECTIONS',
-          metadata: JSON.stringify({
-            collectionDetails: shortageDetails.collectionDetails,
-            stationName: shortageDetails.stationName,
-            islandName: shortageDetails.islandName,
-            shiftNumber: shortageDetails.shiftNumber,
-            attendantName: shortageDetails.attendantName
-          })
-        };
-
-        console.log('Creating complete shortage record:', shortageData);
-        
-        const response = await shortageService.createShortage(shortageData);
-        const shortage = response.data;
-        
-        message.success(`Shortage of KES ${shortageDetails.shortageAmount.toFixed(2)} created for ${shortageDetails.attendantName}`);
-        
-        setPostedShortages(prev => ({
-          ...prev,
-          [selectedIsland.key]: {
-            ...shortage,
-            postedAt: new Date().toISOString(),
-            attendantName: shortageDetails.attendantName,
-            amount: shortageDetails.shortageAmount,
-            dueDate: shortageDetails.dueDate
-          }
-        }));
-        
-        setJustPostedShortage(true);
-        setHasPendingShortage(false);
-        
-        setShortageModalVisible(false);
-        
-        message.success({
-          content: (
-            <div>
-              <p><strong>KES {shortageDetails.shortageAmount.toFixed(2)} shortage recorded</strong></p>
-              <p>Attendant: {shortageDetails.attendantName}</p>
-              <p>Due Date: {dayjs(shortageDetails.dueDate).format('DD/MM/YYYY')}</p>
-            </div>
-          ),
-          duration: 4,
-        });
-        
-      } catch (error) {
-        console.error('Error creating shortage record:', error);
-        message.error(`Failed to create shortage: ${error.message}`);
-      } finally {
-        setCreatingShortage(false);
-      }
-    };
-
-    const handleOpenShortageCreation = async () => {
-      console.log('Opening shortage creation modal...');
-      
-      try {
-        const details = await prepareShortageDetails();
-        if (details) {
-          setShortageDetails(details);
-          setShortageModalVisible(true);
-        }
-      } catch (error) {
-        console.error('Error preparing shortage details:', error);
-        message.error('Failed to prepare shortage details');
-      }
-    };
-
-    const ShortageCreationModal = () => {
-      if (!shortageDetails) return null;
-
-      return (
-        <Modal
-          title={
-            <Space>
-              <AlertTriangle size={16} color="#fa8c16" />
-              <Text strong>Create Shortage Record</Text>
-              <Tag color="red" style={{ marginLeft: 8 }}>
-                KES {shortageDetails.shortageAmount.toFixed(2)}
-              </Tag>
-            </Space>
-          }
-          open={shortageModalVisible}
-          onCancel={() => {
-            if (!creatingShortage) {
-              setShortageModalVisible(false);
-            }
-          }}
-          width={750}
-          footer={[
-            <Button 
-              key="cancel" 
-              onClick={() => setShortageModalVisible(false)}
-              disabled={creatingShortage}
-            >
-              Cancel
-            </Button>,
-            <Button
-              key="create"
-              type="primary"
-              onClick={handleCreateShortageRecord}
-              loading={creatingShortage}
-              icon={creatingShortage ? null : <CheckSquare size={14} />}
-              disabled={!shortageDetails.staffAccountId || creatingShortage}
-            >
-              {creatingShortage ? 'Creating Shortage Record...' : 'Create Shortage Record'}
-            </Button>
-          ]}
-          maskClosable={!creatingShortage}
-          closable={!creatingShortage}
-        >
-          <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 8 }}>
-            <Card 
-              size="small" 
-              style={{ marginBottom: 16, borderLeft: '4px solid #1890ff' }}
-            >
-              <Descriptions title="Attendant & Basic Information" column={2} size="small">
-                <Descriptions.Item label="Attendant" span={2}>
-                  <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                    <Space>
-                      <UserOutlined style={{ color: '#1890ff' }} />
-                      <Text strong style={{ fontSize: '15px' }}>
-                        {shortageDetails.attendantName}
-                      </Text>
-                    </Space>
-                  </Space>
-                </Descriptions.Item>
-                
-                <Descriptions.Item label="Station">
-                  <Space>
-                    <BankOutlined />
-                    <Text>{shortageDetails.stationName || 'Unknown Station'}</Text>
-                  </Space>
-                </Descriptions.Item>
-                
-                <Descriptions.Item label="Island">
-                  <Space>
-                    <Fuel size={14} color="#52c41a" />
-                    <Text>{shortageDetails.islandName}</Text>
-                  </Space>
-                </Descriptions.Item>
-                
-                <Descriptions.Item label="Shift">
-                  <Space>
-                    <Clock size={14} />
-                    <Tag color="blue">#{shortageDetails.shiftNumber}</Tag>
-                  </Space>
-                </Descriptions.Item>
-              </Descriptions>
-            </Card>
-
-            <Card 
-              size="small" 
-              style={{ marginBottom: 16, borderLeft: '4px solid #ff4d4f' }}
-              title={
-                <Space>
-                  <DollarSign size={14} color="#ff4d4f" />
-                  <Text strong>Shortage Details</Text>
-                </Space>
-              }
-            >
-              <Row gutter={[16, 16]} style={{ marginBottom: 12 }}>
-                <Col span={8}>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '12px', color: '#666', marginBottom: 4 }}>
-                      Amount
-                    </div>
-                    <div style={{ 
-                      fontSize: '22px', 
-                      fontWeight: 'bold', 
-                      color: '#ff4d4f',
-                      padding: '8px',
-                      backgroundColor: '#fff2f0',
-                      borderRadius: '6px'
-                    }}>
-                      KES {shortageDetails.shortageAmount.toFixed(2)}
-                    </div>
-                  </div>
-                </Col>
-                
-                <Col span={8}>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '12px', color: '#666', marginBottom: 4 }}>
-                      Type
-                    </div>
-                    <Tag 
-                      color="purple" 
-                      style={{ 
-                        fontSize: '14px', 
-                        padding: '8px 12px',
-                        margin: 0
-                      }}
-                    >
-                      {shortageDetails.shortageType}
-                    </Tag>
-                  </div>
-                </Col>
-                
-                <Col span={8}>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '12px', color: '#666', marginBottom: 4 }}>
-                      Severity
-                    </div>
-                    <Tag 
-                      color={
-                        shortageDetails.severity === 'CRITICAL' ? 'red' :
-                        shortageDetails.severity === 'MAJOR' ? 'orange' :
-                        shortageDetails.severity === 'MODERATE' ? 'gold' : 'blue'
-                      }
-                      style={{ 
-                        fontSize: '14px', 
-                        padding: '8px 12px',
-                        margin: 0,
-                        fontWeight: 'bold'
-                      }}
-                    >
-                      {shortageDetails.severity}
-                    </Tag>
-                  </div>
-                </Col>
-              </Row>
-            </Card>
-
-            <Card 
-              size="small" 
-              style={{ marginBottom: 16, borderLeft: '4px solid #52c41a' }}
-              title={
-                <Space>
-                  <Wallet size={14} color="#52c41a" />
-                  <Text strong>Collection Breakdown</Text>
-                </Space>
-              }
-            >
-              <Row gutter={[16, 16]} style={{ marginBottom: 12 }}>
-                <Col span={8}>
-                  <Statistic
-                    title="Expected Total"
-                    value={shortageDetails.collectionDetails.totalExpected}
-                    precision={2}
-                    prefix="KES"
-                    valueStyle={{ fontSize: '14px', color: '#1890ff', fontWeight: 'bold' }}
-                  />
-                </Col>
-                <Col span={8}>
-                  <Statistic
-                    title="Collected"
-                    value={shortageDetails.collectionDetails.totalCollected}
-                    precision={2}
-                    prefix="KES"
-                    valueStyle={{ fontSize: '14px', color: '#52c41a', fontWeight: 'bold' }}
-                  />
-                </Col>
-                <Col span={8}>
-                  <Statistic
-                    title="Shortage"
-                    value={shortageDetails.collectionDetails.shortageAmount}
-                    precision={2}
-                    prefix="KES"
-                    valueStyle={{ 
-                      fontSize: '14px', 
-                      color: '#ff4d4f', 
-                      fontWeight: 'bold',
-                      backgroundColor: '#fff2f0',
-                      padding: '4px 8px',
-                      borderRadius: '4px'
-                    }}
-                  />
-                </Col>
-              </Row>
-              
-              <Divider style={{ margin: '8px 0' }} />
-              
-              <Row gutter={[16, 16]}>
-                <Col span={12}>
-                  <Card size="small" style={{ backgroundColor: '#f6ffed' }}>
-                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                      <Space>
-                        <Tag color="green">Cash</Tag>
-                        <Text strong>Cash Collections</Text>
-                      </Space>
-                      <div style={{ paddingLeft: 24 }}>
-                        <Text>
-                          {shortageDetails.collectionDetails.cashCollections.length} entries
-                        </Text>
-                        <Text type="secondary" style={{ display: 'block', fontSize: '12px' }}>
-                          Total: KES {
-                            shortageDetails.collectionDetails.cashCollections
-                              .reduce((sum, c) => sum + (c.amount || 0), 0)
-                              .toFixed(2)
-                          }
-                        </Text>
-                      </div>
-                    </Space>
-                  </Card>
-                </Col>
-                
-                <Col span={12}>
-                  <Card size="small" style={{ backgroundColor: '#f0f8ff' }}>
-                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                      <Space>
-                        <Tag color="blue">Debt</Tag>
-                        <Text strong>Debt Collections</Text>
-                      </Space>
-                      <div style={{ paddingLeft: 24 }}>
-                        <Text>
-                          {shortageDetails.collectionDetails.debtCollections.length} entries
-                        </Text>
-                        <Text type="secondary" style={{ display: 'block', fontSize: '12px' }}>
-                          Total: KES {
-                            shortageDetails.collectionDetails.debtCollections
-                              .reduce((sum, c) => sum + (c.amount || 0), 0)
-                              .toFixed(2)
-                          }
-                        </Text>
-                      </div>
-                    </Space>
-                  </Card>
-                </Col>
-              </Row>
-              
-              <Divider style={{ margin: '8px 0' }} />
-              <Row gutter={[16, 16]}>
-                <Col span={12}>
-                  <Card size="small" style={{ backgroundColor: '#fff7e6' }}>
-                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                      <Space>
-                        <Tag color="orange">Auto</Tag>
-                        <Text strong>Auto Expenses</Text>
-                      </Space>
-                      <div style={{ paddingLeft: 24 }}>
-                        <Text>
-                          {shortageDetails.collectionDetails.autoExpenses > 0 ? 'Yes' : 'No'}
-                        </Text>
-                        <Text type="secondary" style={{ display: 'block', fontSize: '12px' }}>
-                          Amount: KES {shortageDetails.collectionDetails.autoExpenses.toFixed(2)}
-                        </Text>
-                      </div>
-                    </Space>
-                  </Card>
-                </Col>
-                
-                <Col span={12}>
-                  <Card size="small" style={{ backgroundColor: '#fff2e8' }}>
-                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                      <Space>
-                        <Tag color="red">Manual</Tag>
-                        <Text strong>Manual Expenses</Text>
-                      </Space>
-                      <div style={{ paddingLeft: 24 }}>
-                        <Text>
-                          {shortageDetails.collectionDetails.manualExpenses > 0 ? 'Yes' : 'No'}
-                        </Text>
-                        <Text type="secondary" style={{ display: 'block', fontSize: '12px' }}>
-                          Amount: KES {shortageDetails.collectionDetails.manualExpenses.toFixed(2)}
-                        </Text>
-                      </div>
-                    </Space>
-                  </Card>
-                </Col>
-              </Row>
-            </Card>
-          </div>
-        </Modal>
+    const filteredDebtors = useMemo(() => {
+      if (!searchDebtor) return debtors;
+      return debtors.filter(debtor =>
+        debtor.name?.toLowerCase().includes(searchDebtor.toLowerCase()) ||
+        debtor.phone?.toLowerCase().includes(searchDebtor.toLowerCase()) ||
+        debtor.code?.toLowerCase().includes(searchDebtor.toLowerCase())
       );
-    };
+    }, [debtors, searchDebtor]);
 
     const handleAddCashCollection = () => {
       const cashAmountNum = parseFloat(cashAmount) || 0;
@@ -1355,7 +770,6 @@ const IntegratedShiftClose = ({
       const updatedCollections = [...localCollections, newCollection];
       setLocalCollections(updatedCollections);
       setCashAmount('');
-      message.success(`Added KES ${cashAmountNum.toFixed(2)} cash collection`);
     };
 
     const handleAddDebtCollection = () => {
@@ -1382,7 +796,6 @@ const IntegratedShiftClose = ({
       setSelectedDebtor(null);
       setDebtAmount('');
       setSearchDebtor('');
-      message.success(`Added KES ${debtAmountNum.toFixed(2)} debt for ${selectedDebtor.name}`);
     };
 
     const handleRemoveCollection = (collectionId) => {
@@ -1396,41 +809,7 @@ const IntegratedShiftClose = ({
         return;
       }
 
-      // Check for unresolved shortage
-      if (hasShortage && !shortagePosted && !justPostedShortage) {
-        Modal.error({
-          title: 'Cannot Save - Unresolved Shortage',
-          content: (
-            <div>
-              <p>You have an unresolved shortage of <strong>KES {shortageAmount.toFixed(2)}</strong>.</p>
-              <p><strong>You must create a shortage record before you can save collections.</strong></p>
-              <p>Click "Create Shortage Record" to proceed.</p>
-            </div>
-          ),
-          okText: 'Create Shortage Record',
-          cancelText: 'Cancel',
-          onOk: () => {
-            handleOpenShortageCreation();
-          }
-        });
-        return;
-      }
-      
-      // Calculate final amounts
-      const finalCashTotal = localCollections
-        .filter(c => c.type === 'cash')
-        .reduce((sum, c) => sum + (c.amount || 0), 0);
-      
-      const finalDebtTotal = localCollections
-        .filter(c => c.type === 'debt')
-        .reduce((sum, c) => sum + (c.amount || 0), 0);
-      
-      const finalCollected = finalCashTotal + finalDebtTotal;
-      
-      // Calculate final shortage if any (only when expected > collected)
-      const finalShortageAmount = totalExpected > finalCollected ? totalExpected - finalCollected : 0;
-      
-      onSave(localCollections, finalShortageAmount);
+      onSave(localCollections);
     };
 
     if (!selectedIsland) {
@@ -1438,348 +817,497 @@ const IntegratedShiftClose = ({
     }
 
     return (
-      <>
-        <Modal
-          title={
-            <Space>
-              <Wallet size={16} />
-              <Text strong>Collections - {selectedIsland?.islandName || 'Unknown Island'}</Text>
-              {!hasShortage && displayTotal >= totalExpected && (
-                <Tag color="green" icon={<CheckCircle size={12} />}>
-                  Fully Collected ✓
-                </Tag>
-              )}
-              {justPostedShortage && (
-                <Tag color="green" icon={<CheckCircle size={12} />}>
-                  Shortage Posted
-                </Tag>
-              )}
-              {hasUnaddedCash && (
-                <Tag color="orange" icon={<AlertCircle size={12} />}>
-                  Unadded Cash
-                </Tag>
-              )}
-            </Space>
-          }
-          open={visible}
-          onCancel={onCancel}
-          width={isMobile ? '95%' : 800}
-          footer={[
-            <Button key="cancel" onClick={onCancel}>
-              Cancel
-            </Button>,
-            // Only show shortage button if there's a shortage
-            hasShortage && (
-              <Button
-                key="post"
-                type={hasPendingShortage && !justPostedShortage ? "dashed" : "default"}
-                danger={hasPendingShortage && !justPostedShortage}
-                onClick={handleOpenShortageCreation}
-                disabled={!hasPendingShortage || justPostedShortage || creatingShortage}
-                icon={<AlertTriangle size={14} />}
-                loading={creatingShortage}
-              >
-                {justPostedShortage 
-                  ? 'Shortage Created ✓' 
-                  : hasPendingShortage 
-                    ? `Create Shortage (KES ${shortageAmount.toFixed(2)})`
-                    : 'No Shortage'}
-              </Button>
-            ),
-            <Button
-              key="save"
-              type="primary"
-              onClick={handleSaveCollections}
-              disabled={!canSaveCollections}
-              style={{
-                opacity: canSaveCollections ? 1 : 0.5,
-                cursor: canSaveCollections ? 'pointer' : 'not-allowed'
-              }}
+      <Modal
+        title={
+          <Space>
+            <Wallet size={16} />
+            <Text strong>Collections - {selectedIsland?.islandName || 'Unknown Island'}</Text>
+            {hasUnaddedCash && (
+              <Tag color="orange" icon={<AlertCircle size={12} />}>
+                Unadded Cash
+              </Tag>
+            )}
+          </Space>
+        }
+        open={visible}
+        onCancel={onCancel}
+        width={isMobile ? '95%' : 800}
+        footer={[
+          <Button key="cancel" onClick={onCancel}>
+            Cancel
+          </Button>,
+          <Button
+            key="save"
+            type="primary"
+            onClick={handleSaveCollections}
+            disabled={localCollections.length === 0 || hasUnaddedCash}
+          >
+            Save Collections
+          </Button>
+        ]}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Card size="small">
+            <Row gutter={16}>
+              <Col span={6}>
+                <Statistic
+                  title="Expected Total"
+                  value={totalExpected}
+                  precision={2}
+                  prefix="KES"
+                  valueStyle={{ color: '#1890ff', fontSize: '16px' }}
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title="Collected"
+                  value={currentTotal}
+                  precision={2}
+                  prefix="KES"
+                  valueStyle={{ color: '#52c41a', fontSize: '16px' }}
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title="Pending"
+                  value={pendingCash}
+                  precision={2}
+                  prefix="KES"
+                  valueStyle={{ color: '#fa8c16', fontSize: '16px' }}
+                />
+              </Col>
+              <Col span={6}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '12px', color: '#666', marginBottom: 4 }}>
+                    SHORTAGE (if any)
+                  </div>
+                  <div style={{ 
+                    fontSize: '20px', 
+                    fontWeight: 'bold',
+                    color: shortageAmount > 0 ? '#ff4d4f' : '#52c41a',
+                    backgroundColor: shortageAmount > 0 ? '#fff2f0' : '#f6ffed',
+                    padding: '8px',
+                    borderRadius: '6px'
+                  }}>
+                    KES {shortageAmount.toFixed(2)}
+                    {shortageAmount === 0 && ' ✓'}
+                  </div>
+                </div>
+              </Col>
+            </Row>
+            
+            {(autoExpenseAmount > 0 || manualExpenseAmount > 0) && (
+              <Alert
+                message="Expense Details"
+                description={
+                  <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                    {autoExpenseAmount > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Text type="secondary">Auto Expenses (pre-recorded):</Text>
+                        <Text strong style={{ color: '#fa8c16' }}>KES {autoExpenseAmount.toFixed(2)}</Text>
+                      </div>
+                    )}
+                    {manualExpenseAmount > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Text type="secondary">Manual Expenses (entered now):</Text>
+                        <Text strong style={{ color: '#ff4d4f' }}>KES {manualExpenseAmount.toFixed(2)}</Text>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                      <Text strong>Total Expenses:</Text>
+                      <Text strong style={{ color: totalExpenses > 0 ? '#ff4d4f' : '#52c41a' }}>
+                        KES {totalExpenses.toFixed(2)}
+                      </Text>
+                    </div>
+                  </Space>
+                }
+                type="info"
+                showIcon
+                style={{ marginTop: 12 }}
+              />
+            )}
+            
+            {hasUnaddedCash && (
+              <div style={{ 
+                marginTop: 12, 
+                padding: '8px 12px', 
+                backgroundColor: '#fff7e6',
+                border: '1px solid #ffbb96',
+                borderRadius: '4px'
+              }}>
+                <Text type="warning" strong>
+                  ⚠️ You have KES {pendingCash.toFixed(2)} in the cash field that hasn't been added. 
+                  Click "Add Cash Collection" to include it.
+                </Text>
+              </div>
+            )}
+          </Card>
+        </div>
+
+        <Row gutter={[16, 16]}>
+          <Col span={12}>
+            <Card 
+              size="small" 
+              title="Cash Collections"
+              style={{ height: '100%' }}
             >
-              {hasUnaddedCash ? 'Click "Add" first to include cash' :
-               justPostedShortage ? 'Save Collections (Shortage Resolved)' : 
-               hasPendingShortage ? 'Save Collections (Blocked - Resolve Shortage First)' :
-               'Save Collections'}
-            </Button>
-          ]}
-        >
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <InputNumber
+                    value={cashAmount}
+                    onChange={setCashAmount}
+                    placeholder="Enter cash amount"
+                    prefix="KES"
+                    style={{ width: '100%', marginBottom: 8 }}
+                    min={0}
+                    size="large"
+                  />
+                  <Button
+                    type="dashed"
+                    onClick={handleAddCashCollection}
+                    icon={<Plus size={14} />}
+                    block
+                    disabled={!cashAmount || parseFloat(cashAmount) <= 0}
+                  >
+                    Add Cash Collection
+                  </Button>
+                </Space>
+                
+                {localCollections.filter(c => c.type === 'cash').map((collection) => (
+                  <Card key={collection.id} size="small" style={{ marginTop: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Space>
+                        <Tag color="green">Cash</Tag>
+                        <Text strong>KES {collection.amount?.toFixed(2)}</Text>
+                      </Space>
+                      <Button
+                        danger
+                        size="small"
+                        icon={<Trash2 size={12} />}
+                        onClick={() => handleRemoveCollection(collection.id)}
+                      />
+                    </div>
+                  </Card>
+                ))}
+              </Space>
+            </Card>
+          </Col>
+          
+          <Col span={12}>
+            <Card 
+              size="small" 
+              title="Debt Collections"
+              style={{ height: '100%' }}
+            >
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Input
+                    placeholder="Search debtor by name, phone, or code..."
+                    prefix={<Search size={14} />}
+                    value={searchDebtor}
+                    onChange={(e) => setSearchDebtor(e.target.value)}
+                    style={{ width: '100%', marginBottom: 8 }}
+                  />
+                  <Select
+                    placeholder={loadingDebtors ? "Loading debtors..." : "Select a debtor"}
+                    value={selectedDebtor?.id}
+                    onChange={(value) => setSelectedDebtor(debtors.find(d => d.id === value))}
+                    style={{ width: '100%', marginBottom: 8 }}
+                    loading={loadingDebtors}
+                    showSearch
+                    filterOption={false}
+                    size="large"
+                  >
+                    {filteredDebtors.slice(0, 10).map(debtor => (
+                      <Option key={debtor.id} value={debtor.id}>
+                        <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                          <Text strong>{debtor.name}</Text>
+                          {debtor.code && <Text type="secondary">Code: {debtor.code}</Text>}
+                          {debtor.phone && <Text type="secondary">Phone: {debtor.phone}</Text>}
+                        </Space>
+                      </Option>
+                    ))}
+                  </Select>
+                  <InputNumber
+                    value={debtAmount}
+                    onChange={setDebtAmount}
+                    placeholder="Enter debt amount"
+                    prefix="KES"
+                    style={{ width: '100%', marginBottom: 8 }}
+                    min={0}
+                    size="large"
+                  />
+                  <Button
+                    type="dashed"
+                    onClick={handleAddDebtCollection}
+                    icon={<Plus size={14} />}
+                    disabled={!selectedDebtor || !debtAmount}
+                    block
+                  >
+                    Add Debt Collection
+                  </Button>
+                </Space>
+                
+                {localCollections.filter(c => c.type === 'debt').map((collection) => (
+                  <Card key={collection.id} size="small" style={{ marginTop: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Space direction="vertical" size={0}>
+                        <Space>
+                          <Tag color="blue">Debt</Tag>
+                          <Text strong>{collection.debtorName}</Text>
+                        </Space>
+                        {collection.debtorCode && (
+                          <Text type="secondary" style={{ fontSize: '11px', marginLeft: 24 }}>
+                            Code: {collection.debtorCode}
+                          </Text>
+                        )}
+                        <Text strong style={{ marginLeft: 24 }}>KES {collection.amount?.toFixed(2)}</Text>
+                      </Space>
+                      <Button
+                        danger
+                        size="small"
+                        icon={<Trash2 size={12} />}
+                        onClick={() => handleRemoveCollection(collection.id)}
+                      />
+                    </div>
+                  </Card>
+                ))}
+              </Space>
+            </Card>
+          </Col>
+        </Row>
+        
+        {localCollections.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <Text strong>Current Collections ({localCollections.length} entries):</Text>
+            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {localCollections.map(collection => (
+                <Tag 
+                  key={collection.id} 
+                  color={collection.type === 'cash' ? 'green' : 'blue'}
+                  style={{ margin: '2px' }}
+                >
+                  {collection.type === 'cash' ? 'Cash' : collection.debtorName}: KES {collection.amount?.toFixed(2)}
+                </Tag>
+              ))}
+            </div>
+          </div>
+        )}
+      </Modal>
+    );
+  };
+
+  // ========== SHORTAGE MODAL (Separate step) ==========
+  const ShortageModal = ({ 
+    visible, 
+    onCancel, 
+    onPost,
+    island
+  }) => {
+    const [shortageDetails, setShortageDetails] = useState(null);
+    const [creatingShortage, setCreatingShortage] = useState(false);
+    const [staffAccount, setStaffAccount] = useState(null);
+    const [loadingStaff, setLoadingStaff] = useState(false);
+    
+    useEffect(() => {
+      if (visible && island) {
+        prepareShortageDetails();
+      }
+    }, [visible, island]);
+    
+    const prepareShortageDetails = async () => {
+      if (!island || !island.attendants || island.attendants.length === 0) {
+        message.error('No attendant assigned to this island');
+        return;
+      }
+
+      const primaryAttendant = island.attendants[0];
+      
+      setLoadingStaff(true);
+      try {
+        const result = await staffAccountService.getStaffAccountsByStation(currentStationId);
+        const accounts = result?.accounts || result?.data || result || [];
+        
+        let foundAccount = accounts.find(account => {
+          const userId = account.user?.id || account.userId;
+          return userId === primaryAttendant.id;
+        });
+        
+        if (!foundAccount) {
+          const attendantFullName = `${primaryAttendant.firstName} ${primaryAttendant.lastName}`.toLowerCase().trim();
+          
+          foundAccount = accounts.find(account => {
+            const accountFullName = `${account.user?.firstName || ''} ${account.user?.lastName || ''}`.toLowerCase().trim();
+            return accountFullName === attendantFullName;
+          });
+        }
+        
+        setStaffAccount(foundAccount);
+        
+        if (!foundAccount) {
+          message.error(`No staff account found for ${primaryAttendant.firstName} ${primaryAttendant.lastName}`);
+        }
+        
+      } catch (error) {
+        console.error('Error fetching staff accounts:', error);
+        message.error('Failed to fetch staff accounts');
+      } finally {
+        setLoadingStaff(false);
+      }
+    };
+    
+    const getSeverityLevel = (amount) => {
+      if (amount <= 1000) return 'MINOR';
+      if (amount <= 5000) return 'MODERATE';
+      if (amount <= 20000) return 'MAJOR';
+      return 'CRITICAL';
+    };
+    
+    const handlePostShortage = async () => {
+      if (!staffAccount) {
+        message.error('No staff account found for attendant');
+        return;
+      }
+      
+      setCreatingShortage(true);
+      try {
+        const today = dayjs();
+        const dueDate = today.add(30, 'day');
+        
+        const shortageData = {
+          staffAccountId: staffAccount.id,
+          amount: island.shortageAmount,
+          description: `Island Collection Shortage - ${island.islandName}, Shift #${shift?.shiftNumber || 'N/A'}`,
+          shortageType: 'CASH',
+          responsibleParty: 'ATTENDANT',
+          severity: getSeverityLevel(island.shortageAmount),
+          comments: `Posted during shift closing. Expected: KES ${island.totalExpected?.toFixed(2)}, Collected: KES ${island.totalCollection?.toFixed(2)}`,
+          shiftId: shift?.id,
+          islandId: island.islandId,
+          dueDate: dueDate.toISOString(),
+          incidentDate: new Date().toISOString(),
+          recordedById: currentUser?.id,
+          stationId: currentStationId,
+          autoGenerated: true,
+          source: 'SHIFT_CLOSING'
+        };
+
+        console.log('Posting shortage:', shortageData);
+        
+        const response = await shortageService.createShortage(shortageData);
+        const shortage = response.data || response;
+        
+        message.success(`Shortage of KES ${island.shortageAmount.toFixed(2)} posted to ${island.attendants[0].firstName} ${island.attendants[0].lastName}`);
+        
+        onPost(island.key, shortage);
+        
+      } catch (error) {
+        console.error('Error posting shortage:', error);
+        message.error(`Failed to post shortage: ${error.message}`);
+      } finally {
+        setCreatingShortage(false);
+      }
+    };
+
+    if (!island) return null;
+
+    return (
+      <Modal
+        title={
+          <Space>
+            <AlertTriangle size={16} color="#fa8c16" />
+            <Text strong>Post Shortage - {island.islandName}</Text>
+            <Tag color="red" style={{ marginLeft: 8 }}>
+              KES {island.shortageAmount?.toFixed(2)}
+            </Tag>
+          </Space>
+        }
+        open={visible}
+        onCancel={onCancel}
+        width={600}
+        footer={[
+          <Button key="cancel" onClick={onCancel} disabled={creatingShortage}>
+            Cancel
+          </Button>,
+          <Button
+            key="post"
+            type="primary"
+            danger
+            onClick={handlePostShortage}
+            loading={creatingShortage}
+            disabled={!staffAccount || loadingStaff}
+            icon={<AlertTriangle size={14} />}
+          >
+            {creatingShortage ? 'Posting Shortage...' : 'Post Shortage to Attendant'}
+          </Button>
+        ]}
+      >
+        <Spin spinning={loadingStaff}>
           <div style={{ marginBottom: 16 }}>
-            <Card size="small">
+            <Card size="small" style={{ backgroundColor: '#fff7e6' }}>
               <Row gutter={16}>
-                <Col span={8}>
+                <Col span={12}>
                   <Statistic
-                    title="Expected Total"
-                    value={totalExpected}
+                    title="Expected Amount"
+                    value={island.totalExpected}
                     precision={2}
                     prefix="KES"
                     valueStyle={{ color: '#1890ff' }}
                   />
                 </Col>
-                <Col span={8}>
+                <Col span={12}>
                   <Statistic
-                    title="Collected"
-                    value={displayTotal}
+                    title="Collected Amount"
+                    value={island.totalCollection}
                     precision={2}
                     prefix="KES"
-                    valueStyle={{ color: displayTotal >= totalExpected ? '#52c41a' : '#faad14' }}
-                  />
-                </Col>
-                <Col span={8}>
-                  <Statistic
-                    title="Status"
-                    value={
-                      justPostedShortage ? 'Shortage Posted ✓' :
-                      displayTotal >= totalExpected ? 'Fully Collected ✓' : 
-                      'Shortage'
-                    }
-                    valueStyle={{ 
-                      color: justPostedShortage || displayTotal >= totalExpected ? '#52c41a' : '#ff4d4f',
-                      fontSize: '14px'
-                    }}
+                    valueStyle={{ color: '#52c41a' }}
                   />
                 </Col>
               </Row>
-              
-              {(autoExpenseAmount > 0 || manualExpenseAmount > 0) && (
-                <Alert
-                  message="Expense Details"
-                  description={
-                    <Space direction="vertical" size={0} style={{ width: '100%' }}>
-                      {autoExpenseAmount > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <Text type="secondary">Auto Expenses (pre-recorded):</Text>
-                          <Text strong style={{ color: '#fa8c16' }}>KES {autoExpenseAmount.toFixed(2)}</Text>
-                        </div>
-                      )}
-                      {manualExpenseAmount > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <Text type="secondary">Manual Expenses (entered now):</Text>
-                          <Text strong style={{ color: '#ff4d4f' }}>KES {manualExpenseAmount.toFixed(2)}</Text>
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-                        <Text strong>Total Expenses:</Text>
-                        <Text strong style={{ color: totalExpenses > 0 ? '#ff4d4f' : '#52c41a' }}>
-                          KES {totalExpenses.toFixed(2)}
-                        </Text>
-                      </div>
-                    </Space>
-                  }
-                  type="info"
-                  showIcon
-                  style={{ marginTop: 12 }}
-                />
-              )}
-              
-              {justPostedShortage && (
-                <Alert
-                  message="✅ Shortage Recorded"
-                  description={
-                    <div>
-                      <p><strong>KES {shortageAmount.toFixed(2)} shortage has been recorded for the attendant.</strong></p>
-                      <p>You can now save collections. All your entered data is preserved.</p>
-                    </div>
-                  }
-                  type="success"
-                  showIcon
-                  style={{ marginTop: 12 }}
-                />
-              )}
-              
-              {displayTotal >= totalExpected && (
-                <Alert
-                  message="✅ Fully Collected"
-                  description="Collections meet or exceed expected amount. No shortage to record."
-                  type="success"
-                  showIcon
-                  style={{ marginTop: 12 }}
-                />
-              )}
-              
-              {hasUnaddedCash && (
+              <Divider style={{ margin: '12px 0' }} />
+              <div style={{ textAlign: 'center' }}>
+                <Text type="secondary">Shortage Amount</Text>
                 <div style={{ 
-                  marginTop: 12, 
-                  padding: '8px 12px', 
-                  backgroundColor: '#fff7e6',
-                  border: '1px solid #ffbb96',
-                  borderRadius: '4px'
+                  fontSize: '32px', 
+                  fontWeight: 'bold',
+                  color: '#ff4d4f'
                 }}>
-                  <Text type="warning" strong>
-                    ⚠️ You have KES {parseFloat(cashAmount).toFixed(2)} in the cash field that hasn't been added. 
-                    Click "Add Cash Collection" to include it.
-                  </Text>
+                  KES {island.shortageAmount?.toFixed(2)}
                 </div>
-              )}
-              
-              {!canSaveCollections && hasPendingShortage && !hasUnaddedCash && (
-                <div style={{ 
-                  marginTop: 12, 
-                  padding: '8px 12px', 
-                  backgroundColor: '#fff2e8',
-                  border: '1px solid #ffbb96',
-                  borderRadius: '4px'
-                }}>
-                  <Text type="warning" strong>
-                    ⚠️ Save is blocked until shortage record is created
-                  </Text>
-                </div>
-              )}
+              </div>
             </Card>
           </div>
 
-          <Row gutter={[16, 16]}>
-            <Col span={12}>
-              <Card 
-                size="small" 
-                title="Cash Collections"
-                style={{ height: '100%' }}
-              >
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Space direction="vertical" style={{ width: '100%' }}>
-                    <InputNumber
-                      value={cashAmount}
-                      onChange={setCashAmount}
-                      placeholder="Enter cash amount"
-                      prefix="KES"
-                      style={{ width: '100%', marginBottom: 8 }}
-                      min={0}
-                      size="large"
-                    />
-                    <Button
-                      type="dashed"
-                      onClick={handleAddCashCollection}
-                      icon={<Plus size={14} />}
-                      block
-                      disabled={!cashAmount || parseFloat(cashAmount) <= 0}
-                    >
-                      Add Cash Collection
-                    </Button>
+          <Card size="small">
+            <Descriptions column={1} size="small">
+              <Descriptions.Item label="Island">
+                <Tag color="blue">{island.islandName}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Attendant">
+                {island.attendants && island.attendants.length > 0 ? (
+                  <Space>
+                    <UserOutlined />
+                    <Text>{island.attendants[0].firstName} {island.attendants[0].lastName}</Text>
                   </Space>
-                  
-                  {localCollections.filter(c => c.type === 'cash').map((collection) => (
-                    <Card key={collection.id} size="small" style={{ marginTop: 8 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Space>
-                          <Tag color="green">Cash</Tag>
-                          <Text strong>KES {collection.amount?.toFixed(2)}</Text>
-                        </Space>
-                        <Button
-                          danger
-                          size="small"
-                          icon={<Trash2 size={12} />}
-                          onClick={() => handleRemoveCollection(collection.id)}
-                        />
-                      </div>
-                    </Card>
-                  ))}
-                </Space>
-              </Card>
-            </Col>
-            
-            <Col span={12}>
-              <Card 
-                size="small" 
-                title="Debt Collections"
-                style={{ height: '100%' }}
-              >
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Space direction="vertical" style={{ width: '100%' }}>
-                    <Input
-                      placeholder="Search debtor by name, phone, or code..."
-                      prefix={<Search size={14} />}
-                      value={searchDebtor}
-                      onChange={(e) => setSearchDebtor(e.target.value)}
-                      style={{ width: '100%', marginBottom: 8 }}
-                    />
-                    <Select
-                      placeholder={loadingDebtors ? "Loading debtors..." : "Select a debtor"}
-                      value={selectedDebtor?.id}
-                      onChange={(value) => setSelectedDebtor(debtors.find(d => d.id === value))}
-                      style={{ width: '100%', marginBottom: 8 }}
-                      loading={loadingDebtors}
-                      showSearch
-                      filterOption={false}
-                      size="large"
-                    >
-                      {filteredDebtors.slice(0, 10).map(debtor => (
-                        <Option key={debtor.id} value={debtor.id}>
-                          <Space direction="vertical" size={0} style={{ width: '100%' }}>
-                            <Text strong>{debtor.name}</Text>
-                            {debtor.code && <Text type="secondary">Code: {debtor.code}</Text>}
-                            {debtor.phone && <Text type="secondary">Phone: {debtor.phone}</Text>}
-                          </Space>
-                        </Option>
-                      ))}
-                    </Select>
-                    <InputNumber
-                      value={debtAmount}
-                      onChange={setDebtAmount}
-                      placeholder="Enter debt amount"
-                      prefix="KES"
-                      style={{ width: '100%', marginBottom: 8 }}
-                      min={0}
-                      size="large"
-                    />
-                    <Button
-                      type="dashed"
-                      onClick={handleAddDebtCollection}
-                      icon={<Plus size={14} />}
-                      disabled={!selectedDebtor || !debtAmount}
-                      block
-                    >
-                      Add Debt Collection
-                    </Button>
-                  </Space>
-                  
-                  {localCollections.filter(c => c.type === 'debt').map((collection) => (
-                    <Card key={collection.id} size="small" style={{ marginTop: 8 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Space direction="vertical" size={0}>
-                          <Space>
-                            <Tag color="blue">Debt</Tag>
-                            <Text strong>{collection.debtorName}</Text>
-                          </Space>
-                          {collection.debtorCode && (
-                            <Text type="secondary" style={{ fontSize: '11px', marginLeft: 24 }}>
-                              Code: {collection.debtorCode}
-                            </Text>
-                          )}
-                          <Text strong style={{ marginLeft: 24 }}>KES {collection.amount?.toFixed(2)}</Text>
-                        </Space>
-                        <Button
-                          danger
-                          size="small"
-                          icon={<Trash2 size={12} />}
-                          onClick={() => handleRemoveCollection(collection.id)}
-                        />
-                      </div>
-                    </Card>
-                  ))}
-                </Space>
-              </Card>
-            </Col>
-          </Row>
-          
-          {localCollections.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <Text strong>Current Collections:</Text>
-              <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {localCollections.map(collection => (
-                  <Tag 
-                    key={collection.id} 
-                    color={collection.type === 'cash' ? 'green' : 'blue'}
-                    style={{ margin: '2px' }}
-                  >
-                    {collection.type === 'cash' ? 'Cash' : collection.debtorName}: KES {collection.amount?.toFixed(2)}
-                  </Tag>
-                ))}
-              </div>
-            </div>
-          )}
-        </Modal>
-        
-        <ShortageCreationModal />
-      </>
+                ) : (
+                  <Text type="danger">No attendant assigned</Text>
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label="Staff Account">
+                {staffAccount ? (
+                  <Tag color="green">Account Found ✓</Tag>
+                ) : (
+                  <Text type="danger">No staff account found</Text>
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label="Due Date">
+                {dayjs().add(30, 'day').format('DD/MM/YYYY')}
+              </Descriptions.Item>
+            </Descriptions>
+          </Card>
+        </Spin>
+      </Modal>
     );
   };
 
@@ -1809,7 +1337,6 @@ const IntegratedShiftClose = ({
       
     } else if (currentStep === 2) {
       const islandStats = calculateIslandStats();
-      
       const allCollectionsComplete = islandStats.every(island => island.collectionsModalCompleted);
       
       if (!allCollectionsComplete) {
@@ -1817,17 +1344,19 @@ const IntegratedShiftClose = ({
         return;
       }
       
-      // Check if all shortages are resolved (only for islands with shortageAmount > 0)
-      const allShortagesResolved = islandStats.every(island => 
-        island.shortageAmount <= 10 || island.shortagePosted
-      );
+      setCurrentStep(3);
       
-      if (!allShortagesResolved) {
-        message.error('Please resolve all shortages above KES 10 before proceeding');
+    } else if (currentStep === 3) {
+      const islandStats = calculateIslandStats();
+      const islandsWithShortages = islandStats.filter(island => island.shortageAmount > 10);
+      const allShortagesResolved = islandsWithShortages.every(island => island.shortagePosted);
+      
+      if (islandsWithShortages.length > 0 && !allShortagesResolved) {
+        message.warning('Please post all shortages before proceeding');
         return;
       }
       
-      setCurrentStep(3);
+      setCurrentStep(4);
     }
   };
 
@@ -1837,7 +1366,7 @@ const IntegratedShiftClose = ({
     }
   };
 
-  const handleIslandCollectionsSave = (islandKey, collectionsData, shortageAmount) => {
+  const handleIslandCollectionsSave = (islandKey, collectionsData) => {
     setCollections(prev => ({
       ...prev,
       [islandKey]: collectionsData
@@ -1845,6 +1374,19 @@ const IntegratedShiftClose = ({
     
     setCollectionsModalVisible(false);
     message.success('Collections saved for island');
+  };
+
+  const handlePostShortage = (islandKey, shortageRecord) => {
+    setPostedShortages(prev => ({
+      ...prev,
+      [islandKey]: {
+        ...shortageRecord,
+        postedAt: new Date().toISOString()
+      }
+    }));
+    
+    setShortageModalVisible(false);
+    setCurrentShortageIsland(null);
   };
 
   const prepareSummaryData = () => {
@@ -1869,7 +1411,7 @@ const IntegratedShiftClose = ({
           .filter(c => c && c.type === 'cash')
           .reduce((sum, c) => sum + (c.amount || 0), 0),
         collections: islandCollections,
-        shortageAmount: island.shortageAmount, // Now only populated for shortages
+        shortageAmount: island.shortageAmount,
         shortagePosted: island.shortagePosted,
         shortageRecord: island.shortageRecord,
         isComplete: true,
@@ -1886,7 +1428,7 @@ const IntegratedShiftClose = ({
     const totalAutoExpenses = enhancedIslands.reduce((sum, island) => sum + (island.autoExpenses || 0), 0);
     const totalExpenses = totalManualExpenses + totalAutoExpenses;
     
-    // Total shortage amount - only count when collections < expected
+    // Total shortage amount
     const totalShortageAmount = enhancedIslands.reduce((sum, island) => sum + (island.shortageAmount || 0), 0);
 
     const apiPayload = {
@@ -1958,8 +1500,8 @@ const IntegratedShiftClose = ({
           expectedCashAmount: expectedAmount,
           debtorCollections: debtorCollections,
           expensesAmount: totalIslandExpenses,
-          shortageAmount: shortageAmount, // Now only > 0 when there's a shortage
-          overageAmount: 0 // Always 0 now
+          shortageAmount: shortageAmount,
+          overageAmount: 0
         };
       }).filter(item => item.islandId),
       
@@ -1977,7 +1519,7 @@ const IntegratedShiftClose = ({
         totalManualExpenses,
         totalAutoExpenses,
         totalExpenses,
-        totalShortageAmount, // Now only reflects actual shortages
+        totalShortageAmount,
         totalIslands: enhancedIslands.length,
         islandsWithShortage: enhancedIslands.filter(island => island.shortageAmount > 10).length,
         islandsWithPostedShortages: enhancedIslands.filter(island => island.shortagePosted).length,
@@ -1994,7 +1536,7 @@ const IntegratedShiftClose = ({
       autoExpenses: autoExpenses
     };
 
-    console.log('✅ prepareSummaryData completed with expenses');
+    console.log('✅ prepareSummaryData completed');
     return summaryData;
   };
 
@@ -2794,11 +2336,6 @@ const IntegratedShiftClose = ({
     
     const allCollectionsComplete = islandStats.every(island => island.collectionsModalCompleted);
     
-    // Check if all shortages are resolved (only for islands with shortageAmount > 0)
-    const allShortagesResolved = islandStats.every(island => 
-      island.shortageAmount <= 10 || island.shortagePosted
-    );
-    
     const columns = [
       {
         title: 'ISLAND',
@@ -2860,43 +2397,26 @@ const IntegratedShiftClose = ({
       },
       {
         title: 'SHORTAGE',
-        width: 120,
+        width: 100,
         render: (_, island) => {
           if (island.shortageAmount === 0) {
-            return <Tag color="green">No Shortage</Tag>;
-          } else if (island.shortageAmount > 0) {
-            return (
-              <Tag color={island.shortagePosted ? 'orange' : 'red'}>
-                KES {island.shortageAmount?.toFixed(2)}
-                {island.shortagePosted && ' ✓'}
-              </Tag>
-            );
+            return <Tag color="green">None</Tag>;
           }
-          return null;
+          return (
+            <Tag color="red">
+              KES {island.shortageAmount?.toFixed(2)}
+            </Tag>
+          );
         },
       },
       {
         title: 'STATUS',
-        width: 120,
-        render: (_, island) => {
-          if (!island.collectionsModalCompleted) {
-            return <Tag color="red">Pending</Tag>;
-          }
-          
-          if (island.shortageAmount === 0) {
-            return <Tag color="green">Complete ✓</Tag>;
-          }
-          
-          if (island.shortageAmount > 0 && island.shortagePosted) {
-            return <Tag color="orange">Shortage Posted</Tag>;
-          }
-          
-          if (island.shortageAmount > 0) {
-            return <Tag color="red">Shortage Unresolved</Tag>;
-          }
-          
-          return <Tag color="gold">Complete</Tag>;
-        },
+        width: 100,
+        render: (_, island) => (
+          <Tag color={island.collectionsModalCompleted ? 'green' : 'red'}>
+            {island.collectionsModalCompleted ? 'Saved' : 'Pending'}
+          </Tag>
+        ),
       },
       {
         title: 'ACTIONS',
@@ -2919,10 +2439,6 @@ const IntegratedShiftClose = ({
     const totalIslands = islandStats.length;
     const islandsWithCollections = islandStats.filter(island => island.collectionsModalCompleted).length;
     const islandsWithShortages = islandStats.filter(island => island.shortageAmount > 10).length;
-    const islandsWithPostedShortages = islandStats.filter(island => island.shortagePosted).length;
-    const totalShortageAmount = islandStats
-      .filter(island => island.shortagePosted)
-      .reduce((sum, island) => sum + island.shortageAmount, 0);
 
     return (
       <div style={{ padding: '16px' }}>
@@ -2930,14 +2446,14 @@ const IntegratedShiftClose = ({
           <Space>
             <Wallet size={18} />
             Collections
-            {!allShortagesResolved && (
-              <Badge count="!" style={{ backgroundColor: '#ff4d4f', marginLeft: 8 }} />
+            {islandsWithShortages > 0 && (
+              <Badge count={`${islandsWithShortages} Shortages`} style={{ backgroundColor: '#ff4d4f' }} />
             )}
           </Space>
         </Title>
         
         <Row gutter={[8, 8]} style={{ marginBottom: 20 }}>
-          <Col span={4}>
+          <Col span={6}>
             <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
               <Statistic
                 title="Islands"
@@ -2947,7 +2463,7 @@ const IntegratedShiftClose = ({
               />
             </Card>
           </Col>
-          <Col span={4}>
+          <Col span={6}>
             <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
               <Statistic
                 title="With Shortages"
@@ -2956,58 +2472,38 @@ const IntegratedShiftClose = ({
               />
             </Card>
           </Col>
-          <Col span={4}>
-            <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
-              <Statistic
-                title="Shortages Posted"
-                value={islandsWithPostedShortages}
-                suffix={`/ ${islandsWithShortages}`}
-                valueStyle={{ fontSize: '14px', fontWeight: 'bold', color: '#fa8c16' }}
-              />
-            </Card>
-          </Col>
-          <Col span={4}>
+          <Col span={6}>
             <Card size="small" bodyStyle={{ padding: '8px', textAlign: 'center' }}>
               <Statistic
                 title="Total Shortage"
-                value={totalShortageAmount}
+                value={islandStats.reduce((sum, island) => sum + (island.shortageAmount || 0), 0)}
                 precision={0}
                 prefix="KES"
                 valueStyle={{ fontSize: '14px', fontWeight: 'bold', color: '#ff4d4f' }}
               />
             </Card>
           </Col>
-          <Col span={4}>
+          <Col span={6}>
             <Card 
               size="small" 
               bodyStyle={{ 
                 padding: '8px', 
                 textAlign: 'center',
-                backgroundColor: allCollectionsComplete && allShortagesResolved ? '#f6ffed' : '#fff7e6'
+                backgroundColor: allCollectionsComplete ? '#f6ffed' : '#fff7e6'
               }}
             >
               <Statistic
                 title="Status"
-                value={allCollectionsComplete && allShortagesResolved ? "Ready" : "In Progress"}
+                value={allCollectionsComplete ? "Ready" : "In Progress"}
                 valueStyle={{ 
                   fontSize: '14px', 
                   fontWeight: 'bold',
-                  color: allCollectionsComplete && allShortagesResolved ? '#52c41a' : '#faad14' 
+                  color: allCollectionsComplete ? '#52c41a' : '#faad14' 
                 }}
               />
             </Card>
           </Col>
         </Row>
-        
-        {!allShortagesResolved && (
-          <Alert
-            message="Action Required"
-            description="Some islands have unresolved shortages above KES 10. Please post shortages to attendants before proceeding."
-            type="error"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-        )}
         
         <Card bodyStyle={{ padding: '12px' }} style={{ marginBottom: 16 }}>
           <Table
@@ -3027,21 +2523,182 @@ const IntegratedShiftClose = ({
           <Button
             type="primary"
             onClick={handleNextStep}
-            disabled={!allCollectionsComplete || !allShortagesResolved}
+            disabled={!allCollectionsComplete}
             style={{ 
-              background: allCollectionsComplete && allShortagesResolved ? '#1890ff' : '#d9d9d9'
+              background: allCollectionsComplete ? '#1890ff' : '#d9d9d9'
             }}
           >
-            {allShortagesResolved ? 'Review & Submit' : 'Resolve Shortages First'}
+            Proceed to Shortages
           </Button>
         </div>
         
         <CollectionsModal
           visible={collectionsModalVisible}
           onCancel={() => setCollectionsModalVisible(false)}
-          onSave={(collectionsData, shortageAmount) => handleIslandCollectionsSave(currentIslandIndex, collectionsData, shortageAmount)}
+          onSave={(collectionsData) => handleIslandCollectionsSave(currentIslandIndex, collectionsData)}
           islandIndex={currentIslandIndex}
           currentCollections={collections[currentIslandIndex] || []}
+        />
+      </div>
+    );
+  };
+
+  const renderShortagesStep = () => {
+    const islandStats = calculateIslandStats();
+    const islandsWithShortages = islandStats.filter(island => island.shortageAmount > 10);
+    const allShortagesPosted = islandsWithShortages.every(island => island.shortagePosted);
+    
+    const columns = [
+      {
+        title: 'ISLAND',
+        key: 'island',
+        width: 180,
+        render: (_, island) => (
+          <Space direction="vertical" size={2}>
+            <Text strong>{island.islandName}</Text>
+            {island.attendants && island.attendants.length > 0 && (
+              <Tag color="blue">
+                <UserOutlined /> {island.attendants[0].firstName} {island.attendants[0].lastName}
+              </Tag>
+            )}
+          </Space>
+        ),
+      },
+      {
+        title: 'EXPECTED',
+        width: 120,
+        render: (_, island) => (
+          <Text strong>KES {island.totalExpected?.toFixed(2)}</Text>
+        ),
+      },
+      {
+        title: 'COLLECTED',
+        width: 120,
+        render: (_, island) => (
+          <Text strong>KES {island.totalCollection?.toFixed(2)}</Text>
+        ),
+      },
+      {
+        title: 'SHORTAGE AMOUNT',
+        width: 150,
+        render: (_, island) => (
+          <Text strong style={{ color: '#ff4d4f', fontSize: '16px' }}>
+            KES {island.shortageAmount?.toFixed(2)}
+          </Text>
+        ),
+      },
+      {
+        title: 'STATUS',
+        width: 120,
+        render: (_, island) => {
+          if (island.shortagePosted) {
+            return <Tag color="green">Posted ✓</Tag>;
+          }
+          return <Tag color="red">Pending</Tag>;
+        },
+      },
+      {
+        title: 'ACTIONS',
+        width: 150,
+        render: (_, island) => {
+          if (island.shortagePosted) {
+            return (
+              <Button 
+                size="small" 
+                disabled
+                icon={<CheckCircle size={14} />}
+              >
+                Already Posted
+              </Button>
+            );
+          }
+          return (
+            <Button
+              type="primary"
+              danger
+              size="small"
+              onClick={() => {
+                setCurrentShortageIsland(island);
+                setShortageModalVisible(true);
+              }}
+              icon={<AlertTriangle size={14} />}
+            >
+              Post Shortage
+            </Button>
+          );
+        },
+      }
+    ];
+
+    return (
+      <div style={{ padding: '16px' }}>
+        <Title level={4}>
+          <Space>
+            <AlertTriangle size={18} color="#fa8c16" />
+            Post Shortages
+            {islandsWithShortages.length === 0 && (
+              <Tag color="green">No Shortages to Post</Tag>
+            )}
+          </Space>
+        </Title>
+        
+        {islandsWithShortages.length === 0 ? (
+          <Card>
+            <div style={{ textAlign: 'center', padding: '40px' }}>
+              <CheckCircle size={48} color="#52c41a" style={{ marginBottom: 16 }} />
+              <Title level={4}>No Shortages Found</Title>
+              <Text type="secondary">All islands have fully collected their expected amounts.</Text>
+            </div>
+          </Card>
+        ) : (
+          <>
+            <Alert
+              message={`${islandsWithShortages.length} Island${islandsWithShortages.length > 1 ? 's' : ''} with Shortages`}
+              description="Please post shortages to the responsible attendants. Shortages below KES 10 are automatically ignored."
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+            
+            <Card bodyStyle={{ padding: '12px' }} style={{ marginBottom: 16 }}>
+              <Table
+                columns={columns}
+                dataSource={islandsWithShortages}
+                size="small"
+                pagination={false}
+                rowKey="key"
+              />
+            </Card>
+          </>
+        )}
+        
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <Button onClick={handlePrevStep} icon={<ArrowLeft size={16} />}>
+            Back to Collections
+          </Button>
+          <Button
+            type="primary"
+            onClick={handleNextStep}
+            disabled={!allShortagesPosted && islandsWithShortages.length > 0}
+            style={{ 
+              background: allShortagesPosted || islandsWithShortages.length === 0 ? '#52c41a' : '#d9d9d9',
+              border: 'none'
+            }}
+          >
+            {islandsWithShortages.length === 0 ? 'Proceed to Summary' : 
+             allShortagesPosted ? 'All Shortages Posted - Proceed to Summary' : 
+             'Post All Shortages First'}
+          </Button>
+        </div>
+        
+        <ShortageModal
+          visible={shortageModalVisible}
+          onCancel={() => {
+            setShortageModalVisible(false);
+            setCurrentShortageIsland(null);
+          }}
+          onPost={handlePostShortage}
+          island={currentShortageIsland}
         />
       </div>
     );
@@ -3326,7 +2983,7 @@ const IntegratedShiftClose = ({
           marginTop: '24px'
         }}>
           <Button onClick={handlePrevStep} icon={<ArrowLeft size={16} />}>
-            Back to Collections
+            Back to Shortages
           </Button>
           
           <Space>
@@ -3424,7 +3081,8 @@ const IntegratedShiftClose = ({
               {currentStep === 0 && renderReadingsStep()}
               {currentStep === 1 && renderIslandSalesStep()}
               {currentStep === 2 && renderCollectionsStep()}
-              {currentStep === 3 && renderSummaryStep()}
+              {currentStep === 3 && renderShortagesStep()}
+              {currentStep === 4 && renderSummaryStep()}
             </>
           )}
         </div>

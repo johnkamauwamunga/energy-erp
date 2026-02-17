@@ -1113,7 +1113,7 @@ const AccountsManagement = () => {
           <Col xs={12} sm={6} md={4}>
             <Card size="small" bodyStyle={{ padding: '8px' }}>
               <Statistic
-                title={<span style={{ fontSize: '11px' }}>Inflow</span>}
+                title={<span style={{ fontSize: '11px' }}>Latest Inflow</span>}
                 value={walletStats.latestInflow}
                 formatter={value => bankingService.formatCurrency(value)}
                 valueStyle={{ color: '#52c41a', fontSize: '14px' }}
@@ -1123,7 +1123,7 @@ const AccountsManagement = () => {
           <Col xs={12} sm={6} md={4}>
             <Card size="small" bodyStyle={{ padding: '8px' }}>
               <Statistic
-                title={<span style={{ fontSize: '11px' }}>Outflow</span>}
+                title={<span style={{ fontSize: '11px' }}>Latest Outflow</span>}
                 value={walletStats.latestOutflow}
                 formatter={value => bankingService.formatCurrency(value)}
                 valueStyle={{ color: '#ff4d4f', fontSize: '14px' }}

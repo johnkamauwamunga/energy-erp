@@ -89,6 +89,7 @@ const PersonnelStep = ({
   const shiftTypes = [
     { id: 'DAY', label: 'Day Shift', description: 'Morning to Evening (e.g., 7 AM - 7 PM)' },
     { id: 'NIGHT', label: 'Night Shift', description: 'Evening to Morning (e.g., 7 PM - 7 AM)' },
+    { id: 'MID-DAY', label: 'Mid Shift', description: 'Evening to Morning (e.g., 12 PM - 7 AM)' },
     { id: 'OTHER', label: 'Other Shift', description: 'Custom shift timings' }
   ];
 
