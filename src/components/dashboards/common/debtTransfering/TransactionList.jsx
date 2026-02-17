@@ -1,5 +1,5 @@
 // src/components/dashboards/common/debtTransfer/TransactionList.jsx
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Table,
   Tag,
@@ -18,7 +18,10 @@ import {
   Popover,
   Alert,
   Empty,
-  Divider
+  Divider,
+  Modal,
+  Descriptions,
+  message
 } from 'antd';
 import {
   FilterOutlined,
@@ -32,9 +35,16 @@ import {
   InfoCircleOutlined,
   SortDescendingOutlined,
   FileTextOutlined,
-  InboxOutlined
+  InboxOutlined,
+  CloseOutlined,
+  UserOutlined,
+  BankOutlined,
+  ClockCircleOutlined,
+  TagOutlined,
+  FilePdfOutlined
 } from '@ant-design/icons';
 import { formatCurrency, formatDate } from '../../../../utils/formatters';
+import dayjs from 'dayjs';
 
 // Import report generators
 import AdvancedReportGenerator from '../../common/downloadable/AdvancedReportGenerator';
@@ -60,6 +70,112 @@ const TransactionList = ({
     field: 'transactionDate',
     order: 'descend'
   });
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [detailsModalVisible, setDetailsModalVisible] = useState(false);
+  const [selectedDebtor, setSelectedDebtor] = useState(null);
+
+  // Get unique debtors from transactions
+  const uniqueDebtors = useMemo(() => {
+    const debtorsMap = new Map();
+    
+    transactions.forEach(t => {
+      const debtor = t.stationDebtorAccount?.debtor || t.debtor;
+      if (debtor && debtor.id && !debtorsMap.has(debtor.id)) {
+        debtorsMap.set(debtor.id, {
+          id: debtor.id,
+          name: debtor.name,
+          code: debtor.code,
+          description: debtor.description
+        });
+      }
+    });
+    
+    return Array.from(debtorsMap.values());
+  }, [transactions]);
+
+  // Check if transaction is from today
+  const isToday = (dateString) => {
+    const today = dayjs().startOf('day');
+    const transactionDate = dayjs(dateString).startOf('day');
+    return transactionDate.isSame(today);
+  };
+
+  // Filter transactions by selected debtor
+  const filteredTransactions = useMemo(() => {
+    if (!selectedDebtor) return transactions;
+    
+    return transactions.filter(t => {
+      const debtorId = t.stationDebtorAccount?.debtor?.id || t.debtor?.id;
+      return debtorId === selectedDebtor;
+    });
+  }, [transactions, selectedDebtor]);
+
+  // Enhanced transactions with sequential numbering
+  const enhancedTransactions = useMemo(() => 
+    filteredTransactions.map((transaction, index) => ({
+      ...transaction,
+      sequentialNumber: index + 1,
+      formattedDate: formatDate(transaction.transactionDate, true),
+      formattedAmount: formatCurrency(Math.abs(transaction.amount)),
+      formattedNewBalance: formatCurrency(transaction.newBalance),
+      formattedPreviousBalance: formatCurrency(transaction.previousBalance),
+      formattedStatus: transaction.status?.replace(/_/g, ' ') || 'N/A',
+      debtorName: transaction.stationDebtorAccount?.debtor?.name || 
+                  transaction.debtor?.name || 
+                  'N/A',
+      debtorCode: transaction.stationDebtorAccount?.debtor?.code || 
+                  transaction.debtor?.code,
+      shiftNumber: transaction.shift?.shiftNumber || 'N/A',
+      shiftStartTime: transaction.shift?.startTime,
+      recordedByDisplay: transaction.recordedBy ? 
+        `${transaction.recordedBy.firstName} ${transaction.recordedBy.lastName}` : 
+        'System',
+      stationName: transaction.stationDebtorAccount?.station?.name || 
+                   transaction.station?.name || 
+                   'N/A',
+      timestamp: new Date(transaction.transactionDate).getTime(),
+      isToday: isToday(transaction.transactionDate)
+    })),
+  [filteredTransactions]);
+
+  // Sort transactions
+  const sortedTransactions = useMemo(() => {
+    const sorted = [...enhancedTransactions];
+    
+    if (sortOrder.field && sortOrder.order) {
+      sorted.sort((a, b) => {
+        let aValue = a[sortOrder.field];
+        let bValue = b[sortOrder.field];
+        
+        if (sortOrder.field === 'debtorName') {
+          aValue = a.debtorName;
+          bValue = b.debtorName;
+        }
+        
+        if (sortOrder.field === 'shiftNumber') {
+          aValue = a.shiftNumber;
+          bValue = b.shiftNumber;
+        }
+        
+        if (sortOrder.field === 'transactionDate') {
+          aValue = a.timestamp;
+          bValue = b.timestamp;
+        }
+        
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          return sortOrder.order === 'descend' 
+            ? bValue.localeCompare(aValue)
+            : aValue.localeCompare(bValue);
+        }
+        
+        return sortOrder.order === 'descend' 
+          ? bValue - aValue
+          : aValue - bValue;
+      });
+    }
+    
+    return sorted;
+  }, [enhancedTransactions, sortOrder]);
 
   const handleSearch = (value) => {
     onFiltersChange({ ...filters, search: value });
@@ -85,12 +201,24 @@ const TransactionList = ({
     });
   };
 
+  const handleDebtorChange = (debtorId) => {
+    setSelectedDebtor(debtorId);
+    // Also update parent filters if needed
+    onFiltersChange({ ...filters, debtorId });
+  };
+
   const clearFilters = () => {
     onFiltersChange({});
+    setSelectedDebtor(null);
     setSortOrder({
       field: 'transactionDate',
       order: 'descend'
     });
+  };
+
+  const handleViewDetails = (transaction) => {
+    setSelectedTransaction(transaction);
+    setDetailsModalVisible(true);
   };
 
   // Get status color
@@ -104,135 +232,17 @@ const TransactionList = ({
     return colors[status] || 'default';
   };
 
-  // Get unique shift numbers from transactions
-  const getUniqueShiftNumbers = () => {
-    if (!transactions.length) return [];
-    
-    const shifts = transactions
-      .map(t => t.shift?.shiftNumber)
-      .filter(Boolean)
-      .filter((value, index, self) => self.indexOf(value) === index);
-    
-    return shifts.map(shift => ({
-      text: shift,
-      value: shift
-    }));
+  // Get transaction type icon
+  const getTypeIcon = (type) => {
+    return type === 'CREDIT' ? <ArrowDownOutlined /> : <ArrowUpOutlined />;
   };
 
-  // Check if any filters are active
-  const hasActiveFilters = useMemo(() => {
-    return Object.keys(filters).length > 0;
-  }, [filters]);
+  // Row className for highlighting
+  const rowClassName = (record) => {
+    return record.isToday ? 'highlight-today' : '';
+  };
 
-  // Calculate summary statistics
-  const summaryStats = useMemo(() => {
-    if (!transactions.length) {
-      return {
-        totalAmount: 0,
-        creditTotal: 0,
-        debitTotal: 0,
-        averageAmount: 0,
-        settledCount: 0,
-        outstandingCount: 0,
-        debtorCount: 0,
-        maxAmount: 0,
-        minAmount: 0
-      };
-    }
-
-    const totalAmount = transactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    const creditTotal = transactions
-      .filter(t => t.type === 'CREDIT')
-      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    const debitTotal = transactions
-      .filter(t => t.type === 'DEBIT')
-      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    const settledCount = transactions.filter(t => t.status === 'SETTLED').length;
-    const outstandingCount = transactions.filter(t => t.status === 'OUTSTANDING').length;
-    const debtorNames = new Set(
-      transactions
-        .map(t => t.stationDebtorAccount?.debtor?.name || t.debtor?.name)
-        .filter(Boolean)
-    );
-
-    return {
-      totalAmount,
-      creditTotal,
-      debitTotal,
-      averageAmount: totalAmount / transactions.length,
-      settledCount,
-      outstandingCount,
-      debtorCount: debtorNames.size,
-      maxAmount: Math.max(...transactions.map(t => Math.abs(t.amount))),
-      minAmount: Math.min(...transactions.map(t => Math.abs(t.amount)))
-    };
-  }, [transactions]);
-
-  // Enhanced transactions data for reporting WITH SEQUENTIAL NUMBERING
-  const enhancedTransactions = useMemo(() => 
-    transactions.map((transaction, index) => ({
-      ...transaction,
-      sequentialNumber: index + 1,
-      formattedDate: formatDate(transaction.transactionDate, true),
-      formattedAmount: formatCurrency(Math.abs(transaction.amount)),
-      formattedNewBalance: formatCurrency(transaction.newBalance),
-      formattedStatus: transaction.status?.replace(/_/g, ' ') || 'N/A',
-      debtorName: transaction.stationDebtorAccount?.debtor?.name || 
-                  transaction.debtor?.name || 
-                  'N/A',
-      shiftNumber: transaction.shift?.shiftNumber || 'N/A',
-      recordedByDisplay: transaction.recordedBy ? 
-        `${transaction.recordedBy.firstName} ${transaction.recordedBy.lastName}` : 
-        'System',
-      timestamp: new Date(transaction.transactionDate).getTime()
-    })),
-  [transactions]);
-
-  // Sort transactions based on current sort order
-  const sortedTransactions = useMemo(() => {
-    const sorted = [...enhancedTransactions];
-    
-    if (sortOrder.field && sortOrder.order) {
-      sorted.sort((a, b) => {
-        let aValue = a[sortOrder.field];
-        let bValue = b[sortOrder.field];
-        
-        // Handle nested properties
-        if (sortOrder.field === 'debtorName') {
-          aValue = a.stationDebtorAccount?.debtor?.name || a.debtor?.name;
-          bValue = b.stationDebtorAccount?.debtor?.name || b.debtor?.name;
-        }
-        
-        if (sortOrder.field === 'shiftNumber') {
-          aValue = a.shift?.shiftNumber;
-          bValue = b.shift?.shiftNumber;
-        }
-        
-        if (sortOrder.field === 'transactionDate') {
-          aValue = new Date(a.transactionDate).getTime();
-          bValue = new Date(b.transactionDate).getTime();
-        }
-        
-        if (typeof aValue === 'string' && typeof bValue === 'string') {
-          if (sortOrder.order === 'descend') {
-            return bValue.localeCompare(aValue);
-          } else {
-            return aValue.localeCompare(bValue);
-          }
-        }
-        
-        if (sortOrder.order === 'descend') {
-          return bValue - aValue;
-        } else {
-          return aValue - bValue;
-        }
-      });
-    }
-    
-    return sorted;
-  }, [enhancedTransactions, sortOrder]);
-
-  // Transaction columns for table display - DEFAULT DESC ORDER
+  // Columns for the table
   const columns = [
     {
       title: '#',
@@ -249,52 +259,67 @@ const TransactionList = ({
       title: 'Date & Time',
       dataIndex: 'transactionDate',
       key: 'transactionDate',
-      render: (date) => (
+      render: (date, record) => (
         <Tooltip title={new Date(date).toLocaleString()}>
-          <span style={{ fontSize: '11px' }}>{formatDate(date, true)}</span>
+          <Space direction="vertical" size={0}>
+            <Text strong={record.isToday} style={{ fontSize: '11px' }}>
+              {formatDate(date, true)}
+            </Text>
+            {record.isToday && (
+              <Badge count="Today" style={{ backgroundColor: '#52c41a', fontSize: '9px' }} />
+            )}
+          </Space>
         </Tooltip>
       ),
       width: 150,
-      sorter: (a, b) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime(),
-      defaultSortOrder: 'descend',
-      sortDirections: ['descend', 'ascend']
-    },
-    {
-      title: 'Shift',
-      key: 'shiftNumber',
-      render: (_, record) => (
-        <Badge 
-          count={record.shift?.shiftNumber || 'N/A'} 
-          style={{ 
-            backgroundColor: '#1890ff',
-            fontSize: '11px'
-          }}
-        />
-      ),
-      width: 80,
-      filters: getUniqueShiftNumbers(),
-      onFilter: (value, record) => record.shift?.shiftNumber === value,
-      sorter: (a, b) => (b.shift?.shiftNumber || '').localeCompare(a.shift?.shiftNumber || ''),
+      sorter: true,
       defaultSortOrder: 'descend'
     },
     {
       title: 'Debtor',
       key: 'debtor',
       render: (_, record) => (
-        <Text strong style={{ fontSize: '12px' }}>
-          {record.stationDebtorAccount?.debtor?.name || 
-           record.debtor?.name || 
-           'N/A'}
-        </Text>
+        <Space direction="vertical" size={0}>
+          <Text strong style={{ fontSize: '12px' }}>
+            {record.debtorName}
+          </Text>
+          {record.debtorCode && (
+            <Tag color="blue" style={{ fontSize: '9px', marginTop: '2px' }}>
+              {record.debtorCode}
+            </Tag>
+          )}
+        </Space>
       ),
-      width: 140,
-      ellipsis: true,
-      sorter: (a, b) => {
-        const aName = (a.stationDebtorAccount?.debtor?.name || a.debtor?.name || '').toLowerCase();
-        const bName = (b.stationDebtorAccount?.debtor?.name || b.debtor?.name || '').toLowerCase();
-        return bName.localeCompare(aName);
-      },
-      defaultSortOrder: 'descend'
+      width: 160,
+      sorter: true
+    },
+    {
+      title: 'Station',
+      key: 'station',
+      render: (_, record) => (
+        <Tooltip title={`Station ID: ${record.stationDebtorAccount?.stationId || record.stationId}`}>
+          <Text style={{ fontSize: '11px' }}>{record.stationName}</Text>
+        </Tooltip>
+      ),
+      width: 130,
+      sorter: true
+    },
+    {
+      title: 'Shift',
+      key: 'shift',
+      render: (_, record) => (
+        <Tooltip title={record.shiftStartTime ? `Started: ${formatDate(record.shiftStartTime, true)}` : ''}>
+          <Badge 
+            count={record.shiftNumber} 
+            style={{ 
+              backgroundColor: '#1890ff',
+              fontSize: '10px'
+            }}
+          />
+        </Tooltip>
+      ),
+      width: 100,
+      sorter: true
     },
     {
       title: 'Type',
@@ -303,7 +328,8 @@ const TransactionList = ({
       render: (type) => (
         <Tag 
           color={type === 'CREDIT' ? 'green' : 'red'}
-          icon={type === 'CREDIT' ? <ArrowDownOutlined /> : <ArrowUpOutlined />}
+          icon={getTypeIcon(type)}
+          style={{ fontSize: '11px' }}
         >
           {type}
         </Tag>
@@ -316,6 +342,36 @@ const TransactionList = ({
       onFilter: (value, record) => record.type === value
     },
     {
+      title: 'Amount',
+      dataIndex: 'amount',
+      key: 'amount',
+      render: (amount, record) => (
+        <Text 
+          strong 
+          type={record.type === 'CREDIT' ? 'success' : 'danger'}
+          style={{ fontSize: '12px' }}
+        >
+          {record.type === 'CREDIT' ? '-' : '+'} {formatCurrency(Math.abs(amount))}
+        </Text>
+      ),
+      width: 120,
+      sorter: true
+    },
+    {
+      title: 'Balance',
+      dataIndex: 'newBalance',
+      key: 'newBalance',
+      render: (balance, record) => (
+        <Tooltip title={`Previous: ${formatCurrency(record.previousBalance)}`}>
+          <Text strong style={{ fontSize: '12px' }}>
+            {formatCurrency(balance)}
+          </Text>
+        </Tooltip>
+      ),
+      width: 120,
+      sorter: true
+    },
+    {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
@@ -326,67 +382,25 @@ const TransactionList = ({
           style={{ fontSize: '11px' }}
         />
       ),
-      width: 120,
+      width: 110,
       filters: [
         { text: 'Outstanding', value: 'OUTSTANDING' },
         { text: 'Settled', value: 'SETTLED' },
         { text: 'Overdue', value: 'OVERDUE' },
         { text: 'Partially Paid', value: 'PARTIALLY_PAID' }
       ],
-      onFilter: (value, record) => record.status === value,
-      sorter: (a, b) => (b.status || '').localeCompare(a.status || ''),
-      defaultSortOrder: 'descend'
-    },
-    {
-      title: 'Amount',
-      dataIndex: 'amount',
-      key: 'amount',
-      render: (amount, record) => (
-        <Text 
-          strong 
-          type={record.type === 'CREDIT' ? 'success' : 'danger'}
-          style={{ fontSize: '12px' }}
-        >
-          {formatCurrency(Math.abs(amount))}
-        </Text>
-      ),
-      width: 120,
-      sorter: (a, b) => Math.abs(b.amount) - Math.abs(a.amount),
-      defaultSortOrder: 'descend',
-      sortDirections: ['descend', 'ascend']
-    },
-    {
-      title: 'Balance',
-      dataIndex: 'newBalance',
-      key: 'newBalance',
-      render: (balance) => (
-        <Text strong style={{ fontSize: '12px' }}>
-          {formatCurrency(balance)}
-        </Text>
-      ),
-      width: 120,
-      sorter: (a, b) => b.newBalance - a.newBalance,
-      defaultSortOrder: 'descend',
-      sortDirections: ['descend', 'ascend']
+      onFilter: (value, record) => record.status === value
     },
     {
       title: 'Recorded By',
       key: 'recordedBy',
       render: (_, record) => (
         <Text style={{ fontSize: '11px' }}>
-          {record.recordedBy ? 
-            `${record.recordedBy.firstName} ${record.recordedBy.lastName}` : 
-            'System'
-          }
+          {record.recordedByDisplay}
         </Text>
       ),
       width: 120,
-      sorter: (a, b) => {
-        const aName = (a.recordedBy ? `${a.recordedBy.firstName} ${a.recordedBy.lastName}` : '').toLowerCase();
-        const bName = (b.recordedBy ? `${b.recordedBy.firstName} ${b.recordedBy.lastName}` : '').toLowerCase();
-        return bName.localeCompare(aName);
-      },
-      defaultSortOrder: 'descend'
+      sorter: true
     },
     {
       title: 'Actions',
@@ -394,63 +408,62 @@ const TransactionList = ({
       width: 70,
       fixed: 'right',
       render: (_, record) => (
-        <Space>
-          <Tooltip title="View Details">
-            <Button 
-              type="text" 
-              icon={<EyeOutlined />} 
-              size="small"
-              onClick={() => handleViewDetails(record)}
-            />
-          </Tooltip>
-        </Space>
+        <Tooltip title="View Details">
+          <Button 
+            type="text" 
+            icon={<EyeOutlined />} 
+            size="small"
+            onClick={() => handleViewDetails(record)}
+          />
+        </Tooltip>
       )
     }
   ];
 
-  // Columns for export (optimized for reports) - WITH SEQUENTIAL NUMBERING
+  // Columns for export
   const exportColumns = [
     {
       title: '#',
       key: 'sequence',
       render: (_, record, index) => index + 1,
-      type: 'number',
-      width: 50
+      type: 'number'
     },
     {
       title: 'Date & Time',
       dataIndex: 'transactionDate',
-      key: 'transactionDate',
+      key: 'date',
       render: (date) => formatDate(date, true),
       type: 'datetime'
     },
     {
+      title: 'Debtor Name',
+      key: 'debtorName',
+      render: (_, record) => record.debtorName,
+      type: 'text'
+    },
+    {
+      title: 'Debtor Code',
+      key: 'debtorCode',
+      render: (_, record) => record.debtorCode || 'N/A',
+      type: 'text'
+    },
+    {
+      title: 'Station',
+      key: 'station',
+      render: (_, record) => record.stationName,
+      type: 'text'
+    },
+    {
       title: 'Shift Number',
       key: 'shiftNumber',
-      render: (_, record) => record.shift?.shiftNumber || 'N/A',
+      render: (_, record) => record.shiftNumber,
       type: 'text'
     },
     {
-      title: 'Debtor',
-      key: 'debtor',
-      render: (_, record) => 
-        record.stationDebtorAccount?.debtor?.name || 
-        record.debtor?.name || 
-        'N/A',
-      type: 'text'
-    },
-    {
-      title: 'Type',
+      title: 'Transaction Type',
       dataIndex: 'type',
       key: 'type',
       type: 'text'
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status) => status?.replace(/_/g, ' ') || 'N/A',
-      type: 'status'
     },
     {
       title: 'Amount',
@@ -460,26 +473,24 @@ const TransactionList = ({
       type: 'currency'
     },
     {
-      title: 'Transaction Type',
-      dataIndex: 'type',
-      key: 'typeDisplay',
-      render: (type) => type === 'CREDIT' ? 'Credit (Payment Received)' : 'Debit (Debt Incurred)',
-      type: 'text'
+      title: 'Previous Balance',
+      dataIndex: 'previousBalance',
+      key: 'previousBalance',
+      render: (balance) => balance || 0,
+      type: 'currency'
     },
     {
-      title: 'Balance After Transaction',
+      title: 'New Balance',
       dataIndex: 'newBalance',
       key: 'newBalance',
       render: (balance) => balance,
       type: 'currency'
     },
     {
-      title: 'Recorded By',
-      key: 'recordedBy',
-      render: (_, record) => 
-        record.recordedBy ? 
-          `${record.recordedBy.firstName} ${record.recordedBy.lastName}` : 
-          'System',
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status) => status?.replace(/_/g, ' ') || 'N/A',
       type: 'text'
     },
     {
@@ -490,39 +501,44 @@ const TransactionList = ({
       type: 'text'
     },
     {
-      title: 'Previous Balance',
-      dataIndex: 'previousBalance',
-      key: 'previousBalance',
-      render: (balance) => balance || 0,
-      type: 'currency'
+      title: 'Recorded By',
+      key: 'recordedBy',
+      render: (_, record) => record.recordedByDisplay,
+      type: 'text'
     },
     {
-      title: 'Transaction Value',
-      dataIndex: 'amount',
-      key: 'absoluteAmount',
-      render: (amount) => Math.abs(amount),
-      type: 'currency'
+      title: 'Collection Reference',
+      key: 'collectionRef',
+      render: (_, record) => {
+        if (record.islandCollectionId) return `Island: ${record.islandCollectionId}`;
+        if (record.shiftCollectionId) return `Shift: ${record.shiftCollectionId}`;
+        if (record.accountTransferId) return `Transfer: ${record.accountTransferId}`;
+        return 'N/A';
+      },
+      type: 'text'
     }
   ];
 
-  // Summary data for report header
-  const summaryData = useMemo(() => ({
-    'Total Transactions': enhancedTransactions.length,
-    'Total Amount': formatCurrency(summaryStats.totalAmount),
-    'Credit Total': formatCurrency(summaryStats.creditTotal),
-    'Debit Total': formatCurrency(summaryStats.debitTotal),
-    'Settled Count': summaryStats.settledCount,
-    'Outstanding Count': summaryStats.outstandingCount,
-    'Unique Debtors': summaryStats.debtorCount,
-    'Average Transaction': formatCurrency(summaryStats.averageAmount),
-    'Largest Transaction': formatCurrency(summaryStats.maxAmount),
-    'Smallest Transaction': formatCurrency(summaryStats.minAmount)
-  }), [enhancedTransactions, summaryStats]);
+  // Summary data
+  const summaryStats = useMemo(() => {
+    if (!filteredTransactions.length) return null;
 
-  const handleViewDetails = (transaction) => {
-    console.log('View transaction details:', transaction);
-    // Implement modal or drawer for details
-  };
+    const totalAmount = filteredTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    const creditTotal = filteredTransactions
+      .filter(t => t.type === 'CREDIT')
+      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    const debitTotal = filteredTransactions
+      .filter(t => t.type === 'DEBIT')
+      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+    return {
+      totalAmount,
+      creditTotal,
+      debitTotal,
+      transactionCount: filteredTransactions.length,
+      debtorCount: uniqueDebtors.length
+    };
+  }, [filteredTransactions, uniqueDebtors]);
 
   // Handle table sort change
   const handleTableChange = (pagination, filters, sorter) => {
@@ -532,12 +548,7 @@ const TransactionList = ({
     });
   };
 
-  // Main export handler
-  const handleExport = (format) => {
-    console.log(`Exporting ${enhancedTransactions.length} transactions as ${format}`);
-  };
-
-  // Render empty state - SIMPLIFIED like ShiftManagementTest
+  // Render empty state
   const renderEmptyState = () => (
     <div style={{ 
       padding: '48px 0', 
@@ -549,19 +560,18 @@ const TransactionList = ({
     }}>
       <Empty
         image={<InboxOutlined style={{ fontSize: 64, color: '#bfbfbf' }} />}
-        imageStyle={{ height: 80 }}
         description={
           <Space direction="vertical" size="small">
             <Text strong style={{ fontSize: 16 }}>No Transactions Found</Text>
             <Text type="secondary" style={{ fontSize: 14, maxWidth: 400 }}>
-              {hasActiveFilters 
+              {selectedDebtor || Object.keys(filters).length > 0
                 ? 'No transactions match your current filters. Try adjusting your search criteria.'
                 : 'There are no transactions to display at this time.'}
             </Text>
           </Space>
         }
       >
-        {hasActiveFilters && (
+        {(selectedDebtor || Object.keys(filters).length > 0) && (
           <Button 
             type="primary" 
             onClick={clearFilters}
@@ -586,8 +596,8 @@ const TransactionList = ({
 
       {/* Main Content */}
       <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-        {/* Summary Cards - Only show if there are transactions */}
-        {showSummaryCards && transactions.length > 0 && (
+        {/* Summary Cards */}
+        {showSummaryCards && summaryStats && (
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col xs={24} sm={6}>
               <Card size="small">
@@ -597,11 +607,6 @@ const TransactionList = ({
                   precision={2}
                   prefix="KES"
                   valueStyle={{ color: '#3f8600' }}
-                  suffix={
-                    <Tooltip title="Sum of all transaction amounts">
-                      <InfoCircleOutlined style={{ color: '#999', marginLeft: 4 }} />
-                    </Tooltip>
-                  }
                 />
               </Card>
             </Col>
@@ -613,7 +618,7 @@ const TransactionList = ({
                   precision={2}
                   prefix="KES"
                   valueStyle={{ color: '#52c41a' }}
-                  suffix={<ArrowDownOutlined style={{ color: '#52c41a', marginRight: 4 }} />}
+                  suffix={<ArrowDownOutlined style={{ color: '#52c41a' }} />}
                 />
               </Card>
             </Col>
@@ -625,7 +630,7 @@ const TransactionList = ({
                   precision={2}
                   prefix="KES"
                   valueStyle={{ color: '#cf1322' }}
-                  suffix={<ArrowUpOutlined style={{ color: '#cf1322', marginRight: 4 }} />}
+                  suffix={<ArrowUpOutlined style={{ color: '#cf1322' }} />}
                 />
               </Card>
             </Col>
@@ -633,7 +638,7 @@ const TransactionList = ({
               <Card size="small">
                 <Statistic
                   title="Transactions"
-                  value={transactions.length}
+                  value={summaryStats.transactionCount}
                   suffix={`/ ${summaryStats.debtorCount} debtors`}
                   valueStyle={{ color: '#1890ff' }}
                 />
@@ -668,7 +673,7 @@ const TransactionList = ({
                     icon={<FilterOutlined />}
                     onClick={clearFilters}
                     size="small"
-                    disabled={!hasActiveFilters}
+                    disabled={!selectedDebtor && Object.keys(filters).length === 0}
                   >
                     Clear
                   </Button>
@@ -677,15 +682,32 @@ const TransactionList = ({
             }
           >
             <Row gutter={[12, 12]} align="middle">
-              <Col xs={24} sm={6}>
+              <Col xs={24} sm={5}>
                 <Search
-                  placeholder="Search debtor, description..."
+                  placeholder="Search description..."
                   onSearch={handleSearch}
                   onChange={(e) => !e.target.value && handleSearch('')}
                   allowClear
                   size="small"
-                  disabled={loading}
                 />
+              </Col>
+              <Col xs={24} sm={5}>
+                <Select
+                  placeholder="Filter by Debtor"
+                  value={selectedDebtor}
+                  onChange={handleDebtorChange}
+                  style={{ width: '100%' }}
+                  allowClear
+                  size="small"
+                  showSearch
+                  optionFilterProp="children"
+                >
+                  {uniqueDebtors.map(debtor => (
+                    <Option key={debtor.id} value={debtor.id}>
+                      {debtor.name} {debtor.code ? `(${debtor.code})` : ''}
+                    </Option>
+                  ))}
+                </Select>
               </Col>
               <Col xs={24} sm={4}>
                 <Select
@@ -695,7 +717,6 @@ const TransactionList = ({
                   style={{ width: '100%' }}
                   allowClear
                   size="small"
-                  disabled={loading}
                 >
                   <Option value="CREDIT">Credit</Option>
                   <Option value="DEBIT">Debit</Option>
@@ -709,61 +730,69 @@ const TransactionList = ({
                   style={{ width: '100%' }}
                   allowClear
                   size="small"
-                  disabled={loading}
                 >
                   <Option value="OUTSTANDING">Outstanding</Option>
                   <Option value="SETTLED">Settled</Option>
                   <Option value="OVERDUE">Overdue</Option>
-                  <Option value="PARTIALLY_PAID">Partially Paid</Option>
-                </Select>
-              </Col>
-              <Col xs={24} sm={4}>
-                <Select
-                  placeholder="Shift"
-                  value={filters.shiftNumber}
-                  onChange={handleShiftChange}
-                  style={{ width: '100%' }}
-                  allowClear
-                  showSearch
-                  size="small"
-                  disabled={loading || transactions.length === 0}
-                >
-                  {getUniqueShiftNumbers().map(shift => (
-                    <Option key={shift.value} value={shift.value}>
-                      Shift {shift.text}
-                    </Option>
-                  ))}
                 </Select>
               </Col>
               <Col xs={24} sm={6}>
-                {/* Export Button */}
-                <AdvancedReportGenerator
-                  dataSource={enhancedTransactions}
-                  columns={exportColumns}
-                  title={`Transaction History Report - ${currentStation?.name || 'Company'} Level`}
-                  fileName={`debt_transactions_${currentStation?.code || 'company'}_${new Date().toISOString().split('T')[0]}`}
-                  summaryData={summaryData}
-                  reportType="finance"
-                  stationInfo={currentStation}
-                  footerText={`Generated from Lynx Energy System - ${currentUser ? `User: ${currentUser.firstName} ${currentUser.lastName}` : ''} - ${new Date().toLocaleDateString()}`}
-                  showFooter={true}
-                  enableCustomization={true}
-                  onReportGenerate={handleExport}
-                  disabled={transactions.length === 0}
-                  showGrandTotals={false}
-                  horizontalScroll={true}
-                  maxVisibleColumns={10}
-                  compactMode={true}
-                  hideAdvancedButtons={false}
+                <RangePicker
+                  style={{ width: '100%' }}
+                  onChange={handleDateChange}
+                  size="small"
+                  placeholder={['Start Date', 'End Date']}
                 />
               </Col>
             </Row>
 
+            {/* Export Button */}
+            <div style={{ marginTop: 12, textAlign: 'right' }}>
+              <AdvancedReportGenerator
+                dataSource={enhancedTransactions}
+                columns={exportColumns}
+                title={`Debt Transaction Report - ${selectedDebtor ? 
+                  uniqueDebtors.find(d => d.id === selectedDebtor)?.name : 
+                  'All Debtors'}`}
+                fileName={`debt_transactions_${dayjs().format('YYYYMMDD_HHmmss')}`}
+                summaryData={{
+                  'Total Transactions': enhancedTransactions.length,
+                  'Total Amount': formatCurrency(summaryStats?.totalAmount || 0),
+                  'Credit Total': formatCurrency(summaryStats?.creditTotal || 0),
+                  'Debit Total': formatCurrency(summaryStats?.debitTotal || 0),
+                  ...(selectedDebtor && {
+                    'Selected Debtor': uniqueDebtors.find(d => d.id === selectedDebtor)?.name
+                  })
+                }}
+                reportType="finance"
+                stationInfo={currentStation}
+                footerText={`Generated from Lynx Energy System - ${currentUser ? 
+                  `User: ${currentUser.firstName} ${currentUser.lastName}` : ''} - 
+                  ${new Date().toLocaleDateString()}`}
+                disabled={enhancedTransactions.length === 0}
+              />
+            </div>
+
             {/* Active Filters Display */}
-            {hasActiveFilters && (
+            {(selectedDebtor || Object.keys(filters).length > 0) && (
               <div style={{ marginTop: 12 }}>
                 <Space size={[0, 8]} wrap>
                   <Text type="secondary" style={{ fontSize: 12 }}>Active filters:</Text>
+                  
+                  {selectedDebtor && (
+                    <Badge
+                      count={`Debtor: ${uniqueDebtors.find(d => d.id === selectedDebtor)?.name}`}
+                      style={{ 
+                        backgroundColor: '#e6f7ff',
+                        color: '#1890ff',
+                        border: '1px solid #91d5ff',
+                        fontSize: 11,
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => setSelectedDebtor(null)}
+                    />
+                  )}
+                  
                   {Object.entries(filters).map(([key, value]) => {
                     if (!value) return null;
                     let displayValue = value;
@@ -791,22 +820,20 @@ const TransactionList = ({
           </Card>
         )}
 
-        {/* Main Content - Table or Empty State */}
+        {/* Transactions Table */}
         <Card size="small">
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '48px 0', minHeight: '400px' }}>
-              <div style={{ marginBottom: 16 }}>
-                <ReloadOutlined spin style={{ fontSize: 32, color: '#1890ff' }} />
-              </div>
-              <Text type="secondary">Loading transactions...</Text>
+            <div style={{ textAlign: 'center', padding: '48px 0' }}>
+              <ReloadOutlined spin style={{ fontSize: 32, color: '#1890ff' }} />
+              <div style={{ marginTop: 16 }}>Loading transactions...</div>
             </div>
-          ) : transactions.length === 0 ? (
+          ) : enhancedTransactions.length === 0 ? (
             renderEmptyState()
           ) : (
             <Table
               columns={columns}
               dataSource={sortedTransactions}
-              rowKey="sequentialNumber"
+              rowKey="id"
               loading={loading}
               onChange={handleTableChange}
               pagination={{
@@ -815,11 +842,11 @@ const TransactionList = ({
                 showQuickJumper: true,
                 showTotal: (total, range) => 
                   `${range[0]}-${range[1]} of ${total} transactions`,
-                defaultPageSize: 10,
                 pageSizeOptions: ['10', '20', '50', '100']
               }}
               size="small"
-              scroll={{ x: 1200 }}
+              scroll={{ x: 1500 }}
+              rowClassName={rowClassName}
               summary={() => (
                 <Table.Summary fixed>
                   <Table.Summary.Row>
@@ -827,38 +854,17 @@ const TransactionList = ({
                       <Space>
                         <SortDescendingOutlined style={{ color: '#1890ff' }} />
                         <Text strong>Sorted by: {sortOrder.field}</Text>
-                        <Text type="secondary">({sortOrder.order === 'descend' ? 'Descending' : 'Ascending'})</Text>
+                        <Text type="secondary">
+                          ({sortOrder.order === 'descend' ? 'Descending' : 'Ascending'})
+                        </Text>
                       </Space>
                     </Table.Summary.Cell>
-                    <Table.Summary.Cell index={1}>
-                      <Text strong>
-                        Total: {formatCurrency(summaryStats.totalAmount)}
-                      </Text>
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell index={2} colSpan={3}>
+                    <Table.Summary.Cell index={1} colSpan={6}>
                       <Text type="secondary">
                         Showing {sortedTransactions.length} transactions 
-                        {summaryStats.creditTotal > 0 && ` (${formatCurrency(summaryStats.creditTotal)} in credits)`}
-                        {summaryStats.debitTotal > 0 && ` (${formatCurrency(summaryStats.debitTotal)} in debits)`}
+                        {summaryStats && ` • Total: ${formatCurrency(summaryStats.totalAmount)}`}
+                        {selectedDebtor && ` • Filtered by: ${uniqueDebtors.find(d => d.id === selectedDebtor)?.name}`}
                       </Text>
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell index={3}>
-                      {/* Secondary Export Button */}
-                      <AdvancedReportGenerator
-                        dataSource={enhancedTransactions}
-                        columns={exportColumns}
-                        title={`Detailed Debt Transactions - ${currentStation?.name || 'Company'}`}
-                        fileName={`detailed_transactions_${new Date().toISOString().split('T')[0]}`}
-                        summaryData={summaryData}
-                        reportType="finance"
-                        showFooter={true}
-                        customStyles={{
-                          fontSize: 8,
-                          rowHeight: 5,
-                          alternateRowColors: true
-                        }}
-                        enableCustomization={false}
-                      />
                     </Table.Summary.Cell>
                   </Table.Summary.Row>
                 </Table.Summary>
@@ -866,25 +872,240 @@ const TransactionList = ({
             />
           )}
         </Card>
-
-        {/* Footer message when no data */}
-        {transactions.length === 0 && !loading && hasActiveFilters && (
-          <div style={{ textAlign: 'center', marginTop: 16 }}>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              <InfoCircleOutlined style={{ marginRight: 4 }} />
-              Try adjusting your filters or clearing them to see more transactions.
-            </Text>
-          </div>
-        )}
       </div>
 
-      {/* Add CSS for better empty state */}
+      {/* Transaction Details Modal */}
+      <Modal
+        title={
+          <Space>
+            <FileTextOutlined style={{ color: '#1890ff' }} />
+            <span>Transaction Details</span>
+            {selectedTransaction?.isToday && (
+              <Badge count="Today" style={{ backgroundColor: '#52c41a' }} />
+            )}
+          </Space>
+        }
+        open={detailsModalVisible}
+        onCancel={() => setDetailsModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setDetailsModalVisible(false)}>
+            Close
+          </Button>,
+          <Button 
+            key="export" 
+            type="primary"
+            icon={<FilePdfOutlined />}
+            onClick={() => {
+              // Export single transaction as PDF
+              message.info('Export functionality coming soon');
+            }}
+          >
+            Export PDF
+          </Button>
+        ]}
+        width={800}
+      >
+        {selectedTransaction && (
+          <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            {/* Status Banner */}
+            <Alert
+              message={
+                <Space>
+                  <Badge status={getStatusColor(selectedTransaction.status)} />
+                  <Text strong>Status: {selectedTransaction.formattedStatus}</Text>
+                </Space>
+              }
+              type={selectedTransaction.status === 'SETTLED' ? 'success' : 'info'}
+              showIcon
+            />
+
+            {/* Transaction Summary Cards */}
+            <Row gutter={[16, 16]}>
+              <Col span={8}>
+                <Card size="small">
+                  <Statistic
+                    title="Amount"
+                    value={Math.abs(selectedTransaction.amount)}
+                    precision={2}
+                    prefix="KES"
+                    valueStyle={{ 
+                      color: selectedTransaction.type === 'CREDIT' ? '#52c41a' : '#cf1322' 
+                    }}
+                    suffix={selectedTransaction.type === 'CREDIT' ? '(Credit)' : '(Debit)'}
+                  />
+                </Card>
+              </Col>
+              <Col span={8}>
+                <Card size="small">
+                  <Statistic
+                    title="Previous Balance"
+                    value={selectedTransaction.previousBalance}
+                    precision={2}
+                    prefix="KES"
+                    valueStyle={{ color: '#8c8c8c' }}
+                  />
+                </Card>
+              </Col>
+              <Col span={8}>
+                <Card size="small">
+                  <Statistic
+                    title="New Balance"
+                    value={selectedTransaction.newBalance}
+                    precision={2}
+                    prefix="KES"
+                    valueStyle={{ color: '#1890ff' }}
+                  />
+                </Card>
+              </Col>
+            </Row>
+
+            {/* Transaction Details */}
+            <Card size="small" title="Transaction Information">
+              <Descriptions column={2} size="small">
+                {/* <Descriptions.Item label="Transaction ID">
+                  <Text copyable>{selectedTransaction.id}</Text>
+                </Descriptions.Item> */}
+                <Descriptions.Item label="Date & Time">
+                  {formatDate(selectedTransaction.transactionDate, true)}
+                </Descriptions.Item>
+                <Descriptions.Item label="Type">
+                  <Tag color={selectedTransaction.type === 'CREDIT' ? 'green' : 'red'}>
+                    {selectedTransaction.type}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="Description">
+                  {selectedTransaction.description || 'N/A'}
+                </Descriptions.Item>
+                <Descriptions.Item label="Debtor">
+                  <Space>
+                    <UserOutlined />
+                    {selectedTransaction.debtorName}
+                    {selectedTransaction.debtorCode && (
+                      <Tag color="blue">{selectedTransaction.debtorCode}</Tag>
+                    )}
+                  </Space>
+                </Descriptions.Item>
+                <Descriptions.Item label="Station">
+                  <Space>
+                    <BankOutlined />
+                    {selectedTransaction.stationName}
+                  </Space>
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            {/* Account Details */}
+            <Card size="small" title="Account Information">
+              <Descriptions column={2} size="small">
+                {/* <Descriptions.Item label="Account ID">
+                  <Text copyable>{selectedTransaction.stationDebtorAccountId}</Text>
+                </Descriptions.Item> */}
+                <Descriptions.Item label="Current Debt">
+                  {formatCurrency(selectedTransaction.stationDebtorAccount?.currentDebt || 0)}
+                </Descriptions.Item>
+                <Descriptions.Item label="Debtor Description">
+                  {selectedTransaction.stationDebtorAccount?.debtor?.description || 'N/A'}
+                </Descriptions.Item>
+                <Descriptions.Item label="Credit Limit">
+                  {selectedTransaction.stationDebtorAccount?.debtor?.hasCreditLimit ? 
+                    formatCurrency(selectedTransaction.stationDebtorAccount?.debtor?.creditLimit) : 
+                    'No Limit'}
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            {/* Shift Details */}
+            <Card size="small" title="Shift Information">
+              <Descriptions column={2} size="small">
+                <Descriptions.Item label="Shift Number">
+                  {selectedTransaction.shiftNumber}
+                </Descriptions.Item>
+                <Descriptions.Item label="Shift Start">
+                  {selectedTransaction.shiftStartTime ? 
+                    formatDate(selectedTransaction.shiftStartTime, true) : 
+                    'N/A'}
+                </Descriptions.Item>
+                {/* <Descriptions.Item label="Shift ID">
+                  <Text copyable>{selectedTransaction.shiftId}</Text>
+                </Descriptions.Item> */}
+              </Descriptions>
+            </Card>
+
+            {/* Collection References */}
+            {/* {(selectedTransaction.islandCollectionId || 
+              selectedTransaction.shiftCollectionId || 
+              selectedTransaction.accountTransferId) && (
+              <Card size="small" title="Collection References">
+                <Descriptions column={1} size="small">
+                  {selectedTransaction.islandCollectionId && (
+                    <Descriptions.Item label="Island Collection ID">
+                      <Text copyable>{selectedTransaction.islandCollectionId}</Text>
+                    </Descriptions.Item>
+                  )}
+                  {selectedTransaction.shiftCollectionId && (
+                    <Descriptions.Item label="Shift Collection ID">
+                      <Text copyable>{selectedTransaction.shiftCollectionId}</Text>
+                    </Descriptions.Item>
+                  )}
+                  {selectedTransaction.accountTransferId && (
+                    <Descriptions.Item label="Account Transfer ID">
+                      <Text copyable>{selectedTransaction.accountTransferId}</Text>
+                    </Descriptions.Item>
+                  )}
+                </Descriptions>
+              </Card>
+            )} */}
+
+            {/* Audit Information */}
+            <Card size="small" title="Audit Information">
+              <Descriptions column={2} size="small">
+                <Descriptions.Item label="Recorded By">
+                  <Space>
+                    <UserOutlined />
+                    {selectedTransaction.recordedByDisplay}
+                  </Space>
+                </Descriptions.Item>
+                <Descriptions.Item label="Created At">
+                  <Space>
+                    <ClockCircleOutlined />
+                    {formatDate(selectedTransaction.createdAt, true)}
+                  </Space>
+                </Descriptions.Item>
+                <Descriptions.Item label="Updated At">
+                  {formatDate(selectedTransaction.updatedAt, true)}
+                </Descriptions.Item>
+                {/* <Descriptions.Item label="Company ID">
+                  <Text copyable>{selectedTransaction.companyId}</Text>
+                </Descriptions.Item> */}
+              </Descriptions>
+            </Card>
+          </Space>
+        )}
+      </Modal>
+
+      {/* Styles */}
       <style>{`
+        .highlight-today {
+          background-color: #f6ffed !important;
+          border-left: 3px solid #52c41a;
+          animation: highlightPulse 2s ease-in-out;
+        }
+        
+        .highlight-today:hover td {
+          background-color: #d9f7be !important;
+        }
+        
+        @keyframes highlightPulse {
+          0% { background-color: #f6ffed; }
+          50% { background-color: #b7eb8f; }
+          100% { background-color: #f6ffed; }
+        }
+
         .ant-empty {
           margin: 0;
         }
         .ant-card-body {
-          padding: ${transactions.length === 0 ? '0' : '24px'};
+          padding: ${enhancedTransactions.length === 0 ? '0' : '24px'};
         }
       `}</style>
     </div>
