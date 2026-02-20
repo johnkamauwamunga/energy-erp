@@ -467,6 +467,25 @@ const handleNavigateToPumpReadings = (shiftId) => {
   });
 };
 
+const handleNavigateToReconcilliations = (shiftId) => {
+  if (!shiftId || !userStationId) {
+    message.warning('Shift ID or Station ID missing');
+    return;
+  }
+  
+  const shift = shiftsHistory.find(s => s.id === shiftId);
+  
+  // Navigate with state
+  navigate('/readings/reconcilliation-readings', {
+    state: {
+      shiftId,
+      stationId: userStationId,
+      shiftNumber: shift?.shiftNumber || 'Unknown',
+      shiftData: shift
+    }
+  });
+};
+
 const handleNavigateToTankReadings = (shiftId) => {
   if (!shiftId || !userStationId) {
     message.warning('Shift ID or Station ID missing');
@@ -799,15 +818,22 @@ const exportColumns = [
                   >
                     View Attendants
                   </Menu.Item>
-                  <Menu.Divider />
                   <Menu.Item 
+                    key="reconcilliations"
+                    icon={<Users size={14} />}
+                    onClick={() => handleNavigateToReconcilliations(record.id)}
+                  >
+                    View Reconcilliation
+                  </Menu.Item>
+                  <Menu.Divider />
+                  {/* <Menu.Item 
                     key="reconciliation"
                     icon={<BarChart3 size={14} />}
                     onClick={() => handleViewReconciliation(record.id)}
                     disabled={record.status === 'OPEN' || record.status === 'PENDING'}
                   >
                     View Reconciliation
-                  </Menu.Item>
+                  </Menu.Item> */}
                   <Menu.Divider />
                   {record.status === 'PENDING' && (
                     <Menu.Item 

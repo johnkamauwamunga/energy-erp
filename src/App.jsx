@@ -24,6 +24,7 @@ const StationManagerDashboard = React.lazy(() => import('./components/dashboards
 const SupervisorDashboard = React.lazy(() => import('./components/dashboards/SupervisorDashboard'));
 const PumpMeterReadings = React.lazy(() => import('./components/dashboards/common/shift/readings/PumpMeterReadings'));
 const TankFuelReadings = React.lazy(() => import('./components/dashboards/common/shift/readings/TankFuelReadings'));
+const ReconcilliationReadings =  React.lazy(() => import('./components/dashboards/common/shift/readings/ReconcilliationReadings'));
 // Feature Modules
 const ServiceStationManagement = React.lazy(() => import('./components/features/stations/ServiceStationManagement'));
 const FuelManagement = React.lazy(() => import('./components/features/fuel/FuelManagement'));
@@ -186,6 +187,13 @@ function App() {
               <RoleProtectedRoute allowedRoles={['STATION_MANAGER', 'SUPERVISOR']}>
                 {/* You'll need to import this component */}
                 <TankFuelReadings />
+              </RoleProtectedRoute>
+            } />
+
+              <Route path="/readings/reconcilliation-readings" element={
+              <RoleProtectedRoute allowedRoles={['STATION_MANAGER', 'SUPERVISOR']}>
+                {/* You'll need to import this component */}
+                <ReconcilliationReadings />
               </RoleProtectedRoute>
             } />
             

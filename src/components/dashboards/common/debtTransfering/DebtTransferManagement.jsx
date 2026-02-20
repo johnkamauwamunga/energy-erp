@@ -35,7 +35,7 @@ const { TabPane } = Tabs;
 const DebtTransferManagement = () => {
   const [activeTab, setActiveTab] = useState('transactions');
   const [transactions, setTransactions] = useState([]);
-  const [transfers, setTransfers] = useState([]);
+  const [transfers, setTransfers] = useState([]); 
   const [loading, setLoading] = useState(false);
   const [transactionFilters, setTransactionFilters] = useState({});
   const [transferFilters, setTransferFilters] = useState({});

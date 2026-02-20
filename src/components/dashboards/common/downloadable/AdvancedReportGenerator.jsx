@@ -325,7 +325,7 @@ const AdvancedReportGenerator = ({
   const [securitySettings, setSecuritySettings] = useState({
     passwordProtected: false,
     password: '',
-    watermarkText: 'CONFIDENTIAL',
+    watermarkText: 'CON',
     hideSensitiveData: reportType === 'users' || reportType === 'finance'
   });
 
@@ -1080,7 +1080,7 @@ const AdvancedReportGenerator = ({
                   fontWeight: 'bold',
                   backgroundColor: columnCount <= 5 ? '#e6f7ff' : 'white'
                 }}>
-                  {columnCount}c
+                  {columnCount}
                 </div>
                 <Text type="secondary">Portrait</Text>
               </div>
@@ -1098,7 +1098,7 @@ const AdvancedReportGenerator = ({
                   fontWeight: 'bold',
                   backgroundColor: columnCount > 5 ? '#e6f7ff' : 'white'
                 }}>
-                  {columnCount}c
+                  {columnCount}
                 </div>
                 <Text type="secondary">Landscape</Text>
               </div>

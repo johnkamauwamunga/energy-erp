@@ -41,6 +41,7 @@ import WarehouseManagement from '../common/warehouses/WarehouseManagement';
 import StationFuelSales from '../common/fuelSales/StationFuelSales';
 import CashMovement from '../common/cashMovement/CashMovement';
 import ShortageManagement from '../common/shortages/ShortageManagement';
+import ReconciliationTest from '../common/ReconciliationTest';
 import { FallOutlined } from '@ant-design/icons';
 
 
@@ -214,7 +215,7 @@ const StationManagerDashboard = () => {
       case 'reconciliation':
         return <TankReconciliationManagement />;
       case 'debug':
-        return <StationDebug />;
+        return <ReconciliationTest />;
       case 'receipts':
         return <PlaceholderComponent title="Receipts Management" icon={Receipt} />;
       default:
