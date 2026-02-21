@@ -1,4 +1,4 @@
-// EnhancedSummaryModal.jsx (FIXED - Proper shift closing)
+// EnhancedSummaryModal.jsx (FIXED - Proper expense display without double counting)
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -162,12 +162,15 @@ const EnhancedSummaryModal = ({
     }
   }, [visible]);
 
-  // Calculate debtor breakdown
+  // ========== FIXED: Calculate debtor breakdown ==========
   const debtorBreakdown = useMemo(() => {
     const debtorMap = new Map();
     
     islands.forEach(island => {
+      // Use displayValues if available, otherwise fallback to direct properties
+      const display = island.displayValues || island;
       const collections = island.collections || [];
+      
       collections.forEach(collection => {
         if (collection && collection.type === 'debt' && collection.debtorName) {
           const debtorName = collection.debtorName;
@@ -202,25 +205,28 @@ const EnhancedSummaryModal = ({
     return Array.from(debtorMap.values()).sort((a, b) => b.total - a.total);
   }, [islands]);
 
-  // Calculate expense breakdown by island
+  // ========== FIXED: Calculate expense breakdown ==========
   const expenseBreakdown = useMemo(() => {
     const breakdown = [];
     
     islands.forEach(island => {
+      // Use displayValues if available
+      const display = island.displayValues || island;
       const autoExpenseDetails = island.autoExpenseDetails || [];
-      const manualExpenses = island.manualExpenses || 0;
-      const totalExpenses = island.totalExpenses || 0;
+      const autoExpenses = display.autoExpenses || island.autoExpenses || 0;
+      const manualExpenses = display.manualExpenses || island.manualExpenses || 0;
+      const totalExpenses = autoExpenses + manualExpenses;
       
       if (totalExpenses > 0) {
         breakdown.push({
           key: island.islandId || island.islandName,
           islandName: island.islandName,
           islandId: island.islandId,
-          autoExpenses: island.autoExpenses || 0,
+          autoExpenses: autoExpenses,
           manualExpenses: manualExpenses,
           totalExpenses: totalExpenses,
           autoExpenseDetails: autoExpenseDetails,
-          hasAutoExpenses: autoExpenseDetails.length > 0,
+          hasAutoExpenses: autoExpenseDetails.length > 0 || autoExpenses > 0,
           hasManualExpenses: manualExpenses > 0
         });
       }
@@ -229,35 +235,51 @@ const EnhancedSummaryModal = ({
     return breakdown.sort((a, b) => b.totalExpenses - a.totalExpenses);
   }, [islands]);
 
-  // ========== MODIFIED RECONCILIATION DATA - Clear structure ==========
+  // ========== FIXED RECONCILIATION DATA - Using pre-calculated values ==========
   const reconciliationData = useMemo(() => {
     return islands.map((island, index) => {
-      const cashDrops = island.cashCollection || 0;
-      const debtCollections = island.collections?.filter(c => c && c.type === 'debt') || [];
-      const cashCollections = island.collections?.filter(c => c && c.type === 'cash') || [];
+      // Use displayValues if available (from IntegratedShiftClose)
+      // This ensures we use the pre-calculated values that already have expenses factored in
+      const display = island.displayValues || island;
       
-      const totalDebts = debtCollections.reduce((sum, debt) => sum + (debt.amount || 0), 0);
-      const totalCashCollected = cashCollections.reduce((sum, cash) => sum + (cash.amount || 0), 0);
+      // Collections data
+      const collections = island.collections || [];
+      const debtCollections = collections.filter(c => c && c.type === 'debt');
+      const cashCollections = collections.filter(c => c && c.type === 'cash');
       
-      const totalSales = island.totalActualSales || 0;
-      const receipts = island.receipts || 0;
-      const autoExpenses = island.autoExpenses || 0;
-      const manualExpenses = island.manualExpenses || 0;
+      // Use pre-calculated values from IntegratedShiftClose
+      const totalSales = display.totalSales || island.totalActualSales || 0;
+      const receipts = display.receipts || island.receipts || 0;
+      
+      // EXPENSE VALUES - FOR DISPLAY ONLY (not used in calculations)
+      const autoExpenses = display.autoExpenses || island.autoExpenses || 0;
+      const manualExpenses = display.manualExpenses || island.manualExpenses || 0;
       const totalExpenses = autoExpenses + manualExpenses;
       
-      const totalCollected = cashDrops + totalDebts + receipts - totalExpenses;
+      // COLLECTION VALUES - from actual collections
+      const cashDrops = display.cashCollected || 
+                        cashCollections.reduce((sum, cash) => sum + (cash.amount || 0), 0);
+      const totalDebts = display.debtCollected || 
+                        debtCollections.reduce((sum, debt) => sum + (debt.amount || 0), 0);
       
-      // Expected total (sales + receipts - expenses)
-      const expectedTotal = totalSales + receipts - totalExpenses;
+      // Total collected (expenses are NOT subtracted here because they're already in sales)
+      const totalCollected = cashDrops + totalDebts + receipts;
+      
+      // Expected amount (from pre-calculated value - already has expenses factored in)
+      const expectedTotal = display.expectedAmount || (totalSales + receipts);
       
       // Shortage (only when collected < expected)
-      const shortageAmount = expectedTotal > totalCollected ? expectedTotal - totalCollected : 0;
+      const shortageAmount = display.shortageAmount !== undefined ? display.shortageAmount :
+                            (expectedTotal > totalCollected ? expectedTotal - totalCollected : 0);
       
       const status = shortageAmount > 10 ? 'SHORT' : 'OK';
-      const statusDisplay = shortageAmount === 0 ? 'Complete' : shortageAmount > 10 ? 'Shortage' : 'Minor';
+      const statusDisplay = shortageAmount === 0 ? 'Complete' : 
+                           shortageAmount > 10 ? 'Shortage' : 'Minor';
       
       // Attendant names
-      const attendantNames = island.attendants?.map(a => `${a.firstName || ''} ${a.lastName || ''}`).filter(Boolean).join(', ') || 'No attendant';
+      const attendantNames = island.attendants?.map(a => 
+        `${a.firstName || ''} ${a.lastName || ''}`
+      ).filter(Boolean).join(', ') || 'No attendant';
       
       return {
         key: index,
@@ -265,29 +287,37 @@ const EnhancedSummaryModal = ({
         islandId: island.islandId,
         attendants: island.attendants || [],
         attendantNames: attendantNames,
+        
+        // DISPLAY VALUES (shown in UI)
         totalSales: totalSales,
         receipts: receipts,
         autoExpenses: autoExpenses,
         manualExpenses: manualExpenses,
         totalExpenses: totalExpenses,
+        
+        // COLLECTION VALUES
         cashDrops: cashDrops,
-        cashCollections: totalCashCollected,
         totalDebts: totalDebts,
         debtCollections: debtCollections,
+        cashCollections: cashCollections,
         totalCollected: totalCollected,
+        
+        // EXPECTED & SHORTAGE
         expectedTotal: expectedTotal,
         shortageAmount: shortageAmount,
         status: status,
         statusDisplay: statusDisplay,
         shortagePosted: island.shortagePosted || false,
+        
+        // METADATA
         isComplete: island.isComplete || false,
-        collections: island.collections || [],
+        collections: collections,
         autoExpenseDetails: island.autoExpenseDetails || []
       };
     });
   }, [islands]);
 
-  // ========== MODIFIED OVERALL TOTALS - Clear structure ==========
+  // ========== FIXED OVERALL TOTALS - Using pre-calculated values ==========
   const overallTotals = useMemo(() => {
     const totalCashDrops = reconciliationData.reduce((sum, row) => sum + row.cashDrops, 0);
     const totalSales = reconciliationData.reduce((sum, row) => sum + row.totalSales, 0);
@@ -296,9 +326,12 @@ const EnhancedSummaryModal = ({
     const totalManualExpenses = reconciliationData.reduce((sum, row) => sum + row.manualExpenses, 0);
     const totalExpenses = totalAutoExpenses + totalManualExpenses;
     const totalDebts = reconciliationData.reduce((sum, row) => sum + row.totalDebts, 0);
-    const totalCashCollections = reconciliationData.reduce((sum, row) => sum + row.cashCollections, 0);
-    const totalCollected = totalCashDrops + totalDebts + totalReceipts - totalExpenses;
-    const totalExpected = totalSales + totalReceipts - totalExpenses;
+    
+    // IMPORTANT: totalCollected does NOT subtract expenses because they're already in sales
+    const totalCollected = reconciliationData.reduce((sum, row) => sum + row.totalCollected, 0);
+    
+    // expectedTotal already has expenses factored in from previous step
+    const totalExpected = reconciliationData.reduce((sum, row) => sum + row.expectedTotal, 0);
     
     const totalShortageAmount = reconciliationData
       .filter(row => row.shortageAmount > 10)
@@ -320,7 +353,6 @@ const EnhancedSummaryModal = ({
       totalManualExpenses,
       totalExpenses,
       totalDebts,
-      totalCashCollections,
       totalCollected,
       totalExpected,
       totalShortageAmount,
@@ -428,7 +460,8 @@ const EnhancedSummaryModal = ({
         totalIslands: reconciliationData.length,
         totalDebtors: debtorBreakdown.length,
         totalTransactions: debtorBreakdown.reduce((sum, d) => sum + d.transactions.length, 0),
-        totalExpenseItems: expenseBreakdown.reduce((sum, e) => sum + (e.autoExpenseDetails?.length || 0), 0),
+        totalExpenseItems: expenseBreakdown.reduce((sum, e) => sum + (e.autoExpenseDetails?.length || 0), 0) + 
+                          (overallTotals.hasManualExpenses ? 1 : 0),
         hasShortages: overallTotals.hasShortages,
         totalShortageAmount: overallTotals.totalShortageAmount,
         isBalanced: overallTotals.isBalanced
@@ -436,7 +469,7 @@ const EnhancedSummaryModal = ({
     };
   };
 
-  // ========== MAIN ISLAND TABLE COLUMNS - Clear structure ==========
+  // ========== FIXED MAIN ISLAND TABLE COLUMNS ==========
   const islandColumns = [
     {
       title: 'ISLAND & ATTENDANT',
@@ -454,13 +487,24 @@ const EnhancedSummaryModal = ({
       ),
     },
     {
-      title: 'EXPECTED',
-      key: 'expectedTotal',
-      width: 120,
+      title: 'SALES',
+      key: 'totalSales',
+      width: 100,
       align: 'right',
       render: (_, record) => (
         <Text strong style={{ fontSize: '13px', color: '#1890ff' }}>
-          {formatCurrency(record.expectedTotal)}
+          {formatCurrency(record.totalSales)}
+        </Text>
+      ),
+    },
+    {
+      title: 'RECEIPTS',
+      key: 'receipts',
+      width: 100,
+      align: 'right',
+      render: (_, record) => (
+        <Text strong style={{ fontSize: '13px', color: '#fa8c16' }}>
+          {formatCurrency(record.receipts)}
         </Text>
       ),
     },
@@ -474,9 +518,19 @@ const EnhancedSummaryModal = ({
           <Text strong style={{ color: record.totalExpenses > 0 ? '#ff4d4f' : '#52c41a' }}>
             {formatCurrency(record.totalExpenses)}
           </Text>
-          {record.autoExpenses > 0 && (
+          {record.autoExpenses > 0 && record.manualExpenses > 0 && (
             <Text type="secondary" style={{ fontSize: '9px' }}>
+              A:{formatCurrency(record.autoExpenses)} M:{formatCurrency(record.manualExpenses)}
+            </Text>
+          )}
+          {record.autoExpenses > 0 && record.manualExpenses === 0 && (
+            <Text type="secondary" style={{ fontSize: '9px', color: '#fa8c16' }}>
               Auto: {formatCurrency(record.autoExpenses)}
+            </Text>
+          )}
+          {record.manualExpenses > 0 && record.autoExpenses === 0 && (
+            <Text type="secondary" style={{ fontSize: '9px', color: '#ff4d4f' }}>
+              Manual: {formatCurrency(record.manualExpenses)}
             </Text>
           )}
         </Space>
@@ -485,7 +539,7 @@ const EnhancedSummaryModal = ({
     {
       title: 'DEBTS',
       key: 'totalDebts',
-      width: 120,
+      width: 100,
       align: 'right',
       render: (_, record) => (
         <Text strong style={{ color: record.totalDebts > 0 ? '#722ed1' : '#52c41a' }}>
@@ -494,13 +548,35 @@ const EnhancedSummaryModal = ({
       ),
     },
     {
-      title: 'COLLECTED',
+      title: 'CASH',
+      key: 'cashDrops',
+      width: 100,
+      align: 'right',
+      render: (_, record) => (
+        <Text strong style={{ color: '#52c41a' }}>
+          {formatCurrency(record.cashDrops)}
+        </Text>
+      ),
+    },
+    {
+      title: 'TOTAL COLLECTED',
       key: 'totalCollected',
       width: 120,
       align: 'right',
       render: (_, record) => (
         <Text strong style={{ fontSize: '13px', color: '#52c41a' }}>
           {formatCurrency(record.totalCollected)}
+        </Text>
+      ),
+    },
+    {
+      title: 'EXPECTED',
+      key: 'expectedTotal',
+      width: 100,
+      align: 'right',
+      render: (_, record) => (
+        <Text strong style={{ fontSize: '13px', color: '#1890ff' }}>
+          {formatCurrency(record.expectedTotal)}
         </Text>
       ),
     },
@@ -701,7 +777,7 @@ const EnhancedSummaryModal = ({
         const pageWidth = doc.internal.pageSize.width;
         const pageHeight = doc.internal.pageSize.height;
         
-        // Helper function to check if we need a new page - FIXED
+        // Helper function to check if we need a new page
         const checkPageBreak = (neededSpace) => {
           if (yPosition + neededSpace > pageHeight - 20) {
             doc.addPage();
@@ -840,33 +916,37 @@ const EnhancedSummaryModal = ({
         const islandTableData = reconciliationData.map(row => [
           row.islandName,
           row.attendantNames.substring(0, 20),
-          formatCurrency(row.expectedTotal).replace('KES', '').trim(),
+          formatCurrency(row.totalSales).replace('KES', '').trim(),
+          formatCurrency(row.receipts).replace('KES', '').trim(),
           formatCurrency(row.totalExpenses).replace('KES', '').trim(),
           formatCurrency(row.totalDebts).replace('KES', '').trim(),
+          formatCurrency(row.cashDrops).replace('KES', '').trim(),
           formatCurrency(row.totalCollected).replace('KES', '').trim(),
           row.shortageAmount === 0 ? 'None' : `KES ${row.shortageAmount.toFixed(2)}`
         ]);
         
         autoTable(doc, {
           startY: yPosition,
-          head: [['Island', 'Attendant', 'Expected', 'Expenses', 'Debts', 'Collected', 'Shortage']],
+          head: [['Island', 'Attendant', 'Sales', 'Receipts', 'Expenses', 'Debts', 'Cash', 'Collected', 'Shortage']],
           body: islandTableData,
           margin: { left: margin, right: margin },
           headStyles: { 
             fillColor: [...primaryColor],
             textColor: [255, 255, 255],
-            fontSize: 9,
+            fontSize: 8,
             halign: 'center'
           },
-          bodyStyles: { fontSize: 8 },
+          bodyStyles: { fontSize: 7 },
           columnStyles: {
-            0: { cellWidth: 35 },
-            1: { cellWidth: 40 },
-            2: { cellWidth: 25, halign: 'right' },
-            3: { cellWidth: 25, halign: 'right' },
-            4: { cellWidth: 25, halign: 'right' },
-            5: { cellWidth: 25, halign: 'right' },
-            6: { cellWidth: 25, halign: 'center' }
+            0: { cellWidth: 30 },
+            1: { cellWidth: 35 },
+            2: { cellWidth: 20, halign: 'right' },
+            3: { cellWidth: 20, halign: 'right' },
+            4: { cellWidth: 20, halign: 'right' },
+            5: { cellWidth: 20, halign: 'right' },
+            6: { cellWidth: 20, halign: 'right' },
+            7: { cellWidth: 22, halign: 'right' },
+            8: { cellWidth: 22, halign: 'center' }
           },
           didDrawPage: (data) => {
             doc.setFontSize(8);
@@ -891,11 +971,13 @@ const EnhancedSummaryModal = ({
         doc.setTextColor(0, 0, 0);
         
         doc.text('TOTAL', margin + 5, yPosition + 8);
-        doc.text(formatCurrency(overallTotals.totalExpected).replace('KES', '').trim(), margin + 45, yPosition + 8, { align: 'right' });
-        doc.text(formatCurrency(overallTotals.totalExpenses).replace('KES', '').trim(), margin + 75, yPosition + 8, { align: 'right' });
-        doc.text(formatCurrency(overallTotals.totalDebts).replace('KES', '').trim(), margin + 105, yPosition + 8, { align: 'right' });
-        doc.text(formatCurrency(overallTotals.totalCollected).replace('KES', '').trim(), margin + 135, yPosition + 8, { align: 'right' });
-        doc.text(formatCurrency(overallTotals.totalShortageAmount).replace('KES', '').trim(), margin + 165, yPosition + 8, { align: 'center' });
+        doc.text(formatCurrency(overallTotals.totalSales).replace('KES', '').trim(), margin + 40, yPosition + 8, { align: 'right' });
+        doc.text(formatCurrency(overallTotals.totalReceipts).replace('KES', '').trim(), margin + 65, yPosition + 8, { align: 'right' });
+        doc.text(formatCurrency(overallTotals.totalExpenses).replace('KES', '').trim(), margin + 90, yPosition + 8, { align: 'right' });
+        doc.text(formatCurrency(overallTotals.totalDebts).replace('KES', '').trim(), margin + 115, yPosition + 8, { align: 'right' });
+        doc.text(formatCurrency(overallTotals.totalCashDrops).replace('KES', '').trim(), margin + 140, yPosition + 8, { align: 'right' });
+        doc.text(formatCurrency(overallTotals.totalCollected).replace('KES', '').trim(), margin + 165, yPosition + 8, { align: 'right' });
+        doc.text(formatCurrency(overallTotals.totalShortageAmount).replace('KES', '').trim(), margin + 190, yPosition + 8, { align: 'center' });
         
         yPosition += 20;
         
@@ -1283,6 +1365,11 @@ const EnhancedSummaryModal = ({
               <Tag color={overallTotals.hasShortages ? 'red' : 'green'} style={{ fontSize: '11px' }}>
                 {overallTotals.hasShortages ? `${overallTotals.islandsWithShortage} Shortages` : 'All Complete'}
               </Tag>
+              {overallTotals.hasExpenses && (
+                <Tag color="orange" style={{ fontSize: '11px' }}>
+                  Expenses: {formatCurrency(overallTotals.totalExpenses)}
+                </Tag>
+              )}
             </Space>
           </div>
         </div>
@@ -1319,11 +1406,49 @@ const EnhancedSummaryModal = ({
           <Col xs={12} sm={8} md={4}>
             <Card size="small" style={{ background: '#e6f7ff', border: '1px solid #1890ff' }}>
               <Statistic
-                title={<span style={{ fontSize: '11px' }}>Expected</span>}
-                value={overallTotals.totalExpected}
+                title={<span style={{ fontSize: '11px' }}>Sales</span>}
+                value={overallTotals.totalSales}
                 precision={0}
                 prefix="KES"
                 valueStyle={{ color: '#1890ff', fontSize: '14px', fontWeight: 'bold' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} sm={8} md={4}>
+            <Card size="small" style={{ background: '#fff7e6', border: '1px solid #fa8c16' }}>
+              <Statistic
+                title={<span style={{ fontSize: '11px' }}>Receipts</span>}
+                value={overallTotals.totalReceipts}
+                precision={0}
+                prefix="KES"
+                valueStyle={{ color: '#fa8c16', fontSize: '14px', fontWeight: 'bold' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} sm={8} md={4}>
+            <Card size="small" style={{ background: '#fff2e8', border: '1px solid #fa8c16' }}>
+              <Statistic
+                title={<span style={{ fontSize: '11px' }}>Expenses</span>}
+                value={overallTotals.totalExpenses}
+                precision={0}
+                prefix="KES"
+                valueStyle={{ color: '#ff4d4f', fontSize: '14px', fontWeight: 'bold' }}
+              />
+              {overallTotals.hasAutoExpenses && overallTotals.hasManualExpenses && (
+                <Text type="secondary" style={{ fontSize: '9px' }}>
+                  A:{formatCurrency(overallTotals.totalAutoExpenses)} M:{formatCurrency(overallTotals.totalManualExpenses)}
+                </Text>
+              )}
+            </Card>
+          </Col>
+          <Col xs={12} sm={8} md={4}>
+            <Card size="small" style={{ background: '#f0f5ff', border: '1px solid #722ed1' }}>
+              <Statistic
+                title={<span style={{ fontSize: '11px' }}>Debts</span>}
+                value={overallTotals.totalDebts}
+                precision={0}
+                prefix="KES"
+                valueStyle={{ color: '#722ed1', fontSize: '14px', fontWeight: 'bold' }}
               />
             </Card>
           </Col>
@@ -1353,28 +1478,6 @@ const EnhancedSummaryModal = ({
                   fontSize: '14px',
                   fontWeight: 'bold'
                 }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={8} md={4}>
-            <Card size="small" style={{ background: '#f0f5ff', border: '1px solid #722ed1' }}>
-              <Statistic
-                title={<span style={{ fontSize: '11px' }}>Debts</span>}
-                value={overallTotals.totalDebts}
-                precision={0}
-                prefix="KES"
-                valueStyle={{ color: '#722ed1', fontSize: '14px', fontWeight: 'bold' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={8} md={4}>
-            <Card size="small" style={{ background: '#fff2e8', border: '1px solid #fa8c16' }}>
-              <Statistic
-                title={<span style={{ fontSize: '11px' }}>Expenses</span>}
-                value={overallTotals.totalExpenses}
-                precision={0}
-                prefix="KES"
-                valueStyle={{ color: '#fa8c16', fontSize: '14px', fontWeight: 'bold' }}
               />
             </Card>
           </Col>
@@ -1419,6 +1522,11 @@ const EnhancedSummaryModal = ({
               <Tag color={overallTotals.islandsWithShortage > 0 ? 'red' : 'green'} style={{ fontSize: '11px' }}>
                 {overallTotals.islandsWithShortage} Shortages
               </Tag>
+              {overallTotals.hasExpenses && (
+                <Tag color="orange" style={{ fontSize: '11px' }}>
+                  Total Expenses: {formatCurrency(overallTotals.totalExpenses)}
+                </Tag>
+              )}
             </Space>
           }
           style={{ marginBottom: 16 }}
@@ -1431,7 +1539,7 @@ const EnhancedSummaryModal = ({
               dataSource={reconciliationData}
               pagination={false}
               size="small"
-              scroll={{ x: 900 }}
+              scroll={{ x: 1200 }}
               style={{ fontSize: '12px' }}
               rowKey="key"
               summary={() => (
@@ -1441,18 +1549,27 @@ const EnhancedSummaryModal = ({
                       <Text strong>TOTAL</Text>
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={1} align="right">
-                      <Text strong style={{ color: '#1890ff' }}>{formatCurrency(overallTotals.totalExpected)}</Text>
+                      <Text strong style={{ color: '#1890ff' }}>{formatCurrency(overallTotals.totalSales)}</Text>
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={2} align="right">
-                      <Text strong style={{ color: '#ff4d4f' }}>{formatCurrency(overallTotals.totalExpenses)}</Text>
+                      <Text strong style={{ color: '#fa8c16' }}>{formatCurrency(overallTotals.totalReceipts)}</Text>
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={3} align="right">
-                      <Text strong style={{ color: '#722ed1' }}>{formatCurrency(overallTotals.totalDebts)}</Text>
+                      <Text strong style={{ color: '#ff4d4f' }}>{formatCurrency(overallTotals.totalExpenses)}</Text>
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={4} align="right">
+                      <Text strong style={{ color: '#722ed1' }}>{formatCurrency(overallTotals.totalDebts)}</Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={5} align="right">
+                      <Text strong style={{ color: '#52c41a' }}>{formatCurrency(overallTotals.totalCashDrops)}</Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={6} align="right">
                       <Text strong style={{ color: '#52c41a' }}>{formatCurrency(overallTotals.totalCollected)}</Text>
                     </Table.Summary.Cell>
-                    <Table.Summary.Cell index={5} align="center">
+                    <Table.Summary.Cell index={7} align="right">
+                      <Text strong style={{ color: '#1890ff' }}>{formatCurrency(overallTotals.totalExpected)}</Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={8} align="center">
                       <Tag color={overallTotals.hasShortages ? 'red' : 'green'}>
                         {formatCurrency(overallTotals.totalShortageAmount)}
                       </Tag>
@@ -1507,6 +1624,71 @@ const EnhancedSummaryModal = ({
                           </List.Item>
                         )}
                       />
+                    </div>
+                  ),
+                }}
+              />
+            </div>
+          </Card>
+        )}
+
+        {/* Expense Breakdown Table */}
+        {expenseBreakdown.length > 0 && (
+          <Card
+            title={
+              <Space wrap>
+                <Receipt size={16} color="#fa8c16" />
+                <Text strong style={{ fontSize: '14px' }}>Expense Breakdown</Text>
+                <Tag color="orange" style={{ fontSize: '11px' }}>{expenseBreakdown.length} Islands with Expenses</Tag>
+                <Text type="secondary" style={{ fontSize: '12px' }}>
+                  Total: {formatCurrency(overallTotals.totalExpenses)}
+                </Text>
+              </Space>
+            }
+            style={{ marginBottom: 16 }}
+            size="small"
+          >
+            <div style={{ overflowX: 'auto' }}>
+              <Table
+                columns={expenseColumns}
+                dataSource={expenseBreakdown}
+                pagination={false}
+                size="small"
+                scroll={{ x: 500 }}
+                rowKey="key"
+                expandable={{
+                  expandedRowRender: (record) => (
+                    <div style={{ padding: '8px', backgroundColor: '#fafafa' }}>
+                      {record.autoExpenseDetails && record.autoExpenseDetails.length > 0 && (
+                        <>
+                          <Text strong style={{ fontSize: '12px', color: '#fa8c16' }}>Auto Expense Details:</Text>
+                          <List
+                            size="small"
+                            dataSource={record.autoExpenseDetails}
+                            renderItem={(expense, idx) => (
+                              <List.Item key={idx}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                                  <Space direction="vertical" size={0}>
+                                    <Text style={{ fontSize: '11px' }}>{expense.title || expense.description || 'Expense'}</Text>
+                                    {expense.expenseNumber && (
+                                      <Text type="secondary" style={{ fontSize: '9px' }}>#{expense.expenseNumber}</Text>
+                                    )}
+                                  </Space>
+                                  <Text strong style={{ fontSize: '11px', color: '#fa8c16' }}>
+                                    {formatCurrency(expense.amount)}
+                                  </Text>
+                                </div>
+                              </List.Item>
+                            )}
+                          />
+                        </>
+                      )}
+                      {record.manualExpenses > 0 && (
+                        <>
+                          {record.autoExpenseDetails && record.autoExpenseDetails.length > 0 && <Divider style={{ margin: '8px 0' }} />}
+                          <Text strong style={{ fontSize: '12px', color: '#ff4d4f' }}>Manual Expenses Total: {formatCurrency(record.manualExpenses)}</Text>
+                        </>
+                      )}
                     </div>
                   ),
                 }}
