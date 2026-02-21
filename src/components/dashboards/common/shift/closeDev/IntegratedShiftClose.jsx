@@ -251,62 +251,139 @@ const IntegratedShiftClose = ({
   }, [pumps, tanks, salesEntries, receipts, expenses, autoExpenses, collections, postedShortages, currentStep]);
 
   // ========== LOAD EXISTING EXPENSES ==========
-  const loadExistingExpenses = async () => {
-    if (!shift?.id || !currentStationId) return;
+  // const loadExistingExpenses = async () => {
+  //   if (!shift?.id || !currentStationId) return;
     
+  //   try {
+  //     const filters = {
+  //       stationId: currentStationId,
+  //       shiftId: shift.id,
+  //       status: 'APPROVED',
+  //       paymentSource: 'ISLAND_COLLECTION'
+  //     };
+      
+  //     const response = await expenseService.getExpenses(filters);
+  //     const expensesData = response.data || response || [];
+      
+  //     console.log('📝 Existing expenses for shift:', expensesData);
+      
+  //     const expensesByIsland = {};
+  //     expensesData.forEach(expense => {
+  //       if (expense.islandId && expense.amount > 0) {
+  //         if (!expensesByIsland[expense.islandId]) {
+  //           expensesByIsland[expense.islandId] = [];
+  //         }
+  //         expensesByIsland[expense.islandId].push({
+  //           id: expense.id,
+  //           amount: expense.amount,
+  //           title: expense.title,
+  //           description: expense.description,
+  //           category: expense.category,
+  //           expenseNumber: expense.expenseNumber,
+  //           approvedAt: expense.approvedAt
+  //         });
+  //       }
+  //     });
+      
+  //     const autoExpenseTotals = {};
+  //     Object.keys(expensesByIsland).forEach(islandId => {
+  //       const total = expensesByIsland[islandId].reduce((sum, exp) => sum + exp.amount, 0);
+  //       autoExpenseTotals[islandId] = {
+  //         total,
+  //         details: expensesByIsland[islandId]
+  //       };
+  //     });
+      
+  //     setAutoExpenses(autoExpenseTotals);
+      
+  //     if (currentStep >= 1) {
+  //       prepareIslandsData(pumps, {});
+  //     }
+      
+  //     message.success(`Loaded ${expensesData.length} existing expenses`);
+      
+  //   } catch (error) {
+  //     console.error('Failed to load existing expenses:', error);
+  //     message.error('Could not load existing expenses');
+  //   }
+  // };
+
+  const loadExistingExpenses = async () => {
+  if (!shift?.id || !currentStationId) return;
+  
+  try {
+    console.log('📋 Loading expenses for shift:', shift.id);
+    
+    // Use the specific shift endpoint if available
+    let expensesData = [];
     try {
-      const filters = {
-        stationId: currentStationId,
-        shiftId: shift.id,
-        status: 'APPROVED',
-        paymentSource: 'ISLAND_COLLECTION'
-      };
-      
-      const response = await expenseService.getExpenses(filters);
-      const expensesData = response.data || response || [];
-      
-      console.log('📝 Existing expenses for shift:', expensesData);
-      
-      const expensesByIsland = {};
-      expensesData.forEach(expense => {
-        if (expense.islandId && expense.amount > 0) {
-          if (!expensesByIsland[expense.islandId]) {
-            expensesByIsland[expense.islandId] = [];
-          }
-          expensesByIsland[expense.islandId].push({
-            id: expense.id,
-            amount: expense.amount,
-            title: expense.title,
-            description: expense.description,
-            category: expense.category,
-            expenseNumber: expense.expenseNumber,
-            approvedAt: expense.approvedAt
-          });
-        }
-      });
-      
-      const autoExpenseTotals = {};
-      Object.keys(expensesByIsland).forEach(islandId => {
-        const total = expensesByIsland[islandId].reduce((sum, exp) => sum + exp.amount, 0);
-        autoExpenseTotals[islandId] = {
-          total,
-          details: expensesByIsland[islandId]
-        };
-      });
-      
-      setAutoExpenses(autoExpenseTotals);
-      
-      if (currentStep >= 1) {
-        prepareIslandsData(pumps, {});
-      }
-      
-      message.success(`Loaded ${expensesData.length} existing expenses`);
-      
+      const response = await expenseService.getExpensesByShift(shift.id);
+      expensesData = response.data || response || [];
     } catch (error) {
-      console.error('Failed to load existing expenses:', error);
-      message.error('Could not load existing expenses');
+      // Fallback to filtering all expenses
+      console.warn('Shift-specific endpoint failed, falling back to filter');
+      const response = await expenseService.getExpenses({ 
+        stationId: currentStationId,
+        status: 'APPROVED'
+      });
+      expensesData = response.data || response || [];
+      
+      // Client-side filter for this shift
+      expensesData = expensesData.filter(exp => exp.shiftId === shift.id);
     }
-  };
+    
+    console.log(`Found ${expensesData.length} total expenses for shift`);
+    
+    // Filter for expenses with islandId
+    const islandExpenses = expensesData.filter(expense => 
+      expense.islandId && 
+      expense.amount > 0 &&
+      expense.status === 'APPROVED'
+    );
+    
+    console.log(`Found ${islandExpenses.length} expenses with island assignment`);
+    
+    // Group by island
+    const expensesByIsland = {};
+    islandExpenses.forEach(expense => {
+      if (!expensesByIsland[expense.islandId]) {
+        expensesByIsland[expense.islandId] = [];
+      }
+      expensesByIsland[expense.islandId].push({
+        id: expense.id,
+        amount: expense.amount,
+        title: expense.title,
+        description: expense.description,
+        category: expense.category,
+        expenseNumber: expense.expenseNumber,
+        approvedAt: expense.approvedAt
+      });
+    });
+    
+    // Calculate totals
+    const autoExpenseTotals = {};
+    Object.keys(expensesByIsland).forEach(islandId => {
+      const total = expensesByIsland[islandId].reduce((sum, exp) => sum + exp.amount, 0);
+      autoExpenseTotals[islandId] = {
+        total,
+        details: expensesByIsland[islandId]
+      };
+    });
+    
+    setAutoExpenses(autoExpenseTotals);
+    
+    // Update islands data if needed
+    if (currentStep >= 1) {
+      prepareIslandsData(pumps, {});
+    }
+    
+    message.success(`Loaded ${islandExpenses.length} existing expenses`);
+    
+  } catch (error) {
+    console.error('❌ Failed to load existing expenses:', error);
+    message.error('Could not load existing expenses');
+  }
+};
 
   // ========== LOAD DEBTORS ==========
   const loadDebtors = async () => {
@@ -442,63 +519,116 @@ const IntegratedShiftClose = ({
     }
   };
 
-  const prepareIslandsData = (pumpsData, islandAssignments) => {
-    const pumpsByIsland = {};
-    pumpsData.forEach(pump => {
-      const islandKey = pump.islandId || 'unassigned';
-      if (!pumpsByIsland[islandKey]) {
-        pumpsByIsland[islandKey] = {
-          islandId: pump.islandId,
-          islandName: pump.islandName,
-          pumps: [],
-          attendant: pump.attendant
-        };
-      }
-      pumpsByIsland[islandKey].pumps.push(pump);
-    });
+  // const prepareIslandsData = (pumpsData, islandAssignments) => {
+  //   const pumpsByIsland = {};
+  //   pumpsData.forEach(pump => {
+  //     const islandKey = pump.islandId || 'unassigned';
+  //     if (!pumpsByIsland[islandKey]) {
+  //       pumpsByIsland[islandKey] = {
+  //         islandId: pump.islandId,
+  //         islandName: pump.islandName,
+  //         pumps: [],
+  //         attendant: pump.attendant
+  //       };
+  //     }
+  //     pumpsByIsland[islandKey].pumps.push(pump);
+  //   });
 
-    const islands = Object.values(pumpsByIsland).map((islandData, index) => {
-      const attendants = islandData.attendant ? [islandData.attendant] : [];
+  //   const islands = Object.values(pumpsByIsland).map((islandData, index) => {
+  //     const attendants = islandData.attendant ? [islandData.attendant] : [];
 
-      const islandAutoExpenses = islandData.islandId ? autoExpenses[islandData.islandId] : null;
-      const autoExpenseTotal = islandAutoExpenses?.total || 0;
-      const autoExpenseDetails = islandAutoExpenses?.details || [];
+  //     const islandAutoExpenses = islandData.islandId ? autoExpenses[islandData.islandId] : null;
+  //     const autoExpenseTotal = islandAutoExpenses?.total || 0;
+  //     const autoExpenseDetails = islandAutoExpenses?.details || [];
 
-      return {
-        key: index,
-        islandId: islandData.islandId,
-        islandName: islandData.islandName,
-        attendants: attendants,
-        pumps: islandData.pumps,
-        totalPumpSales: calculateIslandExpectedSales(islandData.pumps),
-        autoExpenses: autoExpenseTotal,
-        autoExpenseDetails: autoExpenseDetails
-      };
-    });
+  //     return {
+  //       key: index,
+  //       islandId: islandData.islandId,
+  //       islandName: islandData.islandName,
+  //       attendants: attendants,
+  //       pumps: islandData.pumps,
+  //       totalPumpSales: calculateIslandExpectedSales(islandData.pumps),
+  //       autoExpenses: autoExpenseTotal,
+  //       autoExpenseDetails: autoExpenseDetails
+  //     };
+  //   });
 
-    setIslandsData(islands);
+  //   setIslandsData(islands);
     
-    const initialEntries = {};
-    islands.forEach((island) => {
-      if (!salesEntries[island.key]) {
-        initialEntries[island.key] = {
-          islandTotalSales: island.totalPumpSales || 0,
-          notes: ''
-        };
-      }
+  //   const initialEntries = {};
+  //   islands.forEach((island) => {
+  //     if (!salesEntries[island.key]) {
+  //       initialEntries[island.key] = {
+  //         islandTotalSales: island.totalPumpSales || 0,
+  //         notes: ''
+  //       };
+  //     }
       
-      if (island.autoExpenses > 0 && !expenses[island.key]) {
-        setExpenses(prev => ({
-          ...prev,
-          [island.key]: island.autoExpenses
-        }));
-      }
-    });
+  //     if (island.autoExpenses > 0 && !expenses[island.key]) {
+  //       setExpenses(prev => ({
+  //         ...prev,
+  //         [island.key]: island.autoExpenses
+  //       }));
+  //     }
+  //   });
     
-    if (Object.keys(initialEntries).length > 0) {
-      setSalesEntries(prev => ({ ...prev, ...initialEntries }));
+  //   if (Object.keys(initialEntries).length > 0) {
+  //     setSalesEntries(prev => ({ ...prev, ...initialEntries }));
+  //   }
+  // };
+
+const prepareIslandsData = (pumpsData, islandAssignments) => {
+  const pumpsByIsland = {};
+  pumpsData.forEach(pump => {
+    const islandKey = pump.islandId || 'unassigned';
+    if (!pumpsByIsland[islandKey]) {
+      pumpsByIsland[islandKey] = {
+        islandId: pump.islandId,
+        islandName: pump.islandName,
+        pumps: [],
+        attendant: pump.attendant
+      };
     }
-  };
+    pumpsByIsland[islandKey].pumps.push(pump);
+  });
+
+  const islands = Object.values(pumpsByIsland).map((islandData, index) => {
+    const attendants = islandData.attendant ? [islandData.attendant] : [];
+
+    const islandAutoExpenses = islandData.islandId ? autoExpenses[islandData.islandId] : null;
+    const autoExpenseTotal = islandAutoExpenses?.total || 0;
+    const autoExpenseDetails = islandAutoExpenses?.details || [];
+
+    return {
+      key: index,
+      islandId: islandData.islandId,
+      islandName: islandData.islandName,
+      attendants: attendants,
+      pumps: islandData.pumps,
+      totalPumpSales: calculateIslandExpectedSales(islandData.pumps),
+      autoExpenses: autoExpenseTotal,        // Keep autoExpenses separate
+      autoExpenseDetails: autoExpenseDetails
+    };
+  });
+
+  setIslandsData(islands);
+  
+  // REMOVED: The code that sets autoExpenses into expenses state
+  
+  const initialEntries = {};
+  islands.forEach((island) => {
+    if (!salesEntries[island.key]) {
+      initialEntries[island.key] = {
+        islandTotalSales: island.totalPumpSales || 0,
+        notes: ''
+      };
+    }
+  });
+  
+  if (Object.keys(initialEntries).length > 0) {
+    setSalesEntries(prev => ({ ...prev, ...initialEntries }));
+  }
+};
 
   const calculateIslandExpectedSales = (islandPumps) => {
     return islandPumps.reduce((sum, pump) => {
