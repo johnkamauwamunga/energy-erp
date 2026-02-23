@@ -1,4 +1,4 @@
-// EnhancedSummaryModal.jsx (FIXED - Proper expense display without double counting)
+// EnhancedSummaryModal.jsx (FIXED - With Cache Clearing)
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -57,7 +57,8 @@ import {
   FileJson,
   FileSpreadsheet,
   Receipt as ReceiptIcon,
-  FileWarning
+  FileWarning,
+  Trash2
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -90,6 +91,7 @@ const EnhancedSummaryModal = ({
   const [showExpenseDetails, setShowExpenseDetails] = useState({});
   const [saveResult, setSaveResult] = useState(null);
   const [validationErrors, setValidationErrors] = useState([]);
+  const [clearingCache, setClearingCache] = useState(false);
 
   const printRef = useRef();
 
@@ -138,7 +140,137 @@ const EnhancedSummaryModal = ({
     };
   };
 
-  // ========== FIXED: Fetch wallet balance correctly ==========
+  // ========== CACHE CLEARING FUNCTION ==========
+  const clearAllShiftCaches = () => {
+    try {
+      setClearingCache(true);
+      console.log('🧹 Clearing all shift caches...');
+      
+      const stationId = stateStationId || state?.currentStation?.id;
+      if (!stationId) {
+        console.warn('No station ID available for cache clearing');
+        return;
+      }
+      
+      const cachePattern = `shift_close_${stationId}`;
+      const shiftSpecificPattern = shiftId ? `${cachePattern}_${shiftId}` : cachePattern;
+      
+      let removedCount = 0;
+      const removedKeys = [];
+      
+      // 1. Clear localStorage caches for this station
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes(cachePattern) || key.includes(shiftSpecificPattern))) {
+          localStorage.removeItem(key);
+          removedCount++;
+          removedKeys.push(key);
+          console.log(`   Removed: ${key}`);
+        }
+      }
+      
+      // 2. Clear any backup/temp keys with various patterns
+      const backupPatterns = [
+        `shift_backup_${stationId}`,
+        `shift_draft_${stationId}`,
+        `shift_temp_${stationId}`,
+        `shift_session_${stationId}`,
+        `shift_working_${stationId}`,
+        `shift_auto_${stationId}`,
+        `shift_draft_${stationId}`,
+        `shift_recovery_${stationId}`
+      ];
+      
+      backupPatterns.forEach(pattern => {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.includes(pattern)) {
+            localStorage.removeItem(key);
+            removedCount++;
+            removedKeys.push(key);
+            console.log(`   Removed backup: ${key}`);
+          }
+        }
+      });
+      
+      // 3. Clear any keys containing shift ID
+      if (shiftId) {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.includes(shiftId)) {
+            localStorage.removeItem(key);
+            removedCount++;
+            removedKeys.push(key);
+            console.log(`   Removed shift-specific: ${key}`);
+          }
+        }
+      }
+      
+      // 4. Clear session storage
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        if (key && (key.includes(cachePattern) || (shiftId && key.includes(shiftId)))) {
+          sessionStorage.removeItem(key);
+          removedCount++;
+          removedKeys.push(key);
+          console.log(`   Removed session: ${key}`);
+        }
+      }
+      
+      // 5. Clear any IndexedDB stores if they exist
+      if (window.indexedDB) {
+        try {
+          // Common database names that might be used
+          const dbNames = ['ShiftDrafts', 'ShiftCache', 'OfflineStorage', 'AppCache'];
+          dbNames.forEach(dbName => {
+            try {
+              const deleteRequest = indexedDB.deleteDatabase(dbName);
+              deleteRequest.onsuccess = () => console.log(`   IndexedDB cleared: ${dbName}`);
+              deleteRequest.onerror = () => console.warn(`   Could not clear IndexedDB: ${dbName}`);
+            } catch (e) {
+              console.warn(`   Error clearing IndexedDB ${dbName}:`, e);
+            }
+          });
+        } catch (e) {
+          console.warn('   Could not clear IndexedDB:', e);
+        }
+      }
+      
+      // 6. Clear service worker caches if they exist
+      if ('caches' in window) {
+        try {
+          caches.keys().then(keys => {
+            keys.forEach(key => {
+              if (key.includes('shift') || key.includes('cache') || key.includes('offline')) {
+                caches.delete(key).then(() => {
+                  console.log(`   Cache storage cleared: ${key}`);
+                });
+              }
+            });
+          });
+        } catch (e) {
+          console.warn('   Could not clear caches API:', e);
+        }
+      }
+      
+      console.log(`✅ Cleared ${removedCount} cache entries:`, removedKeys);
+      
+      // Optional: Show success message
+      if (removedCount > 0) {
+        message.success(`Cleared ${removedCount} temporary cache entries`);
+      } else {
+        message.info('No caches found to clear');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error clearing caches:', error);
+      message.error('Failed to clear some caches');
+    } finally {
+      setClearingCache(false);
+    }
+  };
+
+  // ========== FETCH WALLET BALANCE ==========
   const fetchWallet = async () => {
     try {
       const response = await bankingService.getCurrentStationWallet();
@@ -162,7 +294,7 @@ const EnhancedSummaryModal = ({
     }
   }, [visible]);
 
-  // ========== FIXED: Calculate debtor breakdown ==========
+  // ========== CALCULATE DEBTOR BREAKDOWN ==========
   const debtorBreakdown = useMemo(() => {
     const debtorMap = new Map();
     
@@ -205,7 +337,7 @@ const EnhancedSummaryModal = ({
     return Array.from(debtorMap.values()).sort((a, b) => b.total - a.total);
   }, [islands]);
 
-  // ========== FIXED: Calculate expense breakdown ==========
+  // ========== CALCULATE EXPENSE BREAKDOWN ==========
   const expenseBreakdown = useMemo(() => {
     const breakdown = [];
     
@@ -235,7 +367,7 @@ const EnhancedSummaryModal = ({
     return breakdown.sort((a, b) => b.totalExpenses - a.totalExpenses);
   }, [islands]);
 
-  // ========== FIXED RECONCILIATION DATA - Using pre-calculated values ==========
+  // ========== RECONCILIATION DATA ==========
   const reconciliationData = useMemo(() => {
     return islands.map((island, index) => {
       // Use displayValues if available (from IntegratedShiftClose)
@@ -317,7 +449,7 @@ const EnhancedSummaryModal = ({
     });
   }, [islands]);
 
-  // ========== FIXED OVERALL TOTALS - Using pre-calculated values ==========
+  // ========== OVERALL TOTALS ==========
   const overallTotals = useMemo(() => {
     const totalCashDrops = reconciliationData.reduce((sum, row) => sum + row.cashDrops, 0);
     const totalSales = reconciliationData.reduce((sum, row) => sum + row.totalSales, 0);
@@ -469,7 +601,7 @@ const EnhancedSummaryModal = ({
     };
   };
 
-  // ========== FIXED MAIN ISLAND TABLE COLUMNS ==========
+  // ========== MAIN ISLAND TABLE COLUMNS ==========
   const islandColumns = [
     {
       title: 'ISLAND & ATTENDANT',
@@ -750,7 +882,7 @@ const EnhancedSummaryModal = ({
     }
   };
 
-  // ========== FIXED PDF GENERATION - No errors ==========
+  // ========== PDF GENERATION ==========
   const generatePDF = async () => {
     return new Promise((resolve, reject) => {
       try {
@@ -1251,7 +1383,32 @@ const EnhancedSummaryModal = ({
     }
   };
 
-  // ========== FIXED: Handle final submission with PDF download and shift closing ==========
+  // Manual cache clear handler
+  const handleManualCacheClear = () => {
+    Modal.confirm({
+      title: 'Clear All Caches',
+      content: (
+        <div>
+          <p>This will clear all temporary shift data including:</p>
+          <ul>
+            <li>Local storage caches</li>
+            <li>Session storage</li>
+            <li>IndexedDB databases</li>
+            <li>Service worker caches</li>
+          </ul>
+          <p>Are you sure you want to continue?</p>
+        </div>
+      ),
+      okText: 'Yes, Clear All',
+      cancelText: 'No',
+      okButtonProps: { danger: true, loading: clearingCache },
+      onOk: async () => {
+        clearAllShiftCaches();
+      }
+    });
+  };
+
+  // ========== FINAL SUBMISSION WITH CACHE CLEARING ==========
   const handleFinalSubmit = async () => {
     if (!validateSubmission()) {
       message.error('Please fix validation errors before submitting');
@@ -1285,14 +1442,16 @@ const EnhancedSummaryModal = ({
         console.log('📤 Calling onSubmitShift with path:', saveResult.file?.path);
         console.log('📤 shiftId:', shiftId);
         
-        // Then submit the shift - THIS IS CRITICAL
-        // Make sure we're passing the path correctly
+        // Then submit the shift
         await onSubmitShift(saveResult.file?.path);
         
         console.log('✅ Shift submitted successfully!');
         
+        // ========== CLEAR ALL CACHES AFTER SUCCESSFUL SUBMISSION ==========
+        clearAllShiftCaches();
+        
         message.success({
-          content: 'Shift submitted successfully! PDF downloaded.',
+          content: 'Shift submitted successfully! PDF downloaded. All temporary data cleared.',
           duration: 5,
           icon: <CheckCircle size={16} color="#52c41a" />
         });
@@ -1800,6 +1959,17 @@ const EnhancedSummaryModal = ({
                   size="small"
                 >
                   CSV
+                </Button>
+                <Button
+                  icon={<Trash2 size={14} />}
+                  onClick={handleManualCacheClear}
+                  size="small"
+                  danger
+                  type="text"
+                  title="Clear all cached data"
+                  loading={clearingCache}
+                >
+                  Clear Cache
                 </Button>
               </Space>
               

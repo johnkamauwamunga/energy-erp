@@ -519,63 +519,59 @@ const IntegratedShiftClose = ({
     }
   };
 
-  // const prepareIslandsData = (pumpsData, islandAssignments) => {
-  //   const pumpsByIsland = {};
-  //   pumpsData.forEach(pump => {
-  //     const islandKey = pump.islandId || 'unassigned';
-  //     if (!pumpsByIsland[islandKey]) {
-  //       pumpsByIsland[islandKey] = {
-  //         islandId: pump.islandId,
-  //         islandName: pump.islandName,
-  //         pumps: [],
-  //         attendant: pump.attendant
-  //       };
-  //     }
-  //     pumpsByIsland[islandKey].pumps.push(pump);
-  //   });
 
-  //   const islands = Object.values(pumpsByIsland).map((islandData, index) => {
-  //     const attendants = islandData.attendant ? [islandData.attendant] : [];
+// const prepareIslandsData = (pumpsData, islandAssignments) => {
+//   const pumpsByIsland = {};
+//   pumpsData.forEach(pump => {
+//     const islandKey = pump.islandId || 'unassigned';
+//     if (!pumpsByIsland[islandKey]) {
+//       pumpsByIsland[islandKey] = {
+//         islandId: pump.islandId,
+//         islandName: pump.islandName,
+//         pumps: [],
+//         attendant: pump.attendant
+//       };
+//     }
+//     pumpsByIsland[islandKey].pumps.push(pump);
+//   });
 
-  //     const islandAutoExpenses = islandData.islandId ? autoExpenses[islandData.islandId] : null;
-  //     const autoExpenseTotal = islandAutoExpenses?.total || 0;
-  //     const autoExpenseDetails = islandAutoExpenses?.details || [];
+//   const islands = Object.values(pumpsByIsland).map((islandData, index) => {
+//     const attendants = islandData.attendant ? [islandData.attendant] : [];
 
-  //     return {
-  //       key: index,
-  //       islandId: islandData.islandId,
-  //       islandName: islandData.islandName,
-  //       attendants: attendants,
-  //       pumps: islandData.pumps,
-  //       totalPumpSales: calculateIslandExpectedSales(islandData.pumps),
-  //       autoExpenses: autoExpenseTotal,
-  //       autoExpenseDetails: autoExpenseDetails
-  //     };
-  //   });
+//     const islandAutoExpenses = islandData.islandId ? autoExpenses[islandData.islandId] : null;
+//     const autoExpenseTotal = islandAutoExpenses?.total || 0;
+//     const autoExpenseDetails = islandAutoExpenses?.details || [];
 
-  //   setIslandsData(islands);
-    
-  //   const initialEntries = {};
-  //   islands.forEach((island) => {
-  //     if (!salesEntries[island.key]) {
-  //       initialEntries[island.key] = {
-  //         islandTotalSales: island.totalPumpSales || 0,
-  //         notes: ''
-  //       };
-  //     }
-      
-  //     if (island.autoExpenses > 0 && !expenses[island.key]) {
-  //       setExpenses(prev => ({
-  //         ...prev,
-  //         [island.key]: island.autoExpenses
-  //       }));
-  //     }
-  //   });
-    
-  //   if (Object.keys(initialEntries).length > 0) {
-  //     setSalesEntries(prev => ({ ...prev, ...initialEntries }));
-  //   }
-  // };
+//     return {
+//       key: index,
+//       islandId: islandData.islandId,
+//       islandName: islandData.islandName,
+//       attendants: attendants,
+//       pumps: islandData.pumps,
+//       totalPumpSales: calculateIslandExpectedSales(islandData.pumps),
+//       autoExpenses: autoExpenseTotal,        // Keep autoExpenses separate
+//       autoExpenseDetails: autoExpenseDetails
+//     };
+//   });
+
+//   setIslandsData(islands);
+  
+//   // REMOVED: The code that sets autoExpenses into expenses state
+  
+//   const initialEntries = {};
+//   islands.forEach((island) => {
+//     if (!salesEntries[island.key]) {
+//       initialEntries[island.key] = {
+//         islandTotalSales: island.totalPumpSales || 0,
+//         notes: ''
+//       };
+//     }
+//   });
+  
+//   if (Object.keys(initialEntries).length > 0) {
+//     setSalesEntries(prev => ({ ...prev, ...initialEntries }));
+//   }
+// };
 
 const prepareIslandsData = (pumpsData, islandAssignments) => {
   const pumpsByIsland = {};
@@ -599,35 +595,48 @@ const prepareIslandsData = (pumpsData, islandAssignments) => {
     const autoExpenseTotal = islandAutoExpenses?.total || 0;
     const autoExpenseDetails = islandAutoExpenses?.details || [];
 
+    // Calculate expected sales for this island
+    const expectedSales = calculateIslandExpectedSales(islandData.pumps);
+
     return {
       key: index,
       islandId: islandData.islandId,
       islandName: islandData.islandName,
       attendants: attendants,
       pumps: islandData.pumps,
-      totalPumpSales: calculateIslandExpectedSales(islandData.pumps),
-      autoExpenses: autoExpenseTotal,        // Keep autoExpenses separate
+      totalPumpSales: expectedSales,        // This is the expected sales
+      autoExpenses: autoExpenseTotal,
       autoExpenseDetails: autoExpenseDetails
     };
   });
 
   setIslandsData(islands);
   
-  // REMOVED: The code that sets autoExpenses into expenses state
-  
+  // FIX: Pre-fill salesEntries with the expected sales values
   const initialEntries = {};
   islands.forEach((island) => {
-    if (!salesEntries[island.key]) {
-      initialEntries[island.key] = {
-        islandTotalSales: island.totalPumpSales || 0,
-        notes: ''
-      };
-    }
+    // Always set the actual sales to match expected sales by default
+    initialEntries[island.key] = {
+      islandTotalSales: island.totalPumpSales || 0,  // Auto-fill with expected value
+      notes: ''
+    };
   });
   
-  if (Object.keys(initialEntries).length > 0) {
-    setSalesEntries(prev => ({ ...prev, ...initialEntries }));
-  }
+  // Merge with any existing entries (preserves user edits if they exist)
+  setSalesEntries(prev => {
+    // If there are existing entries, keep them (don't override user changes)
+    // This is important for when they come back to this step
+    const merged = { ...prev };
+    
+    // Only set defaults for islands that don't have entries yet
+    Object.keys(initialEntries).forEach(key => {
+      if (!merged[key]) {
+        merged[key] = initialEntries[key];
+      }
+    });
+    
+    return merged;
+  });
 };
 
   const calculateIslandExpectedSales = (islandPumps) => {

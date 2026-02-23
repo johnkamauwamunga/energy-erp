@@ -88,10 +88,12 @@ const ReconciliationReadings = () => {
    * Process tank reconciliation data
    * For each tank:
    * - Opening volume = START reading
-   * - Closing volume = END reading  
-   * - Actual deduction = Opening - Closing
-   * - Expected deduction = Sum of all connected pumps (electric end - start)
-   * - Variance = Actual deduction - Expected deduction
+   * - Addition = Fuel added during shift (default 0)
+   * - Total = Opening + Addition
+   * - Expected Closing = Total - Sales
+   * - Dip Closing = END reading
+   * - Sales = Sum of all connected pumps (electric end - start)
+   * - Variance = Dip Closing - Expected Closing
    */
   const processTankReconciliation = (tankData) => {
     if (!tankData) return null;
@@ -102,6 +104,15 @@ const ReconciliationReadings = () => {
     
     const openingVolume = openingReading?.volume || 0;
     const closingVolume = closingReading?.volume || 0;
+    
+    // Addition (default 0, could come from offloads)
+    let addition = 0;
+    if (tankData.offloads && tankData.offloads.length > 0) {
+      addition = tankData.offloads.reduce((sum, offload) => sum + (offload.actualVolume || 0), 0);
+    }
+    
+    // Total = Opening + Addition
+    const totalVolume = openingVolume + addition;
     
     // Actual deduction from dip readings
     const actualDeduction = openingVolume - closingVolume;
@@ -132,11 +143,11 @@ const ReconciliationReadings = () => {
       });
     }
 
-    // Calculate variance
-    const variance = actualDeduction - expectedDeduction;
-    const variancePercentage = actualDeduction !== 0 
-      ? ((variance / actualDeduction) * 100).toFixed(2)
-      : 0;
+    // Expected Closing = Total - Sales
+    const expectedClosing = totalVolume - expectedDeduction;
+    
+    // Variance = Dip Closing - Expected Closing
+    const variance = closingVolume - expectedClosing;
 
     // Determine reconciliation status
     let status = 'EXCELLENT';
@@ -163,6 +174,9 @@ const ReconciliationReadings = () => {
       
       // Volume readings
       openingVolume,
+      addition,
+      totalVolume,
+      expectedClosing,
       closingVolume,
       actualDeduction,
       
@@ -173,13 +187,13 @@ const ReconciliationReadings = () => {
       
       // Variance
       variance,
-      variancePercentage,
+      
       status,
       statusColor,
       
       // Additional info
       hasOffload: tankData.offloads?.length > 0,
-      offloadVolume: tankData.variances?.offloadVolume || 0,
+      offloadVolume: addition,
       offloads: tankData.offloads || [],
       
       // Raw data for reference
@@ -201,6 +215,9 @@ const ReconciliationReadings = () => {
     // Calculate shift totals
     const shiftTotals = processedTanks.reduce((acc, tank) => {
       acc.totalOpening += tank.openingVolume;
+      acc.totalAddition += tank.addition;
+      acc.totalVolume += tank.totalVolume;
+      acc.totalExpectedClosing += tank.expectedClosing;
       acc.totalClosing += tank.closingVolume;
       acc.totalActualDeduction += tank.actualDeduction;
       acc.totalExpectedDeduction += tank.expectedDeduction;
@@ -214,6 +231,9 @@ const ReconciliationReadings = () => {
       return acc;
     }, {
       totalOpening: 0,
+      totalAddition: 0,
+      totalVolume: 0,
+      totalExpectedClosing: 0,
       totalClosing: 0,
       totalActualDeduction: 0,
       totalExpectedDeduction: 0,
@@ -222,11 +242,6 @@ const ReconciliationReadings = () => {
       totalPumps: 0,
       statusCount: {}
     });
-
-    // Calculate overall variance percentage
-    shiftTotals.variancePercentage = shiftTotals.totalActualDeduction !== 0
-      ? ((shiftTotals.totalVariance / shiftTotals.totalActualDeduction) * 100).toFixed(2)
-      : 0;
 
     // Determine shift reconciliation status
     let shiftStatus = 'RECONCILED';
@@ -382,17 +397,6 @@ const ReconciliationReadings = () => {
 
   const tankColumns = [
     {
-      title: '#',
-      key: 'index',
-      width: 40,
-      fixed: 'left',
-      render: (_, record, index) => (
-        <div style={{ textAlign: 'center', fontWeight: '500', fontSize: '12px' }}>
-          {index + 1}
-        </div>
-      )
-    },
-    {
       title: 'Tank',
       key: 'tankName',
       width: 150,
@@ -439,36 +443,36 @@ const ReconciliationReadings = () => {
       align: 'right',
       render: (vol) => (
         <div style={{ fontSize: '11px', fontWeight: '500' }}>
-          {vol.toLocaleString()}
+          {vol.toLocaleString()} L
         </div>
       )
     },
     {
-      title: 'Closing',
-      dataIndex: 'closingVolume',
-      key: 'closingVolume',
+      title: 'Addition',
+      dataIndex: 'addition',
+      key: 'addition',
       width: 80,
       align: 'right',
       render: (vol) => (
-        <div style={{ fontSize: '11px', fontWeight: '500', color: '#1890ff' }}>
-          {vol.toLocaleString()}
+        <div style={{ fontSize: '11px', fontWeight: '500', color: vol > 0 ? '#52c41a' : '#999' }}>
+          {vol.toLocaleString()} L
         </div>
       )
     },
     {
-      title: 'Actual (Dip)',
-      dataIndex: 'actualDeduction',
-      key: 'actualDeduction',
-      width: 90,
+      title: 'Total',
+      dataIndex: 'totalVolume',
+      key: 'totalVolume',
+      width: 80,
       align: 'right',
       render: (vol) => (
-        <div style={{ fontSize: '11px', fontWeight: '600', color: '#cf1322' }}>
-          {vol.toLocaleString()}
+        <div style={{ fontSize: '11px', fontWeight: '600', color: '#722ed1' }}>
+          {vol.toLocaleString()} L
         </div>
       )
     },
-    {
-      title: 'Expected (Pumps)',
+        {
+      title: 'Sales',
       dataIndex: 'expectedDeduction',
       key: 'expectedDeduction',
       width: 100,
@@ -476,29 +480,48 @@ const ReconciliationReadings = () => {
       render: (vol, record) => (
         <Tooltip title={`From ${record.pumpCount} connected pump(s)`}>
           <div style={{ fontSize: '11px', fontWeight: '600', color: '#389e0d' }}>
-            {vol.toLocaleString()}
+            {vol.toLocaleString()} L
           </div>
         </Tooltip>
       )
     },
     {
+      title: 'Expected Closing',
+      key: 'expectedClosing',
+      width: 100,
+      align: 'right',
+      render: (_, record) => {
+        return (
+          <div style={{ fontSize: '11px', fontWeight: '500', color: '#1890ff' }}>
+            {record.expectedClosing.toLocaleString()} L
+          </div>
+        );
+      }
+    },
+    {
+      title: 'Dip Closing',
+      dataIndex: 'closingVolume',
+      key: 'closingVolume',
+      width: 80,
+      align: 'right',
+      render: (vol) => (
+        <div style={{ fontSize: '11px', fontWeight: '500', color: '#cf1322' }}>
+          {vol.toLocaleString()} L
+        </div>
+      )
+    },
+
+    {
       title: 'Variance',
-      dataIndex: 'variance',
       key: 'variance',
       width: 100,
       align: 'right',
-      render: (val, record) => {
-        const isPositive = val > 0;
-        const color = Math.abs(val) < 10 ? '#389e0d' : Math.abs(val) < 30 ? '#1890ff' : '#cf1322';
+      render: (_, record) => {
+        const color = Math.abs(record.variance) < 10 ? '#389e0d' : Math.abs(record.variance) < 30 ? '#1890ff' : '#cf1322';
         
         return (
-          <div>
-            <div style={{ fontSize: '11px', fontWeight: '700', color }}>
-              {isPositive ? '+' : ''}{val.toFixed(1)} L
-            </div>
-            <div style={{ fontSize: '9px', color: '#999' }}>
-              ({record.variancePercentage}%)
-            </div>
+          <div style={{ fontSize: '11px', fontWeight: '700', color }}>
+            {record.variance.toFixed(1)} L
           </div>
         );
       }
@@ -640,57 +663,65 @@ const ReconciliationReadings = () => {
       
       doc.setFontSize(9);
       doc.setTextColor(0, 0, 0);
-      doc.text('Opening Volume:', 20, yPos + 7);
-      doc.text(`${processedData.totals?.totalOpening?.toLocaleString()} L`, 45, yPos + 7);
+      doc.text('Opening:', 20, yPos + 5);
+      doc.text(`${processedData.totals?.totalOpening?.toLocaleString()} L`, 45, yPos + 5);
       
-      doc.text('Closing Volume:', 90, yPos + 7);
-      doc.text(`${processedData.totals?.totalClosing?.toLocaleString()} L`, 115, yPos + 7);
+      doc.text('Addition:', 80, yPos + 5);
+      doc.text(`${processedData.totals?.totalAddition?.toLocaleString()} L`, 105, yPos + 5);
       
-      doc.text('Actual Deduction:', 160, yPos + 7);
-      doc.text(`${processedData.totals?.totalActualDeduction?.toLocaleString()} L`, 190, yPos + 7);
+      doc.text('Total:', 140, yPos + 5);
+      doc.text(`${processedData.totals?.totalVolume?.toLocaleString()} L`, 165, yPos + 5);
       
-      doc.text('Expected Deduction:', 20, yPos + 15);
-      doc.text(`${processedData.totals?.totalExpectedDeduction?.toLocaleString()} L`, 45, yPos + 15);
+      doc.text('Expected Closing:', 20, yPos + 13);
+      doc.text(`${processedData.totals?.totalExpectedClosing?.toLocaleString()} L`, 55, yPos + 13);
       
-      doc.text('Variance:', 90, yPos + 15);
+      doc.text('Dip Closing:', 100, yPos + 13);
+      doc.text(`${processedData.totals?.totalClosing?.toLocaleString()} L`, 135, yPos + 13);
+      
+      doc.text('Sales:', 170, yPos + 13);
+      doc.text(`${processedData.totals?.totalExpectedDeduction?.toLocaleString()} L`, 195, yPos + 13);
+      
+      doc.text('Variance:', 20, yPos + 21);
       doc.setTextColor(Math.abs(processedData.totals?.totalVariance) < 30 ? 0 : 255, 
                        Math.abs(processedData.totals?.totalVariance) < 30 ? 128 : 0, 
                        0);
-      doc.text(`${processedData.totals?.totalVariance?.toFixed(1)} L (${processedData.totals?.variancePercentage}%)`, 115, yPos + 15);
+      doc.text(`${processedData.totals?.totalVariance?.toFixed(1)} L`, 45, yPos + 21);
 
       // Tanks Table
       yPos = 75;
       const tableData = processedData.tanks.map((tank, index) => [
-        index + 1,
         tank.tankName,
         tank.productName,
         tank.openingVolume.toLocaleString(),
+        tank.addition.toLocaleString(),
+        tank.totalVolume.toLocaleString(),
+        tank.expectedClosing.toLocaleString(),
         tank.closingVolume.toLocaleString(),
-        tank.actualDeduction.toLocaleString(),
         tank.expectedDeduction.toLocaleString(),
-        `${tank.variance > 0 ? '+' : ''}${tank.variance.toFixed(1)} L`,
-        `${tank.variancePercentage}%`,
-        tank.status
+        `${tank.variance.toFixed(1)} L`,
+        tank.status,
+        tank.pumpCount.toString()
       ]);
 
       autoTable(doc, {
         startY: yPos,
-        head: [['#', 'Tank', 'Product', 'Opening', 'Closing', 'Actual', 'Expected', 'Variance', '%', 'Status']],
+        head: [['Tank', 'Product', 'Opening', 'Addition', 'Total', 'Expected Closing', 'Dip Closing', 'Sales', 'Variance', 'Status', 'Pumps']],
         body: tableData,
         theme: 'striped',
-        headStyles: { fillColor: [24, 144, 255], textColor: [255, 255, 255], fontSize: 9 },
-        bodyStyles: { fontSize: 8 },
+        headStyles: { fillColor: [24, 144, 255], textColor: [255, 255, 255], fontSize: 8 },
+        bodyStyles: { fontSize: 7 },
         columnStyles: {
-          0: { cellWidth: 10 },
-          1: { cellWidth: 35 },
-          2: { cellWidth: 25 },
+          0: { cellWidth: 35 },
+          1: { cellWidth: 30 },
+          2: { cellWidth: 20, halign: 'right' },
           3: { cellWidth: 20, halign: 'right' },
           4: { cellWidth: 20, halign: 'right' },
-          5: { cellWidth: 20, halign: 'right' },
+          5: { cellWidth: 25, halign: 'right' },
           6: { cellWidth: 20, halign: 'right' },
-          7: { cellWidth: 25, halign: 'right' },
-          8: { cellWidth: 15, halign: 'right' },
-          9: { cellWidth: 25 }
+          7: { cellWidth: 20, halign: 'right' },
+          8: { cellWidth: 22, halign: 'right' },
+          9: { cellWidth: 25 },
+          10: { cellWidth: 15, halign: 'center' }
         }
       });
 
@@ -741,11 +772,12 @@ const ReconciliationReadings = () => {
       'Tank': tank.tankName,
       'Product': tank.productName,
       'Opening (L)': tank.openingVolume,
-      'Closing (L)': tank.closingVolume,
-      'Actual (Dip) (L)': tank.actualDeduction,
-      'Expected (Pumps) (L)': tank.expectedDeduction,
+      'Addition (L)': tank.addition,
+      'Total (L)': tank.totalVolume,
+      'Expected Closing (L)': tank.expectedClosing,
+      'Dip Closing (L)': tank.closingVolume,
+      'Sales (L)': tank.expectedDeduction,
       'Variance (L)': tank.variance,
-      'Variance (%)': tank.variancePercentage,
       'Pumps': tank.pumpCount,
       'Status': tank.status
     }));
@@ -760,10 +792,12 @@ const ReconciliationReadings = () => {
       'Supervisor': processedData.shiftInfo?.supervisor?.name || 'N/A',
       'Total Tanks': processedData.tanks.length,
       'Total Opening': formatVolume(processedData.totals?.totalOpening || 0),
-      'Total Closing': formatVolume(processedData.totals?.totalClosing || 0),
-      'Total Actual Deduction': formatVolume(processedData.totals?.totalActualDeduction || 0),
-      'Total Expected Deduction': formatVolume(processedData.totals?.totalExpectedDeduction || 0),
-      'Total Variance': `${processedData.totals?.totalVariance?.toFixed(1)} L (${processedData.totals?.variancePercentage}%)`,
+      'Total Addition': formatVolume(processedData.totals?.totalAddition || 0),
+      'Total Volume': formatVolume(processedData.totals?.totalVolume || 0),
+      'Total Expected Closing': formatVolume(processedData.totals?.totalExpectedClosing || 0),
+      'Total Dip Closing': formatVolume(processedData.totals?.totalClosing || 0),
+      'Total Sales': formatVolume(processedData.totals?.totalExpectedDeduction || 0),
+      'Total Variance': `${processedData.totals?.totalVariance?.toFixed(1)} L`,
       'Total Offloads': formatVolume(processedData.totals?.totalOffloadVolume || 0),
       'Report Date': new Date().toLocaleDateString('en-KE'),
       'Generated At': new Date().toLocaleTimeString('en-KE')
@@ -776,11 +810,12 @@ const ReconciliationReadings = () => {
       { title: 'Tank', dataIndex: 'Tank', key: 'tank', width: 100, type: 'text' },
       { title: 'Product', dataIndex: 'Product', key: 'product', width: 80, type: 'text' },
       { title: 'Opening (L)', dataIndex: 'Opening (L)', key: 'opening', width: 70, type: 'volume' },
-      { title: 'Closing (L)', dataIndex: 'Closing (L)', key: 'closing', width: 70, type: 'volume' },
-      { title: 'Actual (L)', dataIndex: 'Actual (Dip) (L)', key: 'actual', width: 70, type: 'volume' },
-      { title: 'Expected (L)', dataIndex: 'Expected (Pumps) (L)', key: 'expected', width: 80, type: 'volume' },
+      { title: 'Addition (L)', dataIndex: 'Addition (L)', key: 'addition', width: 70, type: 'volume' },
+      { title: 'Total (L)', dataIndex: 'Total (L)', key: 'total', width: 70, type: 'volume' },
+      { title: 'Expected Closing (L)', dataIndex: 'Expected Closing (L)', key: 'expectedClosing', width: 80, type: 'volume' },
+      { title: 'Dip Closing (L)', dataIndex: 'Dip Closing (L)', key: 'dipClosing', width: 80, type: 'volume' },
+      { title: 'Sales (L)', dataIndex: 'Sales (L)', key: 'sales', width: 70, type: 'volume' },
       { title: 'Variance (L)', dataIndex: 'Variance (L)', key: 'variance', width: 70, type: 'volume' },
-      { title: 'Variance %', dataIndex: 'Variance (%)', key: 'variancePct', width: 60, type: 'percentage' },
       { title: 'Pumps', dataIndex: 'Pumps', key: 'pumps', width: 50, type: 'number' },
       { title: 'Status', dataIndex: 'Status', key: 'status', width: 80, type: 'text' }
     ];
@@ -804,9 +839,11 @@ const ReconciliationReadings = () => {
       showGrandTotals: true,
       grandTotals: {
         'Opening (L)': processedData.totals?.totalOpening || 0,
-        'Closing (L)': processedData.totals?.totalClosing || 0,
-        'Actual (L)': processedData.totals?.totalActualDeduction || 0,
-        'Expected (L)': processedData.totals?.totalExpectedDeduction || 0,
+        'Addition (L)': processedData.totals?.totalAddition || 0,
+        'Total (L)': processedData.totals?.totalVolume || 0,
+        'Expected Closing (L)': processedData.totals?.totalExpectedClosing || 0,
+        'Dip Closing (L)': processedData.totals?.totalClosing || 0,
+        'Sales (L)': processedData.totals?.totalExpectedDeduction || 0,
         'Variance (L)': processedData.totals?.totalVariance || 0
       }
     };
@@ -936,7 +973,7 @@ const ReconciliationReadings = () => {
       
       {/* Statistics Cards */}
       <Row gutter={[12, 12]}>
-        <Col xs={12} sm={8} md={4}>
+        <Col xs={12} sm={8} md={3}>
           <Card size="small" style={{ height: '100%', background: '#e6f7ff' }}>
             <Statistic
               title="Total Tanks"
@@ -946,7 +983,7 @@ const ReconciliationReadings = () => {
             />
           </Card>
         </Col>
-        <Col xs={12} sm={8} md={4}>
+        <Col xs={12} sm={8} md={3}>
           <Card size="small" style={{ height: '100%', background: '#f6ffed' }}>
             <Statistic
               title="Total Pumps"
@@ -956,10 +993,10 @@ const ReconciliationReadings = () => {
             />
           </Card>
         </Col>
-        <Col xs={12} sm={8} md={4}>
+        <Col xs={12} sm={8} md={3}>
           <Card size="small" style={{ height: '100%', background: '#fff7e6' }}>
             <Statistic
-              title="Opening Volume"
+              title="Opening"
               value={processedData?.totals?.totalOpening || 0}
               precision={0}
               valueStyle={{ color: '#fa8c16', fontSize: '20px' }}
@@ -967,10 +1004,32 @@ const ReconciliationReadings = () => {
             />
           </Card>
         </Col>
-        <Col xs={12} sm={8} md={4}>
+        <Col xs={12} sm={8} md={3}>
+          <Card size="small" style={{ height: '100%', background: '#f6ffed' }}>
+            <Statistic
+              title="Addition"
+              value={processedData?.totals?.totalAddition || 0}
+              precision={0}
+              valueStyle={{ color: '#52c41a', fontSize: '20px' }}
+              suffix="L"
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={8} md={3}>
+          <Card size="small" style={{ height: '100%', background: '#f9f0ff' }}>
+            <Statistic
+              title="Total Volume"
+              value={processedData?.totals?.totalVolume || 0}
+              precision={0}
+              valueStyle={{ color: '#722ed1', fontSize: '20px' }}
+              suffix="L"
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={8} md={3}>
           <Card size="small" style={{ height: '100%', background: '#fff1f0' }}>
             <Statistic
-              title="Closing Volume"
+              title="Dip Closing"
               value={processedData?.totals?.totalClosing || 0}
               precision={0}
               valueStyle={{ color: '#f5222d', fontSize: '20px' }}
@@ -978,18 +1037,18 @@ const ReconciliationReadings = () => {
             />
           </Card>
         </Col>
-        <Col xs={12} sm={8} md={4}>
-          <Card size="small" style={{ height: '100%', background: '#f9f0ff' }}>
+        <Col xs={12} sm={8} md={3}>
+          <Card size="small" style={{ height: '100%', background: '#f6ffed' }}>
             <Statistic
-              title="Actual (Dip)"
-              value={processedData?.totals?.totalActualDeduction || 0}
+              title="Sales"
+              value={processedData?.totals?.totalExpectedDeduction || 0}
               precision={0}
-              valueStyle={{ color: '#722ed1', fontSize: '20px' }}
+              valueStyle={{ color: '#52c41a', fontSize: '20px' }}
               suffix="L"
             />
           </Card>
         </Col>
-        <Col xs={12} sm={8} md={4}>
+        <Col xs={12} sm={8} md={3}>
           <Card 
             size="small" 
             style={{ 
@@ -1007,11 +1066,7 @@ const ReconciliationReadings = () => {
                 fontWeight: 'bold'
               }}
               suffix="L"
-              prefix={processedData?.totals?.totalVariance > 0 ? <PlusOutlined /> : <MinusOutlined />}
             />
-            <div style={{ fontSize: '11px', color: '#999' }}>
-              ({processedData?.totals?.variancePercentage}%)
-            </div>
           </Card>
         </Col>
       </Row>
@@ -1206,35 +1261,37 @@ const ReconciliationReadings = () => {
                   background: '#f0f5ff',
                   fontSize: '12px'
                 }}>
-                  <Table.Summary.Cell index={0} colSpan={3} align="right">
+                  <Table.Summary.Cell index={0} colSpan={2} align="right">
                     <Text strong>TOTALS ({filteredTankData.length} tanks):</Text>
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={1} align="right">
-                    <Text strong>{processedData?.totals?.totalOpening?.toLocaleString()}</Text>
+                    <Text strong>{processedData?.totals?.totalOpening?.toLocaleString()} L</Text>
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={2} align="right">
-                    <Text strong type="danger">{processedData?.totals?.totalClosing?.toLocaleString()}</Text>
+                    <Text strong style={{ color: '#52c41a' }}>{processedData?.totals?.totalAddition?.toLocaleString()} L</Text>
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={3} align="right">
-                    <Text strong type="danger">{processedData?.totals?.totalActualDeduction?.toLocaleString()}</Text>
+                    <Text strong style={{ color: '#722ed1' }}>{processedData?.totals?.totalVolume?.toLocaleString()} L</Text>
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={4} align="right">
-                    <Text strong type="success">{processedData?.totals?.totalExpectedDeduction?.toLocaleString()}</Text>
+                    <Text strong style={{ color: '#1890ff' }}>{processedData?.totals?.totalExpectedClosing?.toLocaleString()} L</Text>
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={5} align="right">
+                    <Text strong type="danger">{processedData?.totals?.totalClosing?.toLocaleString()} L</Text>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={6} align="right">
+                    <Text strong type="success">{processedData?.totals?.totalExpectedDeduction?.toLocaleString()} L</Text>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={7} align="right">
                     <Text 
                       strong 
-                      type={Math.abs(processedData?.totals?.totalVariance || 0) < 30 ? 'success' : 'danger'}
+                      type={Math.abs(processedData?.totals?.totalVariance) < 30 ? 'success' : 'danger'}
                     >
-                      {processedData?.totals?.totalVariance > 0 ? '+' : ''}
                       {processedData?.totals?.totalVariance?.toFixed(1)} L
-                      <span style={{ fontSize: '10px', marginLeft: '4px', color: '#999' }}>
-                        ({processedData?.totals?.variancePercentage}%)
-                      </span>
                     </Text>
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={6} colSpan={2}>
-                    {/* Empty for status and actions */}
+                  <Table.Summary.Cell index={8} colSpan={3}>
+                    {/* Empty for status, pumps, and actions */}
                   </Table.Summary.Cell>
                 </Table.Summary.Row>
               </Table.Summary>
@@ -1325,56 +1382,73 @@ const ReconciliationReadings = () => {
               <Col span={24}>
                 <Divider orientation="left">Volume Readings</Divider>
                 <Row gutter={[16, 8]}>
-                  <Col span={8}>
-                    <Card size="small" style={{ background: '#e6f7ff' }}>
+                  <Col span={6}>
+                    <Card size="small" style={{ background: '#fff7e6' }}>
                       <Statistic 
-                        title="Opening Volume" 
+                        title="Opening" 
                         value={viewingTank.openingVolume}
                         suffix="L"
                         precision={0}
                       />
                     </Card>
                   </Col>
-                  <Col span={8}>
-                    <Card size="small" style={{ background: '#fff1f0' }}>
+                  <Col span={6}>
+                    <Card size="small" style={{ background: '#f6ffed' }}>
                       <Statistic 
-                        title="Closing Volume" 
-                        value={viewingTank.closingVolume}
+                        title="Addition" 
+                        value={viewingTank.addition}
                         suffix="L"
                         precision={0}
                       />
                     </Card>
                   </Col>
-                  <Col span={8}>
+                  <Col span={6}>
                     <Card size="small" style={{ background: '#f9f0ff' }}>
                       <Statistic 
-                        title="Actual Deduction" 
-                        value={viewingTank.actualDeduction}
+                        title="Total" 
+                        value={viewingTank.totalVolume}
                         suffix="L"
                         precision={0}
                         valueStyle={{ color: '#722ed1' }}
                       />
                     </Card>
                   </Col>
+                  <Col span={6}>
+                    <Card size="small" style={{ background: '#e6f7ff' }}>
+                      <Statistic 
+                        title="Expected Closing" 
+                        value={viewingTank.expectedClosing}
+                        suffix="L"
+                        precision={0}
+                        valueStyle={{ color: '#1890ff' }}
+                      />
+                    </Card>
+                  </Col>
                 </Row>
-              </Col>
-              
-              <Col span={24}>
-                <Divider orientation="left">Pump Calculations</Divider>
-                <Row gutter={[16, 8]}>
-                  <Col span={12}>
+                <Row gutter={[16, 8]} style={{ marginTop: '8px' }}>
+                  <Col span={8}>
+                    <Card size="small" style={{ background: '#fff1f0' }}>
+                      <Statistic 
+                        title="Dip Closing" 
+                        value={viewingTank.closingVolume}
+                        suffix="L"
+                        precision={0}
+                        valueStyle={{ color: '#f5222d' }}
+                      />
+                    </Card>
+                  </Col>
+                  <Col span={8}>
                     <Card size="small" style={{ background: '#f6ffed' }}>
                       <Statistic 
-                        title="Expected Deduction (from pumps)" 
+                        title="Sales" 
                         value={viewingTank.expectedDeduction}
                         suffix="L"
                         precision={0}
                         valueStyle={{ color: '#52c41a' }}
                       />
-                      <Text type="secondary">From {viewingTank.pumpCount} connected pump(s)</Text>
                     </Card>
                   </Col>
-                  <Col span={12}>
+                  <Col span={8}>
                     <Card size="small" style={{ background: Math.abs(viewingTank.variance) < 30 ? '#f6ffed' : '#fff2f0' }}>
                       <Statistic 
                         title="Variance" 
@@ -1386,7 +1460,6 @@ const ReconciliationReadings = () => {
                           fontWeight: 'bold'
                         }}
                       />
-                      <Text type="secondary">({viewingTank.variancePercentage}%)</Text>
                     </Card>
                   </Col>
                 </Row>

@@ -90,7 +90,10 @@ const PersonnelStep = ({
     { id: 'DAY', label: 'Day Shift', description: 'Morning to Evening (e.g., 7 AM - 7 PM)' },
     { id: 'NIGHT', label: 'Night Shift', description: 'Evening to Morning (e.g., 7 PM - 7 AM)' },
     { id: 'MID-DAY', label: 'Mid Shift', description: 'Evening to Morning (e.g., 12 PM - 7 AM)' },
-    { id: 'OTHER', label: 'Other Shift', description: 'Custom shift timings' }
+    { id: 'OTHER', label: 'Other Shift', description: 'Custom shift timings' },
+    { id: 'CUSTOM', label: 'Custom Shift', description: 'Manually defined shift timings' },
+    { id: 'CUSTOM1', label: 'Custom Shift', description: 'Manually defined shift timings' },
+    { id: 'CUSTOM2 ', label: 'Custom Shift', description: 'Manually defined shift timings' },
   ];
 
   // Fetch data when stationId is available

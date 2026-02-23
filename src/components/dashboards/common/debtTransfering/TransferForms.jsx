@@ -46,13 +46,13 @@ const TransferForms = ({ visible, onClose, onSuccess }) => {
       component: CashSettlementForm,
       description: 'Debtor pays cash directly at station'
     },
-    {
-      key: 'electronic',
-      label: 'Electronic Transfer',
-      icon: <SwapOutlined />,
-      component: ElectronicTransferForm,
-      description: 'Transfer debt between payment methods'
-    },
+    // {
+    //   key: 'electronic',
+    //   label: 'Electronic Transfer',
+    //   icon: <SwapOutlined />,
+    //   component: ElectronicTransferForm,
+    //   description: 'Transfer debt between payment methods'
+    // },
     {
       key: 'bank',
       label: 'Bank Settlement',
