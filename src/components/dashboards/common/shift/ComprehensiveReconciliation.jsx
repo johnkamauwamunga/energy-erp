@@ -50,7 +50,8 @@ import {
   CalendarOutlined,
   BarChartOutlined,
   ExportOutlined,
-  FolderOutlined
+  FolderOutlined,
+  CompressOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { reconciliationService } from '../../../../services/reconcilliationService/reconcilliationService';
@@ -70,12 +71,14 @@ const ComprehensiveReconciliation = () => {
   const [loading, setLoading] = useState(false);
   const [shiftsData, setShiftsData] = useState(null);
   const [processedData, setProcessedData] = useState(null);
+  const [compactView, setCompactView] = useState(true);
   
   // Modal states
   const [viewModalVisible, setViewModalVisible] = useState(false);
   const [viewingTank, setViewingTank] = useState(null);
   const [offloadModalVisible, setOffloadModalVisible] = useState(false);
   const [viewingOffloads, setViewingOffloads] = useState([]);
+  const [selectedTankOffloads, setSelectedTankOffloads] = useState(null);
   
   // Group by date state
   const [groupedByDate, setGroupedByDate] = useState({});
@@ -112,7 +115,7 @@ const ComprehensiveReconciliation = () => {
     reconciliationRate: 0
   });
 
-  // ==================== YOUR CORE LOGIC - EXACTLY FROM RECONCILIATION READINGS ====================
+  // ==================== PROCESSING FUNCTIONS ====================
 
   /**
    * Process tank reconciliation data - IDENTICAL to ReconciliationReadings
@@ -150,7 +153,10 @@ const ComprehensiveReconciliation = () => {
         density: offload.density,
         status: offload.status,
         createdAt: offload.createdAt,
-        createdBy: offload.createdBy?.name
+        createdBy: offload.createdBy?.name,
+        tankName: tankData.tank?.name,
+        shiftNumber: shiftInfo?.shiftNumber,
+        stationName: shiftInfo?.station?.name
       }));
     }
     
@@ -243,13 +249,13 @@ const ComprehensiveReconciliation = () => {
       productColor: tankData.tank?.product?.colorCode || '#1890ff',
       capacity: tankData.tank?.capacity,
       
-      // Volume readings - YOUR FORMULA
-      openingVolume,                    // START reading
-      addition,                          // OFFLOAD_AFTER - OFFLOAD_BEFORE (or 0)
-      totalVolume,                       // Opening + Addition
-      expectedClosing,                   // Total - Sales
-      closingVolume,                     // END reading
-      expectedDeduction,                  // Sales from pumps
+      // Volume readings
+      openingVolume,
+      addition,
+      totalVolume,
+      expectedClosing,
+      closingVolume,
+      expectedDeduction,
       
       // Variance
       variance,
@@ -264,7 +270,7 @@ const ComprehensiveReconciliation = () => {
       hasOffload: tankData.offloads?.length > 0,
       offloadVolume: addition,
       offloadCount: tankData.offloads?.length || 0,
-      offloadDetails,
+      offloadDetails: offloadDetails,
       
       // Pump info
       pumpDetails,
@@ -289,6 +295,7 @@ const ComprehensiveReconciliation = () => {
     const allTanks = [];
     const shiftSummaries = [];
     const grouped = {};
+    let totalOffloadDetails = [];
 
     // Process each shift
     rawData.shifts.forEach(shift => {
@@ -301,6 +308,11 @@ const ComprehensiveReconciliation = () => {
         if (processedTank) {
           allTanks.push(processedTank);
           
+          // Collect offload details
+          if (processedTank.offloadDetails && processedTank.offloadDetails.length > 0) {
+            totalOffloadDetails.push(...processedTank.offloadDetails);
+          }
+          
           // Group by date
           const date = processedTank.shiftDate;
           if (!grouped[date]) {
@@ -310,7 +322,7 @@ const ComprehensiveReconciliation = () => {
         }
       });
 
-      // Create shift summary
+      // Create shift summary with offload tracking
       const shiftTotals = tanks.reduce((acc, tank) => {
         const processed = processTankReconciliation(tank, shiftInfo);
         if (processed) {
@@ -325,6 +337,12 @@ const ComprehensiveReconciliation = () => {
           acc.totalPumps += processed.pumpCount;
           acc.tankCount++;
           if (processed.status === 'INVESTIGATE') acc.tanksToInvestigate++;
+          
+          // Store offload details for this shift
+          if (processed.offloadDetails && processed.offloadDetails.length > 0) {
+            if (!acc.offloadDetails) acc.offloadDetails = [];
+            acc.offloadDetails.push(...processed.offloadDetails);
+          }
         }
         return acc;
       }, {
@@ -338,7 +356,8 @@ const ComprehensiveReconciliation = () => {
         totalOffloadCount: 0,
         totalPumps: 0,
         tankCount: 0,
-        tanksToInvestigate: 0
+        tanksToInvestigate: 0,
+        offloadDetails: []
       });
 
       shiftSummaries.push({
@@ -417,6 +436,7 @@ const ComprehensiveReconciliation = () => {
       tanks: allTanks,
       shifts: shiftSummaries,
       groupedByDate: sortedGrouped,
+      allOffloads: totalOffloadDetails,
       raw: rawData
     };
   };
@@ -432,11 +452,7 @@ const ComprehensiveReconciliation = () => {
         includeDetails: true
       };
       
-      console.log("🔍 Fetching comprehensive reconciliation:", params);
-      
       const response = await reconciliationService.getShiftsByDateRange(params);
-      
-      console.log("✅ Comprehensive data received:", response);
       
       setShiftsData(response);
       
@@ -512,7 +528,13 @@ const ComprehensiveReconciliation = () => {
     }));
   };
 
-  // Format functions - IDENTICAL to ReconciliationReadings
+  const handleViewOffloads = (offloadDetails, record) => {
+    setViewingOffloads(offloadDetails);
+    setSelectedTankOffloads(record);
+    setOffloadModalVisible(true);
+  };
+
+  // Format functions
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     return dayjs(dateString).format('DD/MM/YYYY HH:mm');
@@ -521,27 +543,27 @@ const ComprehensiveReconciliation = () => {
   const formatCurrency = (amount) => {
     if (amount === undefined || amount === null) return 'KES 0.00';
     return `KES ${parseFloat(amount).toLocaleString('en-KE', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
     })}`;
   };
 
   const formatVolume = (liters) => {
-    if (liters === undefined || liters === null) return '0.00 L';
+    if (liters === undefined || liters === null) return '0';
     const absLiters = Math.abs(liters);
     return `${absLiters.toLocaleString('en-KE', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })} L`;
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    })}`;
   };
 
   const formatVariance = (variance) => {
-    if (variance === undefined || variance === null) return '0.00 L';
+    if (variance === undefined || variance === null) return '0';
     const sign = variance > 0 ? '+' : '';
     return `${sign}${variance.toLocaleString('en-KE', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })} L`;
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    })}`;
   };
 
   // Filtered tank data
@@ -603,9 +625,187 @@ const ComprehensiveReconciliation = () => {
     return [...new Set(processedData.tanks.map(t => t.status))];
   }, [processedData]);
 
-  // ==================== TABLE COLUMNS - EXACTLY FROM RECONCILIATION READINGS ====================
+  // ==================== COMPACT TABLE COLUMNS (Removed last 3 columns) ====================
 
-  const tankColumns = [
+  const compactColumns = [
+    {
+      title: 'Date',
+      key: 'date',
+      width: 100,
+      fixed: 'left',
+      render: (_, record) => (
+        <div style={{ fontSize: '11px' }}>
+          <div style={{ fontWeight: '500' }}>{record.displayDate}</div>
+          <div style={{ fontSize: '10px', color: '#666' }}>#{record.shiftNumber}</div>
+        </div>
+      )
+    },
+    {
+      title: 'Station',
+      key: 'station',
+      width: 110,
+      render: (_, record) => (
+        <div style={{ fontSize: '11px' }}>
+          <div style={{ fontWeight: '500' }}>{record.stationName || 'N/A'}</div>
+          <div style={{ fontSize: '10px', color: '#666' }}>{record.supervisor || ''}</div>
+        </div>
+      )
+    },
+    {
+      title: 'Tank',
+      key: 'tankName',
+      width: 90,
+      render: (_, record) => (
+        <div style={{ fontSize: '11px' }}>
+          <div style={{ fontWeight: '500' }}>{record.tankName || 'N/A'}</div>
+          <div style={{ fontSize: '10px', color: '#666' }}>{record.productName}</div>
+        </div>
+      )
+    },
+    {
+      title: 'Open',
+      dataIndex: 'openingVolume',
+      key: 'openingVolume',
+      width: 55,
+      align: 'right',
+      render: (vol) => (
+        <Tooltip title={`START: ${vol.toLocaleString()} L`}>
+          <div style={{ fontSize: '11px', fontWeight: '500' }}>{formatVolume(vol)}</div>
+        </Tooltip>
+      )
+    },
+    {
+      title: 'Add',
+      dataIndex: 'addition',
+      key: 'addition',
+      width: 90,
+      align: 'right',
+      render: (vol, record) => (
+        <Tooltip title={record.hasOffload ? `Offload: ${vol.toLocaleString()} L` : 'No offload'}>
+          <div 
+            style={{ 
+              fontSize: '11px', 
+              fontWeight: '500', 
+              color: vol > 0 ? '#52c41a' : '#999',
+              cursor: record.hasOffload ? 'pointer' : 'default',
+              textDecoration: record.hasOffload ? 'underline dotted' : 'none'
+            }}
+            onClick={record.hasOffload ? (e) => {
+              e.stopPropagation();
+              handleViewOffloads(record.offloadDetails, record);
+            } : undefined}
+          >
+            {vol > 0 ? `+${formatVolume(vol)}` : '0'}
+          </div>
+        </Tooltip>
+      )
+    },
+    {
+      title: 'Total',
+      dataIndex: 'totalVolume',
+      key: 'totalVolume',
+      width: 55,
+      align: 'right',
+      render: (vol) => (
+        <Tooltip title={`Opening + Addition: ${vol.toLocaleString()} L`}>
+          <div style={{ fontSize: '11px', fontWeight: '600', color: '#722ed1' }}>
+            {formatVolume(vol)}
+          </div>
+        </Tooltip>
+      )
+    },
+    {
+      title: 'Sales',
+      dataIndex: 'expectedDeduction',
+      key: 'expectedDeduction',
+      width: 55,
+      align: 'right',
+      render: (vol, record) => (
+        <Tooltip title={`From ${record.pumpCount} pump(s)`}>
+          <div style={{ fontSize: '11px', fontWeight: '600', color: '#389e0d' }}>
+            {formatVolume(vol)}
+          </div>
+        </Tooltip>
+      )
+    },
+    {
+      title: 'Exp Closing',
+      key: 'expectedClosing',
+      width: 100,
+      align: 'right',
+      render: (_, record) => (
+        <Tooltip title={`Expected: ${record.expectedClosing.toLocaleString()} L`}>
+          <div style={{ fontSize: '11px', fontWeight: '500', color: '#1890ff' }}>
+            {formatVolume(record.expectedClosing)}
+          </div>
+        </Tooltip>
+      )
+    },
+    {
+      title: 'Closing Dip',
+      dataIndex: 'closingVolume',
+      key: 'closingVolume',
+      width: 150,
+      align: 'right',
+      render: (vol) => (
+        <Tooltip title={`END: ${vol.toLocaleString()} L`}>
+          <div style={{ fontSize: '11px', fontWeight: '500', color: '#cf1322' }}>
+            {formatVolume(vol)}
+          </div>
+        </Tooltip>
+      )
+    },
+    {
+      title: 'Variance',
+      key: 'variance',
+      width: 100,
+      align: 'right',
+      render: (_, record) => {
+        const color = record.absVariance < 10 ? '#389e0d' : 
+                     record.absVariance < 30 ? '#1890ff' : 
+                     record.absVariance < 100 ? '#fa8c16' : '#cf1322';
+        
+        return (
+          <Tooltip title={`${record.variancePercentage}% of expected`}>
+            <div style={{ 
+              fontSize: '11px', 
+              fontWeight: '700', 
+              color,
+              background: record.absVariance > 100 ? '#fff2f0' : 'transparent',
+              padding: '2px 2px',
+              borderRadius: '4px'
+            }}>
+              {formatVariance(record.variance)}
+            </div>
+          </Tooltip>
+        );
+      }
+    },
+    {
+      title: '',
+      key: 'actions',
+      width: 55,
+      fixed: 'right',
+      render: (_, record) => (
+        <Tooltip title="View Details">
+          <Button 
+            icon={<EyeOutlined />} 
+            size="small"
+            type="text"
+            style={{ fontSize: '11px' }}
+            onClick={() => {
+              setViewingTank(record);
+              setViewModalVisible(true);
+            }}
+          />
+        </Tooltip>
+      )
+    }
+  ];
+
+  // ==================== STANDARD COLUMNS (Removed last 3 columns) ====================
+
+  const standardColumns = [
     {
       title: 'Date',
       key: 'date',
@@ -617,7 +817,7 @@ const ComprehensiveReconciliation = () => {
             {record.displayDate}
           </div>
           <div style={{ fontSize: '10px', color: '#666' }}>
-            {record.shiftNumber}
+            #{record.shiftNumber}
           </div>
         </div>
       )
@@ -640,7 +840,7 @@ const ComprehensiveReconciliation = () => {
     {
       title: 'Tank',
       key: 'tankName',
-      width: 150,
+      width: 120,
       render: (_, record) => (
         <div>
           <div style={{ fontWeight: '500', fontSize: '12px' }}>
@@ -648,38 +848,16 @@ const ComprehensiveReconciliation = () => {
             {record.tankName || 'N/A'}
           </div>
           <div style={{ fontSize: '10px', color: '#666', lineHeight: '1.2' }}>
-            {record.stationLabel || ''}
+            {record.productName}
           </div>
         </div>
       )
     },
     {
-      title: 'Product',
-      key: 'product',
-      width: 100,
-      render: (_, record) => {
-        return (
-          <div>
-            <div style={{ fontWeight: '500', fontSize: '11px', lineHeight: '1.2' }}>
-              <Tag color={record.productColor} style={{ 
-                marginRight: '3px', 
-                fontSize: '7px', 
-                padding: '0 3px',
-                lineHeight: '1.2'
-              }}>
-                ●
-              </Tag>
-              {record.productName || 'N/A'}
-            </div>
-          </div>
-        );
-      }
-    },
-    {
       title: 'Opening',
       dataIndex: 'openingVolume',
       key: 'openingVolume',
-      width: 80,
+      width: 70,
       align: 'right',
       render: (vol) => (
         <Tooltip title="START reading">
@@ -693,21 +871,21 @@ const ComprehensiveReconciliation = () => {
       title: 'Addition',
       dataIndex: 'addition',
       key: 'addition',
-      width: 80,
+      width: 70,
       align: 'right',
       render: (vol, record) => (
-        <Tooltip title={record.hasOffload ? `Offload: ${formatVolume(vol)}` : 'No offload'}>
+        <Tooltip title={record.hasOffload ? `Offload: ${vol.toLocaleString()} L` : 'No offload'}>
           <div 
             style={{ 
               fontSize: '11px', 
               fontWeight: '500', 
               color: vol > 0 ? '#52c41a' : '#999',
-              cursor: record.hasOffload ? 'pointer' : 'default'
+              cursor: record.hasOffload ? 'pointer' : 'default',
+              textDecoration: record.hasOffload ? 'underline dotted' : 'none'
             }}
             onClick={record.hasOffload ? (e) => {
               e.stopPropagation();
-              setViewingOffloads(record.offloadDetails);
-              setOffloadModalVisible(true);
+              handleViewOffloads(record.offloadDetails, record);
             } : undefined}
           >
             {vol > 0 ? `+${vol.toLocaleString()} L` : '0 L'}
@@ -719,7 +897,7 @@ const ComprehensiveReconciliation = () => {
       title: 'Total',
       dataIndex: 'totalVolume',
       key: 'totalVolume',
-      width: 80,
+      width: 70,
       align: 'right',
       render: (vol) => (
         <Tooltip title="Opening + Addition">
@@ -733,10 +911,10 @@ const ComprehensiveReconciliation = () => {
       title: 'Sales',
       dataIndex: 'expectedDeduction',
       key: 'expectedDeduction',
-      width: 100,
+      width: 70,
       align: 'right',
       render: (vol, record) => (
-        <Tooltip title={`From ${record.pumpCount} connected pump(s) • ${formatCurrency(record.totalSalesValue)}`}>
+        <Tooltip title={`From ${record.pumpCount} pump(s)`}>
           <div style={{ fontSize: '11px', fontWeight: '600', color: '#389e0d' }}>
             {vol.toLocaleString()} L
           </div>
@@ -744,25 +922,23 @@ const ComprehensiveReconciliation = () => {
       )
     },
     {
-      title: 'Expected Closing',
+      title: 'Expected',
       key: 'expectedClosing',
-      width: 100,
+      width: 70,
       align: 'right',
-      render: (_, record) => {
-        return (
-          <Tooltip title="Total - Sales">
-            <div style={{ fontSize: '11px', fontWeight: '500', color: '#1890ff' }}>
-              {record.expectedClosing.toLocaleString()} L
-            </div>
-          </Tooltip>
-        );
-      }
+      render: (_, record) => (
+        <Tooltip title="Total - Sales">
+          <div style={{ fontSize: '11px', fontWeight: '500', color: '#1890ff' }}>
+            {record.expectedClosing.toLocaleString()} L
+          </div>
+        </Tooltip>
+      )
     },
     {
-      title: 'Dip Closing',
+      title: 'Dip',
       dataIndex: 'closingVolume',
       key: 'closingVolume',
-      width: 80,
+      width: 70,
       align: 'right',
       render: (vol) => (
         <Tooltip title="END reading">
@@ -775,7 +951,7 @@ const ComprehensiveReconciliation = () => {
     {
       title: 'Variance',
       key: 'variance',
-      width: 100,
+      width: 80,
       align: 'right',
       render: (_, record) => {
         const color = record.absVariance < 10 ? '#389e0d' : 
@@ -784,7 +960,7 @@ const ComprehensiveReconciliation = () => {
         const sign = record.variance > 0 ? '+' : '';
         
         return (
-          <Tooltip title={`${record.variancePercentage}% of expected closing`}>
+          <Tooltip title={`${record.variancePercentage}% of expected`}>
             <div style={{ 
               fontSize: '11px', 
               fontWeight: '700', 
@@ -793,7 +969,7 @@ const ComprehensiveReconciliation = () => {
               padding: '2px 4px',
               borderRadius: '4px'
             }}>
-              {sign}{record.variance.toFixed(1)} L
+              {sign}{record.variance.toFixed(0)} L
             </div>
           </Tooltip>
         );
@@ -802,7 +978,7 @@ const ComprehensiveReconciliation = () => {
     {
       title: 'Status',
       key: 'status',
-      width: 90,
+      width: 80,
       render: (_, record) => (
         <Badge 
           status={record.statusColor} 
@@ -812,12 +988,25 @@ const ComprehensiveReconciliation = () => {
       )
     },
     {
-      title: 'Pumps',
-      key: 'pumpCount',
+      title: 'Offloads',
+      key: 'offloadIndicator',
       width: 60,
       align: 'center',
-      render: (_, record) => (
-        <Tag color="blue">{record.pumpCount}</Tag>
+      render: (_, record) => record.hasOffload ? (
+        <Tooltip title={`${record.offloadCount} offload(s) • ${formatVolume(record.offloadVolume)} L`}>
+          <Tag 
+            color="green" 
+            style={{ cursor: 'pointer' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleViewOffloads(record.offloadDetails, record);
+            }}
+          >
+            <TruckOutlined /> {record.offloadCount}
+          </Tag>
+        </Tooltip>
+      ) : (
+        <Tag color="default">0</Tag>
       )
     },
     {
@@ -826,34 +1015,18 @@ const ComprehensiveReconciliation = () => {
       width: 50,
       fixed: 'right',
       render: (_, record) => (
-        <Space size={2}>
-          <Tooltip title="View Details">
-            <Button 
-              icon={<EyeOutlined />} 
-              size="small"
-              type="text"
-              style={{ fontSize: '12px' }}
-              onClick={() => {
-                setViewingTank(record);
-                setViewModalVisible(true);
-              }}
-            />
-          </Tooltip>
-          {record.hasOffload && (
-            <Tooltip title="View Offload Details">
-              <Button 
-                icon={<TruckOutlined />} 
-                size="small"
-                type="text"
-                style={{ fontSize: '12px', color: '#52c41a' }}
-                onClick={() => {
-                  setViewingOffloads(record.offloadDetails);
-                  setOffloadModalVisible(true);
-                }}
-              />
-            </Tooltip>
-          )}
-        </Space>
+        <Tooltip title="View Details">
+          <Button 
+            icon={<EyeOutlined />} 
+            size="small"
+            type="text"
+            style={{ fontSize: '12px' }}
+            onClick={() => {
+              setViewingTank(record);
+              setViewModalVisible(true);
+            }}
+          />
+        </Tooltip>
       )
     }
   ];
@@ -863,21 +1036,21 @@ const ComprehensiveReconciliation = () => {
       title: 'Pump',
       dataIndex: 'pumpName',
       key: 'pumpName',
-      width: 120,
+      width: 100,
     },
     {
-      title: 'Start Meter',
+      title: 'Start',
       dataIndex: 'startMeter',
       key: 'startMeter',
-      width: 90,
+      width: 70,
       align: 'right',
       render: (val) => val.toLocaleString()
     },
     {
-      title: 'End Meter',
+      title: 'End',
       dataIndex: 'endMeter',
       key: 'endMeter',
-      width: 90,
+      width: 70,
       align: 'right',
       render: (val) => val.toLocaleString()
     },
@@ -885,15 +1058,15 @@ const ComprehensiveReconciliation = () => {
       title: 'Dispensed',
       dataIndex: 'dispensed',
       key: 'dispensed',
-      width: 90,
+      width: 80,
       align: 'right',
       render: (val) => <Text strong>{val.toLocaleString()} L</Text>
     },
     {
-      title: 'Unit Price',
+      title: 'Price',
       dataIndex: 'unitPrice',
       key: 'unitPrice',
-      width: 90,
+      width: 70,
       align: 'right',
       render: (val) => formatCurrency(val)
     },
@@ -901,7 +1074,7 @@ const ComprehensiveReconciliation = () => {
       title: 'Sales',
       dataIndex: 'salesValue',
       key: 'salesValue',
-      width: 100,
+      width: 80,
       align: 'right',
       render: (val) => formatCurrency(val)
     }
@@ -912,81 +1085,65 @@ const ComprehensiveReconciliation = () => {
       title: 'Receiving #',
       dataIndex: 'receivingNumber',
       key: 'receivingNumber',
-      width: 120,
+      width: 100,
     },
     {
-      title: 'Supplier Invoice',
+      title: 'Supplier',
       dataIndex: 'supplierInvoice',
       key: 'supplierInvoice',
-      width: 120,
+      width: 100,
     },
     {
-      title: 'Delivery Company',
+      title: 'Company',
       dataIndex: 'deliveryCompany',
       key: 'deliveryCompany',
-      width: 150,
+      width: 120,
     },
     {
       title: 'Driver',
       dataIndex: 'driverName',
       key: 'driverName',
-      width: 120,
+      width: 100,
     },
     {
       title: 'Dip Before',
       dataIndex: 'dipBefore',
       key: 'dipBefore',
-      width: 90,
+      width: 70,
       align: 'right',
-      render: (val) => val.toLocaleString() + ' L'
+      render: (val) => val.toLocaleString()
     },
     {
       title: 'Dip After',
       dataIndex: 'dipAfter',
       key: 'dipAfter',
-      width: 90,
+      width: 70,
       align: 'right',
-      render: (val) => val.toLocaleString() + ' L'
+      render: (val) => val.toLocaleString()
     },
     {
-      title: 'Actual Volume',
+      title: 'Volume',
       dataIndex: 'actualVolume',
       key: 'actualVolume',
-      width: 100,
+      width: 80,
       align: 'right',
       render: (val) => <Text strong>{val.toLocaleString()} L</Text>
     },
     {
-      title: 'Expected Volume',
-      dataIndex: 'expectedVolume',
-      key: 'expectedVolume',
-      width: 100,
-      align: 'right',
-      render: (val) => val.toLocaleString() + ' L'
-    },
-    {
-      title: 'Temperature',
+      title: 'Temp',
       dataIndex: 'temperature',
       key: 'temperature',
-      width: 90,
+      width: 50,
       align: 'right',
       render: (val) => val ? val + '°C' : 'N/A'
-    },
-    {
-      title: 'Density',
-      dataIndex: 'density',
-      key: 'density',
-      width: 80,
-      align: 'right',
-      render: (val) => val || 'N/A'
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
+      width: 80,
       render: (status) => (
-        <Tag color={status === 'COMPLETED' ? 'green' : status === 'PENDING' ? 'orange' : 'blue'}>
+        <Tag color={status === 'COMPLETED' ? 'green' : status === 'PENDING' ? 'orange' : 'blue'} style={{ fontSize: '10px' }}>
           {status}
         </Tag>
       )
@@ -995,14 +1152,14 @@ const ComprehensiveReconciliation = () => {
       title: 'Date',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      width: 150,
+      width: 120,
       render: (date) => dayjs(date).format('DD/MM/YYYY HH:mm')
     },
     {
-      title: 'Created By',
+      title: 'By',
       dataIndex: 'createdBy',
       key: 'createdBy',
-      width: 120,
+      width: 80,
     }
   ];
 
@@ -1024,6 +1181,7 @@ const ComprehensiveReconciliation = () => {
       const pageWidth = doc.internal.pageSize.getWidth();
       const fromDate = dayjs(filters.fromDate).format('DD/MM/YYYY');
       const toDate = dayjs(filters.toDate).format('DD/MM/YYYY');
+      const margin = 14; // Consistent margins
 
       // Title
       doc.setFontSize(16);
@@ -1035,136 +1193,106 @@ const ComprehensiveReconciliation = () => {
       doc.setTextColor(100, 100, 100);
       doc.text(`${fromDate} - ${toDate}`, pageWidth / 2, 22, { align: 'center' });
 
-      // Summary Statistics
-      doc.setFontSize(10);
+      // Summary Statistics - Compact with margins
+      doc.setFontSize(9);
       doc.setTextColor(0, 0, 0);
       let yPos = 30;
       
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, yPos);
-      doc.text(`Total Shifts: ${stats.totalShifts} | Total Tanks: ${stats.totalTanks}`, 140, yPos);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, margin, yPos);
+      doc.text(`Shifts: ${stats.totalShifts} | Tanks: ${stats.totalTanks} | Offloads: ${stats.totalOffloads}`, pageWidth - margin - 100, yPos);
       
-      yPos = 40;
+      yPos = 38;
       doc.setFillColor(240, 240, 240);
-      doc.rect(14, yPos, pageWidth - 28, 30, 'F');
+      doc.rect(margin, yPos, pageWidth - (margin * 2), 20, 'F');
       
       doc.setFontSize(8);
-      doc.text('Opening:', 20, yPos + 5);
-      doc.text(`${stats.totalOpening.toLocaleString()} L`, 35, yPos + 5);
+      doc.text('Open:', margin + 6, yPos + 5);
+      doc.text(`${formatVolume(stats.totalOpening)}`, margin + 16, yPos + 5);
       
-      doc.text('Addition:', 60, yPos + 5);
-      doc.text(`${stats.totalAddition.toLocaleString()} L`, 75, yPos + 5);
+      doc.text('Add:', margin + 36, yPos + 5);
+      doc.text(`${formatVolume(stats.totalAddition)}`, margin + 46, yPos + 5);
       
-      doc.text('Total:', 100, yPos + 5);
-      doc.text(`${stats.totalVolume.toLocaleString()} L`, 115, yPos + 5);
+      doc.text('Total:', margin + 66, yPos + 5);
+      doc.text(`${formatVolume(stats.totalVolume)}`, margin + 76, yPos + 5);
       
-      doc.text('Sales:', 140, yPos + 5);
-      doc.text(`${stats.totalSales.toLocaleString()} L`, 155, yPos + 5);
+      doc.text('Sales:', margin + 96, yPos + 5);
+      doc.text(`${formatVolume(stats.totalSales)}`, margin + 106, yPos + 5);
       
-      doc.text('Expected Closing:', 180, yPos + 5);
-      doc.text(`${(stats.totalVolume - stats.totalSales).toLocaleString()} L`, 215, yPos + 5);
+      doc.text('Exp:', margin + 126, yPos + 5);
+      doc.text(`${formatVolume(stats.totalVolume - stats.totalSales)}`, margin + 136, yPos + 5);
       
-      doc.text('Dip Closing:', 20, yPos + 13);
-      doc.text(`${(stats.totalVolume - stats.totalSales + stats.totalVariance).toLocaleString()} L`, 45, yPos + 13);
+      doc.text('Dip:', margin + 156, yPos + 5);
+      doc.text(`${formatVolume(stats.totalVolume - stats.totalSales + stats.totalVariance)}`, margin + 166, yPos + 5);
       
       const varianceColor = stats.totalAbsVariance < 30 ? [0,128,0] : 
                            stats.totalAbsVariance < 100 ? [250,140,22] : [255,0,0];
       doc.setTextColor(varianceColor[0], varianceColor[1], varianceColor[2]);
-      const varianceSign = stats.totalVariance > 0 ? '+' : '';
-      doc.text(`Variance: ${varianceSign}${stats.totalVariance.toFixed(1)} L`, 100, yPos + 13);
+      doc.text('Var:', margin + 186, yPos + 5);
+      doc.text(`${stats.totalVariance > 0 ? '+' : ''}${formatVolume(stats.totalVariance)}`, margin + 196, yPos + 5);
       
       doc.setTextColor(0, 0, 0);
-      doc.text(`Offloads: ${stats.totalOffloads} (${stats.totalOffloadVolume.toLocaleString()} L)`, 180, yPos + 13);
-      
-      doc.text(`Reconciliation Rate: ${stats.reconciliationRate}%`, 20, yPos + 21);
-      doc.text(`Tanks to Investigate: ${stats.tanksToInvestigate}`, 100, yPos + 21);
+      doc.text(`Rate: ${stats.reconciliationRate}%`, margin + 216, yPos + 5);
 
-      // Group by date for PDF
-      const groupedForPDF = {};
-      filteredTankData.forEach(tank => {
-        if (!groupedForPDF[tank.displayDate]) {
-          groupedForPDF[tank.displayDate] = [];
-        }
-        groupedForPDF[tank.displayDate].push(tank);
-      });
-
-      // Tanks Table with Date Grouping
-      yPos = 75;
+      // Tanks Table with Compact Format and margins
+      yPos = 65;
       
-      // Sort dates
-      const sortedDates = Object.keys(groupedForPDF).sort((a, b) => {
-        const [d1, m1, y1] = a.split('/').map(Number);
-        const [d2, m2, y2] = b.split('/').map(Number);
-        const date1 = new Date(y1, m1 - 1, d1);
-        const date2 = new Date(y2, m2 - 1, d2);
-        return date2 - date1;
-      });
-
-      let finalTableData = [];
-      
-      sortedDates.forEach(date => {
-        // Add date header row
-        finalTableData.push([{ content: `Date: ${date}`, colSpan: 13, styles: { fillColor: [230, 244, 255], textColor: [0, 0, 0], fontStyle: 'bold' } }]);
-        
-        // Add tanks for this date
-        groupedForPDF[date].forEach(tank => {
-          finalTableData.push([
-            tank.shiftNumber || '',
-            tank.stationName || '',
-            tank.tankName || '',
-            tank.productName || '',
-            tank.openingVolume.toLocaleString(),
-            tank.addition > 0 ? `+${tank.addition.toLocaleString()}` : '0',
-            tank.totalVolume.toLocaleString(),
-            tank.expectedDeduction.toLocaleString(),
-            tank.expectedClosing.toLocaleString(),
-            tank.closingVolume.toLocaleString(),
-            `${tank.variance > 0 ? '+' : ''}${tank.variance.toFixed(1)} L`,
-            tank.status,
-            tank.pumpCount.toString()
-          ]);
-        });
-      });
+      const tableData = filteredTankData.map(tank => [
+        tank.displayDate,
+        tank.shiftNumber,
+        tank.stationName?.substring(0, 10) || '',
+        tank.tankName?.substring(0, 12) || '',
+        tank.productName?.substring(0, 8) || '',
+        formatVolume(tank.openingVolume),
+        tank.addition > 0 ? `+${formatVolume(tank.addition)}` : '0',
+        formatVolume(tank.totalVolume),
+        formatVolume(tank.expectedDeduction),
+        formatVolume(tank.expectedClosing),
+        formatVolume(tank.closingVolume),
+        `${tank.variance > 0 ? '+' : ''}${formatVolume(tank.variance)}`,
+        tank.status.substring(0, 4),
+        tank.hasOffload ? 'Y' : 'N'
+      ]);
 
       autoTable(doc, {
         startY: yPos,
-        head: [['Shift', 'Station', 'Tank', 'Product', 'Opening', 'Add', 'Total', 'Sales', 'Expected', 'Dip', 'Variance', 'Status', 'Pumps']],
-        body: finalTableData,
+        margin: { left: margin, right: margin },
+        head: [['Date', 'Shift', 'Station', 'Tank', 'Prod', 'Open', 'Add', 'Total', 'Sales', 'Exp', 'Dip', 'Var', 'Stat', 'Off']],
+        body: tableData,
         theme: 'striped',
-        headStyles: { fillColor: [24, 144, 255], textColor: [255, 255, 255], fontSize: 8 },
-        bodyStyles: { fontSize: 7 },
+        headStyles: { fillColor: [24, 144, 255], textColor: [255, 255, 255], fontSize: 7 },
+        bodyStyles: { fontSize: 6 },
         columnStyles: {
-          0: { cellWidth: 20 },
-          1: { cellWidth: 25 },
-          2: { cellWidth: 25 },
-          3: { cellWidth: 22 },
-          4: { cellWidth: 15, halign: 'right' },
-          5: { cellWidth: 15, halign: 'right' },
-          6: { cellWidth: 15, halign: 'right' },
-          7: { cellWidth: 15, halign: 'right' },
-          8: { cellWidth: 18, halign: 'right' },
-          9: { cellWidth: 15, halign: 'right' },
-          10: { cellWidth: 18, halign: 'right' },
-          11: { cellWidth: 18 },
-          12: { cellWidth: 10, halign: 'center' }
+          0: { cellWidth: 18 },
+          1: { cellWidth: 15 },
+          2: { cellWidth: 18 },
+          3: { cellWidth: 20 },
+          4: { cellWidth: 15 },
+          5: { cellWidth: 12, halign: 'right' },
+          6: { cellWidth: 12, halign: 'right' },
+          7: { cellWidth: 12, halign: 'right' },
+          8: { cellWidth: 12, halign: 'right' },
+          9: { cellWidth: 12, halign: 'right' },
+          10: { cellWidth: 12, halign: 'right' },
+          11: { cellWidth: 15, halign: 'right' },
+          12: { cellWidth: 12 },
+          13: { cellWidth: 8, halign: 'center' }
         },
         didDrawPage: (data) => {
-          // Add footer
-          doc.setFontSize(8);
+          doc.setFontSize(7);
           doc.setTextColor(150, 150, 150);
           doc.text(
             `Generated from Lynx Energy System | Page ${doc.internal.getNumberOfPages()}`,
             pageWidth / 2,
-            doc.internal.pageSize.getHeight() - 10,
+            doc.internal.pageSize.getHeight() - 8,
             { align: 'center' }
           );
         }
       });
 
-      // Save PDF
-      doc.save(`comprehensive_reconciliation_${filters.fromDate}_to_${filters.toDate}.pdf`);
+      doc.save(`reconciliation_${filters.fromDate}_to_${filters.toDate}.pdf`);
       message.success('PDF generated successfully!');
     } catch (error) {
-      console.error('PDF generation error:', error);
+      console.error('PDF error:', error);
       message.error('Failed to generate PDF');
     }
   };
@@ -1178,11 +1306,9 @@ const ComprehensiveReconciliation = () => {
 
     try {
       const headers = [
-        'Date', 'Shift Number', 'Station', 'Supervisor', 'Tank', 'Product',
-        'Opening (L)', 'Addition (L)', 'Total (L)', 'Sales (L)',
-        'Expected Closing (L)', 'Dip Closing (L)', 'Variance (L)',
-        'Variance %', 'Status', 'Pumps', 'Offload Count', 'Offload Volume (L)',
-        'Sales Value (KES)'
+        'Date', 'Shift', 'Station', 'Supervisor', 'Tank', 'Product',
+        'Opening', 'Addition', 'Total', 'Sales', 'Expected', 'Dip', 'Variance',
+        'Var%', 'Status', 'Offloads', 'Off Vol', 'Sales Value'
       ];
 
       const csvData = filteredTankData.map(tank => [
@@ -1192,28 +1318,24 @@ const ComprehensiveReconciliation = () => {
         tank.supervisor || 'N/A',
         tank.tankName,
         tank.productName,
-        tank.openingVolume.toFixed(2),
-        tank.addition.toFixed(2),
-        tank.totalVolume.toFixed(2),
-        tank.expectedDeduction.toFixed(2),
-        tank.expectedClosing.toFixed(2),
-        tank.closingVolume.toFixed(2),
-        tank.variance.toFixed(2),
+        tank.openingVolume,
+        tank.addition,
+        tank.totalVolume,
+        tank.expectedDeduction,
+        tank.expectedClosing,
+        tank.closingVolume,
+        tank.variance,
         tank.variancePercentage,
         tank.status,
-        tank.pumpCount,
         tank.offloadCount,
-        tank.offloadVolume.toFixed(2),
-        tank.totalSalesValue.toFixed(2)
+        tank.offloadVolume,
+        tank.totalSalesValue
       ]);
 
-      // Add headers at the beginning
       csvData.unshift(headers);
 
-      // Convert to CSV string
       const csvString = csvData.map(row => 
         row.map(cell => {
-          // Escape commas and quotes
           if (typeof cell === 'string' && (cell.includes(',') || cell.includes('"'))) {
             return `"${cell.replace(/"/g, '""')}"`;
           }
@@ -1221,22 +1343,21 @@ const ComprehensiveReconciliation = () => {
         }).join(',')
       ).join('\n');
 
-      // Create download link
       const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       
       link.setAttribute('href', url);
-      link.setAttribute('download', `comprehensive_reconciliation_${filters.fromDate}_to_${filters.toDate}.csv`);
+      link.setAttribute('download', `reconciliation_${filters.fromDate}_to_${filters.toDate}.csv`);
       link.style.visibility = 'hidden';
       
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       
-      message.success('CSV exported successfully!');
+      message.success('CSV exported!');
     } catch (error) {
-      console.error('CSV export error:', error);
+      console.error('CSV error:', error);
       message.error('Failed to export CSV');
     }
   };
@@ -1244,95 +1365,91 @@ const ComprehensiveReconciliation = () => {
   // ==================== RENDER FUNCTIONS ====================
 
   const renderSummaryStats = () => (
-    <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-      <Col xs={24} sm={12} md={6} lg={3}>
-        <Card size="small" bordered={false} style={{ background: '#f0f5ff' }}>
+    <Row gutter={[8, 8]} style={{ marginBottom: 16 }}>
+      <Col xs={12} sm={8} md={6} lg={3}>
+        <Card size="small" bordered={false} style={{ background: '#f0f5ff', padding: '8px' }}>
           <Statistic
             title="Shifts"
             value={stats.totalShifts}
             prefix={<CalendarOutlined />}
-            valueStyle={{ color: '#1890ff', fontSize: '20px' }}
+            valueStyle={{ fontSize: '18px' }}
           />
         </Card>
       </Col>
-      <Col xs={24} sm={12} md={6} lg={3}>
-        <Card size="small" bordered={false} style={{ background: '#f6ffed' }}>
+      <Col xs={12} sm={8} md={6} lg={3}>
+        <Card size="small" bordered={false} style={{ background: '#f6ffed', padding: '8px' }}>
           <Statistic
             title="Tanks"
             value={stats.totalTanks}
             prefix={<FireOutlined />}
-            valueStyle={{ color: '#52c41a', fontSize: '20px' }}
+            valueStyle={{ fontSize: '18px' }}
           />
         </Card>
       </Col>
-      <Col xs={24} sm={12} md={6} lg={3}>
-        <Card size="small" bordered={false} style={{ background: '#fff7e6' }}>
+      <Col xs={12} sm={8} md={6} lg={3}>
+        <Card size="small" bordered={false} style={{ background: '#fff7e6', padding: '8px' }}>
           <Statistic
             title="Opening"
             value={stats.totalOpening}
-            precision={0}
             suffix="L"
-            valueStyle={{ color: '#fa8c16', fontSize: '20px' }}
+            valueStyle={{ fontSize: '18px' }}
           />
         </Card>
       </Col>
-      <Col xs={24} sm={12} md={6} lg={3}>
-        <Card size="small" bordered={false} style={{ background: '#f6ffed' }}>
+      <Col xs={12} sm={8} md={6} lg={3}>
+        <Card size="small" bordered={false} style={{ background: '#f6ffed', padding: '8px' }}>
           <Statistic
             title="Addition"
             value={stats.totalAddition}
-            precision={0}
             suffix="L"
-            valueStyle={{ color: '#52c41a', fontSize: '20px' }}
+            valueStyle={{ fontSize: '18px' }}
           />
         </Card>
       </Col>
-      <Col xs={24} sm={12} md={6} lg={3}>
-        <Card size="small" bordered={false} style={{ background: '#f9f0ff' }}>
+      <Col xs={12} sm={8} md={6} lg={3}>
+        <Card size="small" bordered={false} style={{ background: '#f9f0ff', padding: '8px' }}>
           <Statistic
             title="Total"
             value={stats.totalVolume}
-            precision={0}
             suffix="L"
-            valueStyle={{ color: '#722ed1', fontSize: '20px' }}
+            valueStyle={{ fontSize: '18px' }}
           />
         </Card>
       </Col>
-      <Col xs={24} sm={12} md={6} lg={3}>
-        <Card size="small" bordered={false} style={{ background: '#e6f7ff' }}>
+      <Col xs={12} sm={8} md={6} lg={3}>
+        <Card size="small" bordered={false} style={{ background: '#e6f7ff', padding: '8px' }}>
           <Statistic
             title="Sales"
             value={stats.totalSales}
-            precision={0}
             suffix="L"
-            valueStyle={{ color: '#1890ff', fontSize: '20px' }}
+            valueStyle={{ fontSize: '18px' }}
           />
         </Card>
       </Col>
-      <Col xs={24} sm={12} md={6} lg={3}>
-        <Card size="small" bordered={false} style={{ background: '#fff2f0' }}>
+      <Col xs={12} sm={8} md={6} lg={3}>
+        <Card size="small" bordered={false} style={{ background: '#fff2f0', padding: '8px' }}>
           <Statistic
             title="Variance"
             value={stats.totalVariance}
-            precision={1}
+            precision={0}
             suffix="L"
             valueStyle={{ 
               color: stats.totalAbsVariance < 30 ? '#52c41a' : 
                      stats.totalAbsVariance < 100 ? '#fa8c16' : '#cf1322',
-              fontSize: '20px',
+              fontSize: '18px',
               fontWeight: 'bold'
             }}
             prefix={stats.totalVariance > 0 ? '+' : ''}
           />
         </Card>
       </Col>
-      <Col xs={24} sm={12} md={6} lg={3}>
-        <Card size="small" bordered={false} style={{ background: '#fff1f0' }}>
+      <Col xs={12} sm={8} md={6} lg={3}>
+        <Card size="small" bordered={false} style={{ background: '#fff1f0', padding: '8px' }}>
           <Statistic
             title="Investigate"
             value={stats.tanksToInvestigate}
             prefix={<AlertOutlined />}
-            valueStyle={{ color: stats.tanksToInvestigate > 0 ? '#cf1322' : '#52c41a', fontSize: '20px' }}
+            valueStyle={{ color: stats.tanksToInvestigate > 0 ? '#cf1322' : '#52c41a', fontSize: '18px' }}
           />
         </Card>
       </Col>
@@ -1340,119 +1457,125 @@ const ComprehensiveReconciliation = () => {
   );
 
   const renderFilters = () => (
-    <Card size="small" style={{ marginBottom: 16 }}>
-      <Row gutter={[16, 16]} align="middle">
-        <Col xs={24} sm={24} md={6} lg={8}>
-          <Space>
+    <Card size="small" style={{ marginBottom: 16, padding: '8px' }}>
+      <Row gutter={[8, 8]} align="middle">
+        <Col xs={24} sm={24} md={8} lg={10}>
+          <Space size={4} wrap>
             <Select 
               value={filters.period} 
               onChange={handlePeriodChange}
-              style={{ width: 100 }}
-              size="middle"
+              style={{ width: 80 }}
+              size="small"
             >
               <Option value="today">Today</Option>
-              <Option value="yesterday">Yesterday</Option>
-              <Option value="week">7 days</Option>
-              <Option value="month">30 days</Option>
-              <Option value="quarter">90 days</Option>
+              <Option value="yesterday">Yest</Option>
+              <Option value="week">7d</Option>
+              <Option value="month">30d</Option>
+              <Option value="quarter">90d</Option>
               <Option value="year">Year</Option>
             </Select>
             <RangePicker 
               onChange={handleDateRangeChange}
               value={[dayjs(filters.fromDate), dayjs(filters.toDate)]}
               format="YYYY-MM-DD"
-              size="middle"
-              style={{ width: 220 }}
+              size="small"
+              style={{ width: 200 }}
               allowClear={false}
             />
           </Space>
         </Col>
         
-        <Col xs={24} sm={12} md={5} lg={4}>
+        <Col xs={24} sm={12} md={4} lg={3}>
           <Input
             placeholder="Search..."
             prefix={<SearchOutlined />}
             value={filters.search}
             onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-            size="middle"
+            size="small"
             allowClear
           />
         </Col>
         
-        <Col xs={24} sm={12} md={4} lg={3}>
+        <Col xs={12} sm={6} md={3} lg={2}>
           <Select
             placeholder="Product"
             value={filters.productFilter}
             onChange={(val) => setFilters(prev => ({ ...prev, productFilter: val }))}
             style={{ width: '100%' }}
-            size="middle"
+            size="small"
             allowClear={false}
           >
-            <Option value="all">All Products</Option>
+            <Option value="all">All</Option>
             {uniqueProducts.map(product => (
-              <Option key={product} value={product}>{product}</Option>
+              <Option key={product} value={product}>{product.substring(0, 8)}</Option>
             ))}
           </Select>
         </Col>
         
-        <Col xs={24} sm={12} md={4} lg={3}>
+        <Col xs={12} sm={6} md={3} lg={2}>
           <Select
             placeholder="Status"
             value={filters.statusFilter}
             onChange={(val) => setFilters(prev => ({ ...prev, statusFilter: val }))}
             style={{ width: '100%' }}
-            size="middle"
+            size="small"
             allowClear={false}
           >
-            <Option value="all">All Status</Option>
+            <Option value="all">All</Option>
             {uniqueStatuses.map(status => (
-              <Option key={status} value={status}>{status}</Option>
+              <Option key={status} value={status}>{status.substring(0, 4)}</Option>
             ))}
           </Select>
         </Col>
         
-        <Col xs={24} sm={12} md={4} lg={3}>
+        <Col xs={12} sm={6} md={3} lg={2}>
           <Button 
             type={filters.showOnlyIssues ? "primary" : "default"}
             danger={filters.showOnlyIssues}
             icon={<WarningOutlined />}
             onClick={() => setFilters(prev => ({ ...prev, showOnlyIssues: !prev.showOnlyIssues }))}
-            size="middle"
+            size="small"
             block
           >
             Issues
           </Button>
         </Col>
         
-        <Col xs={24} sm={12} md={4} lg={3}>
-          <Space>
+        <Col xs={12} sm={6} md={3} lg={3}>
+          <Space size={4}>
             <Button 
               icon={<ReloadOutlined />} 
               onClick={() => fetchComprehensiveData()}
-              size="middle"
+              size="small"
             >
               Refresh
             </Button>
+            <Button 
+              icon={compactView ? <FileTextOutlined /> : <CompressOutlined />} 
+              onClick={() => setCompactView(!compactView)}
+              size="small"
+              title={compactView ? "Standard View" : "Compact View"}
+            />
             <Dropdown 
               menu={{
                 items: [
                   {
                     key: 'pdf',
                     icon: <FileTextOutlined />,
-                    label: 'Export as PDF',
+                    label: 'PDF',
                     onClick: generatePDF
                   },
                   {
                     key: 'csv',
                     icon: <DownloadOutlined />,
-                    label: 'Export as CSV',
+                    label: 'CSV',
                     onClick: exportCSV
                   }
                 ]
               }}
               placement="bottomRight"
             >
-              <Button icon={<ExportOutlined />} size="middle">
+              <Button icon={<ExportOutlined />} size="small">
                 Export
               </Button>
             </Dropdown>
@@ -1465,27 +1588,27 @@ const ComprehensiveReconciliation = () => {
   const renderTankDetailModal = () => (
     <Modal
       title={
-        <Space>
+        <Space size={4}>
           <FireOutlined style={{ color: '#ff4d4f' }} />
-          <span>{viewingTank?.tankName}</span>
-          <Tag color={viewingTank?.productColor}>{viewingTank?.productName}</Tag>
+          <span style={{ fontSize: '14px' }}>{viewingTank?.tankName}</span>
+          <Tag color={viewingTank?.productColor} style={{ fontSize: '11px' }}>{viewingTank?.productName}</Tag>
           <Badge status={viewingTank?.statusColor} text={viewingTank?.status} />
         </Space>
       }
       open={viewModalVisible}
       onCancel={() => setViewModalVisible(false)}
-      width={1000}
+      width={900}
       footer={[
-        <Button key="close" onClick={() => setViewModalVisible(false)}>
+        <Button key="close" size="small" onClick={() => setViewModalVisible(false)}>
           Close
         </Button>
       ]}
     >
       {viewingTank && (
-        <div>
+        <div style={{ margin: '0 8px' }}>
           {/* Shift Info */}
-          <Card size="small" style={{ marginBottom: 16, background: '#f5f5f5' }}>
-            <Row gutter={16}>
+          <Card size="small" style={{ marginBottom: 12, background: '#f5f5f5', fontSize: '12px' }}>
+            <Row gutter={12}>
               <Col span={8}>
                 <Text type="secondary">Shift:</Text>
                 <div><Text strong>#{viewingTank.shiftNumber}</Text></div>
@@ -1498,117 +1621,112 @@ const ComprehensiveReconciliation = () => {
                 <Text type="secondary">Date:</Text>
                 <div><Text strong>{viewingTank.displayDate}</Text></div>
               </Col>
-              <Col span={12}>
-                <Text type="secondary">Start Time:</Text>
-                <div><Text>{formatDate(viewingTank.shiftStartTime)}</Text></div>
-              </Col>
-              <Col span={12}>
-                <Text type="secondary">Supervisor:</Text>
-                <div><Text>{viewingTank.supervisor || 'N/A'}</Text></div>
-              </Col>
             </Row>
           </Card>
 
-          {/* Reconciliation Summary */}
-          <Row gutter={16} style={{ marginBottom: 16 }}>
+          {/* Reconciliation Summary - Compact */}
+          <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
             <Col span={6}>
-              <Card size="small" style={{ background: '#e6f7ff' }}>
+              <Card size="small" style={{ background: '#e6f7ff', padding: '8px' }}>
                 <Statistic 
                   title="Opening" 
                   value={viewingTank.openingVolume} 
                   suffix="L"
-                  valueStyle={{ color: '#1890ff', fontSize: '18px' }}
+                  valueStyle={{ fontSize: '14px' }}
                 />
               </Card>
             </Col>
             <Col span={6}>
-              <Card size="small" style={{ background: '#f6ffed' }}>
+              <Card size="small" style={{ background: '#f6ffed', padding: '8px' }}>
                 <Statistic 
                   title="Addition" 
                   value={viewingTank.addition} 
                   suffix="L"
-                  valueStyle={{ color: '#52c41a', fontSize: '18px' }}
+                  valueStyle={{ fontSize: '14px' }}
                 />
               </Card>
             </Col>
             <Col span={6}>
-              <Card size="small" style={{ background: '#f9f0ff' }}>
+              <Card size="small" style={{ background: '#f9f0ff', padding: '8px' }}>
                 <Statistic 
                   title="Total" 
                   value={viewingTank.totalVolume} 
                   suffix="L"
-                  valueStyle={{ color: '#722ed1', fontSize: '18px' }}
+                  valueStyle={{ fontSize: '14px' }}
                 />
               </Card>
             </Col>
             <Col span={6}>
-              <Card size="small" style={{ background: '#fff7e6' }}>
+              <Card size="small" style={{ background: '#fff7e6', padding: '8px' }}>
                 <Statistic 
                   title="Sales" 
                   value={viewingTank.expectedDeduction} 
                   suffix="L"
-                  valueStyle={{ color: '#fa8c16', fontSize: '18px' }}
+                  valueStyle={{ fontSize: '14px' }}
                 />
               </Card>
             </Col>
           </Row>
 
-          {/* Variance Breakdown */}
-          <Card size="small" style={{ marginBottom: 16 }}>
-            <Title level={5}>Reconciliation Breakdown</Title>
-            <Row gutter={16}>
-              <Col span={8}>
-                <Text type="secondary">Opening:</Text>
-                <div><Text strong>{formatVolume(viewingTank.openingVolume)}</Text></div>
+          {/* Variance Breakdown - Compact */}
+          <Card size="small" style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px' }}>Reconciliation</div>
+            <Row gutter={8}>
+              <Col span={12}>
+                <Text type="secondary">Opening:</Text> <Text strong>{formatVolume(viewingTank.openingVolume)} L</Text><br />
+                <Text type="secondary">+ Addition:</Text> <Text strong type="success">{viewingTank.addition > 0 ? `+${formatVolume(viewingTank.addition)}` : '0'} L</Text><br />
+                <Text type="secondary">= Total:</Text> <Text strong>{formatVolume(viewingTank.totalVolume)} L</Text>
               </Col>
-              <Col span={8}>
-                <Text type="secondary">+ Addition:</Text>
-                <div><Text strong type="success">{viewingTank.addition > 0 ? `+${formatVolume(viewingTank.addition)}` : '0 L'}</Text></div>
+              <Col span={12}>
+                <Text type="secondary">- Sales:</Text> <Text strong type="danger">{formatVolume(viewingTank.expectedDeduction)} L</Text><br />
+                <Text type="secondary">= Expected:</Text> <Text strong style={{ color: '#1890ff' }}>{formatVolume(viewingTank.expectedClosing)} L</Text><br />
+                <Text type="secondary">vs Dip:</Text> <Text strong style={{ color: '#cf1322' }}>{formatVolume(viewingTank.closingVolume)} L</Text>
               </Col>
-              <Col span={8}>
-                <Text type="secondary">= Total:</Text>
-                <div><Text strong style={{ color: '#722ed1' }}>{formatVolume(viewingTank.totalVolume)}</Text></div>
-              </Col>
-              <Col span={8}>
-                <Text type="secondary">- Sales:</Text>
-                <div><Text strong type="danger">{formatVolume(viewingTank.expectedDeduction)}</Text></div>
-              </Col>
-              <Col span={8}>
-                <Text type="secondary">= Expected Closing:</Text>
-                <div><Text strong style={{ color: '#1890ff' }}>{formatVolume(viewingTank.expectedClosing)}</Text></div>
-              </Col>
-              <Col span={8}>
-                <Text type="secondary">vs Dip Closing:</Text>
-                <div><Text strong style={{ color: '#cf1322' }}>{formatVolume(viewingTank.closingVolume)}</Text></div>
-              </Col>
-              <Col span={24}>
-                <Divider style={{ margin: '12px 0' }} />
+              <Col span={24} style={{ marginTop: '8px' }}>
+                <Divider style={{ margin: '4px 0' }} />
                 <Text type="secondary">Variance:</Text>
-                <div>
-                  <Text strong style={{ 
-                    color: viewingTank.absVariance < 10 ? '#52c41a' : 
-                           viewingTank.absVariance < 30 ? '#1890ff' : 
-                           viewingTank.absVariance < 100 ? '#fa8c16' : '#cf1322',
-                    fontSize: '20px'
-                  }}>
-                    {formatVariance(viewingTank.variance)}
-                  </Text>
-                  <Text type="secondary"> ({viewingTank.variancePercentage}% of expected)</Text>
-                </div>
+                <Text strong style={{ 
+                  color: viewingTank.absVariance < 10 ? '#52c41a' : 
+                         viewingTank.absVariance < 30 ? '#1890ff' : 
+                         viewingTank.absVariance < 100 ? '#fa8c16' : '#cf1322',
+                  fontSize: '16px',
+                  marginLeft: '8px'
+                }}>
+                  {formatVariance(viewingTank.variance)} L
+                </Text>
+                <Text type="secondary"> ({viewingTank.variancePercentage}%)</Text>
               </Col>
             </Row>
           </Card>
 
+          {/* Offload Details if exists */}
+          {viewingTank.hasOffload && (
+            <Card size="small" style={{ marginBottom: 12, borderColor: '#52c41a' }}>
+              <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px' }}>
+                <TruckOutlined style={{ color: '#52c41a', marginRight: '8px' }} />
+                Offloads ({viewingTank.offloadCount})
+              </div>
+              <Table 
+                columns={offloadColumns}
+                dataSource={viewingTank.offloadDetails}
+                rowKey="id"
+                size="small"
+                pagination={false}
+                scroll={{ x: 800 }}
+              />
+            </Card>
+          )}
+
           {/* Pumps Details */}
           {viewingTank.pumpDetails.length > 0 && (
-            <Card size="small" title={`Connected Pumps (${viewingTank.pumpDetails.length})`}>
+            <Card size="small" title={`Pumps (${viewingTank.pumpDetails.length})`} style={{ fontSize: '12px' }}>
               <Table 
                 columns={pumpDetailColumns}
                 dataSource={viewingTank.pumpDetails}
                 rowKey="pumpId"
                 size="small"
                 pagination={false}
-                scroll={{ x: 600 }}
+                scroll={{ x: 500 }}
               />
             </Card>
           )}
@@ -1620,42 +1738,69 @@ const ComprehensiveReconciliation = () => {
   const renderOffloadModal = () => (
     <Modal
       title={
-        <Space>
+        <Space size={4}>
           <TruckOutlined style={{ color: '#52c41a' }} />
           <span>Offload Details</span>
+          {selectedTankOffloads && (
+            <Tag color="blue">{selectedTankOffloads.tankName}</Tag>
+          )}
         </Space>
       }
       open={offloadModalVisible}
-      onCancel={() => setOffloadModalVisible(false)}
-      width={1200}
+      onCancel={() => {
+        setOffloadModalVisible(false);
+        setViewingOffloads([]);
+        setSelectedTankOffloads(null);
+      }}
+      width={1000}
       footer={[
-        <Button key="close" onClick={() => setOffloadModalVisible(false)}>
+        <Button key="close" size="small" onClick={() => {
+          setOffloadModalVisible(false);
+          setViewingOffloads([]);
+          setSelectedTankOffloads(null);
+        }}>
           Close
         </Button>
       ]}
     >
-      <Table 
-        columns={offloadColumns}
-        dataSource={viewingOffloads}
-        rowKey="id"
-        size="small"
-        pagination={false}
-        scroll={{ x: 1500 }}
-      />
+      <div style={{ margin: '0 8px' }}>
+        {viewingOffloads.length > 0 ? (
+          <Table 
+            columns={offloadColumns}
+            dataSource={viewingOffloads}
+            rowKey="id"
+            size="small"
+            pagination={false}
+            scroll={{ x: 1000 }}
+          />
+        ) : (
+          <Empty description="No offload details available" />
+        )}
+      </div>
     </Modal>
   );
 
   // ==================== MAIN RENDER ====================
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div style={{ 
+      padding: '24px',
+      maxWidth: '1600px',
+      margin: '0 auto'
+    }}>
       {/* Header */}
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Title level={3} style={{ margin: 0 }}>
+      <div style={{ 
+        marginBottom: 16, 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        padding: '0 8px'
+      }}>
+        <Title level={4} style={{ margin: 0 }}>
           <DiffOutlined style={{ marginRight: 8 }} />
           Comprehensive Reconciliation
         </Title>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>
+        <Button icon={<ArrowLeftOutlined />} size="small" onClick={() => navigate(-1)}>
           Back
         </Button>
       </div>
@@ -1670,74 +1815,80 @@ const ComprehensiveReconciliation = () => {
       <Card 
         size="small"
         title={
-          <Space>
+          <Space size={8} style={{ paddingLeft: '8px' }}>
             <FolderOutlined />
-            <span>Tank Reconciliation Details</span>
-            <Tag color="blue">{filteredTankData.length} records</Tag>
+            <span style={{ fontSize: '13px' }}>Tank Details</span>
+            <Tag color="blue" style={{ fontSize: '11px' }}>{filteredTankData.length} records</Tag>
+            {stats.totalOffloads > 0 && (
+              <Tag color="green" icon={<TruckOutlined />} style={{ fontSize: '11px' }}>
+                {stats.totalOffloads} offloads
+              </Tag>
+            )}
           </Space>
         }
         extra={
-          <Space>
-            <Text type="secondary">
-              {Object.keys(groupedByDate).length} days • {processedData?.shifts?.length || 0} shifts
-            </Text>
-          </Space>
+          <Text type="secondary" style={{ fontSize: '11px', paddingRight: '8px' }}>
+            {Object.keys(groupedByDate).length} days • {processedData?.shifts?.length || 0} shifts
+          </Text>
         }
+        bodyStyle={{ padding: '12px' }}
       >
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '50px' }}>
-            <Spin size="large" />
-            <div style={{ marginTop: 16 }}>Loading reconciliation data...</div>
+          <div style={{ textAlign: 'center', padding: '30px' }}>
+            <Spin size="small" />
+            <div style={{ marginTop: 8, fontSize: '12px' }}>Loading...</div>
           </div>
         ) : filteredTankData.length === 0 ? (
-          <Empty description="No reconciliation data found for selected period" />
+          <Empty description="No data found" />
         ) : (
           <Table 
-            columns={tankColumns}
+            columns={compactView ? compactColumns : standardColumns}
             dataSource={filteredTankData}
             rowKey={(record) => `${record.shiftId}-${record.tankId}`}
             size="small"
-            scroll={{ x: 1600 }}
+            scroll={{ x: compactView ? 900 : 1100 }}
             pagination={{
               pageSize: 50,
               showSizeChanger: true,
-              pageSizeOptions: ['20', '50', '100', '200'],
-              showTotal: (total) => `Total ${total} tanks`
+              pageSizeOptions: ['20', '50', '100'],
+              showTotal: (total) => `${total} tanks`,
+              size: 'small'
             }}
+            style={{ margin: '0 4px' }}
             summary={() => (
               <Table.Summary fixed>
-                <Table.Summary.Row style={{ background: '#f5f5f5' }}>
-                  <Table.Summary.Cell index={0} colSpan={4}>
-                    <Text strong>Totals ({filteredTankData.length} tanks):</Text>
+                <Table.Summary.Row style={{ background: '#f5f5f5', fontSize: '11px' }}>
+                  <Table.Summary.Cell index={0} colSpan={compactView ? 3 : 4}>
+                    <Text strong style={{ marginLeft: '8px' }}>Totals:</Text>
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={4} align="right">
-                    <Text strong>{filteredTankData.reduce((sum, t) => sum + t.openingVolume, 0).toLocaleString()} L</Text>
+                  <Table.Summary.Cell index={compactView ? 3 : 4} align="right">
+                    <Text strong>{formatVolume(filteredTankData.reduce((sum, t) => sum + t.openingVolume, 0))}</Text>
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={5} align="right">
-                    <Text strong type="success">+{filteredTankData.reduce((sum, t) => sum + t.addition, 0).toLocaleString()} L</Text>
+                  <Table.Summary.Cell index={compactView ? 4 : 5} align="right">
+                    <Text strong type="success">+{formatVolume(filteredTankData.reduce((sum, t) => sum + t.addition, 0))}</Text>
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={6} align="right">
-                    <Text strong style={{ color: '#722ed1' }}>{filteredTankData.reduce((sum, t) => sum + t.totalVolume, 0).toLocaleString()} L</Text>
+                  <Table.Summary.Cell index={compactView ? 5 : 6} align="right">
+                    <Text strong style={{ color: '#722ed1' }}>{formatVolume(filteredTankData.reduce((sum, t) => sum + t.totalVolume, 0))}</Text>
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={7} align="right">
-                    <Text strong>{filteredTankData.reduce((sum, t) => sum + t.expectedDeduction, 0).toLocaleString()} L</Text>
+                  <Table.Summary.Cell index={compactView ? 6 : 7} align="right">
+                    <Text strong>{formatVolume(filteredTankData.reduce((sum, t) => sum + t.expectedDeduction, 0))}</Text>
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={8} align="right">
-                    <Text strong style={{ color: '#1890ff' }}>{filteredTankData.reduce((sum, t) => sum + t.expectedClosing, 0).toLocaleString()} L</Text>
+                  <Table.Summary.Cell index={compactView ? 7 : 8} align="right">
+                    <Text strong style={{ color: '#1890ff' }}>{formatVolume(filteredTankData.reduce((sum, t) => sum + t.expectedClosing, 0))}</Text>
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={9} align="right">
-                    <Text strong style={{ color: '#cf1322' }}>{filteredTankData.reduce((sum, t) => sum + t.closingVolume, 0).toLocaleString()} L</Text>
+                  <Table.Summary.Cell index={compactView ? 8 : 9} align="right">
+                    <Text strong style={{ color: '#cf1322' }}>{formatVolume(filteredTankData.reduce((sum, t) => sum + t.closingVolume, 0))}</Text>
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={10} align="right">
+                  <Table.Summary.Cell index={compactView ? 9 : 10} align="right">
                     <Text strong style={{ 
                       color: filteredTankData.reduce((sum, t) => sum + Math.abs(t.variance), 0) < 100 ? '#52c41a' : '#cf1322'
                     }}>
                       {filteredTankData.reduce((sum, t) => sum + t.variance, 0) > 0 ? '+' : ''}
-                      {filteredTankData.reduce((sum, t) => sum + t.variance, 0).toFixed(1)} L
+                      {formatVolume(filteredTankData.reduce((sum, t) => sum + t.variance, 0))}
                     </Text>
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={11} colSpan={3}>
-                    {/* Empty cells for remaining columns */}
+                  <Table.Summary.Cell index={compactView ? 10 : 11} colSpan={compactView ? 3 : 3}>
+                    {/* Empty */}
                   </Table.Summary.Cell>
                 </Table.Summary.Row>
               </Table.Summary>
