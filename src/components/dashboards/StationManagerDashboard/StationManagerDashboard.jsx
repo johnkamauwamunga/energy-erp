@@ -22,6 +22,7 @@ import StationUserManagement from './staff/StationUserManagement';
 import FuelOffloadWizard from '../common/fuel-offload/FuelOffloadWizard';
 import ShiftManagement from '../common/shift/ShiftManagement';
 import ShiftManagementTest from '../common/shift/ShiftManagementTest';
+import ComprehensiveReconciliation from '../common/shift/ComprehensiveReconciliation';
 import AnalyticsDemo from '../common/analytics/AnalyticsDemo';
 import OffloadMagement from '../common/offload-test/OffloadManagement';
 import FuelTankManagement from './products/fuelTankManagement/FuelTankManagement';
@@ -119,6 +120,7 @@ const StationManagerDashboard = () => {
       onToggle: () => toggleMenu('operations'),
       items: [
         { id: 'shifts', label: 'Shift Management', icon: Clock },
+        { id: 'comprehensive-reconcilliation', label: 'Comprehensive Reconciliation', icon: FileCheck2Icon },
         { id: 'offloads', label: 'Fuel Offloads', icon: Truck },
      
       ]
@@ -184,6 +186,8 @@ const StationManagerDashboard = () => {
         return <FuelTankManagement />;
       case 'shifts':
         return <ShiftManagementTest />;
+      case 'comprehensive-reconcilliation':
+        return <ComprehensiveReconciliation />;
       case 'offloads':
         return <OffloadMagement />;
       case 'expenses':
