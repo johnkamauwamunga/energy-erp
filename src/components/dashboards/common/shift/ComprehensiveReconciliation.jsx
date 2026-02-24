@@ -49,7 +49,8 @@ import {
   TruckOutlined,
   CalendarOutlined,
   BarChartOutlined,
-  ExportOutlined
+  ExportOutlined,
+  FolderOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { reconciliationService } from '../../../../services/reconcilliationService/reconcilliationService';
@@ -69,13 +70,15 @@ const ComprehensiveReconciliation = () => {
   const [loading, setLoading] = useState(false);
   const [shiftsData, setShiftsData] = useState(null);
   const [processedData, setProcessedData] = useState(null);
-  const [expandedShift, setExpandedShift] = useState(null);
   
   // Modal states
   const [viewModalVisible, setViewModalVisible] = useState(false);
   const [viewingTank, setViewingTank] = useState(null);
   const [offloadModalVisible, setOffloadModalVisible] = useState(false);
   const [viewingOffloads, setViewingOffloads] = useState([]);
+  
+  // Group by date state
+  const [groupedByDate, setGroupedByDate] = useState({});
   
   // Filters
   const [filters, setFilters] = useState({
@@ -88,7 +91,7 @@ const ComprehensiveReconciliation = () => {
     productFilter: 'all',
     statusFilter: 'all',
     showOnlyIssues: false,
-    limit: 100,
+    limit: 1000,
     offset: 0
   });
   
@@ -102,6 +105,7 @@ const ComprehensiveReconciliation = () => {
     totalVolume: 0,
     totalSales: 0,
     totalVariance: 0,
+    totalAbsVariance: 0,
     totalOffloads: 0,
     totalOffloadVolume: 0,
     tanksToInvestigate: 0,
@@ -139,6 +143,7 @@ const ComprehensiveReconciliation = () => {
         supplierInvoice: offload.supplierInvoiceNumber || 'N/A',
         deliveryCompany: offload.deliveryCompany || 'N/A',
         driverName: offload.driverName || 'N/A',
+        driverPhone: offload.driverPhone || 'N/A',
         dipBefore: offload.dipBeforeVolume || 0,
         dipAfter: offload.dipAfterVolume || 0,
         temperature: offload.temperature,
@@ -213,15 +218,22 @@ const ComprehensiveReconciliation = () => {
       ? (absVariance / expectedClosing * 100).toFixed(1) 
       : 0;
 
+    // Get date for grouping
+    const shiftDate = shiftInfo?.startTime ? dayjs(shiftInfo.startTime).format('YYYY-MM-DD') : 'Unknown';
+    const displayDate = shiftInfo?.startTime ? dayjs(shiftInfo.startTime).format('DD/MM/YYYY') : 'Unknown';
+
     return {
       // Shift info for grouping
       shiftId: shiftInfo?.id,
       shiftNumber: shiftInfo?.shiftNumber,
       shiftStartTime: shiftInfo?.startTime,
       shiftEndTime: shiftInfo?.endTime,
+      shiftDate,
+      displayDate,
       stationName: shiftInfo?.station?.name,
       stationId: shiftInfo?.station?.id,
       supervisor: shiftInfo?.supervisor?.name,
+      shiftStatus: shiftInfo?.status,
       
       // Tank info
       tankId: tankData.tank?.id,
@@ -272,10 +284,11 @@ const ComprehensiveReconciliation = () => {
    * Process all shifts data - aggregates all tanks from all shifts
    */
   const processAllShiftsData = (rawData) => {
-    if (!rawData?.shifts) return { tanks: [], shifts: [] };
+    if (!rawData?.shifts) return { tanks: [], shifts: [], groupedByDate: {} };
 
     const allTanks = [];
     const shiftSummaries = [];
+    const grouped = {};
 
     // Process each shift
     rawData.shifts.forEach(shift => {
@@ -287,6 +300,13 @@ const ComprehensiveReconciliation = () => {
         const processedTank = processTankReconciliation(tank, shiftInfo);
         if (processedTank) {
           allTanks.push(processedTank);
+          
+          // Group by date
+          const date = processedTank.shiftDate;
+          if (!grouped[date]) {
+            grouped[date] = [];
+          }
+          grouped[date].push(processedTank);
         }
       });
 
@@ -329,12 +349,21 @@ const ComprehensiveReconciliation = () => {
         endTime: shiftInfo?.endTime,
         status: shiftInfo?.status,
         supervisor: shiftInfo?.supervisor?.name,
+        date: shiftInfo?.startTime ? dayjs(shiftInfo.startTime).format('DD/MM/YYYY') : 'Unknown',
         ...shiftTotals,
         reconciliationRate: shiftTotals.tankCount > 0 
           ? ((shiftTotals.tankCount - shiftTotals.tanksToInvestigate) / shiftTotals.tankCount * 100).toFixed(1)
           : 0
       });
     });
+
+    // Sort dates in descending order (newest first)
+    const sortedGrouped = {};
+    Object.keys(grouped)
+      .sort((a, b) => b.localeCompare(a))
+      .forEach(key => {
+        sortedGrouped[key] = grouped[key];
+      });
 
     // Calculate overall statistics
     const overallStats = allTanks.reduce((acc, tank) => {
@@ -382,9 +411,12 @@ const ComprehensiveReconciliation = () => {
         : 0
     });
 
+    setGroupedByDate(sortedGrouped);
+
     return {
       tanks: allTanks,
       shifts: shiftSummaries,
+      groupedByDate: sortedGrouped,
       raw: rawData
     };
   };
@@ -423,7 +455,7 @@ const ComprehensiveReconciliation = () => {
 
   useEffect(() => {
     fetchComprehensiveData();
-  }, [filters.period, filters.fromDate, filters.toDate, filters.status]);
+  }, [filters.period, filters.fromDate, filters.toDate, filters.status, filters.stationId]);
 
   // ==================== HANDLERS ====================
 
@@ -550,7 +582,13 @@ const ComprehensiveReconciliation = () => {
       );
     }
     
-    return data;
+    // Sort by date (newest first) and then by shift
+    return data.sort((a, b) => {
+      if (a.shiftDate !== b.shiftDate) {
+        return b.shiftDate.localeCompare(a.shiftDate);
+      }
+      return (a.shiftNumber || '').localeCompare(b.shiftNumber || '');
+    });
   }, [processedData, filters]);
 
   // Get unique products for filter
@@ -569,20 +607,32 @@ const ComprehensiveReconciliation = () => {
 
   const tankColumns = [
     {
-      title: 'Shift',
-      key: 'shift',
-      width: 120,
+      title: 'Date',
+      key: 'date',
+      width: 100,
       fixed: 'left',
       render: (_, record) => (
         <div>
           <div style={{ fontWeight: '500', fontSize: '12px' }}>
-            <Tag color="blue">#{record.shiftNumber}</Tag>
+            {record.displayDate}
           </div>
-          <div style={{ fontSize: '10px', color: '#666', lineHeight: '1.2' }}>
-            {record.stationName || ''}
+          <div style={{ fontSize: '10px', color: '#666' }}>
+            {record.shiftNumber}
           </div>
-          <div style={{ fontSize: '9px', color: '#999' }}>
-            {dayjs(record.shiftStartTime).format('DD/MM HH:mm')}
+        </div>
+      )
+    },
+    {
+      title: 'Station',
+      key: 'station',
+      width: 120,
+      render: (_, record) => (
+        <div>
+          <div style={{ fontWeight: '500', fontSize: '12px' }}>
+            {record.stationName || 'N/A'}
+          </div>
+          <div style={{ fontSize: '10px', color: '#666' }}>
+            {record.supervisor || ''}
           </div>
         </div>
       )
@@ -647,17 +697,19 @@ const ComprehensiveReconciliation = () => {
       align: 'right',
       render: (vol, record) => (
         <Tooltip title={record.hasOffload ? `Offload: ${formatVolume(vol)}` : 'No offload'}>
-          <div style={{ 
-            fontSize: '11px', 
-            fontWeight: '500', 
-            color: vol > 0 ? '#52c41a' : '#999',
-            cursor: record.hasOffload ? 'pointer' : 'default'
-          }}
-          onClick={record.hasOffload ? (e) => {
-            e.stopPropagation();
-            setViewingOffloads(record.offloadDetails);
-            setOffloadModalVisible(true);
-          } : undefined}>
+          <div 
+            style={{ 
+              fontSize: '11px', 
+              fontWeight: '500', 
+              color: vol > 0 ? '#52c41a' : '#999',
+              cursor: record.hasOffload ? 'pointer' : 'default'
+            }}
+            onClick={record.hasOffload ? (e) => {
+              e.stopPropagation();
+              setViewingOffloads(record.offloadDetails);
+              setOffloadModalVisible(true);
+            } : undefined}
+          >
             {vol > 0 ? `+${vol.toLocaleString()} L` : '0 L'}
           </div>
         </Tooltip>
@@ -989,99 +1041,124 @@ const ComprehensiveReconciliation = () => {
       let yPos = 30;
       
       doc.text(`Generated: ${new Date().toLocaleString()}`, 14, yPos);
-      doc.text(`Total Shifts: ${stats.totalShifts}`, 140, yPos);
+      doc.text(`Total Shifts: ${stats.totalShifts} | Total Tanks: ${stats.totalTanks}`, 140, yPos);
       
       yPos = 40;
       doc.setFillColor(240, 240, 240);
       doc.rect(14, yPos, pageWidth - 28, 30, 'F');
       
-      doc.setFontSize(9);
-      doc.text('Total Opening:', 20, yPos + 5);
-      doc.text(`${stats.totalOpening.toLocaleString()} L`, 45, yPos + 5);
+      doc.setFontSize(8);
+      doc.text('Opening:', 20, yPos + 5);
+      doc.text(`${stats.totalOpening.toLocaleString()} L`, 35, yPos + 5);
       
-      doc.text('Total Addition:', 80, yPos + 5);
-      doc.text(`${stats.totalAddition.toLocaleString()} L`, 105, yPos + 5);
+      doc.text('Addition:', 60, yPos + 5);
+      doc.text(`${stats.totalAddition.toLocaleString()} L`, 75, yPos + 5);
       
-      doc.text('Total Volume:', 140, yPos + 5);
-      doc.text(`${stats.totalVolume.toLocaleString()} L`, 165, yPos + 5);
+      doc.text('Total:', 100, yPos + 5);
+      doc.text(`${stats.totalVolume.toLocaleString()} L`, 115, yPos + 5);
       
-      doc.text('Total Sales:', 200, yPos + 5);
-      doc.text(`${stats.totalSales.toLocaleString()} L`, 225, yPos + 5);
+      doc.text('Sales:', 140, yPos + 5);
+      doc.text(`${stats.totalSales.toLocaleString()} L`, 155, yPos + 5);
       
-      doc.text('Total Variance:', 20, yPos + 13);
+      doc.text('Expected Closing:', 180, yPos + 5);
+      doc.text(`${(stats.totalVolume - stats.totalSales).toLocaleString()} L`, 215, yPos + 5);
+      
+      doc.text('Dip Closing:', 20, yPos + 13);
+      doc.text(`${(stats.totalVolume - stats.totalSales + stats.totalVariance).toLocaleString()} L`, 45, yPos + 13);
+      
       const varianceColor = stats.totalAbsVariance < 30 ? [0,128,0] : 
                            stats.totalAbsVariance < 100 ? [250,140,22] : [255,0,0];
       doc.setTextColor(varianceColor[0], varianceColor[1], varianceColor[2]);
       const varianceSign = stats.totalVariance > 0 ? '+' : '';
-      doc.text(`${varianceSign}${stats.totalVariance.toFixed(1)} L`, 45, yPos + 13);
+      doc.text(`Variance: ${varianceSign}${stats.totalVariance.toFixed(1)} L`, 100, yPos + 13);
       
       doc.setTextColor(0, 0, 0);
-      doc.text('Offloads:', 80, yPos + 13);
-      doc.text(`${stats.totalOffloads} (${stats.totalOffloadVolume.toLocaleString()} L)`, 105, yPos + 13);
+      doc.text(`Offloads: ${stats.totalOffloads} (${stats.totalOffloadVolume.toLocaleString()} L)`, 180, yPos + 13);
       
-      doc.text('Reconciliation Rate:', 140, yPos + 13);
-      doc.text(`${stats.reconciliationRate}%`, 185, yPos + 13);
-      
-      doc.text('Tanks to Investigate:', 200, yPos + 13);
-      doc.setTextColor(stats.tanksToInvestigate > 0 ? 255 : 0, 
-                       stats.tanksToInvestigate > 0 ? 0 : 128, 0);
-      doc.text(`${stats.tanksToInvestigate}`, 250, yPos + 13);
+      doc.text(`Reconciliation Rate: ${stats.reconciliationRate}%`, 20, yPos + 21);
+      doc.text(`Tanks to Investigate: ${stats.tanksToInvestigate}`, 100, yPos + 21);
 
-      // Tanks Table
+      // Group by date for PDF
+      const groupedForPDF = {};
+      filteredTankData.forEach(tank => {
+        if (!groupedForPDF[tank.displayDate]) {
+          groupedForPDF[tank.displayDate] = [];
+        }
+        groupedForPDF[tank.displayDate].push(tank);
+      });
+
+      // Tanks Table with Date Grouping
       yPos = 75;
-      const tableData = filteredTankData.map((tank) => [
-        tank.shiftNumber || '',
-        tank.tankName || '',
-        tank.productName || '',
-        tank.openingVolume.toLocaleString(),
-        tank.addition > 0 ? `+${tank.addition.toLocaleString()}` : '0',
-        tank.totalVolume.toLocaleString(),
-        tank.expectedDeduction.toLocaleString(),
-        tank.expectedClosing.toLocaleString(),
-        tank.closingVolume.toLocaleString(),
-        `${tank.variance > 0 ? '+' : ''}${tank.variance.toFixed(1)} L`,
-        tank.status,
-        tank.pumpCount.toString(),
-        tank.hasOffload ? 'Yes' : 'No'
-      ]);
+      
+      // Sort dates
+      const sortedDates = Object.keys(groupedForPDF).sort((a, b) => {
+        const [d1, m1, y1] = a.split('/').map(Number);
+        const [d2, m2, y2] = b.split('/').map(Number);
+        const date1 = new Date(y1, m1 - 1, d1);
+        const date2 = new Date(y2, m2 - 1, d2);
+        return date2 - date1;
+      });
+
+      let finalTableData = [];
+      
+      sortedDates.forEach(date => {
+        // Add date header row
+        finalTableData.push([{ content: `Date: ${date}`, colSpan: 13, styles: { fillColor: [230, 244, 255], textColor: [0, 0, 0], fontStyle: 'bold' } }]);
+        
+        // Add tanks for this date
+        groupedForPDF[date].forEach(tank => {
+          finalTableData.push([
+            tank.shiftNumber || '',
+            tank.stationName || '',
+            tank.tankName || '',
+            tank.productName || '',
+            tank.openingVolume.toLocaleString(),
+            tank.addition > 0 ? `+${tank.addition.toLocaleString()}` : '0',
+            tank.totalVolume.toLocaleString(),
+            tank.expectedDeduction.toLocaleString(),
+            tank.expectedClosing.toLocaleString(),
+            tank.closingVolume.toLocaleString(),
+            `${tank.variance > 0 ? '+' : ''}${tank.variance.toFixed(1)} L`,
+            tank.status,
+            tank.pumpCount.toString()
+          ]);
+        });
+      });
 
       autoTable(doc, {
         startY: yPos,
-        head: [['Shift', 'Tank', 'Product', 'Opening', 'Add', 'Total', 'Sales', 'Expected', 'Dip', 'Variance', 'Status', 'Pumps', 'Offload']],
-        body: tableData,
+        head: [['Shift', 'Station', 'Tank', 'Product', 'Opening', 'Add', 'Total', 'Sales', 'Expected', 'Dip', 'Variance', 'Status', 'Pumps']],
+        body: finalTableData,
         theme: 'striped',
-        headStyles: { fillColor: [24, 144, 255], textColor: [255, 255, 255], fontSize: 7 },
-        bodyStyles: { fontSize: 6 },
+        headStyles: { fillColor: [24, 144, 255], textColor: [255, 255, 255], fontSize: 8 },
+        bodyStyles: { fontSize: 7 },
         columnStyles: {
-          0: { cellWidth: 18 },
-          1: { cellWidth: 22 },
-          2: { cellWidth: 20 },
-          3: { cellWidth: 15, halign: 'right' },
+          0: { cellWidth: 20 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 25 },
+          3: { cellWidth: 22 },
           4: { cellWidth: 15, halign: 'right' },
           5: { cellWidth: 15, halign: 'right' },
           6: { cellWidth: 15, halign: 'right' },
-          7: { cellWidth: 18, halign: 'right' },
-          8: { cellWidth: 15, halign: 'right' },
-          9: { cellWidth: 18, halign: 'right' },
-          10: { cellWidth: 18 },
-          11: { cellWidth: 10, halign: 'center' },
+          7: { cellWidth: 15, halign: 'right' },
+          8: { cellWidth: 18, halign: 'right' },
+          9: { cellWidth: 15, halign: 'right' },
+          10: { cellWidth: 18, halign: 'right' },
+          11: { cellWidth: 18 },
           12: { cellWidth: 10, halign: 'center' }
+        },
+        didDrawPage: (data) => {
+          // Add footer
+          doc.setFontSize(8);
+          doc.setTextColor(150, 150, 150);
+          doc.text(
+            `Generated from Lynx Energy System | Page ${doc.internal.getNumberOfPages()}`,
+            pageWidth / 2,
+            doc.internal.pageSize.getHeight() - 10,
+            { align: 'center' }
+          );
         }
       });
-
-      // Footer
-      const pageCount = doc.internal.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.setTextColor(150, 150, 150);
-        doc.text(
-          `Generated from Lynx Energy System | ${new Date().toLocaleString()} | Page ${i} of ${pageCount}`,
-          pageWidth / 2,
-          doc.internal.pageSize.getHeight() - 10,
-          { align: 'center' }
-        );
-      }
 
       // Save PDF
       doc.save(`comprehensive_reconciliation_${filters.fromDate}_to_${filters.toDate}.pdf`);
@@ -1101,7 +1178,7 @@ const ComprehensiveReconciliation = () => {
 
     try {
       const headers = [
-        'Shift Number', 'Station', 'Date', 'Supervisor', 'Tank', 'Product',
+        'Date', 'Shift Number', 'Station', 'Supervisor', 'Tank', 'Product',
         'Opening (L)', 'Addition (L)', 'Total (L)', 'Sales (L)',
         'Expected Closing (L)', 'Dip Closing (L)', 'Variance (L)',
         'Variance %', 'Status', 'Pumps', 'Offload Count', 'Offload Volume (L)',
@@ -1109,9 +1186,9 @@ const ComprehensiveReconciliation = () => {
       ];
 
       const csvData = filteredTankData.map(tank => [
+        tank.displayDate,
         tank.shiftNumber,
         tank.stationName,
-        dayjs(tank.shiftStartTime).format('DD/MM/YYYY HH:mm'),
         tank.supervisor || 'N/A',
         tank.tankName,
         tank.productName,
@@ -1168,69 +1245,94 @@ const ComprehensiveReconciliation = () => {
 
   const renderSummaryStats = () => (
     <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-      <Col xs={24} sm={12} md={6} lg={4}>
+      <Col xs={24} sm={12} md={6} lg={3}>
         <Card size="small" bordered={false} style={{ background: '#f0f5ff' }}>
           <Statistic
-            title="Total Shifts"
+            title="Shifts"
             value={stats.totalShifts}
             prefix={<CalendarOutlined />}
             valueStyle={{ color: '#1890ff', fontSize: '20px' }}
           />
         </Card>
       </Col>
-      <Col xs={24} sm={12} md={6} lg={4}>
+      <Col xs={24} sm={12} md={6} lg={3}>
         <Card size="small" bordered={false} style={{ background: '#f6ffed' }}>
           <Statistic
-            title="Total Tanks"
+            title="Tanks"
             value={stats.totalTanks}
             prefix={<FireOutlined />}
             valueStyle={{ color: '#52c41a', fontSize: '20px' }}
           />
         </Card>
       </Col>
-      <Col xs={24} sm={12} md={6} lg={4}>
+      <Col xs={24} sm={12} md={6} lg={3}>
         <Card size="small" bordered={false} style={{ background: '#fff7e6' }}>
           <Statistic
-            title="Total Volume"
-            value={stats.totalVolume}
+            title="Opening"
+            value={stats.totalOpening}
             precision={0}
             suffix="L"
-            prefix={<CalculatorOutlined />}
             valueStyle={{ color: '#fa8c16', fontSize: '20px' }}
           />
         </Card>
       </Col>
-      <Col xs={24} sm={12} md={6} lg={4}>
-        <Card size="small" bordered={false} style={{ background: '#f9f0ff' }}>
+      <Col xs={24} sm={12} md={6} lg={3}>
+        <Card size="small" bordered={false} style={{ background: '#f6ffed' }}>
           <Statistic
-            title="Total Sales"
-            value={stats.totalSales}
+            title="Addition"
+            value={stats.totalAddition}
             precision={0}
             suffix="L"
-            prefix={<BarChartOutlined />}
+            valueStyle={{ color: '#52c41a', fontSize: '20px' }}
+          />
+        </Card>
+      </Col>
+      <Col xs={24} sm={12} md={6} lg={3}>
+        <Card size="small" bordered={false} style={{ background: '#f9f0ff' }}>
+          <Statistic
+            title="Total"
+            value={stats.totalVolume}
+            precision={0}
+            suffix="L"
             valueStyle={{ color: '#722ed1', fontSize: '20px' }}
           />
         </Card>
       </Col>
-      <Col xs={24} sm={12} md={6} lg={4}>
-        <Card size="small" bordered={false} style={{ background: stats.tanksToInvestigate > 0 ? '#fff2f0' : '#f6ffed' }}>
+      <Col xs={24} sm={12} md={6} lg={3}>
+        <Card size="small" bordered={false} style={{ background: '#e6f7ff' }}>
           <Statistic
-            title="To Investigate"
-            value={stats.tanksToInvestigate}
-            prefix={<AlertOutlined />}
-            valueStyle={{ color: stats.tanksToInvestigate > 0 ? '#cf1322' : '#52c41a', fontSize: '20px' }}
+            title="Sales"
+            value={stats.totalSales}
+            precision={0}
+            suffix="L"
+            valueStyle={{ color: '#1890ff', fontSize: '20px' }}
           />
         </Card>
       </Col>
-      <Col xs={24} sm={12} md={6} lg={4}>
-        <Card size="small" bordered={false} style={{ background: '#e6f7ff' }}>
+      <Col xs={24} sm={12} md={6} lg={3}>
+        <Card size="small" bordered={false} style={{ background: '#fff2f0' }}>
           <Statistic
-            title="Reconciliation Rate"
-            value={stats.reconciliationRate}
+            title="Variance"
+            value={stats.totalVariance}
             precision={1}
-            suffix="%"
-            prefix={<CheckCircleOutlined />}
-            valueStyle={{ color: '#1890ff', fontSize: '20px' }}
+            suffix="L"
+            valueStyle={{ 
+              color: stats.totalAbsVariance < 30 ? '#52c41a' : 
+                     stats.totalAbsVariance < 100 ? '#fa8c16' : '#cf1322',
+              fontSize: '20px',
+              fontWeight: 'bold'
+            }}
+            prefix={stats.totalVariance > 0 ? '+' : ''}
+          />
+        </Card>
+      </Col>
+      <Col xs={24} sm={12} md={6} lg={3}>
+        <Card size="small" bordered={false} style={{ background: '#fff1f0' }}>
+          <Statistic
+            title="Investigate"
+            value={stats.tanksToInvestigate}
+            prefix={<AlertOutlined />}
+            valueStyle={{ color: stats.tanksToInvestigate > 0 ? '#cf1322' : '#52c41a', fontSize: '20px' }}
           />
         </Card>
       </Col>
@@ -1250,10 +1352,10 @@ const ComprehensiveReconciliation = () => {
             >
               <Option value="today">Today</Option>
               <Option value="yesterday">Yesterday</Option>
-              <Option value="week">Last 7 days</Option>
-              <Option value="month">Last 30 days</Option>
-              <Option value="quarter">Last 90 days</Option>
-              <Option value="year">Last year</Option>
+              <Option value="week">7 days</Option>
+              <Option value="month">30 days</Option>
+              <Option value="quarter">90 days</Option>
+              <Option value="year">Year</Option>
             </Select>
             <RangePicker 
               onChange={handleDateRangeChange}
@@ -1266,9 +1368,9 @@ const ComprehensiveReconciliation = () => {
           </Space>
         </Col>
         
-        <Col xs={24} sm={12} md={6} lg={4}>
+        <Col xs={24} sm={12} md={5} lg={4}>
           <Input
-            placeholder="Search tanks/products"
+            placeholder="Search..."
             prefix={<SearchOutlined />}
             value={filters.search}
             onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
@@ -1316,8 +1418,9 @@ const ComprehensiveReconciliation = () => {
             icon={<WarningOutlined />}
             onClick={() => setFilters(prev => ({ ...prev, showOnlyIssues: !prev.showOnlyIssues }))}
             size="middle"
+            block
           >
-            Issues Only
+            Issues
           </Button>
         </Col>
         
@@ -1364,7 +1467,7 @@ const ComprehensiveReconciliation = () => {
       title={
         <Space>
           <FireOutlined style={{ color: '#ff4d4f' }} />
-          <span>Tank Details: {viewingTank?.tankName}</span>
+          <span>{viewingTank?.tankName}</span>
           <Tag color={viewingTank?.productColor}>{viewingTank?.productName}</Tag>
           <Badge status={viewingTank?.statusColor} text={viewingTank?.status} />
         </Space>
@@ -1392,16 +1495,16 @@ const ComprehensiveReconciliation = () => {
                 <div><Text strong>{viewingTank.stationName}</Text></div>
               </Col>
               <Col span={8}>
-                <Text type="secondary">Supervisor:</Text>
-                <div><Text strong>{viewingTank.supervisor || 'N/A'}</Text></div>
+                <Text type="secondary">Date:</Text>
+                <div><Text strong>{viewingTank.displayDate}</Text></div>
               </Col>
               <Col span={12}>
                 <Text type="secondary">Start Time:</Text>
                 <div><Text>{formatDate(viewingTank.shiftStartTime)}</Text></div>
               </Col>
               <Col span={12}>
-                <Text type="secondary">End Time:</Text>
-                <div><Text>{formatDate(viewingTank.shiftEndTime)}</Text></div>
+                <Text type="secondary">Supervisor:</Text>
+                <div><Text>{viewingTank.supervisor || 'N/A'}</Text></div>
               </Col>
             </Row>
           </Card>
@@ -1411,7 +1514,7 @@ const ComprehensiveReconciliation = () => {
             <Col span={6}>
               <Card size="small" style={{ background: '#e6f7ff' }}>
                 <Statistic 
-                  title="Opening Volume" 
+                  title="Opening" 
                   value={viewingTank.openingVolume} 
                   suffix="L"
                   valueStyle={{ color: '#1890ff', fontSize: '18px' }}
@@ -1429,22 +1532,22 @@ const ComprehensiveReconciliation = () => {
               </Card>
             </Col>
             <Col span={6}>
+              <Card size="small" style={{ background: '#f9f0ff' }}>
+                <Statistic 
+                  title="Total" 
+                  value={viewingTank.totalVolume} 
+                  suffix="L"
+                  valueStyle={{ color: '#722ed1', fontSize: '18px' }}
+                />
+              </Card>
+            </Col>
+            <Col span={6}>
               <Card size="small" style={{ background: '#fff7e6' }}>
                 <Statistic 
                   title="Sales" 
                   value={viewingTank.expectedDeduction} 
                   suffix="L"
                   valueStyle={{ color: '#fa8c16', fontSize: '18px' }}
-                />
-              </Card>
-            </Col>
-            <Col span={6}>
-              <Card size="small" style={{ background: '#f9f0ff' }}>
-                <Statistic 
-                  title="Closing Volume" 
-                  value={viewingTank.closingVolume} 
-                  suffix="L"
-                  valueStyle={{ color: '#722ed1', fontSize: '18px' }}
                 />
               </Card>
             </Col>
@@ -1455,7 +1558,7 @@ const ComprehensiveReconciliation = () => {
             <Title level={5}>Reconciliation Breakdown</Title>
             <Row gutter={16}>
               <Col span={8}>
-                <Text type="secondary">Opening Volume:</Text>
+                <Text type="secondary">Opening:</Text>
                 <div><Text strong>{formatVolume(viewingTank.openingVolume)}</Text></div>
               </Col>
               <Col span={8}>
@@ -1463,7 +1566,7 @@ const ComprehensiveReconciliation = () => {
                 <div><Text strong type="success">{viewingTank.addition > 0 ? `+${formatVolume(viewingTank.addition)}` : '0 L'}</Text></div>
               </Col>
               <Col span={8}>
-                <Text type="secondary">= Total Volume:</Text>
+                <Text type="secondary">= Total:</Text>
                 <div><Text strong style={{ color: '#722ed1' }}>{formatVolume(viewingTank.totalVolume)}</Text></div>
               </Col>
               <Col span={8}>
@@ -1568,7 +1671,7 @@ const ComprehensiveReconciliation = () => {
         size="small"
         title={
           <Space>
-            <FileTextOutlined />
+            <FolderOutlined />
             <span>Tank Reconciliation Details</span>
             <Tag color="blue">{filteredTankData.length} records</Tag>
           </Space>
@@ -1576,7 +1679,7 @@ const ComprehensiveReconciliation = () => {
         extra={
           <Space>
             <Text type="secondary">
-              Showing {filteredTankData.length} of {processedData?.tanks?.length || 0} tanks
+              {Object.keys(groupedByDate).length} days • {processedData?.shifts?.length || 0} shifts
             </Text>
           </Space>
         }
@@ -1594,37 +1697,38 @@ const ComprehensiveReconciliation = () => {
             dataSource={filteredTankData}
             rowKey={(record) => `${record.shiftId}-${record.tankId}`}
             size="small"
-            scroll={{ x: 1500 }}
+            scroll={{ x: 1600 }}
             pagination={{
-              pageSize: 20,
+              pageSize: 50,
               showSizeChanger: true,
+              pageSizeOptions: ['20', '50', '100', '200'],
               showTotal: (total) => `Total ${total} tanks`
             }}
             summary={() => (
               <Table.Summary fixed>
-                <Table.Summary.Row>
-                  <Table.Summary.Cell index={0} colSpan={3}>
-                    <Text strong>Totals:</Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={3} align="right">
-                    <Text strong>{filteredTankData.reduce((sum, t) => sum + t.openingVolume, 0).toLocaleString()} L</Text>
+                <Table.Summary.Row style={{ background: '#f5f5f5' }}>
+                  <Table.Summary.Cell index={0} colSpan={4}>
+                    <Text strong>Totals ({filteredTankData.length} tanks):</Text>
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={4} align="right">
-                    <Text strong type="success">+{filteredTankData.reduce((sum, t) => sum + t.addition, 0).toLocaleString()} L</Text>
+                    <Text strong>{filteredTankData.reduce((sum, t) => sum + t.openingVolume, 0).toLocaleString()} L</Text>
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={5} align="right">
-                    <Text strong style={{ color: '#722ed1' }}>{filteredTankData.reduce((sum, t) => sum + t.totalVolume, 0).toLocaleString()} L</Text>
+                    <Text strong type="success">+{filteredTankData.reduce((sum, t) => sum + t.addition, 0).toLocaleString()} L</Text>
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={6} align="right">
-                    <Text strong>{filteredTankData.reduce((sum, t) => sum + t.expectedDeduction, 0).toLocaleString()} L</Text>
+                    <Text strong style={{ color: '#722ed1' }}>{filteredTankData.reduce((sum, t) => sum + t.totalVolume, 0).toLocaleString()} L</Text>
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={7} align="right">
-                    <Text strong style={{ color: '#1890ff' }}>{filteredTankData.reduce((sum, t) => sum + t.expectedClosing, 0).toLocaleString()} L</Text>
+                    <Text strong>{filteredTankData.reduce((sum, t) => sum + t.expectedDeduction, 0).toLocaleString()} L</Text>
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={8} align="right">
-                    <Text strong style={{ color: '#cf1322' }}>{filteredTankData.reduce((sum, t) => sum + t.closingVolume, 0).toLocaleString()} L</Text>
+                    <Text strong style={{ color: '#1890ff' }}>{filteredTankData.reduce((sum, t) => sum + t.expectedClosing, 0).toLocaleString()} L</Text>
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={9} align="right">
+                    <Text strong style={{ color: '#cf1322' }}>{filteredTankData.reduce((sum, t) => sum + t.closingVolume, 0).toLocaleString()} L</Text>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={10} align="right">
                     <Text strong style={{ 
                       color: filteredTankData.reduce((sum, t) => sum + Math.abs(t.variance), 0) < 100 ? '#52c41a' : '#cf1322'
                     }}>
@@ -1632,7 +1736,7 @@ const ComprehensiveReconciliation = () => {
                       {filteredTankData.reduce((sum, t) => sum + t.variance, 0).toFixed(1)} L
                     </Text>
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={10} colSpan={4}>
+                  <Table.Summary.Cell index={11} colSpan={3}>
                     {/* Empty cells for remaining columns */}
                   </Table.Summary.Cell>
                 </Table.Summary.Row>

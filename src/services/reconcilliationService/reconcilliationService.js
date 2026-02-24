@@ -3,8 +3,7 @@ import { apiService } from '../apiService';
 
 class ReconciliationService {
   constructor() {
-    // FIXED: Base path to match backend routes
-    this.basePath = '/reconcilliations'; // Was '/reconcilliations' (typo)
+    this.basePath = '/reconcilliations';
     this.cache = new Map();
     this.CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
     this.pendingRequests = new Map(); // For request deduplication
@@ -28,7 +27,6 @@ class ReconciliationService {
   // ==================== CORE UTILITIES ====================
 
   #handleResponse(response, operation) {
-    // FIXED: Handle the response structure from your backend
     // Your backend returns { success: true, data: {...} }
     if (response.data?.success) {
       this.logger.debug(`${operation} successful`);
@@ -60,7 +58,6 @@ class ReconciliationService {
       
       switch (status) {
         case 401:
-          // Handle unauthorized - token expired
           localStorage.removeItem('accessToken');
           window.location.href = '/login';
           throw new Error('Session expired. Please login again.');
@@ -104,7 +101,6 @@ class ReconciliationService {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
-        // Handle boolean values - convert to strings for enum validation
         if (typeof value === 'boolean') {
           params.append(key, value ? 'true' : 'false');
         } else if (Array.isArray(value)) {
@@ -135,7 +131,6 @@ class ReconciliationService {
 
   #setCached(key, data) {
     if (this.config.cacheEnabled) {
-      // Clean old cache if too large
       if (this.cache.size > 100) {
         const oldestKey = this.cache.keys().next().value;
         this.cache.delete(oldestKey);
@@ -171,7 +166,7 @@ class ReconciliationService {
         const isServerError = error.response?.status >= 500 || error.code === 'ECONNABORTED';
         
         if (isServerError && i < retries - 1) {
-          const delay = this.config.retryDelay * Math.pow(2, i); // Exponential backoff
+          const delay = this.config.retryDelay * Math.pow(2, i);
           this.logger.warn(`Retrying operation (${i + 1}/${retries}) after ${delay}ms`);
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
@@ -196,7 +191,7 @@ class ReconciliationService {
         
         if (!forceRefresh) {
           const cached = this.#getCached(cacheKey);
-          if (cached) return cached;
+          if (cached) return this.transformShiftData(cached);
         }
 
         this.logger.info(`Fetching shift reconciliation: ${shiftId}`, options);
@@ -213,8 +208,9 @@ class ReconciliationService {
         );
         
         const data = this.#handleResponse(response, 'Shift reconciliation fetch');
-        this.#setCached(cacheKey, data);
-        return data;
+        const transformed = this.transformShiftData(data);
+        this.#setCached(cacheKey, transformed);
+        return transformed;
       }).catch(error => {
         throw this.#handleError(error, 'Shift reconciliation fetch', 'Failed to fetch shift reconciliation');
       });
@@ -245,16 +241,17 @@ class ReconciliationService {
           toDate: filters.toDate,
           period: filters.period,
           status: filters.status,
-          limit: filters.limit,
-          offset: filters.offset,
-          includeDetails: filters.includeDetails
+          limit: filters.limit || 20,
+          offset: filters.offset || 0,
+          includeDetails: filters.includeDetails !== false
         });
 
         const response = await apiService.get(`${this.basePath}/shifts?${queryParams}`);
         
         const data = this.#handleResponse(response, 'Shifts fetch');
-        this.#setCached(cacheKey, data);
-        return data;
+        const transformed = this.transformShiftsList(data);
+        this.#setCached(cacheKey, transformed);
+        return transformed;
       }).catch(error => {
         throw this.#handleError(error, 'Shifts fetch', 'Failed to fetch shifts');
       });
@@ -283,15 +280,16 @@ class ReconciliationService {
           stationId: filters.stationId,
           fromDate: filters.fromDate,
           toDate: filters.toDate,
-          period: filters.period,
-          groupBy: filters.groupBy
+          period: filters.period || 'month',
+          groupBy: filters.groupBy || 'day'
         });
 
         const response = await apiService.get(`${this.basePath}/summary?${queryParams}`);
         
         const data = this.#handleResponse(response, 'Summary fetch');
-        this.#setCached(cacheKey, data);
-        return data;
+        const transformed = this.transformSummaryData(data);
+        this.#setCached(cacheKey, transformed);
+        return transformed;
       }).catch(error => {
         throw this.#handleError(error, 'Summary fetch', 'Failed to fetch reconciliation summary');
       });
@@ -319,7 +317,7 @@ class ReconciliationService {
         const queryParams = this.#buildQueryParams({
           fromDate: filters.fromDate,
           toDate: filters.toDate,
-          period: filters.period
+          period: filters.period || 'month'
         });
 
         const response = await apiService.get(
@@ -327,20 +325,20 @@ class ReconciliationService {
         );
         
         const data = this.#handleResponse(response, 'Tank history fetch');
-        this.#setCached(cacheKey, data);
-        return data;
+        const transformed = this.transformTankHistoryData(data);
+        this.#setCached(cacheKey, transformed);
+        return transformed;
       }).catch(error => {
         throw this.#handleError(error, 'Tank history fetch', 'Failed to fetch tank reconciliation history');
       });
     });
   }
 
-  // ==================== NEW: COMPREHENSIVE REPORT ====================
+  // ==================== COMPREHENSIVE REPORT ====================
 
   /**
    * Generate comprehensive reconciliation report
    * GET /reconciliation/reports/comprehensive
-   * NEW - Matches backend endpoint
    */
   async generateComprehensiveReport(filters = {}, forceRefresh = false) {
     const requestKey = this.#getCacheKey('comprehensive-report', filters);
@@ -360,32 +358,32 @@ class ReconciliationService {
           stationId: filters.stationId,
           fromDate: filters.fromDate,
           toDate: filters.toDate,
-          groupBy: filters.groupBy,
-          includeTankDetails: filters.includeTankDetails,
-          includePumpDetails: filters.includePumpDetails,
-          includeOffloadDetails: filters.includeOffloadDetails,
-          excellentThreshold: filters.threshold?.excellent,
-          goodThreshold: filters.threshold?.good,
-          acceptableThreshold: filters.threshold?.acceptable
+          groupBy: filters.groupBy || 'day',
+          includeTankDetails: filters.includeTankDetails !== false,
+          includePumpDetails: filters.includePumpDetails || false,
+          includeOffloadDetails: filters.includeOffloadDetails !== false,
+          excellentThreshold: filters.threshold?.excellent || 10,
+          goodThreshold: filters.threshold?.good || 30,
+          acceptableThreshold: filters.threshold?.acceptable || 100
         });
 
         const response = await apiService.get(`${this.basePath}/reports/comprehensive?${queryParams}`);
         
         const data = this.#handleResponse(response, 'Comprehensive report generation');
-        this.#setCached(cacheKey, data);
-        return data;
+        const transformed = this.transformReportData(data);
+        this.#setCached(cacheKey, transformed);
+        return transformed;
       }).catch(error => {
         throw this.#handleError(error, 'Report generation', 'Failed to generate comprehensive report');
       });
     });
   }
 
-  // ==================== NEW: BATCH PROCESSING ====================
+  // ==================== BATCH PROCESSING ====================
 
   /**
    * Batch process multiple shifts
    * POST /reconciliation/shifts/batch
-   * NEW - Matches backend endpoint
    */
   async batchProcessShifts(shiftIds, options = {}) {
     return this.#retryOperation(async () => {
@@ -405,18 +403,17 @@ class ReconciliationService {
       // Clear relevant cache entries
       this.clearCache('shifts');
       
-      return data;
+      return this.transformBatchResult(data);
     }).catch(error => {
       throw this.#handleError(error, 'Batch processing', 'Failed to batch process shifts');
     });
   }
 
-  // ==================== NEW: EXPORT REPORT ====================
+  // ==================== EXPORT ====================
 
   /**
    * Export comprehensive report
    * GET /reconciliation/reports/export
-   * NEW - Matches backend endpoint
    */
   async exportReport(filters = {}, format = 'csv') {
     return this.#retryOperation(async () => {
@@ -426,10 +423,10 @@ class ReconciliationService {
         stationId: filters.stationId,
         fromDate: filters.fromDate,
         toDate: filters.toDate,
-        groupBy: filters.groupBy,
-        includeTankDetails: filters.includeTankDetails,
-        includePumpDetails: filters.includePumpDetails,
-        includeOffloadDetails: filters.includeOffloadDetails,
+        groupBy: filters.groupBy || 'day',
+        includeTankDetails: filters.includeTankDetails !== false,
+        includePumpDetails: filters.includePumpDetails || false,
+        includeOffloadDetails: filters.includeOffloadDetails !== false,
         format
       });
 
@@ -439,7 +436,6 @@ class ReconciliationService {
           { responseType: 'blob' }
         );
         
-        // Create download link
         const fileName = `reconciliation_report_${filters.fromDate}_to_${filters.toDate}.csv`;
         const url = window.URL.createObjectURL(new Blob([response.data]));
         const link = document.createElement('a');
@@ -450,12 +446,23 @@ class ReconciliationService {
         link.remove();
         window.URL.revokeObjectURL(url);
         
-        return { success: true, message: 'Report exported successfully', fileName };
+        return { 
+          success: true, 
+          message: 'Report exported successfully', 
+          fileName,
+          format 
+        };
       }
       
       if (format === 'json') {
         const response = await apiService.get(`${this.basePath}/reports/export?${queryParams}`);
-        return this.#handleResponse(response, 'Export fetch');
+        const data = this.#handleResponse(response, 'Export fetch');
+        return {
+          success: true,
+          data,
+          format,
+          message: 'Report exported successfully'
+        };
       }
 
       throw new Error(`Unsupported export format: ${format}`);
@@ -463,8 +470,6 @@ class ReconciliationService {
       throw this.#handleError(error, 'Export', 'Failed to export report');
     });
   }
-
-  // ==================== EXPORT SHIFT ====================
 
   /**
    * Export shift reconciliation data
@@ -490,12 +495,23 @@ class ReconciliationService {
         link.remove();
         window.URL.revokeObjectURL(url);
         
-        return { success: true, message: 'Export completed successfully', fileName };
+        return { 
+          success: true, 
+          message: 'Export completed successfully', 
+          fileName,
+          format
+        };
       }
       
       if (format === 'json') {
         const response = await apiService.get(`${this.basePath}/export/${shiftId}?format=json`);
-        return this.#handleResponse(response, 'Export fetch');
+        const data = this.#handleResponse(response, 'Export fetch');
+        return {
+          success: true,
+          data,
+          format,
+          message: 'Export completed successfully'
+        };
       }
 
       throw new Error(`Unsupported export format: ${format}`);
@@ -515,13 +531,24 @@ class ReconciliationService {
       this.logger.debug('Checking reconciliation service health');
       
       const response = await apiService.get(`${this.basePath}/health`);
+      
+      // Handle your backend response format { success: true, message, timestamp }
+      if (response.data) {
+        return {
+          success: response.data.success !== false,
+          message: response.data.message || 'Service is healthy',
+          timestamp: response.data.timestamp || new Date().toISOString()
+        };
+      }
+      
       return this.#handleResponse(response, 'Health check');
     } catch (error) {
       this.logger.error('Health check failed:', error);
       return {
         success: false,
         message: 'Reconciliation service is unavailable',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        error: error.message
       };
     }
   }
@@ -546,6 +573,12 @@ class ReconciliationService {
     this.logger.info('Cache cleared' + (pattern ? ` for pattern: ${pattern}` : ''));
   }
 
+  clearCacheForDateRange(fromDate, toDate) {
+    const pattern = `${fromDate}_${toDate}`;
+    this.clearCache(pattern);
+    this.logger.info(`Cleared cache for date range: ${fromDate} to ${toDate}`);
+  }
+
   cancelPendingRequests(pattern = null) {
     if (pattern) {
       for (const [key, promise] of this.pendingRequests.entries()) {
@@ -559,68 +592,235 @@ class ReconciliationService {
     this.logger.info('Pending requests cleared');
   }
 
+  /**
+   * Load next page of shifts (for pagination)
+   */
+  async loadMoreShifts(currentFilters = {}, currentData = null) {
+    if (!currentData?.pagination?.hasMore) {
+      return { 
+        success: true,
+        shifts: [], 
+        pagination: { ...currentData?.pagination, hasMore: false },
+        hasMore: false 
+      };
+    }
+
+    const nextOffset = (currentData.pagination.offset || 0) + (currentData.pagination.limit || 20);
+    
+    const filters = {
+      ...currentFilters,
+      offset: nextOffset,
+    };
+
+    const result = await this.getShiftsByDateRange(filters, true);
+    return result;
+  }
+
   // ==================== DATA TRANSFORMERS ====================
 
   /**
-   * Transform raw shift data for UI consumption
+   * Transform single shift data (matches /shifts/:shiftId structure)
    */
   transformShiftData(shiftData) {
     if (!shiftData) return null;
 
     return {
       ...shiftData,
-      reconciliation: {
-        ...shiftData.reconciliation,
-        summary: {
-          ...shiftData.reconciliation?.summary,
-          reconciliationRate: this.calculateReconciliationRate(shiftData),
-          hasIssues: this.checkForIssues(shiftData),
-          issues: this.getIssues(shiftData)
-        }
+      display: this.#generateShiftDisplay(shiftData)
+    };
+  }
+
+  /**
+   * Transform shifts list response (matches /shifts structure)
+   */
+  transformShiftsList(data) {
+    if (!data) return null;
+
+    const transformed = {
+      shifts: Array.isArray(data.shifts) 
+        ? data.shifts.map(shift => ({
+            ...shift,
+            display: this.#generateShiftDisplay(shift)
+          }))
+        : [],
+      pagination: data.pagination || {
+        limit: 20,
+        offset: 0,
+        totalCount: 0,
+        returnedCount: 0,
+        hasMore: false
       },
+      summary: data.summary || {
+        totalShifts: 0,
+        completedShifts: 0,
+        openShifts: 0,
+        totalOffloads: 0,
+        totalReadings: 0
+      },
+      filters: data.filters || {}
+    };
+
+    // Add UI helper properties
+    transformed.display = {
+      hasMore: transformed.pagination.hasMore,
+      totalCount: transformed.pagination.totalCount,
+      returnedCount: transformed.pagination.returnedCount,
+      currentPage: Math.floor(transformed.pagination.offset / transformed.pagination.limit) + 1,
+      totalPages: Math.ceil(transformed.pagination.totalCount / transformed.pagination.limit),
+      isEmpty: transformed.shifts.length === 0
+    };
+
+    return transformed;
+  }
+
+  /**
+   * Transform summary data
+   */
+  transformSummaryData(data) {
+    if (!data) return null;
+
+    return {
+      ...data,
       display: {
-        formattedDuration: this.formatDuration(shiftData.shift?.duration),
-        formattedDateRange: this.formatDateRange(
-          shiftData.shift?.startTime,
-          shiftData.shift?.endTime
-        ),
-        statusBadge: this.getStatusBadge(shiftData.shift?.status)
+        formattedPeriod: this.#formatPeriod(data.period),
+        metrics: this.#formatMetrics(data.metrics),
+        hasData: !!(data.metrics?.totalShifts || data.groupedData?.length)
       }
     };
   }
 
   /**
-   * Transform comprehensive report for UI
+   * Transform tank history data
    */
-  transformReportData(reportData) {
-    if (!reportData) return null;
+  transformTankHistoryData(data) {
+    if (!data) return null;
 
     return {
-      ...reportData,
-      overallStats: {
-        ...reportData.overallStats,
-        formattedVariance: this.formatVariance(reportData.overallStats?.totalVariance),
-        reconciliationRateFormatted: `${reportData.overallStats?.reconciliationRate || 0}%`
-      },
-      groupedData: reportData.groupedData?.map(group => ({
-        ...group,
-        formattedVariance: this.formatVariance(group.totalVariance),
-        variancePercentageFormatted: `${group.variancePercentage || 0}%`
-      })),
-      topIssues: reportData.topIssues?.map(issue => ({
-        ...issue,
-        severityBadge: this.getSeverityBadge(issue.severity)
-      }))
+      ...data,
+      display: {
+        tankInfo: `${data.tank?.name} (${data.tank?.product?.name || 'No Product'})`,
+        connectedPumps: data.connectedPumps?.length || 0,
+        history: Array.isArray(data.history) 
+          ? data.history.map(item => ({
+              ...item,
+              display: {
+                formattedVariance: this.#formatVariance(item.variance),
+                statusBadge: this.getStatusBadgeFromVariance(item.variance),
+                date: new Date(item.startTime).toLocaleDateString()
+              }
+            }))
+          : [],
+        trends: this.#calculateTrends(data.history)
+      }
     };
   }
 
   /**
-   * Calculate reconciliation rate for a shift
+   * Transform report data
    */
-  calculateReconciliationRate(shiftData) {
-    if (!shiftData?.reconciliation?.tanks) return 0;
+  transformReportData(data) {
+    if (!data) return null;
+
+    return {
+      ...data,
+      display: {
+        reportInfo: {
+          ...data.reportInfo,
+          generatedAtFormatted: new Date(data.reportInfo?.generatedAt).toLocaleString(),
+          dateRangeFormatted: this.#formatDateRange(
+            data.reportInfo?.dateRange?.from,
+            data.reportInfo?.dateRange?.to
+          )
+        },
+        overallStats: {
+          ...data.overallStats,
+          formattedVariance: this.#formatVariance(data.overallStats?.totalVariance),
+          reconciliationRateFormatted: `${data.overallStats?.reconciliationRate || 0}%`,
+          variancePercentageFormatted: `${data.overallStats?.variancePercentage || 0}%`
+        },
+        groupedData: data.groupedData?.map(group => ({
+          ...group,
+          display: {
+            formattedVariance: this.#formatVariance(group.totalVariance),
+            variancePercentageFormatted: `${group.variancePercentage || 0}%`,
+            label: group.label || group.period
+          }
+        })),
+        topIssues: data.topIssues?.map(issue => ({
+          ...issue,
+          display: {
+            severityBadge: this.getSeverityBadge(issue.severity),
+            dateFormatted: new Date(issue.date).toLocaleString(),
+            shiftRef: `${issue.stationName} - Shift #${issue.shiftNumber}`
+          }
+        })),
+        hasData: !!(data.overallStats?.totalShifts)
+      }
+    };
+  }
+
+  /**
+   * Transform batch processing result
+   */
+  transformBatchResult(data) {
+    if (!data) return null;
+
+    return {
+      ...data,
+      display: {
+        summary: {
+          ...data.summary,
+          successRateFormatted: `${data.summary?.successRate || 0}%`
+        },
+        results: Array.isArray(data.results) 
+          ? data.results.map(result => ({
+              ...result,
+              display: {
+                status: result.success ? 'Success' : 'Failed',
+                statusBadge: result.success 
+                  ? { label: 'Success', color: 'green', variant: 'solid' }
+                  : { label: 'Failed', color: 'red', variant: 'solid' }
+              }
+            }))
+          : []
+      }
+    };
+  }
+
+  // ==================== PRIVATE HELPER METHODS ====================
+
+  #generateShiftDisplay(shift) {
+    if (!shift) return {};
+
+    const hasIssues = this.#checkForIssues(shift);
+    const issues = this.#getIssues(shift);
     
-    const tanks = shiftData.reconciliation.tanks;
+    return {
+      formattedDuration: this.#formatDuration(shift.shift?.duration),
+      formattedDateRange: this.#formatDateRange(
+        shift.shift?.startTime,
+        shift.shift?.endTime
+      ),
+      statusBadge: this.getStatusBadge(shift.shift?.status),
+      reconciliationRate: this.#calculateReconciliationRate(shift),
+      hasIssues,
+      issues,
+      issuesCount: issues.length,
+      summary: {
+        totalTanks: shift.reconciliation?.summary?.totalTanks || 0,
+        tanksWithData: shift.reconciliation?.summary?.tanksWithCompleteData || 0,
+        totalVariance: this.#formatVariance(shift.reconciliation?.summary?.totals?.variance),
+        totalDispensed: shift.reconciliation?.summary?.totals?.dispensed || 0,
+        totalOffloads: shift.reconciliation?.summary?.offloadSummary?.totalOffloads || 0,
+        reconciliationRate: shift.reconciliation?.summary?.reconciliationRate || 0
+      }
+    };
+  }
+
+  #calculateReconciliationRate(shift) {
+    if (!shift?.reconciliation?.tanks) return 0;
+    
+    const tanks = shift.reconciliation.tanks;
     const reconciledTanks = tanks.filter(t => {
       const status = t.variances?.reconciliationStatus;
       return status === 'EXCELLENT' || status === 'GOOD';
@@ -629,40 +829,40 @@ class ReconciliationService {
     return tanks.length ? (reconciledTanks / tanks.length * 100).toFixed(1) : 0;
   }
 
-  /**
-   * Check if shift has issues
-   */
-  checkForIssues(shiftData) {
-    return shiftData?.verification?.alerts?.length > 0 || 
-           shiftData?.verification?.missingReadings?.length > 0;
+  #checkForIssues(shift) {
+    return shift?.verification?.alerts?.length > 0 || 
+           shift?.verification?.missingReadings?.length > 0;
   }
 
-  /**
-   * Get issues summary
-   */
-  getIssues(shiftData) {
+  #getIssues(shift) {
     const issues = [];
     
-    if (shiftData?.verification?.alerts?.length) {
-      issues.push(...shiftData.verification.alerts);
+    if (shift?.verification?.alerts?.length) {
+      issues.push(...shift.verification.alerts.map(alert => ({
+        ...alert,
+        display: {
+          severityBadge: this.getSeverityBadge(alert.severity)
+        }
+      })));
     }
     
-    if (shiftData?.verification?.missingReadings?.length) {
+    if (shift?.verification?.missingReadings?.length) {
       issues.push({
         type: 'MISSING_READINGS',
         severity: 'HIGH',
-        message: `${shiftData.verification.missingReadings.length} missing readings`
+        message: `${shift.verification.missingReadings.length} missing readings`,
+        details: shift.verification.missingReadings,
+        display: {
+          severityBadge: this.getSeverityBadge('HIGH')
+        }
       });
     }
     
     return issues;
   }
 
-  /**
-   * Format duration
-   */
-  formatDuration(hours) {
-    if (!hours) return 'N/A';
+  #formatDuration(hours) {
+    if (!hours && hours !== 0) return 'N/A';
     
     const h = Math.floor(hours);
     const m = Math.round((hours - h) * 60);
@@ -670,10 +870,7 @@ class ReconciliationService {
     return `${h}h ${m}m`;
   }
 
-  /**
-   * Format date range
-   */
-  formatDateRange(start, end) {
+  #formatDateRange(start, end) {
     if (!start) return 'N/A';
     
     const startDate = new Date(start);
@@ -687,19 +884,141 @@ class ReconciliationService {
     return `${formattedStart} - ${formattedEnd}`;
   }
 
+  #formatVariance(variance) {
+    if (variance === null || variance === undefined) {
+      return { value: 'N/A', color: 'gray', numericValue: null };
+    }
+    
+    const absVariance = Math.abs(variance);
+    const value = variance > 0 ? `+${variance.toFixed(2)}` : variance.toFixed(2);
+    
+    let color = 'green';
+    if (absVariance > 100) color = 'red';
+    else if (absVariance > 30) color = 'yellow';
+    else if (absVariance > 10) color = 'blue';
+    
+    return { value, color, numericValue: variance };
+  }
+
+  #formatPeriod(period) {
+    if (!period) return 'Unknown';
+    
+    const periods = {
+      today: 'Today',
+      yesterday: 'Yesterday',
+      week: 'Last 7 Days',
+      month: 'Last 30 Days',
+      quarter: 'Last 90 Days',
+      year: 'Last 365 Days',
+      custom: 'Custom Range'
+    };
+    
+    return periods[period] || period;
+  }
+
+  #formatMetrics(metrics) {
+    if (!metrics) return null;
+
+    return {
+      ...metrics,
+      completionRateFormatted: `${metrics.completionRate || 0}%`,
+      verifiedRateFormatted: `${metrics.verifiedRate || 0}%`,
+      readingCoverageFormatted: `${metrics.readingCoverage || 0}%`
+    };
+  }
+
+  #calculateTrends(history) {
+    if (!history?.length) return null;
+    
+    const values = history.map(h => h.variance || 0);
+    
+    // Calculate moving average
+    const movingAverage = values.map((_, i, arr) => {
+      const start = Math.max(0, i - 2);
+      const end = i + 1;
+      const slice = arr.slice(start, end);
+      return slice.reduce((sum, v) => sum + v, 0) / slice.length;
+    });
+    
+    // Determine trend direction
+    const recentAvg = values.slice(0, Math.min(3, values.length)).reduce((a, b) => a + b, 0) / Math.min(3, values.length);
+    const previousAvg = values.slice(-Math.min(3, values.length)).reduce((a, b) => a + b, 0) / Math.min(3, values.length);
+    
+    const direction = Math.abs(recentAvg) < Math.abs(previousAvg) ? 'improving' : 'worsening';
+    
+    return {
+      movingAverage,
+      direction,
+      stability: this.#calculateStability(values),
+      outliers: this.#findOutliers(values)
+    };
+  }
+
+  #calculateStability(values) {
+    if (values.length < 2) return 'unknown';
+    
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+    
+    const cv = (stdDev / Math.abs(mean)) * 100;
+    
+    if (cv < 10) return 'very stable';
+    if (cv < 20) return 'stable';
+    if (cv < 30) return 'moderately stable';
+    return 'unstable';
+  }
+
+  #findOutliers(values) {
+    if (values.length < 4) return [];
+    
+    const sorted = [...values].sort((a, b) => a - b);
+    const q1 = sorted[Math.floor(sorted.length * 0.25)];
+    const q3 = sorted[Math.floor(sorted.length * 0.75)];
+    const iqr = q3 - q1;
+    const lowerBound = q1 - 1.5 * iqr;
+    const upperBound = q3 + 1.5 * iqr;
+    
+    return values
+      .map((v, i) => ({ value: v, index: i }))
+      .filter(item => item.value < lowerBound || item.value > upperBound);
+  }
+
+  // ==================== PUBLIC HELPER METHODS ====================
+
   /**
-   * Get status badge configuration
+   * Get status badge configuration based on shift status
    */
   getStatusBadge(status) {
     const badges = {
       OPEN: { label: 'Open', color: 'blue', variant: 'outline' },
       CLOSED: { label: 'Closed', color: 'green', variant: 'solid' },
-      VERIFIED: { label: 'Verified', color: 'purple', variant: 'solid' },
-      RECONCILED: { label: 'Reconciled', color: 'emerald', variant: 'solid' },
-      DISCREPANCY: { label: 'Has Discrepancy', color: 'red', variant: 'solid' }
+      VERIFIED: { label: 'Verified', color: 'purple', variant: 'solid' }
     };
     
-    return badges[status] || { label: status, color: 'gray', variant: 'outline' };
+    return badges[status] || { label: status || 'Unknown', color: 'gray', variant: 'outline' };
+  }
+
+  /**
+   * Get status badge from variance value
+   */
+  getStatusBadgeFromVariance(variance) {
+    if (variance === null || variance === undefined) {
+      return { label: 'No Data', color: 'gray', variant: 'outline' };
+    }
+    
+    const absVariance = Math.abs(variance);
+    
+    if (absVariance < 10) {
+      return { label: 'Excellent', color: 'green', variant: 'solid' };
+    }
+    if (absVariance < 30) {
+      return { label: 'Good', color: 'blue', variant: 'solid' };
+    }
+    if (absVariance < 100) {
+      return { label: 'Acceptable', color: 'yellow', variant: 'solid' };
+    }
+    return { label: 'Investigate', color: 'red', variant: 'solid' };
   }
 
   /**
@@ -713,30 +1032,11 @@ class ReconciliationService {
       CRITICAL: { label: 'Critical', color: 'red', variant: 'solid' }
     };
     
-    return badges[severity] || { label: severity, color: 'gray', variant: 'subtle' };
+    return badges[severity] || { label: severity || 'Unknown', color: 'gray', variant: 'subtle' };
   }
 
   /**
-   * Format variance with color indication
-   */
-  formatVariance(variance) {
-    if (variance === null || variance === undefined) {
-      return { value: 'N/A', color: 'gray' };
-    }
-    
-    const absVariance = Math.abs(variance);
-    const value = variance > 0 ? `+${variance.toFixed(2)}` : variance.toFixed(2);
-    
-    let color = 'green';
-    if (absVariance > 100) color = 'red';
-    else if (absVariance > 30) color = 'yellow';
-    else if (absVariance > 10) color = 'blue';
-    
-    return { value, color };
-  }
-
-  /**
-   * Group shifts by date
+   * Group shifts by date for UI display
    */
   groupShiftsByDate(shifts) {
     if (!shifts?.length) return {};
@@ -754,69 +1054,82 @@ class ReconciliationService {
   }
 
   /**
-   * Calculate trends over time
+   * Calculate summary statistics from multiple shifts
    */
-  calculateTrends(history) {
-    if (!history?.length) return null;
+  calculateMultiShiftSummary(shifts) {
+    if (!shifts?.length) return null;
     
-    const values = history.map(h => h.variance || 0);
+    const totalShifts = shifts.length;
+    let totalVariance = 0;
+    let totalDispensed = 0;
+    let totalOffloads = 0;
+    let shiftsWithIssues = 0;
     
-    // Calculate moving average
-    const movingAverage = values.map((_, i, arr) => {
-      const start = Math.max(0, i - 2);
-      const end = i + 1;
-      const slice = arr.slice(start, end);
-      return slice.reduce((sum, v) => sum + v, 0) / slice.length;
+    shifts.forEach(shift => {
+      totalVariance += Math.abs(shift.reconciliation?.summary?.totals?.variance || 0);
+      totalDispensed += shift.reconciliation?.summary?.totals?.dispensed || 0;
+      totalOffloads += shift.reconciliation?.summary?.offloadSummary?.totalOffloads || 0;
+      
+      if (shift.verification?.alerts?.length > 0 || 
+          shift.verification?.missingReadings?.length > 0) {
+        shiftsWithIssues++;
+      }
     });
     
-    // Determine trend direction
-    const recentAvg = values.slice(0, 3).reduce((a, b) => a + b, 0) / Math.min(3, values.length);
-    const previousAvg = values.slice(-3).reduce((a, b) => a + b, 0) / Math.min(3, values.length);
-    
-    const direction = Math.abs(recentAvg) < Math.abs(previousAvg) ? 'improving' : 'worsening';
-    
     return {
-      movingAverage,
-      direction,
-      stability: this.calculateStability(values),
-      outliers: this.findOutliers(values)
+      totalShifts,
+      totalVariance,
+      averageVariancePerShift: totalShifts ? (totalVariance / totalShifts).toFixed(2) : 0,
+      totalDispensed,
+      averageDispensedPerShift: totalShifts ? (totalDispensed / totalShifts).toFixed(2) : 0,
+      totalOffloads,
+      averageOffloadsPerShift: totalShifts ? (totalOffloads / totalShifts).toFixed(1) : 0,
+      shiftsWithIssues,
+      healthyShifts: totalShifts - shiftsWithIssues,
+      healthRate: totalShifts ? ((totalShifts - shiftsWithIssues) / totalShifts * 100).toFixed(1) : 0,
+      display: {
+        totalVarianceFormatted: this.#formatVariance(totalVariance),
+        healthRateFormatted: `${((totalShifts - shiftsWithIssues) / totalShifts * 100).toFixed(1)}%`
+      }
     };
   }
 
   /**
-   * Calculate stability of values
+   * Validate reconciliation filters
    */
-  calculateStability(values) {
-    if (values.length < 2) return 'unknown';
+  validateReconciliationFilters(filters) {
+    const errors = [];
     
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
-    const stdDev = Math.sqrt(variance);
+    if (filters.fromDate && filters.toDate) {
+      const from = new Date(filters.fromDate);
+      const to = new Date(filters.toDate);
+      
+      if (from > to) {
+        errors.push('From date cannot be after to date');
+      }
+      
+      const diffDays = Math.ceil((to - from) / (1000 * 60 * 60 * 24));
+      if (diffDays > 90) {
+        errors.push('Date range cannot exceed 90 days');
+      }
+    }
     
-    const cv = (stdDev / Math.abs(mean)) * 100; // Coefficient of variation
+    if (filters.limit && (filters.limit < 1 || filters.limit > 1000)) {
+      errors.push('Limit must be between 1 and 1000');
+    }
     
-    if (cv < 10) return 'very stable';
-    if (cv < 20) return 'stable';
-    if (cv < 30) return 'moderately stable';
-    return 'unstable';
-  }
-
-  /**
-   * Find outliers in values
-   */
-  findOutliers(values) {
-    if (values.length < 4) return [];
+    if (filters.offset && filters.offset < 0) {
+      errors.push('Offset must be a positive number');
+    }
     
-    const sorted = [...values].sort((a, b) => a - b);
-    const q1 = sorted[Math.floor(sorted.length * 0.25)];
-    const q3 = sorted[Math.floor(sorted.length * 0.75)];
-    const iqr = q3 - q1;
-    const lowerBound = q1 - 1.5 * iqr;
-    const upperBound = q3 + 1.5 * iqr;
+    if (filters.period && !Object.values(PERIOD_OPTIONS).includes(filters.period)) {
+      errors.push(`Period must be one of: ${Object.values(PERIOD_OPTIONS).join(', ')}`);
+    }
     
-    return values
-      .map((v, i) => ({ value: v, index: i }))
-      .filter(item => item.value < lowerBound || item.value > upperBound);
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
   }
 }
 
@@ -837,18 +1150,13 @@ export const SHIFT_STATUS = {
   OPEN: 'OPEN',
   CLOSED: 'CLOSED',
   VERIFIED: 'VERIFIED'
-  // Note: RECONCILED and DISCREPANCY might not be in backend enum
 };
 
 export const READING_TYPE = {
   START: 'START',
   END: 'END',
   OFFLOAD_BEFORE: 'OFFLOAD_BEFORE',
-  OFFLOAD_AFTER: 'OFFLOAD_AFTER',
-  MANUAL: 'MANUAL',
-  VERIFICATION: 'VERIFICATION',
-  AUDIT: 'AUDIT',
-  ADJUSTMENT: 'ADJUSTMENT'
+  OFFLOAD_AFTER: 'OFFLOAD_AFTER'
 };
 
 export const TANK_OFFLOAD_STATUS = {
@@ -904,7 +1212,7 @@ export const EXPORT_FORMATS = {
 // ==================== HELPER FUNCTIONS ====================
 
 /**
- * Create a reconciliation report
+ * Create a reconciliation report from shift data
  */
 export const createReconciliationReport = (shiftData) => {
   if (!shiftData) return null;
@@ -948,81 +1256,6 @@ export const createReconciliationReport = (shiftData) => {
     
     generatedAt: new Date().toISOString(),
     generatedBy: 'system'
-  };
-};
-
-/**
- * Validate reconciliation filters
- */
-export const validateReconciliationFilters = (filters) => {
-  const errors = [];
-  
-  if (filters.fromDate && filters.toDate) {
-    const from = new Date(filters.fromDate);
-    const to = new Date(filters.toDate);
-    
-    if (from > to) {
-      errors.push('From date cannot be after to date');
-    }
-    
-    const diffDays = Math.ceil((to - from) / (1000 * 60 * 60 * 24));
-    if (diffDays > 90) {
-      errors.push('Date range cannot exceed 90 days');
-    }
-  }
-  
-  if (filters.limit && (filters.limit < 1 || filters.limit > 1000)) {
-    errors.push('Limit must be between 1 and 1000');
-  }
-  
-  if (filters.offset && filters.offset < 0) {
-    errors.push('Offset must be a positive number');
-  }
-  
-  if (filters.period && !Object.values(PERIOD_OPTIONS).includes(filters.period)) {
-    errors.push(`Period must be one of: ${Object.values(PERIOD_OPTIONS).join(', ')}`);
-  }
-  
-  return {
-    isValid: errors.length === 0,
-    errors
-  };
-};
-
-/**
- * Calculate summary statistics from multiple shifts
- */
-export const calculateMultiShiftSummary = (shifts) => {
-  if (!shifts?.length) return null;
-  
-  const totalShifts = shifts.length;
-  let totalVariance = 0;
-  let totalDispensed = 0;
-  let totalOffloads = 0;
-  let shiftsWithIssues = 0;
-  
-  shifts.forEach(shift => {
-    totalVariance += Math.abs(shift.reconciliation?.summary?.totals?.variance || 0);
-    totalDispensed += shift.reconciliation?.summary?.totals?.dispensed || 0;
-    totalOffloads += shift.reconciliation?.summary?.offloadSummary?.totalOffloads || 0;
-    
-    if (shift.verification?.alerts?.length > 0 || 
-        shift.verification?.missingReadings?.length > 0) {
-      shiftsWithIssues++;
-    }
-  });
-  
-  return {
-    totalShifts,
-    totalVariance,
-    averageVariancePerShift: totalVariance / totalShifts,
-    totalDispensed,
-    averageDispensedPerShift: totalDispensed / totalShifts,
-    totalOffloads,
-    averageOffloadsPerShift: totalOffloads / totalShifts,
-    shiftsWithIssues,
-    healthyShifts: totalShifts - shiftsWithIssues,
-    healthRate: ((totalShifts - shiftsWithIssues) / totalShifts * 100).toFixed(1)
   };
 };
 
